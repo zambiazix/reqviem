@@ -84,7 +84,7 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
       {/* Logo à esquerda */}
       <Box sx={{ flexShrink: 0 }}>
         <img
-          src="/src/assets/logo.png"
+          src="/logo.png"
           alt="Logo Réquiem RPG"
           style={{
             width: "80px",
@@ -275,7 +275,7 @@ export default function App() {
                     >
                       <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                         <img
-                          src="/src/assets/logo.png"
+                          src="/logo.png"
                           alt="Logo Réquiem RPG"
                           style={{
                             width: "60px",
