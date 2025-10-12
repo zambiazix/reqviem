@@ -4,17 +4,23 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  base: "./", // ✅ Corrige caminho relativo das imagens no build
   plugins: [
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "robots.txt", "apple-touch-icon.png"],
+      includeAssets: [
+        "favicon.ico",
+        "robots.txt",
+        "apple-touch-icon.png",
+        "logo.png" // ✅ garante que a logo também entre no PWA build
+      ],
       manifest: {
         name: "RPG App",
         short_name: "RPG",
         start_url: ".",
         display: "standalone",
-        background_color: "#ffffff",
+        background_color: "#121212",
         theme_color: "#1976d2",
         icons: [
           { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
@@ -23,8 +29,6 @@ export default defineConfig({
       },
     }),
   ],
-
-  // 🔧 Proxy para localhost — resolve WebSocket closed error
   server: {
     proxy: {
       "/socket.io": {

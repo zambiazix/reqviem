@@ -278,8 +278,8 @@ export default function App() {
                           src="/logo.png"
                           alt="Logo Réquiem RPG"
                           style={{
-                            width: "60px",
-                            height: "60px",
+                            width: "80px",
+                            height: "80px",
                             borderRadius: "50%",
                             objectFit: "contain",
                             boxShadow:
