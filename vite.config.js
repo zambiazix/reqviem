@@ -4,7 +4,8 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  base: "./", // ✅ Corrige caminho relativo das imagens no build
+  base: "/", // 🔥 importante para produção no Vercel
+
   plugins: [
     react(),
     VitePWA({
@@ -13,12 +14,12 @@ export default defineConfig({
         "favicon.ico",
         "robots.txt",
         "apple-touch-icon.png",
-        "logo.png" // ✅ garante que a logo também entre no PWA build
+        "logo.png"
       ],
       manifest: {
-        name: "RPG App",
+        name: "Réquiem RPG",
         short_name: "RPG",
-        start_url: ".",
+        start_url: "/",
         display: "standalone",
         background_color: "#121212",
         theme_color: "#1976d2",
@@ -29,17 +30,8 @@ export default defineConfig({
       },
     }),
   ],
-  server: {
-    proxy: {
-      "/socket.io": {
-        target: "http://localhost:5000",
-        ws: true,
-        changeOrigin: true,
-      },
-      "/api": {
-        target: "http://localhost:5000",
-        changeOrigin: true,
-      },
-    },
+
+  build: {
+    outDir: "dist", // Vercel usa isso
   },
 });
