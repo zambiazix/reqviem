@@ -6,7 +6,7 @@
   "framework": "vite",
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/(?!.*\\.(?:js|mjs|css|png|jpg|jpeg|svg|ico|webp|webmanifest|json|map|woff2|woff|ttf)$)(.*)",
       "dest": "/index.html"
     }
   ]

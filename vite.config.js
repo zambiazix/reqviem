@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  base: "/", // 🔥 importante para produção no Vercel
+  base: "./", // 🔥 importante para produção no Vercel
 
   plugins: [
     react(),
@@ -14,7 +14,9 @@ export default defineConfig({
         "favicon.ico",
         "robots.txt",
         "apple-touch-icon.png",
-        "logo.png"
+        "logo.png",
+        "pwa-192x192.png",
+        "pwa-512x512.png"
       ],
       manifest: {
         name: "Réquiem RPG",
