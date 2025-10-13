@@ -58,7 +58,7 @@ export default function AudioProvider({ children }) {
 
       const audio = new Audio();
       audio.crossOrigin = "anonymous";
-      audio.src = url;
+      audio.src = encodeURI(url);
       audio.loop = true;
       audio.preload = "auto";
 

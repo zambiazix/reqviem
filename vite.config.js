@@ -4,7 +4,8 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  base: "./", // 🔥 importante para produção no Vercel
+  base: "./",
+  assetsInclude: ["**/*.mp3", "**/*.m4a"], // 🔥 adiciona suporte a áudio
 
   plugins: [
     react(),
@@ -34,6 +35,6 @@ export default defineConfig({
   ],
 
   build: {
-    outDir: "dist", // Vercel usa isso
+    outDir: "dist",
   },
 });
