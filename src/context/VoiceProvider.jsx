@@ -542,6 +542,7 @@ export default function VoiceProvider({ children }) {
     if (inVoice) return;
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
+      unlockAudio();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
       try {

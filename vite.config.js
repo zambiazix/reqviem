@@ -2,10 +2,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import copyStatic from "./vite-plugin-copy-static.js"; // 👈 importa o plugin
 
 export default defineConfig({
   base: "./",
-  assetsInclude: ["**/*.mp3", "**/*.m4a"], // 🔥 adiciona suporte a áudio
+  assetsInclude: ["**/*.mp3", "**/*.m4a"],
 
   plugins: [
     react(),
@@ -32,6 +33,7 @@ export default defineConfig({
         ],
       },
     }),
+    copyStatic(), // 👈 garante cópia de tudo da pasta public
   ],
 
   build: {
