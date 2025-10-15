@@ -19,44 +19,30 @@ const VoiceContext = createContext();
 export const useVoice = () => useContext(VoiceContext);
 
 export default function VoiceProvider({ children }) {
-  // estados públicos
   const [inVoice, setInVoice] = useState(false);
-  const [participants, setParticipants] = useState([]); // lista do servidor [{id, nick, speaking}, ...]
+  const [participants, setParticipants] = useState([]);
   const [localMuted, setLocalMuted] = useState(false);
   const [speakingIds, setSpeakingIds] = useState(new Set());
   const [userNick, setUserNick] = useState("");
   const [localSocketId, setLocalSocketId] = useState(null);
-
-  // avatars: map participantId -> imageURL (ou empty string)
   const [avatars, setAvatars] = useState({});
   const [localAvatar, setLocalAvatar] = useState("");
 
-  // refs internos
-  const localStreamRef = useRef(null); // meu microfone
-  // peersRef stores per-remote state: { [remoteId]: { pc, audioEl, nick, _stream, polite, makingOffer, ignoreOffer } }
+  const localStreamRef = useRef(null);
   const peersRef = useRef({});
-  const pendingCandidatesRef = useRef({}); // { remoteId: [candidate, ...] }
-  const analyserRef = useRef(null); // analyser local para detectar fala
+  const pendingCandidatesRef = useRef({});
+  const analyserRef = useRef(null);
   const rafRef = useRef(null);
   const isUnmountedRef = useRef(false);
-
-  // ref para garantir que o analisador use sempre o socket id atual (evita closure stale)
   const localSocketIdRef = useRef(null);
-
-  // helper para evitar re-buscas de avatar
   const loadedAvatarIdsRef = useRef(new Set());
-  const avatarsRef = useRef({}); // mirror para operações síncronas
-
-  // prev speaking local (para emitir somente em mudança)
+  const avatarsRef = useRef({});
   const prevLocalSpeakingRef = useRef(false);
 
-  // stream de música (do AudioProvider) para injetar nos peers do mestre
   const { getMusicStream } = useAudio();
-
-  // STUN config
   const RTC_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
-  // --- pega nick do Firebase / fallback para prefix do e-mail ---
+  // --- Identidade do usuário (nick) ---
   useEffect(() => {
     const auth = getAuth();
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -75,7 +61,7 @@ export default function VoiceProvider({ children }) {
     return () => unsub();
   }, []);
 
-  // --- funções auxiliares de speaking detection local ---
+  // --- Detecção de fala local ---
   function startLocalAnalyser(stream) {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -87,37 +73,24 @@ export default function VoiceProvider({ children }) {
       analyserRef.current = { ctx, analyser, src };
 
       const data = new Uint8Array(analyser.frequencyBinCount);
-
       function detect() {
         if (!analyserRef.current) return;
         analyser.getByteFrequencyData(data);
         const vol = data.reduce((a, b) => a + b, 0) / data.length;
         const isSpeaking = vol > 18;
-
-        // usa o id atual do socket via ref para evitar stale closures
         const sid = localSocketIdRef.current || socket?.id || null;
-        if (sid) {
-          // só atualiza/ emite quando houver mudança local (start/stop)
-          if (isSpeaking !== prevLocalSpeakingRef.current) {
-            prevLocalSpeakingRef.current = isSpeaking;
-
-            // atualiza estado local de speakingIds (re-render local)
-            setSpeakingIds((prev) => {
-              const s = new Set(prev);
-              if (isSpeaking) s.add(sid);
-              else s.delete(sid);
-              return s;
-            });
-
-            // Emitimos o evento para o servidor (servidor por sua vez notifica todos)
-            try {
-              socket.emit("voice-speaking", { id: sid, speaking: isSpeaking });
-            } catch (e) {
-              // ignore
-            }
-          }
+        if (sid && isSpeaking !== prevLocalSpeakingRef.current) {
+          prevLocalSpeakingRef.current = isSpeaking;
+          setSpeakingIds((prev) => {
+            const s = new Set(prev);
+            if (isSpeaking) s.add(sid);
+            else s.delete(sid);
+            return s;
+          });
+          try {
+            socket.emit("voice-speaking", { id: sid, speaking: isSpeaking });
+          } catch {}
         }
-
         rafRef.current = requestAnimationFrame(detect);
       }
       detect();
@@ -127,27 +100,24 @@ export default function VoiceProvider({ children }) {
   }
 
   function stopLocalAnalyser() {
-    try {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-      prevLocalSpeakingRef.current = false;
-      if (analyserRef.current) {
-        try { analyserRef.current.src.disconnect(); } catch (e) {}
-        try { analyserRef.current.ctx.close(); } catch (e) {}
-        analyserRef.current = null;
-      }
-    } catch (e) {
-      // ignore
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    prevLocalSpeakingRef.current = false;
+    if (analyserRef.current) {
+      try {
+        analyserRef.current.src.disconnect();
+        analyserRef.current.ctx.close();
+      } catch {}
+      analyserRef.current = null;
     }
   }
 
-  // --- helper: cria <audio> oculto para reprodução de stream remota (global) ---
+  // --- Cria <audio> oculto para cada stream remota ---
   function createHiddenAudioForStream(remoteId, stream) {
-    // se já existe, substitui srcObject
     const existing = peersRef.current[remoteId]?.audioEl;
     if (existing) {
       existing.srcObject = stream;
-      try { existing.play().catch(() => {}); } catch {}
+      existing.play().catch(() => {});
       return existing;
     }
     const audioEl = document.createElement("audio");
@@ -158,11 +128,11 @@ export default function VoiceProvider({ children }) {
     audioEl.dataset.id = remoteId;
     audioEl.srcObject = stream;
     document.body.appendChild(audioEl);
-    try { audioEl.play().catch(() => {}); } catch {}
+    audioEl.play().catch(() => {});
     return audioEl;
   }
 
-  // --- Cria e envia offer de forma controlada para um peer específico ---
+  // --- Criação e envio de Offer para um peer ---
   async function createAndSendOffer(remoteId) {
     try {
       const entry = peersRef.current[remoteId] || {};
@@ -184,7 +154,7 @@ export default function VoiceProvider({ children }) {
     }
   }
 
-  // --- helper: cria RTCPeerConnection para um remoteId ---
+  // --- Criação de PeerConnection ---
   function createPeerIfNeeded(remoteId) {
     if (!remoteId) return null;
     if (peersRef.current[remoteId]?.pc) return peersRef.current[remoteId].pc;
@@ -254,7 +224,7 @@ export default function VoiceProvider({ children }) {
     try {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => {
-          try { pc.addTrack(t, localStreamRef.current); } catch (e) {}
+          try { pc.addTrack(t, localStreamRef.current); } catch {}
         });
       }
       try {
@@ -266,13 +236,11 @@ export default function VoiceProvider({ children }) {
           musicStream.getAudioTracks().forEach((t) => {
             const already = pc.getSenders().some((s) => s.track && s.track.id === t.id);
             if (!already) {
-              try { pc.addTrack(t, musicStream); } catch (e) {}
+              try { pc.addTrack(t, musicStream); } catch {}
             }
           });
         }
-      } catch (e) {
-        // ignore
-      }
+      } catch {}
     } catch (e) {
       console.warn("Erro ao adicionar tracks ao pc:", e);
     }
@@ -299,20 +267,19 @@ export default function VoiceProvider({ children }) {
     try {
       const entry = peersRef.current[remoteId];
       if (entry?.pc) {
-        try { entry.pc.close(); } catch (e) {}
+        try { entry.pc.close(); } catch {}
       }
       if (entry?.audioEl) {
         try {
           entry.audioEl.pause();
           entry.audioEl.srcObject = null;
           entry.audioEl.remove();
-        } catch (e) {}
+        } catch {}
       }
-    } catch (e) {}
+    } catch {}
     delete peersRef.current[remoteId];
     delete pendingCandidatesRef.current[remoteId];
     setParticipants((prev) => (Array.isArray(prev) ? prev.slice() : prev));
-    // também limpa avatar cache
     if (loadedAvatarIdsRef.current.has(remoteId)) {
       loadedAvatarIdsRef.current.delete(remoteId);
       delete avatarsRef.current[remoteId];
@@ -320,25 +287,20 @@ export default function VoiceProvider({ children }) {
     }
   }
 
-  // --- Busca avatar pela ficha (tenta por email -> ficha, se necessário query users por nick) ---
+  // --- Busca avatar e nick ---
   async function fetchAvatarForParticipant(p) {
     try {
       let email = p.email || null;
-      // se não tiver email, tente achar em users onde nick == p.nick
       if (!email && p.nick) {
         try {
           const usersColl = collection(db, "users");
           const q = firestoreQuery(usersColl, where("nick", "==", p.nick));
           const snaps = await getDocs(q);
           if (snaps && snaps.size > 0) {
-            // assumimos o id do doc users = email
             const doc0 = snaps.docs[0];
             email = doc0.id;
           }
-        } catch (err) {
-          // permission issues ou nada encontrado
-          // console.warn("fetchAvatar: busca users por nick falhou", err);
-        }
+        } catch {}
       }
       if (email) {
         try {
@@ -348,54 +310,36 @@ export default function VoiceProvider({ children }) {
             const img = fichaSnap.data().imagemPersonagem || "";
             return { email, url: img || "" };
           }
-        } catch (err) {
-          // permission ou outros erros
-          // console.warn("fetchAvatar: busca ficha falhou", err);
-        }
+        } catch {}
       }
-    } catch (e) {
-      // ignore
-    }
+    } catch {}
     return { email: null, url: "" };
   }
 
-  // --- HANDLE socket events: participants + signaling ---
+  // --- Socket Events ---
   useEffect(() => {
     if (!socket) return;
-
     setLocalSocketId(socket.id);
     localSocketIdRef.current = socket.id;
 
-    // handler para participantes vindos do servidor
     async function onParticipants(list) {
       const arr = Array.isArray(list) ? list : [];
-      // coloca nicks
-      // inicialmente colocamos sem avatar para renderizar rápido
       setParticipants(arr.map((p) => ({ ...p, avatar: null })));
-
-      // atualiza speakingIds de acordo com o servidor (autoridade)
       try {
         const serverSpeaking = new Set(arr.filter((p) => p && p.speaking).map((p) => p.id));
         setSpeakingIds(serverSpeaking);
-      } catch (e) {
-        // ignore
-      }
+      } catch {}
 
-      // cria peers para cada um
       arr.forEach((p) => {
         if (!p || !p.id) return;
         if (p.id === socket.id) return;
         peersRef.current[p.id] = { ...(peersRef.current[p.id] || {}), nick: p.nick };
         createPeerIfNeeded(p.id);
-
         try {
-          if (socket.id < p.id) {
-            createAndSendOffer(p.id).catch(() => {});
-          }
-        } catch (e) {}
+          if (socket.id < p.id) createAndSendOffer(p.id);
+        } catch {}
       });
 
-      // fetch avatars (somente para os ids que ainda não carregamos)
       const toFetch = arr.filter((p) => p && p.id && !loadedAvatarIdsRef.current.has(p.id));
       await Promise.all(
         toFetch.map(async (p) => {
@@ -403,21 +347,20 @@ export default function VoiceProvider({ children }) {
             const { url } = await fetchAvatarForParticipant(p);
             avatarsRef.current[p.id] = url || "";
             loadedAvatarIdsRef.current.add(p.id);
-            // guarda email no peersRef se quiser
-            if (p.email) peersRef.current[p.id] = { ...(peersRef.current[p.id] || {}), email: p.email };
-          } catch (err) {
+          } catch {
             avatarsRef.current[p.id] = "";
             loadedAvatarIdsRef.current.add(p.id);
           }
         })
       );
 
-      // atualiza state avatars e participants (coloca avatar em cada participante)
       setAvatars({ ...avatarsRef.current });
-      const withAvatars = arr.map((p) => ({ ...p, avatar: avatarsRef.current[p.id] || null }));
+      const withAvatars = arr.map((p) => ({
+        ...p,
+        avatar: avatarsRef.current[p.id] || null,
+      }));
       setParticipants(withAvatars);
 
-      // define localAvatar se disponível
       const localId = localSocketIdRef.current;
       if (localId && avatarsRef.current[localId]) {
         setLocalAvatar(avatarsRef.current[localId] || "");
@@ -433,7 +376,9 @@ export default function VoiceProvider({ children }) {
       const entry = (peersRef.current[from] = peersRef.current[from] || {});
       try {
         if (data.sdp) {
-          const offerCollision = data.sdp.type === "offer" && (entry.makingOffer || pc.signalingState !== "stable");
+          const offerCollision =
+            data.sdp.type === "offer" &&
+            (entry.makingOffer || pc.signalingState !== "stable");
           if (offerCollision && !entry.polite) {
             entry.ignoreOffer = true;
             console.log("VoiceProvider: ignorando offer por colisão (impolite)", { from });
@@ -455,13 +400,15 @@ export default function VoiceProvider({ children }) {
           await applyPendingCandidates(from);
         } else if (data.candidate) {
           if (!pc.remoteDescription || !pc.remoteDescription.type) {
-            pendingCandidatesRef.current[from] = pendingCandidatesRef.current[from] || [];
+            pendingCandidatesRef.current[from] =
+              pendingCandidatesRef.current[from] || [];
             pendingCandidatesRef.current[from].push(data.candidate);
           } else {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
             } catch (err) {
-              pendingCandidatesRef.current[from] = pendingCandidatesRef.current[from] || [];
+              pendingCandidatesRef.current[from] =
+                pendingCandidatesRef.current[from] || [];
               pendingCandidatesRef.current[from].push(data.candidate);
             }
           }
@@ -471,7 +418,6 @@ export default function VoiceProvider({ children }) {
       }
     }
 
-    // handler rápido quando o servidor envia o evento dedicado
     function onSpeaking({ id, speaking }) {
       if (!id) return;
       setSpeakingIds((prev) => {
@@ -505,7 +451,6 @@ export default function VoiceProvider({ children }) {
       socket.off("voice-signal", onSignal);
       socket.off("voice-speaking", onSpeaking);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userNick]);
 
   // --- se música do mestre chegar depois, injeta nas peers existentes e renegocia ---

@@ -7,19 +7,19 @@ const AudioContextGlobal = createContext();
 export const useAudio = () => useContext(AudioContextGlobal);
 
 export default function AudioProvider({ children }) {
-  // audioObjects: { url: { audio, sourceNode, volume } }
+  // 🎵 Armazena os objetos de áudio em execução
   const audioObjects = useRef({});
   const [playingTracks, setPlayingTracks] = useState([]);
   const pendingRef = useRef(new Set());
   const desiredVolumesRef = useRef({});
   const socketRef = useRef(socket);
 
-  // AudioContext / destination (mix) / stream
+  // 🎧 Contexto e stream global de áudio
   const audioCtxRef = useRef(null);
   const destinationRef = useRef(null);
   const musicStreamRef = useRef(null);
 
-  // unlock gesture
+  // 🎮 Controle de interação do usuário
   const [interactionAllowed, setInteractionAllowed] = useState(false);
   const unlockAudio = () => {
     if (interactionAllowed) return;
@@ -29,6 +29,7 @@ export default function AudioProvider({ children }) {
     pend.forEach((url) => _playLocal(url));
   };
 
+  // 🧠 Criação do AudioContext global
   function ensureAudioContext() {
     if (!audioCtxRef.current) {
       try {
@@ -44,9 +45,9 @@ export default function AudioProvider({ children }) {
     }
   }
 
+  // 🎶 Função interna de play
   function _playLocal(url) {
     if (!url) return;
-    // se usuário ainda não fez gesture
     if (!interactionAllowed) {
       pendingRef.current.add(url);
       return;
@@ -72,9 +73,13 @@ export default function AudioProvider({ children }) {
       try {
         if (audioCtxRef.current) {
           const srcNode = audioCtxRef.current.createMediaElementSource(audio);
-          try { srcNode.connect(audioCtxRef.current.destination); } catch {}
+          try {
+            srcNode.connect(audioCtxRef.current.destination);
+          } catch {}
           if (destinationRef.current) {
-            try { srcNode.connect(destinationRef.current); } catch (err) {
+            try {
+              srcNode.connect(destinationRef.current);
+            } catch (err) {
               console.warn("Erro conectar srcNode -> destination:", err);
             }
           }
@@ -87,10 +92,12 @@ export default function AudioProvider({ children }) {
         audioObjects.current[url] = { audio, sourceNode: null, volume: vol };
       }
 
-      audio.play().catch((err) => {
-        console.warn("Audio play falhou para", url, err);
-        pendingRef.current.add(url);
-      });
+      audio
+        .play()
+        .catch((err) => {
+          console.warn("Audio play falhou para", url, err);
+          pendingRef.current.add(url);
+        });
 
       setPlayingTracks((prev) => (prev.includes(url) ? prev : [...prev, url]));
     } else {
@@ -102,6 +109,7 @@ export default function AudioProvider({ children }) {
     }
   }
 
+  // 🔊 Controle global de play/pause/volume
   const playMusic = (url) => {
     _playLocal(url);
     try {
@@ -114,7 +122,9 @@ export default function AudioProvider({ children }) {
     if (audioObjects.current[url]) {
       try {
         audioObjects.current[url].audio.pause();
-        try { audioObjects.current[url].sourceNode?.disconnect?.(); } catch {}
+        try {
+          audioObjects.current[url].sourceNode?.disconnect?.();
+        } catch {}
       } catch (err) {
         console.warn("Erro pausar:", err);
       }
@@ -129,7 +139,9 @@ export default function AudioProvider({ children }) {
       try {
         audioObjects.current[url].audio.pause();
         audioObjects.current[url].audio.currentTime = 0;
-        try { audioObjects.current[url].sourceNode?.disconnect?.(); } catch {}
+        try {
+          audioObjects.current[url].sourceNode?.disconnect?.();
+        } catch {}
       } catch (err) {}
     });
     audioObjects.current = {};
@@ -151,36 +163,19 @@ export default function AudioProvider({ children }) {
 
   const getVolume = (url) => {
     if (audioObjects.current[url]) return audioObjects.current[url].volume;
-    if (desiredVolumesRef.current[url] != null) return desiredVolumesRef.current[url] / 100;
+    if (desiredVolumesRef.current[url] != null)
+      return desiredVolumesRef.current[url] / 100;
     return 1.0;
   };
 
   const getMusicStream = () => musicStreamRef.current || null;
 
-  // voice local (apenas utilidade)
-  const [voiceStream, setVoiceStream] = useState(null);
-  const startVoice = async () => {
-    try {
-      // 🔒 Força permissão explícita (essencial para Brave/Chrome)
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setVoiceStream(stream);
-    } catch (error) {
-      alert("⚠️ Permita o acesso ao microfone para usar o chat de voz.");
-      console.error("Erro ao acessar microfone (AudioProvider.startVoice):", error);
-    }
-  };
-  const stopVoice = () => {
-    voiceStream?.getTracks()?.forEach((t) => t.stop());
-    setVoiceStream(null);
-  };
-
+  // 🔁 Sincronização com Socket.IO
   useEffect(() => {
     const s = socketRef.current;
     if (!s) return;
 
     const onPlay = (url) => {
-      // 🔊 só toca se o usuário já interagiu
       if (!interactionAllowed) {
         console.warn("Usuário ainda não desbloqueou áudio. Esperando gesture...");
         pendingRef.current.add(url);
@@ -213,7 +208,7 @@ export default function AudioProvider({ children }) {
     };
   }, [interactionAllowed]);
 
-  // Firestore: sincroniza estado persistente
+  // 🔥 Sincronização com Firestore (sound/current)
   useEffect(() => {
     let unsub;
     try {
@@ -241,6 +236,7 @@ export default function AudioProvider({ children }) {
     return () => unsub && unsub();
   }, []);
 
+  // 🧩 Retorno do Provider global
   return (
     <AudioContextGlobal.Provider
       value={{
@@ -249,8 +245,6 @@ export default function AudioProvider({ children }) {
         stopAllMusic,
         setVolume,
         getVolume,
-        startVoice,
-        stopVoice,
         playingTracks,
         interactionAllowed,
         unlockAudio,

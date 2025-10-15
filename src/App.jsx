@@ -443,8 +443,8 @@ export default function App() {
   }
 
   return (
-    <AudioProvider>
-      <VoiceProvider>
+    <VoiceProvider>
+      <AudioProvider>
         <Router>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -453,7 +453,7 @@ export default function App() {
             <Route path="/sistema" element={<Sistema />} />
           </Routes>
         </Router>
-      </VoiceProvider>
-    </AudioProvider>
+      </AudioProvider>
+    </VoiceProvider>
   );
 }
