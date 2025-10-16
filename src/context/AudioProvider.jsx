@@ -1,3 +1,4 @@
+// src/context/AudioProvider.jsx
 import React, { createContext, useContext, useRef, useState, useEffect } from "react";
 import socket from "../socket";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -7,6 +8,11 @@ const AudioContextGlobal = createContext();
 export const useAudio = () => useContext(AudioContextGlobal);
 
 export default function AudioProvider({ children }) {
+  // 🧭 Define a URL base do backend para servir músicas
+  const BASE_URL =
+    import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ||
+    "https://reqviem-backend.vercel.app/musicas";
+
   // 🎵 Armazena os objetos de áudio em execução
   const audioObjects = useRef({});
   const [playingTracks, setPlayingTracks] = useState([]);
@@ -53,21 +59,32 @@ export default function AudioProvider({ children }) {
       return;
     }
 
-    const existing = audioObjects.current[url];
-    if (!existing) {
-      ensureAudioContext();
+    ensureAudioContext();
 
+    // 🧩 Monta a URL final dependendo do ambiente
+    let finalUrl = url;
+    if (!url.startsWith("http")) {
+      // exemplo: "BatalhaFinal.mp3" → "https://backend/musicas/BatalhaFinal.mp3"
+      finalUrl = `${BASE_URL}/${url.replace(/^\/+/, "")}`;
+    } else if (url.includes("localhost")) {
+      // exemplo: "http://localhost:5173/BatalhaFinal.mp3" → "https://backend/musicas/BatalhaFinal.mp3"
+      const filename = url.split("/").pop();
+      finalUrl = `${BASE_URL}/${filename}`;
+    }
+
+    const existing = audioObjects.current[finalUrl];
+    if (!existing) {
       const audio = new Audio();
       audio.crossOrigin = "anonymous";
-      audio.src = encodeURI(url);
+      audio.src = encodeURI(finalUrl);
       audio.loop = true;
       audio.preload = "auto";
 
       audio.addEventListener("error", (e) => {
-        console.error("Audio error:", url, e, audio.error);
+        console.error("Audio error:", finalUrl, e, audio.error);
       });
 
-      const vol = (desiredVolumesRef.current[url] ?? 100) / 100;
+      const vol = (desiredVolumesRef.current[finalUrl] ?? 100) / 100;
       audio.volume = vol;
 
       try {
@@ -83,29 +100,33 @@ export default function AudioProvider({ children }) {
               console.warn("Erro conectar srcNode -> destination:", err);
             }
           }
-          audioObjects.current[url] = { audio, sourceNode: srcNode, volume: vol };
+          audioObjects.current[finalUrl] = { audio, sourceNode: srcNode, volume: vol };
         } else {
-          audioObjects.current[url] = { audio, sourceNode: null, volume: vol };
+          audioObjects.current[finalUrl] = { audio, sourceNode: null, volume: vol };
         }
       } catch (e) {
         console.warn("Falha ao criar MediaElementSource (fallback):", e);
-        audioObjects.current[url] = { audio, sourceNode: null, volume: vol };
+        audioObjects.current[finalUrl] = { audio, sourceNode: null, volume: vol };
       }
 
       audio
         .play()
+        .then(() => console.log("🎵 Tocando:", finalUrl))
         .catch((err) => {
-          console.warn("Audio play falhou para", url, err);
-          pendingRef.current.add(url);
+          console.warn("Audio play falhou para", finalUrl, err);
+          pendingRef.current.add(finalUrl);
         });
 
-      setPlayingTracks((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      setPlayingTracks((prev) => (prev.includes(finalUrl) ? prev : [...prev, finalUrl]));
     } else {
-      existing.audio.play().catch((err) => {
-        console.warn("Erro ao dar play no existente:", err);
-        pendingRef.current.add(url);
-      });
-      setPlayingTracks((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      existing.audio
+        .play()
+        .then(() => console.log("🎵 Reproduzindo novamente:", finalUrl))
+        .catch((err) => {
+          console.warn("Erro ao dar play no existente:", err);
+          pendingRef.current.add(finalUrl);
+        });
+      setPlayingTracks((prev) => (prev.includes(finalUrl) ? prev : [...prev, finalUrl]));
     }
   }
 
@@ -119,18 +140,20 @@ export default function AudioProvider({ children }) {
 
   const pauseMusic = (url) => {
     if (!url) return;
-    if (audioObjects.current[url]) {
+    const allKeys = Object.keys(audioObjects.current);
+    const key = allKeys.find((k) => k.includes(url)) || url;
+    if (audioObjects.current[key]) {
       try {
-        audioObjects.current[url].audio.pause();
+        audioObjects.current[key].audio.pause();
         try {
-          audioObjects.current[url].sourceNode?.disconnect?.();
+          audioObjects.current[key].sourceNode?.disconnect?.();
         } catch {}
       } catch (err) {
         console.warn("Erro pausar:", err);
       }
-      delete audioObjects.current[url];
+      delete audioObjects.current[key];
     }
-    setPlayingTracks((prev) => prev.filter((u) => u !== url));
+    setPlayingTracks((prev) => prev.filter((u) => !u.includes(url)));
     pendingRef.current.delete(url);
   };
 
@@ -151,10 +174,12 @@ export default function AudioProvider({ children }) {
 
   const setVolume = (url, value) => {
     desiredVolumesRef.current[url] = value;
-    if (audioObjects.current[url]) {
+    const allKeys = Object.keys(audioObjects.current);
+    const key = allKeys.find((k) => k.includes(url)) || url;
+    if (audioObjects.current[key]) {
       try {
-        audioObjects.current[url].audio.volume = value / 100;
-        audioObjects.current[url].volume = value / 100;
+        audioObjects.current[key].audio.volume = value / 100;
+        audioObjects.current[key].volume = value / 100;
       } catch (err) {
         console.warn("Erro setVolume:", err);
       }
@@ -162,7 +187,9 @@ export default function AudioProvider({ children }) {
   };
 
   const getVolume = (url) => {
-    if (audioObjects.current[url]) return audioObjects.current[url].volume;
+    const allKeys = Object.keys(audioObjects.current);
+    const key = allKeys.find((k) => k.includes(url)) || url;
+    if (audioObjects.current[key]) return audioObjects.current[key].volume;
     if (desiredVolumesRef.current[url] != null)
       return desiredVolumesRef.current[url] / 100;
     return 1.0;
