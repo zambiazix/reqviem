@@ -1,4 +1,3 @@
-// src/components/SoundBoard.jsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   Paper,
@@ -14,9 +13,6 @@ import {
 import { db } from "../firebaseConfig";
 import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { useAudio } from "../context/AudioProvider";
-
-// O SoundBoard continua visível apenas para o mestre (isMaster)
-// Os eventos de play/stop/volume são enviados via socket.io (AudioProvider)
 
 export default function SoundBoard({ isMaster }) {
   const [musicTracks, setMusicTracks] = useState([]);
@@ -35,51 +31,55 @@ export default function SoundBoard({ isMaster }) {
     socket,
   } = useAudio();
 
-  // Carrega a lista de músicas do sounds.json
+  // 🎧 Lista de músicas (Cloudinary)
+  const musicList = [
+    { name: "Aventura", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/Aventura_wzo6of.mp3" },
+    { name: "Batalha Final", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/BatalhaFinal_dtaghp.mp3" },
+    { name: "Batalha Marítima", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/BatalhaMaritima_tmybyz.mp3" },
+    { name: "Batalha Medieval", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/BatalhaMedieval_bqhfhq.mp3" },
+    { name: "Batalha Militar", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/BatalhaMilitar_rmd0wb.mp3" },
+    { name: "Batalha em Grupo", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/BatalhaEmGrupo_eftntu.mp3" },
+    { name: "Cidade Chuvosa", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/CidadeChuvosa_jkfkon.mp3" },
+    { name: "Cidade Nova", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/CidadeNova_vdmsos.mp3" },
+    { name: "Vilarejo Feliz", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632379/VilarejoFeliz_ytpk2v.mp3" },
+    { name: "Volta Para Casa", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632381/VoltaParaCasa_fyco7w.mp3" },
+    { name: "Viagem", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632379/Viagem_qbhqn1.mp3" },
+    { name: "Lúdico", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632377/Ludico_c9u8qp.mp3" },
+    { name: "Misterioso", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632377/Misterioso_myosst.mp3" },
+    { name: "Inverno", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632377/Inverno_qs6qqy.mp3" },
+  ];
+
+  // 🌲 Lista de Ambientes / Efeitos Sonoros (Cloudinary)
+  const ambianceList = [
+    { name: "Taverna", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Taverna_wyfwlp.mp3" },
+    { name: "Taverna 1", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Taverna1_gqd4z2.mp3" },
+    { name: "Trovoada", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Trovao_gatyrw.mp3" },
+    { name: "Trovoada 1", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Trovao1_wmrou8.mp3" },
+    { name: "Chuva", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/Chuva_wewgga.m4a" },
+    { name: "Chuva 2", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632373/Chuva2_mvi8qy.mp3" },
+    { name: "Rio", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Rio_y4eowq.mp3" },
+    { name: "Navio", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632377/Navio_lksrzd.mp3" },
+    { name: "Navio Ambiente", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632377/NavioAmbiente_ogt70q.mp3" },
+    { name: "Coliseu", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/Coliseu_fnlnbu.mp3" },
+    { name: "Fogueira", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632376/Fogueira_tjjv8t.mp3" },
+    { name: "Pessoas Conversando", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/PessoasConversando_rz7whs.mp3" },
+    { name: "Compras na Cidade", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/ComprasNaCidade_n16mul.mp3" },
+    { name: "Infiltração", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632376/Infiltracao_fkszbd.mp3" },
+    { name: "Deserto", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632376/Deserto_olyldk.mp3" },
+    { name: "Perseguição", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Perseguicao_pl9qww.mp3" },
+  ];
+
+  // Carrega listas
   useEffect(() => {
-    async function load() {
-      try {
-        let res = await fetch("/sounds.json");
-        if (!res.ok) throw new Error("sounds.json não encontrado");
-        const data = await res.json();
-        const music = (data.music || []).map((f) => ({
-          name: stripExt(f),
-          url: resolveUrl(f),
-        }));
-        const ambience = (data.ambience || []).map((f) => ({
-          name: stripExt(f),
-          url: resolveUrl(f),
-        }));
-        setMusicTracks(music);
-        setAmbianceTracks(ambience);
-      } catch (err) {
-        console.error("Erro carregando sounds.json:", err);
-      }
-    }
-    load();
+    setMusicTracks(musicList);
+    setAmbianceTracks(ambianceList);
   }, []);
 
-  function stripExt(filename) {
-    return filename.replace(/^.*[\\/]/, "").replace(/\.[^/.]+$/, "");
-  }
-
-  // 🔧 URLs absolutas sempre (garante compatibilidade localhost e Render)
-  function resolveUrl(file) {
-    if (!file) return file;
-    if (/^https?:\/\//i.test(file)) return file;
-    return `${window.location.origin}/${file.replace(/^\//, "")}`;
-  }
-
-  // Mestre: tocar música → emite para todos
   function handlePlay(url) {
     playMusic(url);
-    setVolumes((prev) => ({ ...prev, [url]: 100 }));
-    try {
-      socket?.emit?.("play-music", url);
-    } catch (err) {
-      console.warn("Socket emitir play-music falhou:", err);
-    }
-    scheduleSaveState(
+    setVolumes((p) => ({ ...p, [url]: 100 }));
+    socket?.emit?.("play-music", url);
+    scheduleSave(
       [...new Set([...playingTracks, url])].map((u) => ({
         url: u,
         playing: true,
@@ -90,17 +90,13 @@ export default function SoundBoard({ isMaster }) {
 
   function handleStop(url) {
     pauseMusic(url);
-    setVolumes((prev) => {
-      const copy = { ...prev };
+    setVolumes((p) => {
+      const copy = { ...p };
       delete copy[url];
       return copy;
     });
-    try {
-      socket?.emit?.("stop-music", url);
-    } catch (err) {
-      console.warn("Socket emitir stop-music falhou:", err);
-    }
-    scheduleSaveState(
+    socket?.emit?.("stop-music", url);
+    scheduleSave(
       playingTracks
         .filter((u) => u !== url)
         .map((u) => ({ url: u, playing: true, volume: volumes[u] ?? 100 }))
@@ -110,23 +106,15 @@ export default function SoundBoard({ isMaster }) {
   function handleStopAll() {
     stopAllMusic();
     setVolumes({});
-    try {
-      socket?.emit?.("stop-all-music");
-    } catch (err) {
-      console.warn("Socket emitir stop-all-music falhou:", err);
-    }
-    scheduleSaveState([]);
+    socket?.emit?.("stop-all-music");
+    scheduleSave([]);
   }
 
   function handleVolume(url, value) {
     setVolume(url, value);
-    setVolumes((prev) => ({ ...prev, [url]: value }));
-    try {
-      socket?.emit?.("volume-music", { url, value });
-    } catch (err) {
-      console.warn("Socket emitir volume-music falhou:", err);
-    }
-    scheduleSaveState(
+    setVolumes((p) => ({ ...p, [url]: value }));
+    socket?.emit?.("volume-music", { url, value });
+    scheduleSave(
       playingTracks.map((u) => ({
         url: u,
         playing: true,
@@ -135,45 +123,37 @@ export default function SoundBoard({ isMaster }) {
     );
   }
 
-  // Firestore (mantém estado sincronizado para quem entra depois)
-  useEffect(() => {
-    try {
-      unsubRef.current = onSnapshot(doc(db, "sound", "current"), (snap) => {
-        const data = snap?.data?.() ?? snap;
-        if (!data) return;
-      });
-    } catch {}
-    return () => unsubRef.current && unsubRef.current();
-  }, []);
-
-  function scheduleSaveState(newState) {
+  function scheduleSave(state) {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(
-      () => saveStateToFirestore(newState),
-      250
-    );
+    saveTimeoutRef.current = setTimeout(() => saveToFirestore(state), 300);
   }
 
-  async function saveStateToFirestore(state) {
+  async function saveToFirestore(state) {
     await setDoc(doc(db, "sound", "current"), {
       sounds: state,
       updatedAt: serverTimestamp(),
     });
   }
 
-  // Atualiza sliders quando playingTracks muda
+  useEffect(() => {
+    unsubRef.current = onSnapshot(doc(db, "sound", "current"), () => {});
+    return () => unsubRef.current && unsubRef.current();
+  }, []);
+
   useEffect(() => {
     const updated = {};
     playingTracks.forEach((url) => {
-      updated[url] = Math.round((getVolume(url) ?? 1.0) * 100);
+      updated[url] = Math.round((getVolume(url) ?? 1) * 100);
     });
-    setVolumes((prev) => ({ ...prev, ...updated }));
+    setVolumes((p) => ({ ...p, ...updated }));
   }, [playingTracks, getVolume]);
+
+  if (!isMaster) return null;
 
   function renderList(title, tracks) {
     return (
       <>
-        <Typography variant="subtitle1" sx={{ mt: 1 }}>
+        <Typography variant="subtitle1" sx={{ mt: 1, fontWeight: "bold" }}>
           {title}
         </Typography>
         <List dense>
@@ -238,17 +218,15 @@ export default function SoundBoard({ isMaster }) {
     );
   }
 
-  if (!isMaster) return null;
-
   return (
-    <Paper sx={{ p: 2, mt: 2, maxHeight: 420, overflowY: "auto" }}>
-      <Typography variant="h6" sx={{ mb: 1 }}>
+    <Paper sx={{ p: 2, mt: 2, maxHeight: 450, overflowY: "auto" }}>
+      <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
         🎵 Trilha Sonora
       </Typography>
 
-      {renderList("🎶 Música", musicTracks)}
+      {renderList("🎶 Músicas", musicTracks)}
       <Divider sx={{ my: 1 }} />
-      {renderList("🌲 Ambiente", ambianceTracks)}
+      {renderList("🌲 Ambientes", ambianceTracks)}
 
       {playingTracks.length > 0 && (
         <Button
