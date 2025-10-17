@@ -11,7 +11,7 @@ import {
   query as firestoreQuery,
   where,
 } from "firebase/firestore";
-import { useAudio } from "./AudioProvider";
+import { useAudio } from "./AudioProvider"; // IMPORTANTE: usamos unlockAudio/getMusicStream dali
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
@@ -39,7 +39,9 @@ export default function VoiceProvider({ children }) {
   const avatarsRef = useRef({});
   const prevLocalSpeakingRef = useRef(false);
 
-  const { getMusicStream } = useAudio();
+  // Pegamos o unlockAudio e o getMusicStream do AudioProvider
+  const { unlockAudio, getMusicStream } = useAudio();
+
   const RTC_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
   // --- Identidade do usuário (nick) ---
@@ -117,6 +119,7 @@ export default function VoiceProvider({ children }) {
     const existing = peersRef.current[remoteId]?.audioEl;
     if (existing) {
       existing.srcObject = stream;
+      // tentar tocar, ignorar rejeições (pode acontecer se autoplay bloqueado; mas já chamamos unlockAudio)
       existing.play().catch(() => {});
       return existing;
     }
@@ -127,6 +130,8 @@ export default function VoiceProvider({ children }) {
     audioEl.style.display = "none";
     audioEl.dataset.id = remoteId;
     audioEl.srcObject = stream;
+    // garantir que não fique mute por acidente
+    try { audioEl.muted = false; } catch {}
     document.body.appendChild(audioEl);
     audioEl.play().catch(() => {});
     return audioEl;
@@ -222,25 +227,39 @@ export default function VoiceProvider({ children }) {
     };
 
     try {
+      // se já tivermos microfone local, adiciona
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => {
           try { pc.addTrack(t, localStreamRef.current); } catch {}
         });
       }
-      try {
-        const musicStream = getMusicStream();
-        if (
-          musicStream &&
-          (userNick === MASTER_EMAIL || (typeof userNick === "string" && userNick === MASTER_EMAIL))
-        ) {
-          musicStream.getAudioTracks().forEach((t) => {
-            const already = pc.getSenders().some((s) => s.track && s.track.id === t.id);
-            if (!already) {
-              try { pc.addTrack(t, musicStream); } catch {}
-            }
-          });
+
+      // ---- ALTERAÇÃO IMPORTANTE ----
+      // Garantir que audio foi desbloqueado antes de pegar/getMusicStream e adicionar tracks do mestre.
+      // Se o mestre tiver música, queremos injetar os tracks do musicStream. Chamamos unlockAudio() antes.
+      (async () => {
+        try {
+          // tentar desbloquear (não quebra se já desbloqueado)
+          try { await unlockAudio(); } catch (e) { /* ignore */ }
+
+          const musicStream = getMusicStream && getMusicStream();
+          if (
+            musicStream &&
+            (userNick === MASTER_EMAIL || (typeof userNick === "string" && userNick === MASTER_EMAIL))
+          ) {
+            const existingIds = pc.getSenders().map((s) => s.track && s.track.id).filter(Boolean);
+            musicStream.getAudioTracks().forEach((t) => {
+              if (!existingIds.includes(t.id)) {
+                try { pc.addTrack(t, musicStream); } catch (e) { console.warn("Erro addTrack musicStream:", e); }
+              }
+            });
+          }
+        } catch (err) {
+          // não quebrar o fluxo por causa disso
+          console.warn("Erro ao tentar injetar musicStream no pc:", err);
         }
-      } catch {}
+      })();
+      // -----------------------------
     } catch (e) {
       console.warn("Erro ao adicionar tracks ao pc:", e);
     }
@@ -386,7 +405,23 @@ export default function VoiceProvider({ children }) {
           }
           entry.ignoreOffer = false;
 
-          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          // PROTEÇÃO: chamar setRemoteDescription dentro de try/catch e tratar erros de estado
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          } catch (setErr) {
+            // alguns erros de setRemoteDescription podem ocorrer por ordem de m-lines ou estado
+            console.warn("Erro ao setRemoteDescription:", setErr, { from, sdpType: data.sdp?.type });
+            // se for offer, e polite, tentar ignorar se collision
+            if (data.sdp.type === "offer") {
+              // se polite, podemos tentar responder depois; se não, apenas ignoramos
+              if (!entry.polite) {
+                // ignore
+                return;
+              }
+            }
+            // não rethrow — apenas log e sair
+            return;
+          }
 
           if (data.sdp.type === "offer") {
             try {
@@ -451,42 +486,50 @@ export default function VoiceProvider({ children }) {
       socket.off("voice-signal", onSignal);
       socket.off("voice-speaking", onSpeaking);
     };
-  }, [userNick]);
+  }, [userNick, unlockAudio, getMusicStream]);
 
   // --- se música do mestre chegar depois, injeta nas peers existentes e renegocia ---
   useEffect(() => {
-    if (!getMusicStream) return;
-    try {
-      const musicStream = getMusicStream();
-      if (!musicStream) return;
-      if (userNick !== MASTER_EMAIL) return;
-      Object.keys(peersRef.current).forEach(async (rid) => {
-        const entry = peersRef.current[rid];
-        const pc = entry?.pc;
-        if (!pc) return;
-        const existingIds = pc.getSenders().map((s) => s.track && s.track.id).filter(Boolean);
-        musicStream.getAudioTracks().forEach((t) => {
-          if (!existingIds.includes(t.id)) {
-            try { pc.addTrack(t, musicStream); } catch (e) { console.warn("Erro addTrack musicStream:", e); }
+    // Quando o getMusicStream mudar ou userNick mudar, tentamos injetar
+    (async () => {
+      try {
+        // garantir desbloqueio (se ainda houver necessidade)
+        try { await unlockAudio(); } catch (e) { /* ignore */ }
+
+        const musicStream = getMusicStream && getMusicStream();
+        if (!musicStream) return;
+        if (userNick !== MASTER_EMAIL) return;
+        for (const rid of Object.keys(peersRef.current)) {
+          const entry = peersRef.current[rid];
+          const pc = entry?.pc;
+          if (!pc) continue;
+          const existingIds = pc.getSenders().map((s) => s.track && s.track.id).filter(Boolean);
+          musicStream.getAudioTracks().forEach((t) => {
+            if (!existingIds.includes(t.id)) {
+              try { pc.addTrack(t, musicStream); } catch (e) { console.warn("Erro addTrack musicStream:", e); }
+            }
+          });
+          try {
+            await createAndSendOffer(rid);
+          } catch (e) {
+            console.warn("Erro ao renegociar com musicStream:", e);
           }
-        });
-        try {
-          await createAndSendOffer(rid);
-        } catch (e) {
-          console.warn("Erro ao renegociar com musicStream:", e);
         }
-      });
-    } catch (e) {
-      // ignore
-    }
+      } catch (e) {
+        // ignore
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getMusicStream, userNick]);
+  }, [getMusicStream, userNick, unlockAudio]);
 
   // --- Entrar no chat de voz (pega microfone) ---
   async function startVoice() {
     if (inVoice) return;
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Chamamos unlockAudio aqui: Gesto do usuário que libera áudio para o browser (resolve pending)
+      try { await unlockAudio(); } catch (e) { /* ignore */ }
+
+      // pegar microfone
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
       try {
@@ -495,10 +538,11 @@ export default function VoiceProvider({ children }) {
       setInVoice(true);
       startLocalAnalyser(stream);
 
-      Object.keys(peersRef.current).forEach(async (rid) => {
+      // adicionar local tracks a peers existentes e renegociar
+      for (const rid of Object.keys(peersRef.current)) {
         const entry = peersRef.current[rid];
         const pc = entry?.pc;
-        if (!pc) return;
+        if (!pc) continue;
         const currentSenderTrackIds = pc.getSenders().map((s) => s.track && s.track.id).filter(Boolean);
         stream.getTracks().forEach((t) => {
           if (!currentSenderTrackIds.includes(t.id)) {
@@ -510,7 +554,7 @@ export default function VoiceProvider({ children }) {
         } catch (e) {
           console.warn("Erro ao renegociar após startVoice:", e);
         }
-      });
+      }
     } catch (err) {
       alert("⚠️ Permita o acesso ao microfone para usar o chat de voz.");
       console.error("Erro ao iniciar voz:", err);
