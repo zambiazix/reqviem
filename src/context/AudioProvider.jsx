@@ -76,13 +76,13 @@ export default function AudioProvider({ children }) {
 
     // 2) se já vier com /musicas/ no começo, usar tal como (mas prefixar backend se disponível)
     if (urlOrName.startsWith("/musicas/")) {
-      const backend = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
+      const backend = (import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
       if (backend) return `${backend}${urlOrName}`;
       return urlOrName; // fallback relativo
     }
 
     // 3) nome simples -> monta com BACKEND_URL quando houver
-    const backend = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
+    const backend = (import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
     if (backend) {
       return `${backend}/musicas/${urlOrName}`;
     }
