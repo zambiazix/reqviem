@@ -115,7 +115,9 @@ export default function AudioProvider({ children }) {
       audio.src = fullUrl;
       audio.loop = true;
       audio.preload = "auto";
-      const vol = (desiredVolumesRef.current[fullUrl] ?? 100) / 100;
+
+      // aplica volume desejado caso já exista registro
+      const vol = (desiredVolumesRef.current[fullUrl] ?? desiredVolumesRef.current[getShortName(fullUrl)] ?? 100) / 100;
       audio.volume = vol;
 
       audio.addEventListener("error", (e) =>
@@ -154,9 +156,28 @@ export default function AudioProvider({ children }) {
         .play()
         .then(() => console.log("▶️ Retomando:", fullUrl))
         .catch((err) => console.warn("Erro ao dar play:", err));
+      // reaplica volume caso desiredVolumes tenha mudado
+      const desired = desiredVolumesRef.current[fullUrl] ?? desiredVolumesRef.current[getShortName(fullUrl)];
+      if (desired != null) {
+        try {
+          existing.audio.volume = desired / 100;
+          existing.volume = desired / 100;
+        } catch (err) {
+          console.warn("Erro ao reaplicar volume:", err);
+        }
+      }
       setPlayingTracks((prev) =>
         prev.includes(fullUrl) ? prev : [...prev, fullUrl]
       );
+    }
+  }
+
+  // utilitário para extrair nome curto (quando Firestore/sockets usam nome sem domínio)
+  function getShortName(full) {
+    try {
+      return full.replace(/.*\/musicas\//, "");
+    } catch {
+      return full;
     }
   }
 
@@ -200,6 +221,8 @@ export default function AudioProvider({ children }) {
   const setVolume = (url, value) => {
     const fullUrl = getMusicUrl(url);
     desiredVolumesRef.current[fullUrl] = value;
+    // also store by short name so firestore/sockets with short names work
+    desiredVolumesRef.current[getShortName(fullUrl)] = value;
     const item = audioObjects.current[fullUrl];
     if (item) {
       try {
@@ -217,6 +240,8 @@ export default function AudioProvider({ children }) {
     if (item) return item.volume;
     if (desiredVolumesRef.current[fullUrl] != null)
       return desiredVolumesRef.current[fullUrl] / 100;
+    if (desiredVolumesRef.current[getShortName(fullUrl)] != null)
+      return desiredVolumesRef.current[getShortName(fullUrl)] / 100;
     return 1.0;
   };
 
@@ -227,10 +252,64 @@ export default function AudioProvider({ children }) {
     const s = socketRef.current;
     if (!s) return;
 
-    const onPlay = (url) => _playLocal(url);
-    const onStop = (url) => pauseMusic(url);
-    const onStopAll = () => stopAllMusic();
-    const onVolume = ({ url, value }) => setVolume(url, value);
+    // handlers diretos que usam refs (evitam stale closures)
+    const onPlay = (url) => {
+      try {
+        console.log("socket -> play-music", url);
+        _playLocal(url);
+      } catch (e) {
+        console.warn("onPlay erro:", e);
+      }
+    };
+
+    const onStop = (url) => {
+      try {
+        console.log("socket -> stop-music", url);
+        // pode ser enviado short name ou full url
+        const full = getMusicUrl(url);
+        pauseMusic(full);
+      } catch (e) {
+        console.warn("onStop erro:", e);
+      }
+    };
+
+    const onStopAll = () => {
+      try {
+        console.log("socket -> stop-all-music");
+        stopAllMusic();
+      } catch (e) {
+        console.warn("onStopAll erro:", e);
+      }
+    };
+
+    const onVolume = ({ url, value }) => {
+      try {
+        // suportar url sendo string simples ou objeto
+        const u = typeof url === "string" ? url : url?.url || url;
+        const full = getMusicUrl(u);
+
+        // salva volume desejado para reaplicar se necessário
+        desiredVolumesRef.current[full] = value;
+        desiredVolumesRef.current[getShortName(full)] = value;
+
+        // se já tocando, aplica imediatamente
+        const item = audioObjects.current[full] || audioObjects.current[getShortName(full)];
+        if (item) {
+          try {
+            item.audio.volume = value / 100;
+            item.volume = value / 100;
+            console.log("socket -> volume-music aplicado", full, value);
+          } catch (err) {
+            console.warn("Erro ao aplicar volume via socket:", err);
+          }
+        } else {
+          // não existe ainda — ficará guardado em desiredVolumesRef e aplicado no play
+          console.log("socket -> volume-music guardado para", full, value);
+        }
+      } catch (e) {
+        console.warn("onVolume erro:", e);
+      }
+    };
 
     s.on("play-music", onPlay);
     s.on("stop-music", onStop);
@@ -246,7 +325,7 @@ export default function AudioProvider({ children }) {
       s.off("stop-all-music", onStopAll);
       s.off("volume-music", onVolume);
     };
-  }, [interactionAllowed]);
+  }, [interactionAllowed]); // interactionAllowed preserva rebind quando desbloqueado
 
   // 🔥 Firestore: sincronização
   useEffect(() => {
@@ -258,7 +337,7 @@ export default function AudioProvider({ children }) {
 
       // Pausa músicas não listadas
       Object.keys(audioObjects.current).forEach((url) => {
-        const shortName = url.replace(/.*\/musicas\//, "");
+        const shortName = getShortName(url);
         if (!playing.includes(url) && !playing.includes(shortName)) pauseMusic(shortName);
       });
 
@@ -270,12 +349,20 @@ export default function AudioProvider({ children }) {
 
       // Aplica volumes
       sounds.forEach((s) => {
-        if (s.url && s.volume != null) setVolume(s.url, s.volume);
+        if (s.url && s.volume != null) {
+          try {
+            // usar setVolume para manter desiredVolumesRef e aplicar se estiver tocando
+            setVolume(s.url, s.volume);
+          } catch (err) {
+            console.warn("Erro ao aplicar volume do Firestore:", err);
+          }
+        }
       });
     });
 
     return () => unsub && unsub();
   }, []);
+
 
   return (
     <AudioContextGlobal.Provider
