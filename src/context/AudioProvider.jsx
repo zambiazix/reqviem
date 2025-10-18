@@ -1,15 +1,20 @@
+// src/context/AudioProvider.jsx
 import React, { createContext, useContext, useRef, useState, useEffect } from "react";
 import socket from "../socket";
-import { doc, onSnapshot, updateDoc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
 const AudioContextGlobal = createContext();
 export const useAudio = () => useContext(AudioContextGlobal);
 
 export default function AudioProvider({ children }) {
+  // Map fullUrl -> { audio, gainNode, sourceNode, volume }
   const audioObjects = useRef({});
+  // lista de urls (normalizadas) que o UI considera "tocando"
   const [playingTracks, setPlayingTracks] = useState([]);
+  // URLs pendentes para tocar assim que houver interação (unlockAudio)
   const pendingRef = useRef(new Set());
+  // volumes desejados (persistência)
   const desiredVolumesRef = useRef({});
   const socketRef = useRef(socket);
 
@@ -18,13 +23,13 @@ export default function AudioProvider({ children }) {
   const musicStreamRef = useRef(null);
   const [interactionAllowed, setInteractionAllowed] = useState(false);
 
-  // 🔹 Firestore cache
+  // Firestore doc ref
   const currentSoundDoc = doc(db, "sound", "current");
 
   // ----------------------------
   // Helpers: URLs / Normalização
   // ----------------------------
-  const normalizeUrl = (url = "") => url.trim().replace(/\/+$/, "").toLowerCase();
+  const normalizeUrl = (url = "") => (url || "").trim().replace(/\/+$/, "").toLowerCase();
 
   const getMusicUrl = (urlOrName) => {
     if (!urlOrName) return "";
@@ -35,11 +40,10 @@ export default function AudioProvider({ children }) {
     return `/musicas/${urlOrName}`;
   };
 
-  const getFileName = (url) =>
-    url.split("/").pop()?.split("?")[0]?.toLowerCase() ?? url;
+  const getFileName = (url) => url.split("/").pop()?.split("?")[0]?.toLowerCase() ?? url;
 
   const findMatchingAudioKeys = (url) => {
-    const normalized = normalizeUrl(url);
+    const normalized = normalizeUrl(getMusicUrl(url));
     const filename = getFileName(normalized);
     return Object.keys(audioObjects.current).filter((k) => {
       const kn = normalizeUrl(k);
@@ -80,35 +84,43 @@ export default function AudioProvider({ children }) {
       }
       setInteractionAllowed(true);
 
-      // tocar pendências
+      // processa pendências (tentar tocar tudo que estiver marcado como tocando no snapshot)
       const pend = Array.from(pendingRef.current);
       pendingRef.current.clear();
-      pend.forEach((url) => _playLocal(url));
-
+      pend.forEach((url) => _playLocal(url, { initiatedByLocal: false })); // initiatedByLocal false porque Firestore já marcou como playing
       console.log("🔓 Áudio desbloqueado e pendências processadas.");
     } catch (e) {
       console.warn("Falha ao desbloquear AudioContext:", e);
+      // mesmo com erro, marcamos permitido para evitar bloqueios posteriores:
       setInteractionAllowed(true);
       const pend = Array.from(pendingRef.current);
       pendingRef.current.clear();
-      pend.forEach((url) => _playLocal(url));
+      pend.forEach((url) => _playLocal(url, { initiatedByLocal: false }));
     }
   };
 
   // ----------------------------
-  // Core: play / pause
+  // Play local (cria audio + GainNode)
+  // options: { initiatedByLocal: boolean } -> se true, atualizamos Firestore (origem local)
   // ----------------------------
-  async function _playLocal(url) {
+  async function _playLocal(url, options = { initiatedByLocal: true }) {
     if (!url) return;
-    const fullUrl = normalizeUrl(getMusicUrl(url));
+    const full = getMusicUrl(url);
+    const fullUrl = normalizeUrl(full);
+
     ensureAudioContext();
 
+    // se app ainda não desbloqueou áudio, guardar em pendência (mas atualizar o estado do UI)
     if (!interactionAllowed) {
       console.warn("🔒 Pendente até interação:", url);
-      pendingRef.current.add(url);
+      pendingRef.current.add(fullUrl);
+      // garantir que UI mostre como "playing" (para o painel do mestre refletir)
+      setPlayingTracks((p) => [...new Set([...p, fullUrl])]);
+      // não tentamos tocar agora
       return;
     }
 
+    // se já existe
     const existing = audioObjects.current[fullUrl];
     if (existing) {
       try {
@@ -117,14 +129,18 @@ export default function AudioProvider({ children }) {
         console.warn("Falha ao retomar áudio existente:", err);
       }
       setPlayingTracks((p) => [...new Set([...p, fullUrl])]);
+      // se ação local: sincronizar Firestore
+      if (options.initiatedByLocal) await syncFirestoreState();
       return;
     }
 
+    // criar novo <audio>
     const audio = new Audio();
     audio.crossOrigin = "anonymous";
-    audio.src = fullUrl;
+    audio.src = full;
     audio.loop = true;
     audio.preload = "auto";
+
     const vol = (desiredVolumesRef.current[fullUrl] ?? 100) / 100;
     audio.volume = vol;
 
@@ -133,7 +149,6 @@ export default function AudioProvider({ children }) {
     try {
       const ctx = audioCtxRef.current;
       const dest = destinationRef.current;
-
       if (ctx && dest) {
         const srcNode = ctx.createMediaElementSource(audio);
         const gainNode = ctx.createGain();
@@ -150,17 +165,32 @@ export default function AudioProvider({ children }) {
     }
 
     audioObjects.current[fullUrl] = entry;
+
     try {
       await audio.play();
       console.log("▶️ Tocando:", fullUrl);
     } catch (err) {
+      // NotAllowedError / AbortError podem ocorrer — mantemos o objeto para futuras tentativas
       console.warn("Falha ao tocar áudio:", err);
     }
 
     setPlayingTracks((p) => [...new Set([...p, fullUrl])]);
+
+    // se ação local (usuário clicou Play), sincronizar Firestore e emitir via socket
+    if (options.initiatedByLocal) {
+      try {
+        socketRef.current?.emit("play-music", fullUrl);
+      } catch (e) {
+        console.warn("Falha ao emitir play-music:", e);
+      }
+      await syncFirestoreState();
+    }
   }
 
-  const pauseMusic = async (url) => {
+  // ----------------------------
+  // Pause / Stop
+  // ----------------------------
+  const pauseMusic = async (url, options = { initiatedByLocal: true }) => {
     const matches = findMatchingAudioKeys(url);
     matches.forEach((k) => {
       const it = audioObjects.current[k];
@@ -170,34 +200,46 @@ export default function AudioProvider({ children }) {
           it.audio.currentTime = 0;
           try { it.sourceNode?.disconnect(); } catch {}
           try { it.gainNode?.disconnect(); } catch {}
-        } catch {}
+        } catch (err) {
+          console.warn("Erro ao pausar faixa:", err);
+        }
         delete audioObjects.current[k];
       }
     });
     setPlayingTracks((p) => p.filter((u) => !matches.includes(u)));
 
-    // atualiza no firestore
-    await syncFirestoreState();
+    if (options.initiatedByLocal) {
+      try {
+        socketRef.current?.emit("stop-music", url);
+      } catch (e) {
+        console.warn("Falha ao emitir stop-music:", e);
+      }
+      await syncFirestoreState();
+    }
   };
 
-  const stopAllMusic = async () => {
+  const stopAllMusic = async (options = { initiatedByLocal: true }) => {
     Object.values(audioObjects.current).forEach((it) => {
       try {
         it.audio.pause();
         it.audio.currentTime = 0;
-        it.sourceNode?.disconnect();
-        it.gainNode?.disconnect();
-      } catch {}
+        try { it.sourceNode?.disconnect(); } catch {}
+        try { it.gainNode?.disconnect(); } catch {}
+      } catch (err) {}
     });
     audioObjects.current = {};
     setPlayingTracks([]);
-    await syncFirestoreState();
+
+    if (options.initiatedByLocal) {
+      try { socketRef.current?.emit("stop-all-music"); } catch (e) {}
+      await syncFirestoreState();
+    }
   };
 
   // ----------------------------
   // Volume
   // ----------------------------
-  const setVolume = async (url, value) => {
+  const setVolume = async (url, value, options = { initiatedByLocal: true }) => {
     const fullUrl = normalizeUrl(getMusicUrl(url));
     desiredVolumesRef.current[fullUrl] = value;
 
@@ -212,13 +254,17 @@ export default function AudioProvider({ children }) {
       }
     });
 
-    await syncFirestoreState();
+    if (options.initiatedByLocal) {
+      try { socketRef.current?.emit("volume-music", { url: fullUrl, value }); } catch (e) {}
+      await syncFirestoreState();
+    }
   };
 
   const getVolume = (url) => {
     const fullUrl = normalizeUrl(getMusicUrl(url));
     const item = audioObjects.current[fullUrl];
-    return item ? item.volume : (desiredVolumesRef.current[fullUrl] ?? 100) / 100;
+    if (item) return item.volume;
+    return (desiredVolumesRef.current[fullUrl] ?? 100) / 100;
   };
 
   const getMusicStream = () => musicStreamRef.current || null;
@@ -228,62 +274,123 @@ export default function AudioProvider({ children }) {
   // ----------------------------
   const syncFirestoreState = async () => {
     try {
+      // gera array com fullUrls normalizados
       const current = Object.keys(audioObjects.current).map((u) => ({
         url: u,
         playing: true,
-        volume: Math.round(
-          (audioObjects.current[u]?.volume ?? 1) * 100
-        ),
+        volume: Math.round((audioObjects.current[u]?.volume ?? 1) * 100),
       }));
-
-      await updateDoc(currentSoundDoc, { sounds: current });
+      // sobrescrever doc (mantendo timestamp)
+      await setDoc(currentSoundDoc, { sounds: current, updatedAt: serverTimestamp() }, { merge: true });
     } catch (e) {
       console.warn("Erro ao atualizar Firestore (sound/current):", e);
     }
   };
 
-  // 🔁 Listener Firestore
+  // ----------------------------
+  // Socket.IO listeners (recebendo ações de outros clientes)
+  // ----------------------------
   useEffect(() => {
-    const unsub = onSnapshot(currentSoundDoc, async (snap) => {
-      const data = snap.data();
-      if (!data || !Array.isArray(data.sounds)) return;
+    const s = socketRef.current;
+    if (!s) return;
 
-      const sounds = data.sounds;
-      const playing = sounds.filter((s) => s.playing).map((s) => s.url);
+    s.on("play-music", (url) => {
+      // remote play: não reescrever Firestore aqui (snapshot já fará)
+      _playLocal(url, { initiatedByLocal: false });
+    });
+    s.on("stop-music", (url) => {
+      pauseMusic(url, { initiatedByLocal: false });
+    });
+    s.on("stop-all-music", () => {
+      stopAllMusic({ initiatedByLocal: false });
+    });
+    s.on("volume-music", ({ url, value }) => {
+      setVolume(url, value, { initiatedByLocal: false });
+    });
 
-      Object.keys(audioObjects.current).forEach((url) => {
-        if (!playing.includes(url)) pauseMusic(url);
-      });
+    s.on("connect", () => console.log("🔌 Socket conectado:", s.id));
+    s.on("disconnect", () => console.log("❌ Socket desconectado"));
 
-      if (interactionAllowed) {
-        playing.forEach((url) => {
-          const full = getMusicUrl(url);
-          if (!audioObjects.current[normalizeUrl(full)]) _playLocal(full);
-        });
-      } else {
-        playing.forEach((url) => pendingRef.current.add(url));
+    return () => {
+      s.off("play-music");
+      s.off("stop-music");
+      s.off("stop-all-music");
+      s.off("volume-music");
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ----------------------------
+  // Firestore snapshot listener (estado global persistente)
+  // Observações fundamentais:
+  // - Atualiza `playingTracks` imediatamente (UI mostra estado global)
+  // - Se interactionAllowed === false => NÃO toca os audios; apenas marca pendências
+  // - Se interactionAllowed === true => inicia reprodução das faixas necessárias
+  // ----------------------------
+  useEffect(() => {
+    const unsub = onSnapshot(currentSoundDoc, (snap) => {
+      const data = snap?.data?.() ?? null;
+      if (!data || !Array.isArray(data.sounds)) {
+        // se não existe doc ou formato errado, nada a fazer
+        setPlayingTracks([]);
+        return;
       }
 
+      const sounds = data.sounds;
+      // full urls no Firestore (esperamos fullUrl normalizado)
+      // extrair lista de urls marcadas como playing
+      const playing = sounds.filter((s) => s.playing).map((s) => normalizeUrl(getMusicUrl(s.url || s.url)));
+      // atualizar volumes desejados a partir do documento
       sounds.forEach((s) => {
-        if (s.url && s.volume != null) setVolume(s.url, s.volume);
+        if (s.url && s.volume != null) {
+          desiredVolumesRef.current[normalizeUrl(getMusicUrl(s.url))] = s.volume;
+        }
       });
 
-      setPlayingTracks(playing.map(normalizeUrl));
+      // atualizar estado do UI (Mestre verá imediatamente)
+      setPlayingTracks(playing);
+
+      // pausar localmente faixas que NÃO estão no documento
+      Object.keys(audioObjects.current).forEach((url) => {
+        if (!playing.includes(url)) {
+          // Notar: passamos initiatedByLocal false porque veio do Firestore
+          pauseMusic(url, { initiatedByLocal: false });
+        }
+      });
+
+      // se já permitimos interação, tocar o que estiver no doc; senão, marcar pendências
+      if (interactionAllowed) {
+        playing.forEach((url) => {
+          if (!audioObjects.current[normalizeUrl(url)]) {
+            _playLocal(url, { initiatedByLocal: false });
+          } else {
+            // se existe, garantir volume atualizado
+            const vol = desiredVolumesRef.current[normalizeUrl(url)];
+            if (vol != null) {
+              setVolume(url, vol, { initiatedByLocal: false });
+            }
+          }
+        });
+      } else {
+        // gravar pendências para tocar quando unlockAudio for chamado
+        playing.forEach((url) => pendingRef.current.add(url));
+      }
     });
 
     return () => unsub && unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interactionAllowed]);
 
+  // ----------------------------
+  // Provider value (funções públicas)
+  // ----------------------------
   return (
     <AudioContextGlobal.Provider
       value={{
-        playMusic: (url) => {
-          _playLocal(url);
-          syncFirestoreState();
-        },
-        pauseMusic,
-        stopAllMusic,
-        setVolume,
+        playMusic: (url) => _playLocal(url, { initiatedByLocal: true }),
+        pauseMusic: (url) => pauseMusic(url, { initiatedByLocal: true }),
+        stopAllMusic: () => stopAllMusic({ initiatedByLocal: true }),
+        setVolume: (url, value) => setVolume(url, value, { initiatedByLocal: true }),
         getVolume,
         playingTracks,
         interactionAllowed,
