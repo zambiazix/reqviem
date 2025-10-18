@@ -28,7 +28,6 @@ export default function SoundBoard({ isMaster }) {
     setVolume,
     getVolume,
     playingTracks,
-    socket,
   } = useAudio();
 
   // 🎧 Lista de músicas (Cloudinary)
@@ -69,16 +68,15 @@ export default function SoundBoard({ isMaster }) {
     { name: "Perseguição", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Perseguicao_pl9qww.mp3" },
   ];
 
-  // Carrega listas
   useEffect(() => {
     setMusicTracks(musicList);
     setAmbianceTracks(ambianceList);
   }, []);
 
+  // 🎵 Play / Stop / Volume (sincronizados com AudioProvider)
   function handlePlay(url) {
     playMusic(url);
     setVolumes((p) => ({ ...p, [url]: 100 }));
-    socket?.emit?.("play-music", url);
     scheduleSave(
       [...new Set([...playingTracks, url])].map((u) => ({
         url: u,
@@ -95,7 +93,6 @@ export default function SoundBoard({ isMaster }) {
       delete copy[url];
       return copy;
     });
-    socket?.emit?.("stop-music", url);
     scheduleSave(
       playingTracks
         .filter((u) => u !== url)
@@ -106,14 +103,12 @@ export default function SoundBoard({ isMaster }) {
   function handleStopAll() {
     stopAllMusic();
     setVolumes({});
-    socket?.emit?.("stop-all-music");
     scheduleSave([]);
   }
 
   function handleVolume(url, value) {
     setVolume(url, value);
     setVolumes((p) => ({ ...p, [url]: value }));
-    socket?.emit?.("volume-music", { url, value });
     scheduleSave(
       playingTracks.map((u) => ({
         url: u,

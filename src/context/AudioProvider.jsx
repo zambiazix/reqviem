@@ -1,7 +1,6 @@
-// src/context/AudioProvider.jsx
 import React, { createContext, useContext, useRef, useState, useEffect } from "react";
 import socket from "../socket";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
 const AudioContextGlobal = createContext();
@@ -19,42 +18,12 @@ export default function AudioProvider({ children }) {
   const musicStreamRef = useRef(null);
   const [interactionAllowed, setInteractionAllowed] = useState(false);
 
-  // 🔓 Desbloqueia o contexto de áudio
-  const unlockAudio = async () => {
-    ensureAudioContext();
-    if (interactionAllowed) return;
+  // 🔹 Firestore cache
+  const currentSoundDoc = doc(db, "sound", "current");
 
-    try {
-      await audioCtxRef.current.resume();
-      console.log("🔓 AudioContext desbloqueado.");
-    } catch (e) {
-      console.warn("Falha ao retomar AudioContext:", e);
-    }
-
-    setInteractionAllowed(true);
-    const pend = Array.from(pendingRef.current);
-    pendingRef.current.clear();
-    pend.forEach((url) => _playLocal(url));
-  };
-
-  // 🎧 Cria o contexto de áudio e o destino de mixagem
-  function ensureAudioContext() {
-    if (!audioCtxRef.current) {
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        const ctx = new AudioCtx();
-        const dest = ctx.createMediaStreamDestination();
-        audioCtxRef.current = ctx;
-        destinationRef.current = dest;
-        musicStreamRef.current = dest.stream;
-        console.log("🎧 AudioContext e destino criados.");
-      } catch (e) {
-        console.warn("Erro ao criar AudioContext:", e);
-      }
-    }
-  }
-
-  // 🔗 Normalização de URLs
+  // ----------------------------
+  // Helpers: URLs / Normalização
+  // ----------------------------
   const normalizeUrl = (url = "") => url.trim().replace(/\/+$/, "").toLowerCase();
 
   const getMusicUrl = (urlOrName) => {
@@ -79,11 +48,59 @@ export default function AudioProvider({ children }) {
     });
   };
 
-  // 🎵 Tocar localmente (com mixer)
+  // ----------------------------
+  // AudioContext & destination
+  // ----------------------------
+  function ensureAudioContext() {
+    if (!audioCtxRef.current) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        const dest = ctx.createMediaStreamDestination();
+        audioCtxRef.current = ctx;
+        destinationRef.current = dest;
+        musicStreamRef.current = dest.stream;
+        console.log("🎧 AudioContext e MediaStreamDestination criados.");
+      } catch (e) {
+        console.warn("Erro ao criar AudioContext:", e);
+      }
+    }
+  }
+
+  // ----------------------------
+  // Unlock / interação do usuário
+  // ----------------------------
+  const unlockAudio = async () => {
+    ensureAudioContext();
+    if (interactionAllowed) return;
+
+    try {
+      if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+        await audioCtxRef.current.resume();
+      }
+      setInteractionAllowed(true);
+
+      // tocar pendências
+      const pend = Array.from(pendingRef.current);
+      pendingRef.current.clear();
+      pend.forEach((url) => _playLocal(url));
+
+      console.log("🔓 Áudio desbloqueado e pendências processadas.");
+    } catch (e) {
+      console.warn("Falha ao desbloquear AudioContext:", e);
+      setInteractionAllowed(true);
+      const pend = Array.from(pendingRef.current);
+      pendingRef.current.clear();
+      pend.forEach((url) => _playLocal(url));
+    }
+  };
+
+  // ----------------------------
+  // Core: play / pause
+  // ----------------------------
   async function _playLocal(url) {
     if (!url) return;
     const fullUrl = normalizeUrl(getMusicUrl(url));
-
     ensureAudioContext();
 
     if (!interactionAllowed) {
@@ -97,7 +114,7 @@ export default function AudioProvider({ children }) {
       try {
         await existing.audio.play();
       } catch (err) {
-        console.warn("Falha ao retomar áudio:", err);
+        console.warn("Falha ao retomar áudio existente:", err);
       }
       setPlayingTracks((p) => [...new Set([...p, fullUrl])]);
       return;
@@ -108,7 +125,6 @@ export default function AudioProvider({ children }) {
     audio.src = fullUrl;
     audio.loop = true;
     audio.preload = "auto";
-
     const vol = (desiredVolumesRef.current[fullUrl] ?? 100) / 100;
     audio.volume = vol;
 
@@ -130,11 +146,10 @@ export default function AudioProvider({ children }) {
         entry.gainNode = gainNode;
       }
     } catch (e) {
-      console.warn("Erro ao conectar fonte de áudio:", e);
+      console.warn("Erro ao conectar fonte de áudio (mixer):", e);
     }
 
     audioObjects.current[fullUrl] = entry;
-
     try {
       await audio.play();
       console.log("▶️ Tocando:", fullUrl);
@@ -145,14 +160,7 @@ export default function AudioProvider({ children }) {
     setPlayingTracks((p) => [...new Set([...p, fullUrl])]);
   }
 
-  // ▶️ Play global
-  const playMusic = (url) => {
-    _playLocal(url);
-    socketRef.current?.emit("play-music", url);
-  };
-
-  // ⏸ Parar música
-  const pauseMusic = (url) => {
+  const pauseMusic = async (url) => {
     const matches = findMatchingAudioKeys(url);
     matches.forEach((k) => {
       const it = audioObjects.current[k];
@@ -160,87 +168,87 @@ export default function AudioProvider({ children }) {
         try {
           it.audio.pause();
           it.audio.currentTime = 0;
-          it.sourceNode?.disconnect?.();
-          it.gainNode?.disconnect?.();
+          try { it.sourceNode?.disconnect(); } catch {}
+          try { it.gainNode?.disconnect(); } catch {}
         } catch {}
         delete audioObjects.current[k];
       }
     });
     setPlayingTracks((p) => p.filter((u) => !matches.includes(u)));
+
+    // atualiza no firestore
+    await syncFirestoreState();
   };
 
-  // 🛑 Parar todas
-  const stopAllMusic = () => {
+  const stopAllMusic = async () => {
     Object.values(audioObjects.current).forEach((it) => {
       try {
         it.audio.pause();
         it.audio.currentTime = 0;
-        it.sourceNode?.disconnect?.();
-        it.gainNode?.disconnect?.();
+        it.sourceNode?.disconnect();
+        it.gainNode?.disconnect();
       } catch {}
     });
     audioObjects.current = {};
     setPlayingTracks([]);
+    await syncFirestoreState();
   };
 
-  // 🔊 Ajuste de volume local (via GainNode)
-  const setVolume = (url, value) => {
-    const fullUrl = normalizeUrl(url);
+  // ----------------------------
+  // Volume
+  // ----------------------------
+  const setVolume = async (url, value) => {
+    const fullUrl = normalizeUrl(getMusicUrl(url));
     desiredVolumesRef.current[fullUrl] = value;
 
     const matches = findMatchingAudioKeys(url);
     matches.forEach((k) => {
       const it = audioObjects.current[k];
       if (it) {
-        try {
-          const gainValue = value / 100;
-          it.volume = gainValue;
-          if (it.gainNode) it.gainNode.gain.value = gainValue;
-          if (it.audio) it.audio.volume = gainValue;
-          console.log("🔊 Volume aplicado:", k, value);
-        } catch (err) {
-          console.warn("Erro ao ajustar volume:", err);
-        }
+        const gainValue = value / 100;
+        it.volume = gainValue;
+        if (it.gainNode) it.gainNode.gain.value = gainValue;
+        if (it.audio) it.audio.volume = gainValue;
       }
     });
+
+    await syncFirestoreState();
   };
 
   const getVolume = (url) => {
-    const fullUrl = normalizeUrl(url);
+    const fullUrl = normalizeUrl(getMusicUrl(url));
     const item = audioObjects.current[fullUrl];
-    if (item) return item.volume;
-    return (desiredVolumesRef.current[fullUrl] ?? 100) / 100;
+    return item ? item.volume : (desiredVolumesRef.current[fullUrl] ?? 100) / 100;
   };
 
   const getMusicStream = () => musicStreamRef.current || null;
 
-  // 🧠 Socket.IO — sincronização
+  // ----------------------------
+  // Firestore sync
+  // ----------------------------
+  const syncFirestoreState = async () => {
+    try {
+      const current = Object.keys(audioObjects.current).map((u) => ({
+        url: u,
+        playing: true,
+        volume: Math.round(
+          (audioObjects.current[u]?.volume ?? 1) * 100
+        ),
+      }));
+
+      await updateDoc(currentSoundDoc, { sounds: current });
+    } catch (e) {
+      console.warn("Erro ao atualizar Firestore (sound/current):", e);
+    }
+  };
+
+  // 🔁 Listener Firestore
   useEffect(() => {
-    const s = socketRef.current;
-    if (!s) return;
+    const unsub = onSnapshot(currentSoundDoc, async (snap) => {
+      const data = snap.data();
+      if (!data || !Array.isArray(data.sounds)) return;
 
-    s.on("play-music", (url) => _playLocal(url));
-    s.on("stop-music", (url) => pauseMusic(url));
-    s.on("stop-all-music", stopAllMusic);
-    s.on("volume-music", ({ url, value }) => setVolume(url, value));
-
-    s.on("connect", () => console.log("🔌 Socket conectado:", s.id));
-    s.on("disconnect", () => console.log("❌ Socket desconectado"));
-
-    return () => {
-      s.off("play-music");
-      s.off("stop-music");
-      s.off("stop-all-music");
-      s.off("volume-music");
-    };
-  }, []);
-
-  // 🔥 Firestore — sincronização de estado global
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, "sound", "current"), (snap) => {
-      const data = snap?.data?.() ?? snap;
-      if (!data) return;
-      const sounds = Array.isArray(data.sounds) ? data.sounds : [];
+      const sounds = data.sounds;
       const playing = sounds.filter((s) => s.playing).map((s) => s.url);
 
       Object.keys(audioObjects.current).forEach((url) => {
@@ -253,12 +261,14 @@ export default function AudioProvider({ children }) {
           if (!audioObjects.current[normalizeUrl(full)]) _playLocal(full);
         });
       } else {
-        console.log("🔒 Som pendente Firestore:", playing);
+        playing.forEach((url) => pendingRef.current.add(url));
       }
 
       sounds.forEach((s) => {
         if (s.url && s.volume != null) setVolume(s.url, s.volume);
       });
+
+      setPlayingTracks(playing.map(normalizeUrl));
     });
 
     return () => unsub && unsub();
@@ -267,7 +277,10 @@ export default function AudioProvider({ children }) {
   return (
     <AudioContextGlobal.Provider
       value={{
-        playMusic,
+        playMusic: (url) => {
+          _playLocal(url);
+          syncFirestoreState();
+        },
         pauseMusic,
         stopAllMusic,
         setVolume,

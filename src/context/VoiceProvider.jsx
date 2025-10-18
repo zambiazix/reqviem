@@ -1,4 +1,3 @@
-// src/context/VoiceProvider.jsx
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import socket from "../socket";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
@@ -116,9 +115,13 @@ export default function VoiceProvider({ children }) {
     el.style.display = "none";
     el.srcObject = stream;
     document.body.appendChild(el);
-    unlockAudio?.();
+    // não chamamos unlockAudio aqui — apenas tentamos tocar
     el.play().catch(() => {});
-    peersRef.current[remoteId] = { ...(peersRef.current[remoteId] || {}), audioEl: el, _stream: stream };
+    peersRef.current[remoteId] = {
+      ...(peersRef.current[remoteId] || {}),
+      audioEl: el,
+      _stream: stream,
+    };
     return el;
   }
 
@@ -153,7 +156,10 @@ export default function VoiceProvider({ children }) {
 
     pc.onicecandidate = (ev) => {
       if (ev.candidate)
-        socket.emit("voice-signal", { target: remoteId, data: { candidate: ev.candidate } });
+        socket.emit("voice-signal", {
+          target: remoteId,
+          data: { candidate: ev.candidate },
+        });
     };
 
     pc.ontrack = (e) => createHiddenAudio(remoteId, e.streams[0]);
@@ -164,19 +170,28 @@ export default function VoiceProvider({ children }) {
 
     // adiciona microfone
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current));
+      localStreamRef.current
+        .getTracks()
+        .forEach((t) => pc.addTrack(t, localStreamRef.current));
     }
 
-    // adiciona música (somente mestre, após desbloqueio)
-    if (userNick === MASTER_EMAIL) {
+    // adiciona música (somente mestre, após desbloqueio e dentro do chat)
+    if (userNick === MASTER_EMAIL && inVoice) {
       (async () => {
-        await unlockAudio();
-        const ms = getMusicStream?.();
-        if (ms) {
-          const existing = pc.getSenders().map((s) => s.track?.id);
-          ms.getAudioTracks().forEach((t) => {
-            if (!existing.includes(t.id)) pc.addTrack(t, ms);
-          });
+        try {
+          await unlockAudio();
+          const ms = getMusicStream?.();
+          if (ms) {
+            const existing = pc.getSenders().map((s) => s.track?.id);
+            ms.getAudioTracks().forEach((t) => {
+              if (!existing.includes(t.id)) {
+                pc.addTrack(t, ms);
+                console.log("🎵 musicStream injetado no peer:", remoteId);
+              }
+            });
+          }
+        } catch (e) {
+          console.warn("Erro ao injetar música:", e);
         }
       })();
     }
@@ -192,7 +207,10 @@ export default function VoiceProvider({ children }) {
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socket.emit("voice-signal", { target: remoteId, data: { sdp: pc.localDescription } });
+      socket.emit("voice-signal", {
+        target: remoteId,
+        data: { sdp: pc.localDescription },
+      });
     } catch (e) {
       console.warn("Erro em createAndSendOffer:", e);
     }
@@ -203,7 +221,10 @@ export default function VoiceProvider({ children }) {
     try {
       let email = p.email || null;
       if (!email && p.nick) {
-        const q = firestoreQuery(collection(db, "users"), where("nick", "==", p.nick));
+        const q = firestoreQuery(
+          collection(db, "users"),
+          where("nick", "==", p.nick)
+        );
         const snaps = await getDocs(q);
         if (snaps.size > 0) email = snaps.docs[0].id;
       }
@@ -248,18 +269,23 @@ export default function VoiceProvider({ children }) {
       try {
         if (data.sdp) {
           const offerCollision =
-            data.sdp.type === "offer" && (pc.signalingState !== "stable" || entry.makingOffer);
+            data.sdp.type === "offer" &&
+            (pc.signalingState !== "stable" || entry.makingOffer);
           if (offerCollision && !entry.polite) return;
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
           if (data.sdp.type === "offer") {
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            socket.emit("voice-signal", { target: from, data: { sdp: pc.localDescription } });
+            socket.emit("voice-signal", {
+              target: from,
+              data: { sdp: pc.localDescription },
+            });
           }
           await applyPendingCandidates(from);
         } else if (data.candidate) {
           if (!pc.remoteDescription)
-            (pendingCandidatesRef.current[from] = pendingCandidatesRef.current[from] || []).push(data.candidate);
+            (pendingCandidatesRef.current[from] =
+              pendingCandidatesRef.current[from] || []).push(data.candidate);
           else await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         }
       } catch (e) {
@@ -289,13 +315,13 @@ export default function VoiceProvider({ children }) {
       socket.off("voice-signal");
       socket.off("voice-speaking");
     };
-  }, [userNick]);
+  }, [userNick, inVoice]);
 
   // 🎙 Entrar no chat de voz
   async function startVoice() {
     if (inVoice) return;
     try {
-      await unlockAudio();
+      await unlockAudio(); // interação real — libera contexto
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
       socket.emit("voice-join", { nick: userNick || "Jogador" });
@@ -319,7 +345,9 @@ export default function VoiceProvider({ children }) {
   function toggleLocalMute() {
     if (!localStreamRef.current) return;
     const muted = !localMuted;
-    localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !muted));
+    localStreamRef.current
+      .getAudioTracks()
+      .forEach((t) => (t.enabled = !muted));
     setLocalMuted(muted);
   }
 
