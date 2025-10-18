@@ -1,3 +1,4 @@
+// src/context/VoiceProvider.jsx
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import socket from "../socket";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
@@ -24,7 +25,6 @@ export default function VoiceProvider({ children }) {
   const [userNick, setUserNick] = useState("");
   const [localSocketId, setLocalSocketId] = useState(null);
   const [avatars, setAvatars] = useState({});
-  const [localAvatar, setLocalAvatar] = useState("");
 
   const localStreamRef = useRef(null);
   const peersRef = useRef({});
@@ -32,10 +32,7 @@ export default function VoiceProvider({ children }) {
   const analyserRef = useRef(null);
   const rafRef = useRef(null);
   const localSocketIdRef = useRef(null);
-  const loadedAvatarIdsRef = useRef(new Set());
-  const avatarsRef = useRef({});
   const prevLocalSpeakingRef = useRef(false);
-  const isUnmountedRef = useRef(false);
 
   const { unlockAudio, getMusicStream } = useAudio();
   const RTC_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
@@ -65,7 +62,7 @@ export default function VoiceProvider({ children }) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const ctx = new AudioCtx();
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = 1024;
       const src = ctx.createMediaStreamSource(stream);
       src.connect(analyser);
       analyserRef.current = { ctx, analyser, src };
@@ -81,8 +78,7 @@ export default function VoiceProvider({ children }) {
           prevLocalSpeakingRef.current = speaking;
           setSpeakingIds((prev) => {
             const s = new Set(prev);
-            if (speaking) s.add(sid);
-            else s.delete(sid);
+            speaking ? s.add(sid) : s.delete(sid);
             return s;
           });
           socket.emit("voice-speaking", { id: sid, speaking });
@@ -97,7 +93,6 @@ export default function VoiceProvider({ children }) {
 
   function stopLocalAnalyser() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
     if (analyserRef.current) {
       try {
         analyserRef.current.src.disconnect();
@@ -115,7 +110,6 @@ export default function VoiceProvider({ children }) {
     el.style.display = "none";
     el.srcObject = stream;
     document.body.appendChild(el);
-    // não chamamos unlockAudio aqui — apenas tentamos tocar
     el.play().catch(() => {});
     peersRef.current[remoteId] = {
       ...(peersRef.current[remoteId] || {}),
@@ -170,18 +164,16 @@ export default function VoiceProvider({ children }) {
 
     // adiciona microfone
     if (localStreamRef.current) {
-      localStreamRef.current
-        .getTracks()
-        .forEach((t) => pc.addTrack(t, localStreamRef.current));
+      localStreamRef.current.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current));
     }
 
-    // adiciona música (somente mestre, após desbloqueio e dentro do chat)
+    // adiciona música — APENAS se o mestre já estiver tocando algo e o contexto desbloqueado
     if (userNick === MASTER_EMAIL && inVoice) {
-      (async () => {
+      setTimeout(async () => {
         try {
           await unlockAudio();
           const ms = getMusicStream?.();
-          if (ms) {
+          if (ms && ms.getAudioTracks().length > 0) {
             const existing = pc.getSenders().map((s) => s.track?.id);
             ms.getAudioTracks().forEach((t) => {
               if (!existing.includes(t.id)) {
@@ -193,7 +185,7 @@ export default function VoiceProvider({ children }) {
         } catch (e) {
           console.warn("Erro ao injetar música:", e);
         }
-      })();
+      }, 1000);
     }
 
     applyPendingCandidates(remoteId);
@@ -221,10 +213,7 @@ export default function VoiceProvider({ children }) {
     try {
       let email = p.email || null;
       if (!email && p.nick) {
-        const q = firestoreQuery(
-          collection(db, "users"),
-          where("nick", "==", p.nick)
-        );
+        const q = firestoreQuery(collection(db, "users"), where("nick", "==", p.nick));
         const snaps = await getDocs(q);
         if (snaps.size > 0) email = snaps.docs[0].id;
       }
@@ -248,7 +237,7 @@ export default function VoiceProvider({ children }) {
 
       for (const p of arr) {
         if (!p || p.id === socket.id) continue;
-        createPeerIfNeeded(p.id);
+        const pc = createPeerIfNeeded(p.id);
         if (socket.id < p.id) createAndSendOffer(p.id);
       }
 
@@ -321,7 +310,7 @@ export default function VoiceProvider({ children }) {
   async function startVoice() {
     if (inVoice) return;
     try {
-      await unlockAudio(); // interação real — libera contexto
+      await unlockAudio();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
       socket.emit("voice-join", { nick: userNick || "Jogador" });
@@ -365,7 +354,6 @@ export default function VoiceProvider({ children }) {
         toggleLocalMute,
         localSocketId,
         avatars,
-        localAvatar,
       }}
     >
       {children}

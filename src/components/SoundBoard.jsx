@@ -1,3 +1,4 @@
+// src/components/SoundBoard.jsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   Paper,
@@ -28,9 +29,10 @@ export default function SoundBoard({ isMaster }) {
     setVolume,
     getVolume,
     playingTracks,
+    unlockAudio,
   } = useAudio();
 
-  // 🎧 Lista de músicas (Cloudinary)
+  // 🔹 Playlists
   const musicList = [
     { name: "Aventura", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/Aventura_wzo6of.mp3" },
     { name: "Batalha Final", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/BatalhaFinal_dtaghp.mp3" },
@@ -48,7 +50,6 @@ export default function SoundBoard({ isMaster }) {
     { name: "Inverno", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632377/Inverno_qs6qqy.mp3" },
   ];
 
-  // 🌲 Lista de Ambientes / Efeitos Sonoros (Cloudinary)
   const ambianceList = [
     { name: "Taverna", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Taverna_wyfwlp.mp3" },
     { name: "Taverna 1", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632378/Taverna1_gqd4z2.mp3" },
@@ -73,17 +74,12 @@ export default function SoundBoard({ isMaster }) {
     setAmbianceTracks(ambianceList);
   }, []);
 
-  // 🎵 Play / Stop / Volume (sincronizados com AudioProvider)
-  function handlePlay(url) {
+  // 🎵 Reproduzir
+  async function handlePlay(url) {
+    await unlockAudio(); // garante autoplay liberado
     playMusic(url);
     setVolumes((p) => ({ ...p, [url]: 100 }));
-    scheduleSave(
-      [...new Set([...playingTracks, url])].map((u) => ({
-        url: u,
-        playing: true,
-        volume: volumes[u] ?? 100,
-      }))
-    );
+    scheduleSave(buildState(url, true, 100));
   }
 
   function handleStop(url) {
@@ -93,11 +89,7 @@ export default function SoundBoard({ isMaster }) {
       delete copy[url];
       return copy;
     });
-    scheduleSave(
-      playingTracks
-        .filter((u) => u !== url)
-        .map((u) => ({ url: u, playing: true, volume: volumes[u] ?? 100 }))
-    );
+    scheduleSave(buildState(url, false));
   }
 
   function handleStopAll() {
@@ -109,18 +101,22 @@ export default function SoundBoard({ isMaster }) {
   function handleVolume(url, value) {
     setVolume(url, value);
     setVolumes((p) => ({ ...p, [url]: value }));
-    scheduleSave(
-      playingTracks.map((u) => ({
+    scheduleSave(buildState(url, true, value));
+  }
+
+  function buildState(changedUrl, playing, volume) {
+    return [...new Set([...playingTracks, changedUrl])]
+      .filter((u) => playingTracks.includes(u) || u === changedUrl)
+      .map((u) => ({
         url: u,
-        playing: true,
-        volume: u === url ? value : volumes[u] ?? 100,
-      }))
-    );
+        playing: u === changedUrl ? playing : playingTracks.includes(u),
+        volume: u === changedUrl ? volume : volumes[u] ?? 100,
+      }));
   }
 
   function scheduleSave(state) {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => saveToFirestore(state), 300);
+    saveTimeoutRef.current = setTimeout(() => saveToFirestore(state), 400);
   }
 
   async function saveToFirestore(state) {
@@ -130,21 +126,37 @@ export default function SoundBoard({ isMaster }) {
     });
   }
 
+  // 🔁 Sincronizar via Firestore
   useEffect(() => {
-    unsubRef.current = onSnapshot(doc(db, "sound", "current"), () => {});
+    if (!isMaster) {
+      unsubRef.current = onSnapshot(doc(db, "sound", "current"), (snap) => {
+        const data = snap.data();
+        if (!data?.sounds) return;
+        data.sounds.forEach(({ url, playing, volume }) => {
+          if (playing) {
+            playMusic(url);
+            setVolume(url, volume);
+          } else {
+            pauseMusic(url);
+          }
+        });
+      });
+    }
     return () => unsubRef.current && unsubRef.current();
-  }, []);
+  }, [isMaster]);
 
+  // Atualiza volumes na interface
   useEffect(() => {
     const updated = {};
     playingTracks.forEach((url) => {
       updated[url] = Math.round((getVolume(url) ?? 1) * 100);
     });
     setVolumes((p) => ({ ...p, ...updated }));
-  }, [playingTracks, getVolume]);
+  }, [playingTracks]);
 
   if (!isMaster) return null;
 
+  // 🧩 UI
   function renderList(title, tracks) {
     return (
       <>
@@ -218,11 +230,9 @@ export default function SoundBoard({ isMaster }) {
       <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
         🎵 Trilha Sonora
       </Typography>
-
       {renderList("🎶 Músicas", musicTracks)}
       <Divider sx={{ my: 1 }} />
       {renderList("🌲 Ambientes", ambianceTracks)}
-
       {playingTracks.length > 0 && (
         <Button
           variant="outlined"
