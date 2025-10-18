@@ -1,4 +1,3 @@
-// src/context/AudioProvider.jsx
 import React, { createContext, useContext, useRef, useState, useEffect } from "react";
 import socket from "../socket";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -79,7 +78,6 @@ export default function AudioProvider({ children }) {
     ensureAudioContext();
 
     if (!interactionAllowed) {
-      // permite tocar mesmo antes do unlock, navegadores ignoram bloqueio se já há contexto ativo
       console.warn("🔒 Pendente até interação:", url);
     }
 
@@ -222,11 +220,18 @@ export default function AudioProvider({ children }) {
         if (!playing.includes(url)) pauseMusic(url);
       });
 
-      // Tocar novas
-      playing.forEach((url) => {
-        const full = getMusicUrl(url);
-        if (!audioObjects.current[normalizeUrl(full)]) _playLocal(full);
-      });
+      // ✅ Tocar novas — APENAS se o áudio já foi desbloqueado
+      if (interactionAllowed) {
+        playing.forEach((url) => {
+          const full = getMusicUrl(url);
+          if (!audioObjects.current[normalizeUrl(full)]) _playLocal(full);
+        });
+      } else {
+        console.log(
+          "🔒 Som pendente — aguardando interação do usuário antes de tocar Firestore:",
+          playing
+        );
+      }
 
       // Aplicar volumes salvos
       sounds.forEach((s) => {
@@ -235,7 +240,7 @@ export default function AudioProvider({ children }) {
     });
 
     return () => unsub && unsub();
-  }, []);
+  }, [interactionAllowed]);
 
   return (
     <AudioContextGlobal.Provider
