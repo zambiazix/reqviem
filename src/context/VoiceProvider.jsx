@@ -11,7 +11,7 @@ import {
   query as firestoreQuery,
   where,
 } from "firebase/firestore";
-import { useAudio } from "./AudioProvider";
+import { useAudio } from "./AudioProvider"; // usamos unlockAudio/getMusicStream daqui
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
@@ -24,6 +24,7 @@ export default function VoiceProvider({ children }) {
   const [localMuted, setLocalMuted] = useState(false);
   const [speakingIds, setSpeakingIds] = useState(new Set());
   const [userNick, setUserNick] = useState("");
+  const [localSocketId, setLocalSocketId] = useState(null);
   const [avatars, setAvatars] = useState({});
   const [localAvatar, setLocalAvatar] = useState("");
 
@@ -32,16 +33,18 @@ export default function VoiceProvider({ children }) {
   const pendingCandidatesRef = useRef({});
   const analyserRef = useRef(null);
   const rafRef = useRef(null);
-  const prevLocalSpeakingRef = useRef(false);
+  const isUnmountedRef = useRef(false);
   const localSocketIdRef = useRef(null);
-  const avatarsRef = useRef({});
   const loadedAvatarIdsRef = useRef(new Set());
+  const avatarsRef = useRef({});
+  const prevLocalSpeakingRef = useRef(false);
 
+  // pegar funções do AudioProvider
   const { unlockAudio, getMusicStream } = useAudio();
 
   const RTC_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
-  // --- Identidade do usuário ---
+  // --- Identidade do usuário (nick) ---
   useEffect(() => {
     const auth = getAuth();
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -53,7 +56,9 @@ export default function VoiceProvider({ children }) {
         } catch {
           setUserNick(user.email.split("@")[0]);
         }
-      } else setUserNick("");
+      } else {
+        setUserNick("");
+      }
     });
     return () => unsub();
   }, []);
@@ -75,7 +80,7 @@ export default function VoiceProvider({ children }) {
         analyser.getByteFrequencyData(data);
         const vol = data.reduce((a, b) => a + b, 0) / data.length;
         const isSpeaking = vol > 18;
-        const sid = localSocketIdRef.current || socket?.id;
+        const sid = localSocketIdRef.current || socket?.id || null;
         if (sid && isSpeaking !== prevLocalSpeakingRef.current) {
           prevLocalSpeakingRef.current = isSpeaking;
           setSpeakingIds((prev) => {
@@ -84,7 +89,9 @@ export default function VoiceProvider({ children }) {
             else s.delete(sid);
             return s;
           });
-          socket.emit("voice-speaking", { id: sid, speaking: isSpeaking });
+          try {
+            socket.emit("voice-speaking", { id: sid, speaking: isSpeaking });
+          } catch {}
         }
         rafRef.current = requestAnimationFrame(detect);
       }
@@ -107,118 +114,459 @@ export default function VoiceProvider({ children }) {
     }
   }
 
-  // --- <audio> oculto para streams ---
+  // --- Cria <audio> oculto para cada stream remota ---
   function createHiddenAudioForStream(remoteId, stream) {
     const existing = peersRef.current[remoteId]?.audioEl;
     if (existing) {
       existing.srcObject = stream;
+      // tentar tocar: primeiro tenta desbloquear o áudio (se aplicável)
+      try {
+        unlockAudio && unlockAudio(); // não await, apenas tenta liberar (AudioProvider gerencia pendências)
+      } catch {}
       existing.play().catch(() => {});
+      peersRef.current[remoteId] = { ...(peersRef.current[remoteId] || {}), audioEl: existing, _stream: stream };
       return existing;
     }
     const audioEl = document.createElement("audio");
     audioEl.autoplay = true;
     audioEl.playsInline = true;
+    audioEl.controls = false;
     audioEl.style.display = "none";
+    audioEl.dataset.id = remoteId;
     audioEl.srcObject = stream;
+    try { audioEl.muted = false; } catch {}
     document.body.appendChild(audioEl);
+    try {
+      // tenta desbloquear e tocar (se bloqueado, AudioProvider irá tocar pendências quando unlocked)
+      unlockAudio && unlockAudio();
+    } catch {}
     audioEl.play().catch(() => {});
+    peersRef.current[remoteId] = { ...(peersRef.current[remoteId] || {}), audioEl, _stream: stream };
     return audioEl;
   }
 
-  // --- Busca avatar ---
+  // --- apply pending ICE candidates ---
+  async function applyPendingCandidates(remoteId) {
+    const arr = pendingCandidatesRef.current[remoteId] || [];
+    const pc = peersRef.current[remoteId]?.pc;
+    if (!pc) return;
+    for (const c of arr) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      } catch (e) {
+        console.warn("Erro ao adicionar pending candidate:", e);
+      }
+    }
+    pendingCandidatesRef.current[remoteId] = [];
+  }
+
+  function cleanupPeer(remoteId) {
+    try {
+      const entry = peersRef.current[remoteId];
+      if (entry?.pc) {
+        try { entry.pc.close(); } catch {}
+      }
+      if (entry?.audioEl) {
+        try {
+          entry.audioEl.pause();
+          entry.audioEl.srcObject = null;
+          entry.audioEl.remove();
+        } catch {}
+      }
+    } catch {}
+    delete peersRef.current[remoteId];
+    delete pendingCandidatesRef.current[remoteId];
+    setParticipants((prev) => (Array.isArray(prev) ? prev.slice() : prev));
+    if (loadedAvatarIdsRef.current.has(remoteId)) {
+      loadedAvatarIdsRef.current.delete(remoteId);
+      delete avatarsRef.current[remoteId];
+      setAvatars({ ...avatarsRef.current });
+    }
+  }
+
+  // --- createPeerIfNeeded (com negociações/negotiationneeded) ---
+  function createPeerIfNeeded(remoteId) {
+    if (!remoteId) return null;
+    if (peersRef.current[remoteId]?.pc) return peersRef.current[remoteId].pc;
+
+    const polite = socket?.id && socket.id < remoteId;
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+
+    peersRef.current[remoteId] = {
+      pc,
+      audioEl: peersRef.current[remoteId]?.audioEl || null,
+      nick: peersRef.current[remoteId]?.nick || undefined,
+      _stream: peersRef.current[remoteId]?._stream || null,
+      polite,
+      makingOffer: false,
+      ignoreOffer: false,
+    };
+
+    pc.onnegotiationneeded = async () => {
+      const entry = peersRef.current[remoteId];
+      if (!entry) return;
+      try {
+        if (entry.makingOffer) return;
+        entry.makingOffer = true;
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("voice-signal", { target: remoteId, data: { sdp: pc.localDescription } });
+      } catch (err) {
+        console.warn("negotiationneeded falhou:", err);
+      } finally {
+        const e2 = peersRef.current[remoteId];
+        if (e2) e2.makingOffer = false;
+      }
+    };
+
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) {
+        try {
+          socket.emit("voice-signal", { target: remoteId, data: { candidate: ev.candidate } });
+        } catch (e) {
+          console.warn("Falha emit candidate:", e);
+        }
+      }
+    };
+
+    pc.ontrack = (e) => {
+      const stream = e.streams[0];
+      const audioEl = createHiddenAudioForStream(remoteId, stream);
+      peersRef.current[remoteId] = {
+        ...(peersRef.current[remoteId] || {}),
+        pc,
+        audioEl,
+        _stream: stream,
+        nick: peersRef.current[remoteId]?.nick,
+      };
+      setTimeout(() => {
+        setParticipants((prev) => (Array.isArray(prev) ? prev.slice() : prev));
+      }, 50);
+    };
+
+    pc.onconnectionstatechange = () => {
+      const st = pc.connectionState;
+      if (["closed", "failed", "disconnected"].includes(st)) {
+        cleanupPeer(remoteId);
+      }
+    };
+
+    try {
+      // add local mic tracks if we have them
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => {
+          try { pc.addTrack(t, localStreamRef.current); } catch {}
+        });
+      }
+
+      // attempt to add musicStream if master - do it async and safely
+      (async () => {
+        try {
+          try { await unlockAudio(); } catch (e) { /* ignore */ }
+          const musicStream = getMusicStream && getMusicStream();
+          if (musicStream && userNick === MASTER_EMAIL) {
+            const existingIds = pc.getSenders().map((s) => s.track && s.track.id).filter(Boolean);
+            musicStream.getAudioTracks().forEach((t) => {
+              if (!existingIds.includes(t.id)) {
+                try { pc.addTrack(t, musicStream); } catch (e) { console.warn("Erro addTrack musicStream:", e); }
+              }
+            });
+          }
+        } catch (err) {
+          console.warn("Erro ao tentar injetar musicStream no pc:", err);
+        }
+      })();
+    } catch (e) {
+      console.warn("Erro ao adicionar tracks ao pc:", e);
+    }
+
+    applyPendingCandidates(remoteId).catch(() => {});
+    return pc;
+  }
+
+  // --- createAndSendOffer com proteção makingOffer ---
+  async function createAndSendOffer(remoteId) {
+    try {
+      const entry = peersRef.current[remoteId] || {};
+      const pc = entry.pc || createPeerIfNeeded(remoteId);
+      if (!pc) return;
+      if (entry.makingOffer) return;
+      entry.makingOffer = true;
+      peersRef.current[remoteId] = entry;
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("voice-signal", { target: remoteId, data: { sdp: pc.localDescription } });
+      } finally {
+        entry.makingOffer = false;
+      }
+    } catch (e) {
+      if (peersRef.current[remoteId]) peersRef.current[remoteId].makingOffer = false;
+      console.warn("Falha ao enviar offer inicial:", e);
+    }
+  }
+
+  // --- fetchAvatarForParticipant ---
   async function fetchAvatarForParticipant(p) {
     try {
       let email = p.email || null;
       if (!email && p.nick) {
-        const usersColl = collection(db, "users");
-        const q = firestoreQuery(usersColl, where("nick", "==", p.nick));
-        const snaps = await getDocs(q);
-        if (snaps.size > 0) email = snaps.docs[0].id;
+        try {
+          const usersColl = collection(db, "users");
+          const q = firestoreQuery(usersColl, where("nick", "==", p.nick));
+          const snaps = await getDocs(q);
+          if (snaps && snaps.size > 0) {
+            const doc0 = snaps.docs[0];
+            email = doc0.id;
+          }
+        } catch {}
       }
       if (email) {
-        const fichaRef = doc(db, "fichas", email);
-        const fichaSnap = await getDoc(fichaRef);
-        if (fichaSnap.exists()) {
-          const img = fichaSnap.data().imagemPersonagem || "";
-          return { email, url: img || "" };
-        }
+        try {
+          const fichaRef = doc(db, "fichas", email);
+          const fichaSnap = await getDoc(fichaRef);
+          if (fichaSnap.exists()) {
+            const img = fichaSnap.data().imagemPersonagem || "";
+            return { email, url: img || "" };
+          }
+        } catch {}
       }
     } catch {}
     return { email: null, url: "" };
   }
 
-  // --- Criação de PeerConnection ---
-  function createPeerIfNeeded(remoteId) {
-    if (!remoteId) return null;
-    if (peersRef.current[remoteId]?.pc) return peersRef.current[remoteId].pc;
+  // --- Socket Events ---
+  useEffect(() => {
+    if (!socket) return;
+    setLocalSocketId(socket.id);
+    localSocketIdRef.current = socket.id;
 
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    peersRef.current[remoteId] = { pc };
+    async function onParticipants(list) {
+      const arr = Array.isArray(list) ? list : [];
+      setParticipants(arr.map((p) => ({ ...p, avatar: null })));
+      try {
+        const serverSpeaking = new Set(arr.filter((p) => p && p.speaking).map((p) => p.id));
+        setSpeakingIds(serverSpeaking);
+      } catch {}
 
-    pc.onicecandidate = (ev) => {
-      if (ev.candidate)
-        socket.emit("voice-signal", { target: remoteId, data: { candidate: ev.candidate } });
+      arr.forEach((p) => {
+        if (!p || !p.id) return;
+        if (p.id === socket.id) return;
+        peersRef.current[p.id] = { ...(peersRef.current[p.id] || {}), nick: p.nick };
+        createPeerIfNeeded(p.id);
+        try {
+          if (socket.id < p.id) createAndSendOffer(p.id);
+        } catch {}
+      });
+
+      const toFetch = arr.filter((p) => p && p.id && !loadedAvatarIdsRef.current.has(p.id));
+      await Promise.all(
+        toFetch.map(async (p) => {
+          try {
+            const { url } = await fetchAvatarForParticipant(p);
+            avatarsRef.current[p.id] = url || "";
+            loadedAvatarIdsRef.current.add(p.id);
+          } catch {
+            avatarsRef.current[p.id] = "";
+            loadedAvatarIdsRef.current.add(p.id);
+          }
+        })
+      );
+
+      setAvatars({ ...avatarsRef.current });
+      const withAvatars = arr.map((p) => ({
+        ...p,
+        avatar: avatarsRef.current[p.id] || null,
+      }));
+      setParticipants(withAvatars);
+
+      const localId = localSocketIdRef.current;
+      if (localId && avatarsRef.current[localId]) {
+        setLocalAvatar(avatarsRef.current[localId] || "");
+      }
+    }
+
+    async function onSignal({ from, data }) {
+      if (!from || !data) return;
+      if (from === socket.id) return;
+      const pc = createPeerIfNeeded(from);
+      if (!pc) return;
+
+      const entry = (peersRef.current[from] = peersRef.current[from] || {});
+      try {
+        if (data.sdp) {
+          const offerCollision =
+            data.sdp.type === "offer" &&
+            (entry.makingOffer || pc.signalingState !== "stable");
+          if (offerCollision && !entry.polite) {
+            entry.ignoreOffer = true;
+            console.log("VoiceProvider: ignorando offer por colisão (impolite)", { from });
+            return;
+          }
+          entry.ignoreOffer = false;
+
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          } catch (setErr) {
+            console.warn("Erro ao setRemoteDescription:", setErr, { from, sdpType: data.sdp?.type });
+            // se for offer e polite -> podemos tentar lidar de forma mais sofisticada
+            if (data.sdp.type === "offer" && !entry.polite) return;
+            return;
+          }
+
+          if (data.sdp.type === "offer") {
+            try {
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              socket.emit("voice-signal", { target: from, data: { sdp: pc.localDescription } });
+            } catch (err) {
+              console.warn("Erro ao criar answer:", err);
+            }
+          }
+          await applyPendingCandidates(from);
+        } else if (data.candidate) {
+          if (!pc.remoteDescription || !pc.remoteDescription.type) {
+            pendingCandidatesRef.current[from] =
+              pendingCandidatesRef.current[from] || [];
+            pendingCandidatesRef.current[from].push(data.candidate);
+          } else {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (err) {
+              pendingCandidatesRef.current[from] =
+                pendingCandidatesRef.current[from] || [];
+              pendingCandidatesRef.current[from].push(data.candidate);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Erro onSignal processing:", e);
+      }
+    }
+
+    function onSpeaking({ id, speaking }) {
+      if (!id) return;
+      setSpeakingIds((prev) => {
+        const s = new Set(prev);
+        if (speaking) s.add(id);
+        else s.delete(id);
+        return s;
+      });
+    }
+
+    socket.on("voice-participants", onParticipants);
+    socket.on("voice-signal", onSignal);
+    socket.on("voice-speaking", onSpeaking);
+
+    socket.on("disconnect", () => {
+      Object.keys(peersRef.current).forEach((rid) => cleanupPeer(rid));
+      if (localStreamRef.current) {
+        try { localStreamRef.current.getTracks().forEach((t) => t.stop()); } catch {}
+        localStreamRef.current = null;
+      }
+      stopLocalAnalyser();
+      setInVoice(false);
+      setParticipants([]);
+      setSpeakingIds(new Set());
+      localSocketIdRef.current = null;
+      setLocalSocketId(null);
+    });
+
+    return () => {
+      socket.off("voice-participants", onParticipants);
+      socket.off("voice-signal", onSignal);
+      socket.off("voice-speaking", onSpeaking);
     };
+  }, [userNick, unlockAudio, getMusicStream]);
 
-    pc.ontrack = (e) => {
-      const stream = e.streams[0];
-      createHiddenAudioForStream(remoteId, stream);
-    };
-
-    if (localStreamRef.current)
-      localStreamRef.current.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current));
-
+  // --- se música do mestre chegar depois, injeta nas peers existentes e renegocia ---
+  useEffect(() => {
     (async () => {
       try {
-        await unlockAudio();
-        const musicStream = getMusicStream();
-        if (musicStream && userNick === MASTER_EMAIL)
-          musicStream.getAudioTracks().forEach((t) => pc.addTrack(t, musicStream));
+        try { await unlockAudio(); } catch (e) { /* ignore */ }
+
+        const musicStream = getMusicStream && getMusicStream();
+        if (!musicStream) return;
+        if (userNick !== MASTER_EMAIL) return;
+        for (const rid of Object.keys(peersRef.current)) {
+          const entry = peersRef.current[rid];
+          const pc = entry?.pc;
+          if (!pc) continue;
+          const existingIds = pc.getSenders().map((s) => s.track && s.track.id).filter(Boolean);
+          musicStream.getAudioTracks().forEach((t) => {
+            if (!existingIds.includes(t.id)) {
+              try { pc.addTrack(t, musicStream); } catch (e) { console.warn("Erro addTrack musicStream:", e); }
+            }
+          });
+          try {
+            await createAndSendOffer(rid);
+          } catch (e) {
+            console.warn("Erro ao renegociar com musicStream:", e);
+          }
+        }
       } catch (e) {
-        console.warn("Falha injetando música:", e);
+        // ignore
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getMusicStream, userNick, unlockAudio]);
 
-    return pc;
-  }
-
-  async function createAndSendOffer(remoteId) {
-    const pc = createPeerIfNeeded(remoteId);
-    if (!pc) return;
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit("voice-signal", { target: remoteId, data: { sdp: pc.localDescription } });
-    } catch (e) {
-      console.warn("Falha ao criar offer:", e);
-    }
-  }
-
-  // --- Entrar ---
+  // --- Entrar no chat de voz (pega microfone) ---
   async function startVoice() {
     if (inVoice) return;
     try {
-      await unlockAudio();
+      // Unlock audio: necessário pra navegadores permitirem play automático de streams/media
+      try { await unlockAudio(); } catch (e) { /* ignore */ }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
-      socket.emit("voice-join", { nick: userNick || "Jogador" });
+      try {
+        socket.emit("voice-join", { nick: userNick || "Jogador" });
+      } catch (e) {}
       setInVoice(true);
       startLocalAnalyser(stream);
+
+      // adicionar local tracks a peers existentes e renegociar
+      for (const rid of Object.keys(peersRef.current)) {
+        const entry = peersRef.current[rid];
+        const pc = entry?.pc;
+        if (!pc) continue;
+        const currentSenderTrackIds = pc.getSenders().map((s) => s.track && s.track.id).filter(Boolean);
+        stream.getTracks().forEach((t) => {
+          if (!currentSenderTrackIds.includes(t.id)) {
+            try { pc.addTrack(t, stream); } catch (e) { console.warn("Erro addTrack local to pc:", e); }
+          }
+        });
+        try {
+          await createAndSendOffer(rid);
+        } catch (e) {
+          console.warn("Erro ao renegociar após startVoice:", e);
+        }
+      }
     } catch (err) {
       alert("⚠️ Permita o acesso ao microfone para usar o chat de voz.");
       console.error("Erro ao iniciar voz:", err);
     }
   }
 
-  // --- Sair ---
+  // --- Sair do chat ---
   function leaveVoice() {
-    socket.emit("voice-leave");
+    try {
+      socket.emit("voice-leave");
+    } catch (e) {}
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      try { localStreamRef.current.getTracks().forEach((t) => t.stop()); } catch {}
       localStreamRef.current = null;
     }
-    setInVoice(false);
+    Object.keys(peersRef.current).forEach((rid) => cleanupPeer(rid));
+    peersRef.current = {};
+    pendingCandidatesRef.current = {};
     stopLocalAnalyser();
+    setInVoice(false);
+    setParticipants([]);
+    setSpeakingIds(new Set());
+    localSocketIdRef.current = null;
+    setLocalSocketId(null);
   }
 
   function toggleLocalMute() {
@@ -228,57 +576,21 @@ export default function VoiceProvider({ children }) {
     setLocalMuted(muted);
   }
 
-  // --- Socket events ---
+  // cleanup on unmount
   useEffect(() => {
-    if (!socket) return;
-    localSocketIdRef.current = socket.id;
-
-    async function onParticipants(list) {
-      const arr = Array.isArray(list) ? list : [];
-      setParticipants(arr);
-      const toFetch = arr.filter((p) => p && p.id && !loadedAvatarIdsRef.current.has(p.id));
-      await Promise.all(
-        toFetch.map(async (p) => {
-          const { url } = await fetchAvatarForParticipant(p);
-          avatarsRef.current[p.id] = url || "";
-          loadedAvatarIdsRef.current.add(p.id);
-        })
-      );
-      setAvatars({ ...avatarsRef.current });
-    }
-
-    socket.on("voice-participants", onParticipants);
-    socket.on("voice-signal", async ({ from, data }) => {
-      if (from === socket.id) return;
-      const pc = createPeerIfNeeded(from);
-      if (!pc) return;
-      if (data.sdp) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        if (data.sdp.type === "offer") {
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit("voice-signal", { target: from, data: { sdp: pc.localDescription } });
-        }
-      } else if (data.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-      }
-    });
-    socket.on("voice-speaking", ({ id, speaking }) => {
-      setSpeakingIds((prev) => {
-        const s = new Set(prev);
-        if (speaking) s.add(id);
-        else s.delete(id);
-        return s;
-      });
-    });
-
     return () => {
-      socket.off("voice-participants", onParticipants);
-      socket.off("voice-signal");
-      socket.off("voice-speaking");
+      isUnmountedRef.current = true;
+      try { leaveVoice(); } catch (e) {}
     };
-  }, [userNick, unlockAudio, getMusicStream]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // expose remoteStreams for UI components that expect them (e.g. MesaRPG)
+  const remoteStreams = Object.keys(peersRef.current).map((id) => {
+    return { id, stream: peersRef.current[id]?._stream || null, nick: peersRef.current[id]?.nick };
+  });
+
+  // provider value
   return (
     <VoiceContext.Provider
       value={{
@@ -289,8 +601,10 @@ export default function VoiceProvider({ children }) {
         startVoice,
         leaveVoice,
         toggleLocalMute,
-        avatars,
-        localAvatar,
+        localSocketId,
+        remoteStreams,
+        avatars,      // map participantId -> url
+        localAvatar,  // avatar do usuário local (se houver)
       }}
     >
       {children}
