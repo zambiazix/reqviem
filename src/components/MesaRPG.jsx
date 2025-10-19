@@ -81,19 +81,22 @@ export default function MesaRPG({ userNick }) {
         {safeParticipants.map((p) => {
           const isSpeaking = safeSpeakingIds.has(p.id);
           const avatarSrc = p.avatar || avatars?.[p.id] || "";
-          const isMaster = p.email === MASTER_EMAIL || p.nick === "Mestre";
+          const isMaster =
+            p.email === MASTER_EMAIL ||
+            p.nick?.toLowerCase() === "mestre" ||
+            p.nick?.toLowerCase().includes("mestre");
 
-          // 🎖️ estilos especiais do Mestre
+          // 🟡 Mestre dourado fixo, outros verdes quando falam
           const borderColor = isMaster
-            ? "#FFD700"
+            ? "#FFD700" // dourado fixo
             : isSpeaking
-            ? "#22c55e"
+            ? "#22c55e" // verde ao falar
             : "transparent";
 
-          const glowColor = isMaster
-            ? "rgba(255,215,0,0.6)"
+          const boxShadow = isMaster
+            ? "0 0 10px 2px rgba(255,215,0,0.5)" // brilho dourado
             : isSpeaking
-            ? "rgba(34,197,94,0.4)"
+            ? "0 0 10px rgba(34,197,94,0.5)"
             : "none";
 
           const nameColor = isMaster
@@ -114,14 +117,14 @@ export default function MesaRPG({ userNick }) {
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                {/* Avatar com borda especial */}
+                {/* Avatar com borda de status */}
                 <Box
                   sx={{
                     position: "relative",
                     width: 48,
                     height: 48,
                     "@keyframes voice-pulse": {
-                      "0%": { boxShadow: `0 0 0 0 ${glowColor}` },
+                      "0%": { boxShadow: `0 0 0 0 ${boxShadow}` },
                       "70%": { boxShadow: `0 0 0 10px transparent` },
                       "100%": { boxShadow: `0 0 0 0 transparent` },
                     },
@@ -135,11 +138,9 @@ export default function MesaRPG({ userNick }) {
                       overflow: "hidden",
                       border: `3px solid ${borderColor}`,
                       animation:
-                        isSpeaking || isMaster
-                          ? "voice-pulse 1.5s infinite"
-                          : "none",
+                        isSpeaking && !isMaster ? "voice-pulse 1.5s infinite" : "none",
                       transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-                      boxShadow: isSpeaking || isMaster ? `0 0 10px ${glowColor}` : "none",
+                      boxShadow,
                     }}
                   >
                     {avatarSrc ? (
@@ -174,7 +175,7 @@ export default function MesaRPG({ userNick }) {
                   </Box>
                 </Box>
 
-                {/* Nome com destaque do Mestre */}
+                {/* Nome do participante */}
                 <Typography
                   sx={{
                     color: nameColor,
