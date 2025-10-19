@@ -235,10 +235,18 @@ export default function VoiceProvider({ children }) {
       const arr = Array.isArray(list) ? list : [];
       setParticipants(arr);
 
+      // ✅ Espera garantir que o microfone já foi capturado antes de criar ofertas
+      await new Promise((r) => setTimeout(r, 500));
+
       for (const p of arr) {
         if (!p || p.id === socket.id) continue;
         const pc = createPeerIfNeeded(p.id);
-        if (socket.id < p.id) createAndSendOffer(p.id);
+        if (socket.id && localStreamRef.current && socket.id < p.id) {
+          console.log("🎙 Enviando oferta para:", p.nick || p.id);
+          createAndSendOffer(p.id);
+        } else {
+          console.warn("⏳ Aguardando microfone antes de criar oferta para", p.id);
+        }
       }
 
       const avatarsData = {};
