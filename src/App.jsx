@@ -300,7 +300,7 @@ export default function App() {
                               display: "block",
                             }}
                           >
-                            Réquiem RPG — versão 2.0 - By: Zambiazi
+                            APP Réquiem RPG — versão 2.1 - By: Zambiazi
                           </Typography>
                         </Box>
                       </Box>

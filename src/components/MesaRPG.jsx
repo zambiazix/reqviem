@@ -11,6 +11,8 @@ import {
 import { useVoice } from "../context/VoiceProvider";
 import { useAudio } from "../context/AudioProvider";
 
+const MASTER_EMAIL = "mestre@reqviemrpg.com";
+
 export default function MesaRPG({ userNick }) {
   const {
     inVoice,
@@ -26,7 +28,6 @@ export default function MesaRPG({ userNick }) {
 
   const { unlockAudio } = useAudio() || {};
 
-  // segurança pra evitar erros se algum dado estiver nulo
   const safeParticipants = Array.isArray(participants) ? participants : [];
   const safeSpeakingIds = speakingIds instanceof Set ? speakingIds : new Set();
 
@@ -80,6 +81,26 @@ export default function MesaRPG({ userNick }) {
         {safeParticipants.map((p) => {
           const isSpeaking = safeSpeakingIds.has(p.id);
           const avatarSrc = p.avatar || avatars?.[p.id] || "";
+          const isMaster = p.email === MASTER_EMAIL || p.nick === "Mestre";
+
+          // 🎖️ estilos especiais do Mestre
+          const borderColor = isMaster
+            ? "#FFD700"
+            : isSpeaking
+            ? "#22c55e"
+            : "transparent";
+
+          const glowColor = isMaster
+            ? "rgba(255,215,0,0.6)"
+            : isSpeaking
+            ? "rgba(34,197,94,0.4)"
+            : "none";
+
+          const nameColor = isMaster
+            ? "#FFD700"
+            : isSpeaking
+            ? "#22c55e"
+            : "white";
 
           return (
             <ListItem
@@ -93,16 +114,16 @@ export default function MesaRPG({ userNick }) {
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                {/* 🔵 Avatar com anel de fala */}
+                {/* Avatar com borda especial */}
                 <Box
                   sx={{
                     position: "relative",
                     width: 48,
                     height: 48,
                     "@keyframes voice-pulse": {
-                      "0%": { boxShadow: "0 0 0 0 rgba(34,197,94,0.6)" },
-                      "70%": { boxShadow: "0 0 0 10px rgba(34,197,94,0)" },
-                      "100%": { boxShadow: "0 0 0 0 rgba(34,197,94,0)" },
+                      "0%": { boxShadow: `0 0 0 0 ${glowColor}` },
+                      "70%": { boxShadow: `0 0 0 10px transparent` },
+                      "100%": { boxShadow: `0 0 0 0 transparent` },
                     },
                   }}
                 >
@@ -112,14 +133,13 @@ export default function MesaRPG({ userNick }) {
                       height: "100%",
                       borderRadius: "50%",
                       overflow: "hidden",
-                      border: isSpeaking
-                        ? "3px solid #22c55e"
-                        : "3px solid transparent",
-                      animation: isSpeaking ? "voice-pulse 1.5s infinite" : "none",
+                      border: `3px solid ${borderColor}`,
+                      animation:
+                        isSpeaking || isMaster
+                          ? "voice-pulse 1.5s infinite"
+                          : "none",
                       transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-                      boxShadow: isSpeaking
-                        ? "0 0 10px rgba(34,197,94,0.4)"
-                        : "none",
+                      boxShadow: isSpeaking || isMaster ? `0 0 10px ${glowColor}` : "none",
                     }}
                   >
                     {avatarSrc ? (
@@ -154,16 +174,20 @@ export default function MesaRPG({ userNick }) {
                   </Box>
                 </Box>
 
-                {/* Nome */}
+                {/* Nome com destaque do Mestre */}
                 <Typography
                   sx={{
-                    color: isSpeaking ? "#22c55e" : "white",
-                    fontWeight: isSpeaking ? "bold" : "normal",
+                    color: nameColor,
+                    fontWeight: isMaster ? "bold" : isSpeaking ? "bold" : "normal",
+                    textShadow: isMaster
+                      ? "0 0 6px rgba(255,215,0,0.6)"
+                      : "none",
                     transition: "color 0.2s ease",
                   }}
                 >
                   {p.nick}
                   {p.id === localSocketId && " (Você)"}
+                  {isMaster && " 👑"}
                 </Typography>
               </Box>
             </ListItem>
