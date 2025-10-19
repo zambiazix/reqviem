@@ -1,4 +1,3 @@
-// src/components/SoundBoard.jsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   Paper,
@@ -32,7 +31,18 @@ export default function SoundBoard({ isMaster }) {
     unlockAudio,
   } = useAudio();
 
-  // 🔹 Playlists
+  // 🔗 Normalização e URL absoluta
+  const getMusicUrl = (u) => {
+    if (!u) return "";
+    if (/^https?:\/\//i.test(u)) return u.trim();
+    const backend = (import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
+    if (u.startsWith("/musicas/")) return `${backend}${u}`;
+    if (backend) return `${backend}/musicas/${u}`;
+    return `/musicas/${u}`;
+  };
+  const normalizeUrl = (url = "") => (url || "").trim().replace(/\/+$/, "").toLowerCase();
+
+  // 🔹 Playlists completas
   const musicList = [
     { name: "Aventura", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/Aventura_wzo6of.mp3" },
     { name: "Batalha Final", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/BatalhaFinal_dtaghp.mp3" },
@@ -76,7 +86,7 @@ export default function SoundBoard({ isMaster }) {
 
   // 🎵 Reproduzir
   async function handlePlay(url) {
-    await unlockAudio(); // garante autoplay liberado
+    await unlockAudio();
     playMusic(url);
     setVolumes((p) => ({ ...p, [url]: 100 }));
     scheduleSave(buildState(url, true, 100));
@@ -104,6 +114,7 @@ export default function SoundBoard({ isMaster }) {
     scheduleSave(buildState(url, true, value));
   }
 
+  // 🔧 Estado persistente
   function buildState(changedUrl, playing, volume) {
     return [...new Set([...playingTracks, changedUrl])]
       .filter((u) => playingTracks.includes(u) || u === changedUrl)
@@ -126,7 +137,7 @@ export default function SoundBoard({ isMaster }) {
     });
   }
 
-  // 🔁 Sincronizar via Firestore
+  // 🔁 Sincronização Firestore (para não-mestres)
   useEffect(() => {
     if (!isMaster) {
       unsubRef.current = onSnapshot(doc(db, "sound", "current"), (snap) => {
@@ -145,7 +156,7 @@ export default function SoundBoard({ isMaster }) {
     return () => unsubRef.current && unsubRef.current();
   }, [isMaster]);
 
-  // Atualiza volumes na interface
+  // 🔊 Atualizar volumes visuais
   useEffect(() => {
     const updated = {};
     playingTracks.forEach((url) => {
@@ -156,7 +167,7 @@ export default function SoundBoard({ isMaster }) {
 
   if (!isMaster) return null;
 
-  // 🧩 UI
+  // 🧩 Interface
   function renderList(title, tracks) {
     return (
       <>
@@ -165,8 +176,9 @@ export default function SoundBoard({ isMaster }) {
         </Typography>
         <List dense>
           {tracks.map((t, i) => {
-            const playing = playingTracks.includes(t.url);
-            const vol100 = volumes[t.url] ?? 100;
+            const canonical = normalizeUrl(getMusicUrl(t.url));
+            const playing = playingTracks.includes(canonical);
+            const vol100 = volumes[canonical] ?? 100;
             return (
               <ListItem
                 key={i}

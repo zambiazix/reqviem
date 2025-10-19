@@ -1,3 +1,4 @@
+// src/components/MesaRPG.jsx
 import React from "react";
 import {
   Paper,
@@ -14,74 +15,93 @@ export default function MesaRPG({ userNick }) {
   const {
     inVoice,
     participants,
-    remoteStreams,
     localMuted,
     speakingIds,
     startVoice,
     leaveVoice,
     toggleLocalMute,
     localSocketId,
-    avatars, // ✅ vindo do VoiceProvider
+    avatars,
   } = useVoice() || {};
 
   const { unlockAudio } = useAudio() || {};
 
-  // 🧩 fallback seguros
+  // segurança pra evitar erros se algum dado estiver nulo
   const safeParticipants = Array.isArray(participants) ? participants : [];
-  const safeRemoteStreams = Array.isArray(remoteStreams) ? remoteStreams : [];
   const safeSpeakingIds = speakingIds instanceof Set ? speakingIds : new Set();
 
   return (
-    <Paper sx={{ p: 2, mb: 2 }}>
-      <Typography variant="h6">Mesa RPG - Chat de Voz</Typography>
+    <Paper
+      sx={{
+        p: 2,
+        mb: 2,
+        bgcolor: "#1e272e",
+        color: "white",
+        borderRadius: 3,
+        boxShadow: "0 0 12px rgba(0,0,0,0.3)",
+      }}
+    >
+      <Typography variant="h6" sx={{ mb: 2 }}>
+        Mesa RPG — Chat de Voz
+      </Typography>
 
       {!inVoice ? (
         <Button
           variant="contained"
-          onClick={() => {
+          color="success"
+          onClick={async () => {
             try {
-              unlockAudio?.();
+              await unlockAudio?.();
+              await startVoice?.();
             } catch (err) {
-              console.warn("unlockAudio falhou:", err);
-            }
-            try {
-              startVoice?.();
-            } catch (err) {
-              console.error("Erro ao iniciar voz:", err);
+              console.error("Erro ao entrar no chat de voz:", err);
+              alert("Não foi possível iniciar o chat de voz.");
             }
           }}
         >
-          Entrar no Áudio
+          Entrar no Chat de Voz
         </Button>
       ) : (
-        <>
+        <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
           <Button variant="outlined" color="error" onClick={leaveVoice}>
-            Sair do Áudio
+            Sair
           </Button>
-          <Button variant="contained" onClick={toggleLocalMute} sx={{ ml: 1 }}>
-            {localMuted ? "Unmute" : "Mute"}
+          <Button
+            variant="contained"
+            color={localMuted ? "warning" : "primary"}
+            onClick={toggleLocalMute}
+          >
+            {localMuted ? "Desmutar" : "Mutar"}
           </Button>
-        </>
+        </Box>
       )}
 
       <List>
         {safeParticipants.map((p) => {
           const isSpeaking = safeSpeakingIds.has(p.id);
-          // ✅ pega avatar pela ID de socket
           const avatarSrc = p.avatar || avatars?.[p.id] || "";
+
           return (
-            <ListItem key={p.id} sx={{ py: 1 }}>
+            <ListItem
+              key={p.id}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                py: 1,
+                px: 0,
+                borderBottom: "1px solid rgba(255,255,255,0.1)",
+              }}
+            >
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                {/* avatar com anel que acende/pulsa quando falando */}
+                {/* 🔵 Avatar com anel de fala */}
                 <Box
                   sx={{
                     position: "relative",
-                    width: 44,
-                    height: 44,
-                    flexShrink: 0,
+                    width: 48,
+                    height: 48,
                     "@keyframes voice-pulse": {
                       "0%": { boxShadow: "0 0 0 0 rgba(34,197,94,0.6)" },
-                      "70%": { boxShadow: "0 0 0 8px rgba(34,197,94,0)" },
+                      "70%": { boxShadow: "0 0 0 10px rgba(34,197,94,0)" },
                       "100%": { boxShadow: "0 0 0 0 rgba(34,197,94,0)" },
                     },
                   }}
@@ -91,18 +111,15 @@ export default function MesaRPG({ userNick }) {
                       width: "100%",
                       height: "100%",
                       borderRadius: "50%",
-                      padding: "2px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
+                      overflow: "hidden",
                       border: isSpeaking
                         ? "3px solid #22c55e"
                         : "3px solid transparent",
-                      transition: "border-color 200ms, box-shadow 200ms",
+                      animation: isSpeaking ? "voice-pulse 1.5s infinite" : "none",
+                      transition: "border-color 0.2s ease, box-shadow 0.2s ease",
                       boxShadow: isSpeaking
-                        ? "0 0 12px rgba(34,197,94,0.45)"
+                        ? "0 0 10px rgba(34,197,94,0.4)"
                         : "none",
-                      animation: isSpeaking ? "voice-pulse 1.6s infinite" : "none",
                     }}
                   >
                     {avatarSrc ? (
@@ -112,8 +129,8 @@ export default function MesaRPG({ userNick }) {
                         style={{
                           width: "100%",
                           height: "100%",
-                          borderRadius: "50%",
                           objectFit: "cover",
+                          borderRadius: "50%",
                         }}
                       />
                     ) : (
@@ -121,13 +138,14 @@ export default function MesaRPG({ userNick }) {
                         sx={{
                           width: "100%",
                           height: "100%",
-                          borderRadius: "50%",
-                          bgcolor: "#24303a",
+                          bgcolor: "#2f3640",
+                          color: "white",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          color: "#fff",
                           fontWeight: "bold",
+                          fontSize: 18,
+                          borderRadius: "50%",
                         }}
                       >
                         {p.nick ? p.nick.charAt(0).toUpperCase() : "?"}
@@ -136,31 +154,22 @@ export default function MesaRPG({ userNick }) {
                   </Box>
                 </Box>
 
+                {/* Nome */}
                 <Typography
                   sx={{
-                    color: isSpeaking ? "white" : "gray",
+                    color: isSpeaking ? "#22c55e" : "white",
                     fontWeight: isSpeaking ? "bold" : "normal",
+                    transition: "color 0.2s ease",
                   }}
                 >
-                  {p.nick + (p.id === localSocketId ? " (Você)" : "")}
+                  {p.nick}
+                  {p.id === localSocketId && " (Você)"}
                 </Typography>
               </Box>
             </ListItem>
           );
         })}
       </List>
-
-      {safeRemoteStreams.map((r) => (
-        <RemoteAudio key={r.id} stream={r.stream} />
-      ))}
     </Paper>
   );
-}
-
-function RemoteAudio({ stream }) {
-  const ref = React.useRef();
-  React.useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream;
-  }, [stream]);
-  return <audio ref={ref} autoPlay playsInline />;
 }
