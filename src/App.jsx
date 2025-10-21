@@ -62,6 +62,7 @@ const theme = createTheme({
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
+// 🔹 Componente de Login
 const LoginForm = memo(function LoginForm({ onLogin }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -79,7 +80,17 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
   };
 
   return (
-    <Paper sx={{ p: 3, m: "auto", maxWidth: 400, display: "flex", flexDirection: "row", alignItems: "center", gap: 2 }}>
+    <Paper
+      sx={{
+        p: 3,
+        m: "auto",
+        maxWidth: 400,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 2,
+      }}
+    >
       <Box sx={{ flexShrink: 0 }}>
         <img
           src="/logo.png"
@@ -136,6 +147,7 @@ export default function App() {
   const [createEmailInput, setCreateEmailInput] = useState("");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  // Detecta se é mobile
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", handleResize);
@@ -166,7 +178,9 @@ export default function App() {
           if (userSnap.exists()) {
             const data = userSnap.data();
             setUserNick(data.nick || u.email);
-            setRole(data.role || (u.email === MASTER_EMAIL ? "master" : "player"));
+            setRole(
+              data.role || (u.email === MASTER_EMAIL ? "master" : "player")
+            );
           } else {
             setUserNick(u.email);
             setRole(u.email === MASTER_EMAIL ? "master" : "player");
@@ -245,30 +259,90 @@ export default function App() {
     }
   }
 
+  // 🔹 Tela principal
   function Home() {
     const isMaster = role === "master";
 
+    // -----------------------------
+    // MOBILE MODE — Ordem especial
+    // -----------------------------
+    if (isMobile) {
+      return (
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Box sx={{ p: 2 }}>
+            {/* Bem-vindo */}
+            <Paper sx={{ p: 2, mb: 2 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <Box>
+                  <Typography variant="h6">Bem-vindo,</Typography>
+                  <Typography variant="subtitle1">{userNick}</Typography>
+                  <Typography variant="caption" display="block">
+                    {user?.email}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontSize: "0.7rem",
+                      color: "rgba(255,255,255,0.5)",
+                      display: "block",
+                    }}
+                  >
+                    APP Réquiem RPG — versão 2.3 - By: Zambiazi
+                  </Typography>
+                </Box>
+                <IconButton color="inherit" onClick={handleLogout} title="Sair">
+                  <LogoutIcon />
+                </IconButton>
+              </Box>
+
+              <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, mt: 2, flexWrap: "wrap" }}>
+                <Button variant="contained" component={Link} to="/map">Grid</Button>
+                <Button variant="contained" component={Link} to="/cronica">Crônica</Button>
+                <Button variant="contained" component={Link} to="/sistema">Sistema</Button>
+              </Box>
+            </Paper>
+
+            {/* Chat de Voz */}
+            <Paper sx={{ p: 2, mb: 2 }}>
+              <MesaRPG userNick={userNick} />
+            </Paper>
+
+            {/* Chat de Texto */}
+            <Paper sx={{ p: 2, mb: 2 }}>
+              <Chat userNick={userNick} userEmail={user?.email} />
+            </Paper>
+
+            {/* Ficha */}
+            <Paper sx={{ p: 2 }}>
+              {user ? (
+                <FichaPersonagem user={user} fichaId={selectedFichaEmail} isMestre={isMaster} />
+              ) : (
+                <Typography>Faça login para editar suas fichas.</Typography>
+              )}
+            </Paper>
+          </Box>
+        </ThemeProvider>
+      );
+    }
+
+    // -----------------------------
+    // DESKTOP MODE — Layout forçado
+    // -----------------------------
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <Box sx={{ height: "100vh", p: 2 }}>
-          <Grid
-            container
-            sx={{
-              height: "100%",
-              flexWrap: isMobile ? "wrap" : "nowrap", // empilha só no mobile
-              flexDirection: isMobile ? "column" : "row", // coluna no celular
-            }}
-          >
-            {/* Chat / Login */}
+          <Grid container sx={{ height: "100%", flexWrap: "nowrap" }}>
+            {/* Coluna: Chat e voz */}
             <Grid
               item
               sx={{
-                flex: isMobile ? "1 1 100%" : "1 1 33%",
+                flex: "1 1 33%",
                 minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
-                borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.08)",
+                borderRight: "1px solid rgba(255,255,255,0.08)",
               }}
             >
               {!user ? (
@@ -293,35 +367,24 @@ export default function App() {
                             height: "80px",
                             borderRadius: "50%",
                             objectFit: "contain",
-                            boxShadow:
-                              "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
+                            boxShadow: "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
                           }}
                         />
                         <Box>
                           <Typography variant="h6">Bem-vindo,</Typography>
                           <Typography variant="subtitle1">{userNick}</Typography>
-                          <Typography variant="caption" display="block">
-                            {user?.email}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              fontSize: "0.7rem",
-                              color: "rgba(255,255,255,0.5)",
-                              display: "block",
-                            }}
-                          >
-                            APP Réquiem RPG — versão 2.2 - By: Zambiazi
+                          <Typography variant="caption" display="block">{user?.email}</Typography>
+                          <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>
+                            APP Réquiem RPG — versão 2.3 - By: Zambiazi
                           </Typography>
                         </Box>
                       </Box>
-
                       <IconButton color="inherit" onClick={handleLogout} title="Sair">
                         <LogoutIcon />
                       </IconButton>
                     </Box>
 
-                    <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, flexWrap: "wrap" }}>
+                    <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5 }}>
                       <Button variant="contained" component={Link} to="/map">Grid</Button>
                       <Button variant="contained" component={Link} to="/cronica">Crônica</Button>
                       <Button variant="contained" component={Link} to="/sistema">Sistema</Button>
@@ -341,8 +404,8 @@ export default function App() {
               )}
             </Grid>
 
-            {/* Colunas seguintes (fichas e ficha aberta) */}
-            {!isMobile && isMaster && (
+            {/* Colunas adicionais: Fichas / Ficha aberta */}
+            {isMaster ? (
               <>
                 <Grid
                   item
@@ -410,9 +473,7 @@ export default function App() {
                   </Paper>
                 </Grid>
               </>
-            )}
-
-            {!isMobile && !isMaster && (
+            ) : (
               <Grid
                 item
                 sx={{
