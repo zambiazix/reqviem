@@ -62,7 +62,6 @@ const theme = createTheme({
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
-// 🧩 Novo componente isolado para o login
 const LoginForm = memo(function LoginForm({ onLogin }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -81,7 +80,6 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
 
   return (
     <Paper sx={{ p: 3, m: "auto", maxWidth: 400, display: "flex", flexDirection: "row", alignItems: "center", gap: 2 }}>
-      {/* Logo à esquerda */}
       <Box sx={{ flexShrink: 0 }}>
         <img
           src="/logo.png"
@@ -97,7 +95,6 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
         />
       </Box>
 
-      {/* Área do formulário à direita */}
       <Box sx={{ flex: 1 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>
           Fazer Login
@@ -137,6 +134,13 @@ export default function App() {
   const [fichasList, setFichasList] = useState([]);
   const [selectedFichaEmail, setSelectedFichaEmail] = useState(null);
   const [createEmailInput, setCreateEmailInput] = useState("");
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const carregarListaFichas = useCallback(async () => {
     try {
@@ -248,16 +252,23 @@ export default function App() {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <Box sx={{ height: "100vh", p: 2 }}>
-          <Grid container sx={{ height: "100%", flexWrap: "nowrap" }}>
-            {/* CHAT / LOGIN - 33% */}
+          <Grid
+            container
+            sx={{
+              height: "100%",
+              flexWrap: isMobile ? "wrap" : "nowrap", // empilha só no mobile
+              flexDirection: isMobile ? "column" : "row", // coluna no celular
+            }}
+          >
+            {/* Chat / Login */}
             <Grid
               item
               sx={{
-                flex: "1 1 33%",
+                flex: isMobile ? "1 1 100%" : "1 1 33%",
                 minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
-                borderRight: "1px solid rgba(255,255,255,0.08)",
+                borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.08)",
               }}
             >
               {!user ? (
@@ -300,7 +311,7 @@ export default function App() {
                               display: "block",
                             }}
                           >
-                            APP Réquiem RPG — versão 2.1 - By: Zambiazi
+                            APP Réquiem RPG — versão 2.2 - By: Zambiazi
                           </Typography>
                         </Box>
                       </Box>
@@ -310,16 +321,10 @@ export default function App() {
                       </IconButton>
                     </Box>
 
-                    <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5 }}>
-                      <Button variant="contained" component={Link} to="/map">
-                        Grid
-                      </Button>
-                      <Button variant="contained" component={Link} to="/cronica">
-                        Crônica
-                      </Button>
-                      <Button variant="contained" component={Link} to="/sistema">
-                        Sistema
-                      </Button>
+                    <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, flexWrap: "wrap" }}>
+                      <Button variant="contained" component={Link} to="/map">Grid</Button>
+                      <Button variant="contained" component={Link} to="/cronica">Crônica</Button>
+                      <Button variant="contained" component={Link} to="/sistema">Sistema</Button>
                     </Box>
                   </Paper>
 
@@ -327,15 +332,7 @@ export default function App() {
                     <MesaRPG userNick={userNick} />
                   </Paper>
 
-                  <Paper
-                    sx={{
-                      flex: 1,
-                      display: "flex",
-                      flexDirection: "column",
-                      overflow: "hidden",
-                      mt: 2,
-                    }}
-                  >
+                  <Paper sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", mt: 2 }}>
                     <Box sx={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                       <Chat userNick={userNick} userEmail={user?.email} />
                     </Box>
@@ -344,8 +341,8 @@ export default function App() {
               )}
             </Grid>
 
-            {/* ÁREA DE FICHAS */}
-            {isMaster ? (
+            {/* Colunas seguintes (fichas e ficha aberta) */}
+            {!isMobile && isMaster && (
               <>
                 <Grid
                   item
@@ -385,11 +382,7 @@ export default function App() {
                         onChange={(e) => setCreateEmailInput(e.target.value)}
                         sx={{ my: 1 }}
                       />
-                      <Button
-                        variant="outlined"
-                        fullWidth
-                        onClick={() => criarFichaParaEmail(createEmailInput)}
-                      >
+                      <Button variant="outlined" fullWidth onClick={() => criarFichaParaEmail(createEmailInput)}>
                         Criar ficha vazia
                       </Button>
                     </Box>
@@ -417,7 +410,9 @@ export default function App() {
                   </Paper>
                 </Grid>
               </>
-            ) : (
+            )}
+
+            {!isMobile && !isMaster && (
               <Grid
                 item
                 sx={{

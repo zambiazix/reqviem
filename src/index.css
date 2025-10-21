@@ -89,3 +89,136 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* ----------------------------- */
+/* 🔹 RESPONSIVIDADE PARA CELULAR */
+/* ----------------------------- */
+
+@media (max-width: 768px) {
+
+  /* Layout base: tudo em coluna */
+  html, body, #root {
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    background-color: #1e1e1e;
+  }
+
+  /* Ajuste de containers MUI e principais seções */
+  .MuiGrid-container {
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    height: auto !important;
+  }
+
+  .MuiGrid-item {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    border: none !important;
+  }
+
+  /* Remove bordas laterais desnecessárias e espaçamento entre seções */
+  .MuiPaper-root {
+    margin-bottom: 10px !important;
+    border: none !important;
+  }
+
+  /* Ajusta tipografia */
+  h1 {
+    font-size: 1.8em !important;
+  }
+
+  h2, h3, h4 {
+    font-size: 1.2em !important;
+  }
+
+  p, span, label, input, textarea, button {
+    font-size: 0.95em !important;
+  }
+
+  /* Centraliza logo e infos */
+  .MuiBox-root img {
+    width: 70px !important;
+    height: 70px !important;
+  }
+
+  /* Chat ocupa toda a tela inicialmente */
+  .chat-box {
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+    background: #222 !important;
+    border-radius: 10px;
+    padding: 8px !important;
+  }
+
+  .chat-mensagens {
+    max-height: 50vh !important;
+    overflow-y: auto !important;
+  }
+
+  .chat-form {
+    flex-direction: column !important;
+  }
+
+  .chat-input, .chat-btn {
+    width: 100% !important;
+  }
+
+  /* Reorganiza colunas internas do app (ex: fichas / chat / soundboard) */
+  .ficha-container,
+  .soundboard-container,
+  .mesa-container {
+    width: 100% !important;
+    padding: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  /* Botões ficam maiores e com mais espaço para toque */
+  button {
+    padding: 10px 16px !important;
+    font-size: 1em !important;
+  }
+
+  /* Cards e blocos MUI ficam em bloco */
+  .MuiPaper-root {
+    display: block !important;
+  }
+
+  /* Evita rolagem dupla */
+  #root > div {
+    overflow: visible !important;
+  }
+
+  /* Trilha sonora e controles */
+  .soundboard-container {
+    padding: 12px !important;
+  }
+
+  /* Corrige zoom automático em inputs no iOS/Android */
+  input, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Ajuste visual para listas de fichas */
+  .MuiListItem-root {
+    padding: 6px 10px !important;
+  }
+
+  /* Barra de topo e botões principais centralizados */
+  .MuiBox-root[role="banner"],
+  .MuiBox-root .MuiTypography-h6 {
+    text-align: center !important;
+  }
+
+  /* Garante altura mínima para scroll confortável */
+  .MuiContainer-root {
+    min-height: 100vh !important;
+  }
+}
