@@ -1,11 +1,27 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo.png" />
+
+    <!-- Ícone e Manifesto -->
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Tema da barra superior no mobile -->
+    <meta name="theme-color" content="#121212" />
+
+    <!-- Responsividade -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Réqviem RPG</title>
+
+    <title>Réquiem RPG</title>
+
+    <!-- Meta opcional para Apple (iOS) -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Réqviem RPG" />
+    <link rel="apple-touch-icon" href="/logo.png" />
   </head>
+
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
