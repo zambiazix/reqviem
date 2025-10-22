@@ -79,7 +79,17 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
   };
 
   return (
-    <Paper sx={{ p: 3, m: "auto", maxWidth: 400, display: "flex", flexDirection: "row", alignItems: "center", gap: 2 }}>
+    <Paper
+      sx={{
+        p: 3,
+        m: "auto",
+        maxWidth: 400,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 2,
+      }}
+    >
       <Box sx={{ flexShrink: 0 }}>
         <img
           src="/logo.png"
@@ -89,7 +99,8 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
             height: "80px",
             borderRadius: "50%",
             objectFit: "contain",
-            boxShadow: "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
+            boxShadow:
+              "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
           }}
         />
       </Box>
@@ -165,7 +176,9 @@ export default function App() {
           if (userSnap.exists()) {
             const data = userSnap.data();
             setUserNick(data.nick || u.email);
-            setRole(data.role || (u.email === MASTER_EMAIL ? "master" : "player"));
+            setRole(
+              data.role || (u.email === MASTER_EMAIL ? "master" : "player")
+            );
           } else {
             setUserNick(u.email);
             setRole(u.email === MASTER_EMAIL ? "master" : "player");
@@ -259,7 +272,7 @@ export default function App() {
               flexDirection: isMobile ? "column" : "row",
             }}
           >
-            {/* CHAT / LOGIN */}
+            {/* COLUNA ESQUERDA */}
             <Grid
               item
               sx={{
@@ -267,15 +280,25 @@ export default function App() {
                 minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
-                borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.08)",
+                borderRight: isMobile
+                  ? "none"
+                  : "1px solid rgba(255,255,255,0.08)",
               }}
             >
               {!user ? (
                 <LoginForm onLogin={() => {}} />
               ) : (
                 <>
+                  {/* Cabeçalho */}
                   <Paper sx={{ p: 2, flexShrink: 0 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        mb: 2,
+                      }}
+                    >
                       <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                         <img
                           src="/logo.png"
@@ -285,7 +308,8 @@ export default function App() {
                             height: "80px",
                             borderRadius: "50%",
                             objectFit: "contain",
-                            boxShadow: "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
+                            boxShadow:
+                              "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
                           }}
                         />
                         <Box>
@@ -294,39 +318,89 @@ export default function App() {
                           <Typography variant="caption" display="block">
                             {user?.email}
                           </Typography>
-                          <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontSize: "0.7rem",
+                              color: "rgba(255,255,255,0.5)",
+                              display: "block",
+                            }}
+                          >
                             APP Réquiem RPG — versão 2.3 - By: Zambiazi
                           </Typography>
                         </Box>
                       </Box>
-                      <IconButton color="inherit" onClick={handleLogout} title="Sair">
+                      <IconButton
+                        color="inherit"
+                        onClick={handleLogout}
+                        title="Sair"
+                      >
                         <LogoutIcon />
                       </IconButton>
                     </Box>
-                    <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, flexWrap: "wrap" }}>
-                      <Button variant="contained" component={Link} to="/map">Grid</Button>
-                      <Button variant="contained" component={Link} to="/cronica">Crônica</Button>
-                      <Button variant="contained" component={Link} to="/sistema">Sistema</Button>
+
+                    {/* Navegação */}
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "center",
+                        gap: 1.5,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button variant="contained" component={Link} to="/map">
+                        Grid
+                      </Button>
+                      <Button variant="contained" component={Link} to="/cronica">
+                        Crônica
+                      </Button>
+                      <Button variant="contained" component={Link} to="/sistema">
+                        Sistema
+                      </Button>
                     </Box>
                   </Paper>
 
+                  {/* Chat de voz */}
                   <Paper sx={{ p: 1, flexShrink: 0, mt: 2 }}>
                     <MesaRPG userNick={userNick} />
                   </Paper>
 
                   {/* Chat com rolagem no mobile */}
-                  <Paper sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", mt: 2 }}>
-                    <Box sx={{ flex: 1, overflowY: "auto", maxHeight: isMobile ? "60vh" : "none", minHeight: 0 }}>
+                  <Paper
+                    sx={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      overflow: "hidden",
+                      mt: 2,
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        flex: 1,
+                        overflowY: "auto",
+                        maxHeight: isMobile ? "60vh" : "none",
+                        minHeight: 0,
+                      }}
+                    >
                       <Chat userNick={userNick} userEmail={user?.email} />
                     </Box>
                   </Paper>
 
-                  {/* Bloco exclusivo para mestre no mobile */}
+                  {/* Fichas e Sons (MESTRE - MOBILE) */}
                   {isMobile && isMaster && (
                     <Paper sx={{ mt: 2, p: 2 }}>
-                      <Typography variant="h6" sx={{ mb: 1 }}>Fichas e Sons</Typography>
+                      <Typography variant="h6" sx={{ mb: 1 }}>
+                        Fichas e Sons
+                      </Typography>
                       <Divider sx={{ mb: 2 }} />
-                      <Box sx={{ flex: 1, overflowY: "auto", maxHeight: "40vh" }}>
+                      <Box
+                        sx={{
+                          flex: 1,
+                          overflowY: "auto",
+                          maxHeight: "40vh",
+                        }}
+                      >
                         <List dense>
                           {fichasList.map((fid) => (
                             <ListItem
@@ -345,19 +419,25 @@ export default function App() {
                     </Paper>
                   )}
 
-                  {/* Ficha */}
-                  <Paper sx={{ flex: 1, overflowY: "auto", p: 2, mt: 2 }}>
-                    {user ? (
-                      <FichaPersonagem user={user} fichaId={selectedFichaEmail} isMestre={isMaster} />
-                    ) : (
-                      <Typography>Faça login para editar suas fichas.</Typography>
-                    )}
-                  </Paper>
+                  {/* Ficha - renderiza só no MOBILE */}
+                  {isMobile && (
+                    <Paper sx={{ flex: 1, overflowY: "auto", p: 2, mt: 2 }}>
+                      {user ? (
+                        <FichaPersonagem
+                          user={user}
+                          fichaId={selectedFichaEmail}
+                          isMestre={isMaster}
+                        />
+                      ) : (
+                        <Typography>Faça login para editar suas fichas.</Typography>
+                      )}
+                    </Paper>
+                  )}
                 </>
               )}
             </Grid>
 
-            {/* Layout mestre e jogador (desktop) */}
+            {/* Layout do MESTRE - DESKTOP */}
             {!isMobile && isMaster && (
               <>
                 <Grid
@@ -370,8 +450,20 @@ export default function App() {
                     borderRight: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
-                  <Paper sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                    <Box sx={{ p: 2, borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                  <Paper
+                    sx={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderBottom: "1px solid rgba(255,255,255,0.1)",
+                      }}
+                    >
                       <Typography variant="h6">Fichas</Typography>
                     </Box>
                     <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
@@ -398,11 +490,20 @@ export default function App() {
                         onChange={(e) => setCreateEmailInput(e.target.value)}
                         sx={{ my: 1 }}
                       />
-                      <Button variant="outlined" fullWidth onClick={() => criarFichaParaEmail(createEmailInput)}>
+                      <Button
+                        variant="outlined"
+                        fullWidth
+                        onClick={() => criarFichaParaEmail(createEmailInput)}
+                      >
                         Criar ficha vazia
                       </Button>
                     </Box>
-                    <Box sx={{ borderTop: "1px solid rgba(255,255,255,0.1)", p: 1 }}>
+                    <Box
+                      sx={{
+                        borderTop: "1px solid rgba(255,255,255,0.1)",
+                        p: 1,
+                      }}
+                    >
                       <SoundBoard isMaster={true} />
                     </Box>
                   </Paper>
@@ -419,7 +520,11 @@ export default function App() {
                 >
                   <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
                     {user ? (
-                      <FichaPersonagem user={user} fichaId={selectedFichaEmail} isMestre={true} />
+                      <FichaPersonagem
+                        user={user}
+                        fichaId={selectedFichaEmail}
+                        isMestre={true}
+                      />
                     ) : (
                       <Typography>Faça login para editar suas fichas.</Typography>
                     )}
@@ -428,6 +533,7 @@ export default function App() {
               </>
             )}
 
+            {/* Layout do JOGADOR - DESKTOP */}
             {!isMobile && !isMaster && (
               <Grid
                 item
@@ -440,7 +546,11 @@ export default function App() {
               >
                 <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
                   {user ? (
-                    <FichaPersonagem user={user} fichaId={selectedFichaEmail} isMestre={false} />
+                    <FichaPersonagem
+                      user={user}
+                      fichaId={selectedFichaEmail}
+                      isMestre={false}
+                    />
                   ) : (
                     <Typography>Faça login para editar suas fichas.</Typography>
                   )}
