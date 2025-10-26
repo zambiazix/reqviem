@@ -9,15 +9,19 @@ import {
   DialogActions,
   TextField,
   IconButton,
+  CircularProgress,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
+import CloseIcon from "@mui/icons-material/Close";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { getAuth } from "firebase/auth";
 import { db } from "../firebaseConfig";
-import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -28,6 +32,7 @@ export default function Sistema() {
   const auth = getAuth();
   const currentUser = auth.currentUser;
   const isMaster = currentUser?.email === MESTRE_EMAIL;
+  const storage = getStorage();
 
   // estados
   const [topicsLeft, setTopicsLeft] = useState([]);
@@ -37,6 +42,31 @@ export default function Sistema() {
   const [side, setSide] = useState("left");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  // 🖼️ Lightbox (imagem ampliável e arrastável)
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const [zoom, setZoom] = useState(1);
+
+  const markdownStyles = `
+    .markdown-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      margin: 8px 0;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .markdown-content img:hover {
+      transform: scale(1.02);
+    }
+    .markdown-content video {
+      max-width: 100%;
+      border-radius: 8px;
+      margin: 8px 0;
+      display: block;
+    }
+  `;
 
   // 🔹 Carrega tópicos do Firestore e ouve atualizações em tempo real
   useEffect(() => {
@@ -50,7 +80,7 @@ export default function Sistema() {
     return () => unsub();
   }, []);
 
-  // 🔹 Abre o modal
+  // 🔹 Abre o modal (criar ou editar)
   const handleOpenDialog = (sideSel, index = null) => {
     setSide(sideSel);
     setEditIndex(index);
@@ -65,7 +95,24 @@ export default function Sistema() {
     setOpenDialog(true);
   };
 
-  // 🔹 Salvar ou editar tópico (mestre)
+  // 🔹 Upload de imagem (disponível no modal de criação e edição)
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const storageRef = ref(storage, `sistema/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      setContent((prev) => `${prev}\n\n![](${url})\n`);
+    } catch (error) {
+      console.error("Erro ao enviar imagem:", error);
+      alert("Erro ao enviar imagem.");
+    }
+    setUploading(false);
+  };
+
+  // 🔹 Salvar ou editar tópico
   const handleSave = async () => {
     const newLeft = [...topicsLeft];
     const newRight = [...topicsRight];
@@ -84,7 +131,7 @@ export default function Sistema() {
     setOpenDialog(false);
   };
 
-  // 🔹 Deletar tópico (mestre)
+  // 🔹 Deletar tópico
   const handleDelete = async (sideSel, index) => {
     const newLeft = [...topicsLeft];
     const newRight = [...topicsRight];
@@ -95,6 +142,12 @@ export default function Sistema() {
     await setDoc(doc(db, "world", "Sistema"), { left: newLeft, right: newRight });
     setTopicsLeft(newLeft);
     setTopicsRight(newRight);
+  };
+
+  // === Lightbox ===
+  const handleWheelZoom = (e) => {
+    e.preventDefault();
+    setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
   };
 
   // 🔹 Renderiza coluna genérica
@@ -129,7 +182,7 @@ export default function Sistema() {
           }}
         >
           <Typography variant="h6">{t.title}</Typography>
-          <Box sx={{ mt: 1 }}>
+          <Box sx={{ mt: 1 }} className="markdown-content">
             <ReactMarkdown
               children={t.content}
               remarkPlugins={[remarkGfm]}
@@ -137,19 +190,22 @@ export default function Sistema() {
                 img: ({ ...props }) => (
                   <img
                     {...props}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLightboxImage(e.target.src);
+                      setZoom(1);
+                    }}
                     style={{
                       maxWidth: "100%",
                       borderRadius: "8px",
                       marginTop: "8px",
+                      cursor: "pointer",
                     }}
+                    draggable={false}
                   />
                 ),
                 video: ({ ...props }) => (
-                  <video
-                    {...props}
-                    controls
-                    style={{ maxWidth: "100%", borderRadius: "8px" }}
-                  />
+                  <video {...props} controls style={{ maxWidth: "100%", borderRadius: "8px" }} />
                 ),
               }}
             />
@@ -182,6 +238,8 @@ export default function Sistema() {
         overflowX: "hidden",
       }}
     >
+      <style>{markdownStyles}</style>
+
       {/* topo */}
       <Box sx={{ p: 2 }}>
         <Button
@@ -216,16 +274,9 @@ export default function Sistema() {
         {renderColumn("right", topicsRight)}
       </Box>
 
-      {/* modal */}
-      <Dialog
-        open={openDialog}
-        onClose={() => setOpenDialog(false)}
-        fullWidth
-        maxWidth="md"
-      >
-        <DialogTitle>
-          {editIndex !== null ? "Editar Tópico" : "Novo Tópico"}
-        </DialogTitle>
+      {/* modal de criação/edição */}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth maxWidth="md">
+        <DialogTitle>{editIndex !== null ? "Editar Tópico" : "Novo Tópico"}</DialogTitle>
         <DialogContent>
           <TextField
             label="Título"
@@ -234,6 +285,27 @@ export default function Sistema() {
             onChange={(e) => setTitle(e.target.value)}
             sx={{ mb: 2 }}
           />
+
+          {/* Botão de Upload sempre visível (criar ou editar) */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+            <Button
+              variant="contained"
+              component="label"
+              startIcon={<CloudUploadIcon />}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <>
+                  <CircularProgress size={18} sx={{ color: "white", mr: 1 }} />
+                  Enviando...
+                </>
+              ) : (
+                "Enviar Imagem"
+              )}
+              <input type="file" hidden accept="image/*" onChange={handleImageUpload} />
+            </Button>
+          </Box>
+
           <TextField
             label="Conteúdo (Markdown, emojis, imagens e vídeos suportados)"
             fullWidth
@@ -250,6 +322,83 @@ export default function Sistema() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* === LIGHTBOX (com zoom + arrastar) === */}
+      {lightboxImage && (
+        <div
+          onClick={() => setLightboxImage(null)}
+          onWheel={handleWheelZoom}
+          className="lightbox-overlay"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            background: "rgba(0,0,0,0.85)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 3000,
+            cursor: "zoom-in",
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const img = e.currentTarget.querySelector("img");
+            const startX = e.clientX - (parseFloat(img.dataset.x || "0"));
+            const startY = e.clientY - (parseFloat(img.dataset.y || "0"));
+
+            const handleMouseMove = (ev) => {
+              ev.preventDefault();
+              const x = ev.clientX - startX;
+              const y = ev.clientY - startY;
+              img.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+              img.dataset.x = x;
+              img.dataset.y = y;
+            };
+
+            const handleMouseUp = () => {
+              window.removeEventListener("mousemove", handleMouseMove);
+              window.removeEventListener("mouseup", handleMouseUp);
+            };
+
+            window.addEventListener("mousemove", handleMouseMove);
+            window.addEventListener("mouseup", handleMouseUp);
+          }}
+        >
+          <img
+            src={lightboxImage}
+            alt="ampliada"
+            style={{
+              transform: `scale(${zoom})`,
+              transition: "transform 0.1s ease",
+              maxWidth: "90%",
+              maxHeight: "90%",
+              borderRadius: 10,
+              cursor: "grab",
+              userSelect: "none",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            draggable={false}
+            data-x="0"
+            data-y="0"
+          />
+          <IconButton
+            onClick={() => setLightboxImage(null)}
+            sx={{
+              position: "fixed",
+              top: 16,
+              right: 16,
+              color: "#fff",
+              background: "rgba(0,0,0,0.5)",
+              "&:hover": { background: "rgba(0,0,0,0.8)" },
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </div>
+      )}
     </Box>
   );
 }

@@ -21,6 +21,7 @@ export default function BattleMap() {
   const socketRef = useRef(null);
   const lastEmitRef = useRef(0);
 
+  // 🔹 Controle de autenticação
   useEffect(() => {
     const auth = getAuth();
     const unsub = auth.onAuthStateChanged((user) => {
@@ -29,6 +30,7 @@ export default function BattleMap() {
     return () => unsub();
   }, []);
 
+  // 🔹 Conexão com o servidor socket
   useEffect(() => {
     const s = io(serverUrl, { transports: ["websocket"] });
     socketRef.current = s;
@@ -53,6 +55,7 @@ export default function BattleMap() {
     };
   }, [selectedId]);
 
+  // 🔹 Upload de token (apenas Mestre)
   const handleFileUpload = async (e) => {
     if (!isMaster) return alert("Apenas o Mestre pode adicionar tokens.");
     const file = e.target.files[0];
@@ -129,6 +132,11 @@ export default function BattleMap() {
     setSelectedId(null);
   };
 
+  // === ZOOM E PAN (DESKTOP + TOUCH) ===
+  const lastTouchRef = useRef(null);
+  const lastDistRef = useRef(null);
+
+  // Zoom via scroll (desktop)
   const handleWheel = (e) => {
     e.evt.preventDefault();
     const stage = stageRef.current;
@@ -149,6 +157,56 @@ export default function BattleMap() {
     setStagePos(newPos);
   };
 
+  // Toque inicial
+  const handleTouchStart = (e) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const touches = e.evt.touches;
+    if (touches.length === 1) {
+      const touch = touches[0];
+      lastTouchRef.current = { x: touch.clientX, y: touch.clientY };
+    } else if (touches.length === 2) {
+      const [t1, t2] = touches;
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      lastDistRef.current = Math.sqrt(dx * dx + dy * dy);
+    }
+  };
+
+  // Movimento de toque
+  const handleTouchMove = (e) => {
+    e.evt.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+    const touches = e.evt.touches;
+
+    if (touches.length === 1 && lastTouchRef.current) {
+      const touch = touches[0];
+      const dx = touch.clientX - lastTouchRef.current.x;
+      const dy = touch.clientY - lastTouchRef.current.y;
+      setStagePos((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+      lastTouchRef.current = { x: touch.clientX, y: touch.clientY };
+    } else if (touches.length === 2) {
+      const [t1, t2] = touches;
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (lastDistRef.current) {
+        const stageScale = stage.scaleX();
+        const newScale = stageScale * (dist / lastDistRef.current);
+        setScale(Math.min(Math.max(newScale, 0.2), 5));
+      }
+      lastDistRef.current = dist;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    lastTouchRef.current = null;
+    lastDistRef.current = null;
+  };
+
+  // Mouse: pan + seleção
   const handleMouseDown = (e) => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -162,6 +220,7 @@ export default function BattleMap() {
       setSelectedId(null);
     }
   };
+
   const handleMouseUp = () => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -172,8 +231,10 @@ export default function BattleMap() {
     }
   };
 
+  // === RENDERIZAÇÃO ===
   return (
     <div style={{ background: "#222", height: "100vh" }} onContextMenu={(e) => e.preventDefault()}>
+      {/* Controles */}
       <div style={{ position: "absolute", top: 10, left: 10, zIndex: 10 }}>
         <button onClick={() => navigate("/")}>Voltar</button>
         {isMaster && (
@@ -205,6 +266,7 @@ export default function BattleMap() {
         )}
       </div>
 
+      {/* Mapa */}
       <Stage
         ref={stageRef}
         width={window.innerWidth}
@@ -217,7 +279,11 @@ export default function BattleMap() {
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
+        {/* Tokens */}
         <Layer>
           {tokens.map((token) => (
             <Token
@@ -235,6 +301,7 @@ export default function BattleMap() {
           ))}
         </Layer>
 
+        {/* Grid */}
         <Layer>
           {Array.from({ length: 200 }).map((_, i) => (
             <Line
@@ -258,6 +325,7 @@ export default function BattleMap() {
   );
 }
 
+// === Componente de Token ===
 function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
   const [image] = useImage(token.src, "anonymous");
   const shapeRef = useRef();

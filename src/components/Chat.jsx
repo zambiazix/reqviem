@@ -24,6 +24,7 @@ import ImageIcon from "@mui/icons-material/Image";
 import GifBoxIcon from "@mui/icons-material/GifBox";
 import SendIcon from "@mui/icons-material/Send";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import CloseIcon from "@mui/icons-material/Close";
 import { db } from "../firebaseConfig";
 import {
   collection,
@@ -38,6 +39,92 @@ import {
 
 const GIPHY_API_KEY = "PBsoFISvy4OFVTNfZbpB5yF79ODJyTsc";
 
+// 🖱️ Componente auxiliar com arraste, zoom e suporte a toque
+function LightboxImage({ src, zoom, setZoom }) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [start, setStart] = useState({ x: 0, y: 0 });
+  const [initialDistance, setInitialDistance] = useState(null);
+
+  // === Mouse drag ===
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setDragging(true);
+    setStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+  const handleMouseMove = (e) => {
+    if (!dragging) return;
+    setPosition({ x: e.clientX - start.x, y: e.clientY - start.y });
+  };
+  const handleMouseUp = () => setDragging(false);
+
+  // === Touch events (mobile drag + pinch zoom) ===
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setDragging(true);
+      setStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setInitialDistance(dist);
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 1 && dragging) {
+      const touch = e.touches[0];
+      setPosition({ x: touch.clientX - start.x, y: touch.clientY - start.y });
+    } else if (e.touches.length === 2 && initialDistance) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const delta = dist / initialDistance;
+      setZoom((z) => Math.min(Math.max(z * delta, 0.5), 5));
+      setInitialDistance(dist);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setDragging(false);
+    setInitialDistance(null);
+  };
+
+  useEffect(() => {
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragging, start]);
+
+  return (
+    <img
+      src={src}
+      alt="ampliada"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={handleMouseDown}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+        transition: dragging ? "none" : "transform 0.2s ease",
+        maxWidth: "90%",
+        maxHeight: "90%",
+        borderRadius: 10,
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none",
+      }}
+    />
+  );
+}
+
 export default function Chat({ userNick, userEmail }) {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([]);
@@ -50,6 +137,8 @@ export default function Chat({ userNick, userEmail }) {
   const [gifOpen, setGifOpen] = useState(false);
   const [gifResults, setGifResults] = useState([]);
   const [gifSearch, setGifSearch] = useState("");
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const [zoom, setZoom] = useState(1);
 
   const chatRef = useRef(null);
   const endRef = useRef(null);
@@ -255,30 +344,20 @@ export default function Chat({ userNick, userEmail }) {
 
   // === Render ===
   return (
-    <Paper
-      elevation={2}
-      sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        p: 1,
-        position: "relative",
-      }}
-    >
-      <Typography variant="h6" sx={{ mb: 1 }}>
-        Chat
-      </Typography>
+    <Paper elevation={2} sx={{ height: "100%", display: "flex", flexDirection: "column", p: 1, position: "relative" }}>
+      <Typography variant="h6" sx={{ mb: 1 }}>Chat</Typography>
 
       {/* Área de mensagens */}
-      <Box
-        ref={chatRef}
-        sx={{ flex: 1, overflowY: "auto", position: "relative", scrollBehavior: "smooth", pb: 1 }}
-      >
+      <Box ref={chatRef} sx={{ flex: 1, overflowY: "auto", position: "relative", scrollBehavior: "smooth", pb: 1 }}>
         <List>
           {messages.map((m, i) => {
             const prev = messages[i - 1];
             const showDivider = !prev || prev.userEmail !== m.userEmail;
-            const hora = m.timestamp?.toDate ? m.timestamp.toDate().toLocaleTimeString() : "";
+            const dataHora = m.timestamp?.toDate ? m.timestamp.toDate() : null;
+            const horaFormatada = dataHora
+              ? `${dataHora.toLocaleDateString("pt-BR")} ${dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+              : "";
+
             return (
               <React.Fragment key={m.id}>
                 {showDivider && i > 0 && <Divider sx={{ my: 0.5, opacity: 0.3 }} />}
@@ -300,17 +379,33 @@ export default function Chat({ userNick, userEmail }) {
                       <Box sx={{ display: "flex", justifyContent: "space-between" }}>
                         <Typography variant="subtitle2">{m.userNick}</Typography>
                         <Typography variant="caption" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>
-                          {hora}
+                          {horaFormatada}
                         </Typography>
                       </Box>
                     }
                     secondary={
                       <>
                         {m.type === "image" && (
-                          <img src={m.text} alt="img" style={{ maxWidth: 240, borderRadius: 8 }} />
+                          <img
+                            src={m.text}
+                            alt="img"
+                            style={{ maxWidth: 240, borderRadius: 8, cursor: "pointer" }}
+                            onClick={() => {
+                              setLightboxImage(m.text);
+                              setZoom(1);
+                            }}
+                          />
                         )}
                         {m.type === "gif" && (
-                          <img src={m.text} alt="gif" style={{ maxWidth: 240, borderRadius: 8 }} />
+                          <img
+                            src={m.text}
+                            alt="gif"
+                            style={{ maxWidth: 240, borderRadius: 8, cursor: "pointer" }}
+                            onClick={() => {
+                              setLightboxImage(m.text);
+                              setZoom(1);
+                            }}
+                          />
                         )}
                         {m.type === "video" && (
                           <video controls src={m.text} style={{ maxWidth: 240, borderRadius: 8 }} />
@@ -345,11 +440,7 @@ export default function Chat({ userNick, userEmail }) {
       {/* Scroll automático */}
       <Fade in={showScrollButton}>
         <Box sx={{ position: "absolute", bottom: 72, right: 16, zIndex: 10 }}>
-          <Badge
-            color="error"
-            badgeContent={unreadCount > 0 ? unreadCount : 0}
-            invisible={unreadCount === 0}
-          >
+          <Badge color="error" badgeContent={unreadCount > 0 ? unreadCount : 0} invisible={unreadCount === 0}>
             <Fab
               size="small"
               color="primary"
@@ -386,16 +477,10 @@ export default function Chat({ userNick, userEmail }) {
         </Button>
       </Box>
 
-      {/* Botões de dados */}
+      {/* Dados */}
       <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 1 }}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-          <Button
-            key={n}
-            variant="outlined"
-            size="small"
-            onClick={() => quickRollDice(n, 10)}
-            sx={{ minWidth: 50 }}
-          >
+          <Button key={n} variant="outlined" size="small" onClick={() => quickRollDice(n, 10)} sx={{ minWidth: 50 }}>
             {n}D10
           </Button>
         ))}
@@ -405,7 +490,14 @@ export default function Chat({ userNick, userEmail }) {
       <Dialog open={gifOpen} onClose={() => setGifOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>Buscar GIF</DialogTitle>
         <DialogContent>
-          <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+          <Box
+            component="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              searchGifs();
+            }}
+            sx={{ display: "flex", gap: 1, mb: 2 }}
+          >
             <TextField
               fullWidth
               placeholder="Pesquisar GIF..."
@@ -430,6 +522,44 @@ export default function Chat({ userNick, userEmail }) {
           </Grid>
         </DialogContent>
       </Dialog>
+
+      {/* Lightbox com Zoom, Arraste e Gestos */}
+      {lightboxImage && (
+        <div
+          onClick={() => setLightboxImage(null)}
+          onWheel={(e) => {
+            e.preventDefault();
+            setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            background: "rgba(0,0,0,0.85)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 3000,
+          }}
+        >
+          <LightboxImage src={lightboxImage} zoom={zoom} setZoom={setZoom} />
+          <IconButton
+            onClick={() => setLightboxImage(null)}
+            sx={{
+              position: "fixed",
+              top: 16,
+              right: 16,
+              color: "#fff",
+              background: "rgba(0,0,0,0.5)",
+              "&:hover": { background: "rgba(0,0,0,0.8)" },
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </div>
+      )}
     </Paper>
   );
 }

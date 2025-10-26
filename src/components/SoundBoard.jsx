@@ -1,3 +1,4 @@
+// src/components/SoundBoard.jsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   Paper,
@@ -9,14 +10,25 @@ import {
   Divider,
   Box,
   Slider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  IconButton,
 } from "@mui/material";
+import EditIcon from "@mui/icons-material/Edit";
+import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { db } from "../firebaseConfig";
-import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, serverTimestamp, getDoc } from "firebase/firestore";
 import { useAudio } from "../context/AudioProvider";
 
 export default function SoundBoard({ isMaster }) {
   const [musicTracks, setMusicTracks] = useState([]);
   const [ambianceTracks, setAmbianceTracks] = useState([]);
+  const [othersTracks, setOthersTracks] = useState([]);
   const [volumes, setVolumes] = useState({});
   const unsubRef = useRef(null);
   const saveTimeoutRef = useRef(null);
@@ -42,7 +54,7 @@ export default function SoundBoard({ isMaster }) {
   };
   const normalizeUrl = (url = "") => (url || "").trim().replace(/\/+$/, "").toLowerCase();
 
-  // 🔹 Playlists completas
+  // 🔹 Playlists completas (defaults)
   const musicList = [
     { name: "Aventura", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632374/Aventura_wzo6of.mp3" },
     { name: "Batalha Final", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632375/BatalhaFinal_dtaghp.mp3" },
@@ -80,8 +92,35 @@ export default function SoundBoard({ isMaster }) {
   ];
 
   useEffect(() => {
+    // set defaults initially (will be overwritten by Firestore if present)
     setMusicTracks(musicList);
     setAmbianceTracks(ambianceList);
+    setOthersTracks([]); // empty default
+  }, []);
+
+  // --- Firestore: load library docs and keep them synced ---
+  useEffect(() => {
+    const docs = [
+      { id: "music", setter: setMusicTracks, fallback: musicList },
+      { id: "ambiance", setter: setAmbianceTracks, fallback: ambianceList },
+      { id: "others", setter: setOthersTracks, fallback: [] },
+    ];
+
+    const unsubs = docs.map((d) =>
+      onSnapshot(doc(db, "soundLibrary", d.id), (snap) => {
+        if (!snap.exists()) {
+          // if missing, keep fallback (do not overwrite with empty)
+          d.setter((prev) => prev && prev.length ? prev : d.fallback);
+          return;
+        }
+        const data = snap.data();
+        d.setter(data.list || d.fallback);
+      })
+    );
+
+    return () => {
+      unsubs.forEach((u) => u && u());
+    };
   }, []);
 
   // 🎵 Reproduzir
@@ -167,13 +206,145 @@ export default function SoundBoard({ isMaster }) {
 
   if (!isMaster) return null;
 
-  // 🧩 Interface
-  function renderList(title, tracks) {
+  // -------------------------
+  // ---- Library editing ----
+  // -------------------------
+  const [openLibDialog, setOpenLibDialog] = useState(false);
+  const [libMode, setLibMode] = useState("music"); // "music" | "ambiance" | "others"
+  const [editIndex, setEditIndex] = useState(null);
+  const [libName, setLibName] = useState("");
+  const [libUrl, setLibUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef();
+
+  // Helper to write a specific library doc
+  const writeLibraryDoc = async (docId, list) => {
+    await setDoc(doc(db, "soundLibrary", docId), { list });
+  };
+
+  // Open add dialog
+  const openAddDialog = (category) => {
+    setLibMode(category);
+    setEditIndex(null);
+    setLibName("");
+    setLibUrl("");
+    setOpenLibDialog(true);
+  };
+
+  // Open edit dialog
+  const openEditDialog = (category, idx) => {
+    setLibMode(category);
+    setEditIndex(idx);
+    const list = category === "music" ? musicTracks : category === "ambiance" ? ambianceTracks : othersTracks;
+    const entry = list[idx];
+    setLibName(entry?.name || "");
+    setLibUrl(entry?.url || "");
+    setOpenLibDialog(true);
+  };
+
+  // Upload to Cloudinary (audio)
+  const cloudinaryUpload = async (file) => {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", "reqviem_upload");
+      // Using the same endpoint pattern you used previously
+      const res = await fetch("https://api.cloudinary.com/v1_1/dwaxw0l83/video/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      setUploading(false);
+      if (data?.secure_url) return data.secure_url;
+      throw new Error("Upload falhou");
+    } catch (err) {
+      setUploading(false);
+      console.error("Erro upload Cloudinary:", err);
+      alert("Erro ao enviar áudio para o Cloudinary.");
+      throw err;
+    }
+  };
+
+  // Save (add or edit) in library
+  const handleSaveLibrary = async () => {
+    // url may be a typed external url or previously uploaded url in libUrl.
+    let urlToUse = libUrl?.trim();
+    // If the user selected a file (file input has files), upload it and override libUrl
+    const file = fileInputRef.current?.files?.[0];
+    if (file) {
+      try {
+        urlToUse = await cloudinaryUpload(file);
+      } catch {
+        return; // upload failed
+      }
+    }
+
+    // Validation
+    if (!libName.trim() || !urlToUse) {
+      alert("Informe o nome e o link/arquivo da faixa.");
+      return;
+    }
+
+    const targetDoc = libMode; // music | ambiance | others
+    const currentList = (targetDoc === "music" ? musicTracks : targetDoc === "ambiance" ? ambianceTracks : othersTracks) || [];
+    const newList = [...currentList];
+
+    if (editIndex !== null) {
+      newList[editIndex] = { name: libName.trim(), url: urlToUse.trim() };
+    } else {
+      newList.push({ name: libName.trim(), url: urlToUse.trim() });
+    }
+
+    // Persist to Firestore library doc
+    await writeLibraryDoc(targetDoc, newList);
+
+    // Update local state immediately
+    if (targetDoc === "music") setMusicTracks(newList);
+    else if (targetDoc === "ambiance") setAmbianceTracks(newList);
+    else setOthersTracks(newList);
+
+    // clear and close
+    setLibName("");
+    setLibUrl("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setOpenLibDialog(false);
+  };
+
+  // Delete a library entry
+  const handleDeleteLibrary = async (category, idx) => {
+    if (!confirm("Excluir essa faixa do acervo?")) return;
+    const list = category === "music" ? [...musicTracks] : category === "ambiance" ? [...ambianceTracks] : [...othersTracks];
+    list.splice(idx, 1);
+    await writeLibraryDoc(category, list);
+    if (category === "music") setMusicTracks(list);
+    else if (category === "ambiance") setAmbianceTracks(list);
+    else setOthersTracks(list);
+  };
+
+  // -------------------------
+  // ---- Render helpers -----
+  // -------------------------
+  function renderList(title, tracks, category) {
     return (
       <>
-        <Typography variant="subtitle1" sx={{ mt: 1, fontWeight: "bold" }}>
-          {title}
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
+            {title}
+          </Typography>
+          <Box>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              variant="contained"
+              onClick={() => openAddDialog(category)}
+              sx={{ mr: 1 }}
+            >
+              Adicionar
+            </Button>
+          </Box>
+        </Box>
+
         <List dense>
           {tracks.map((t, i) => {
             const canonical = normalizeUrl(getMusicUrl(t.url));
@@ -189,6 +360,16 @@ export default function SoundBoard({ isMaster }) {
                   alignItems: "flex-start",
                   gap: 1,
                 }}
+                secondaryAction={
+                  <Box>
+                    <IconButton size="small" onClick={() => openEditDialog(category, i)} title="Editar faixa">
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton size="small" color="error" onClick={() => handleDeleteLibrary(category, i)} title="Excluir faixa">
+                      <DeleteIcon />
+                    </IconButton>
+                  </Box>
+                }
               >
                 <ListItemText primary={t.name} />
                 <Box
@@ -201,29 +382,18 @@ export default function SoundBoard({ isMaster }) {
                   }}
                 >
                   {playing ? (
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      color="error"
-                      onClick={() => handleStop(t.url)}
-                    >
+                    <Button variant="outlined" size="small" color="error" onClick={() => handleStop(t.url)}>
                       Parar
                     </Button>
                   ) : (
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={() => handlePlay(t.url)}
-                    >
+                    <Button variant="contained" size="small" onClick={() => handlePlay(t.url)}>
                       Play
                     </Button>
                   )}
                   <Box sx={{ flex: 1, ml: 1 }}>
                     <Slider
                       value={vol100}
-                      onChange={(_, v) =>
-                        handleVolume(t.url, Array.isArray(v) ? v[0] : v)
-                      }
+                      onChange={(_, v) => handleVolume(t.url, Array.isArray(v) ? v[0] : v)}
                       min={0}
                       max={100}
                     />
@@ -237,25 +407,74 @@ export default function SoundBoard({ isMaster }) {
     );
   }
 
+  // UI dialog for add/edit library entry
+  const LibDialog = () => (
+    <Dialog open={openLibDialog} onClose={() => setOpenLibDialog(false)} fullWidth maxWidth="sm">
+      <DialogTitle>{editIndex !== null ? "Editar Faixa" : "Adicionar Faixa"}</DialogTitle>
+      <DialogContent>
+        <TextField
+          label="Nome da Faixa"
+          fullWidth
+          value={libName}
+          onChange={(e) => setLibName(e.target.value)}
+          sx={{ mb: 2 }}
+        />
+        <TextField
+          label="URL (ou deixe em branco para usar upload)"
+          fullWidth
+          value={libUrl}
+          onChange={(e) => setLibUrl(e.target.value)}
+          sx={{ mb: 2 }}
+        />
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 1 }}>
+          <Button variant="contained" component="label">
+            Selecionar Arquivo (upload)
+            <input hidden ref={fileInputRef} type="file" accept="audio/*" />
+          </Button>
+          <Typography variant="caption" color="text.secondary">
+            Ou cole a URL direta no campo acima.
+          </Typography>
+        </Box>
+        {uploading && <Typography variant="body2">Enviando arquivo...</Typography>}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setOpenLibDialog(false)}>Cancelar</Button>
+        <Button variant="contained" onClick={handleSaveLibrary}>
+          {editIndex !== null ? "Salvar Alterações" : "Adicionar"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+
   return (
-    <Paper sx={{ p: 2, mt: 2, maxHeight: 450, overflowY: "auto" }}>
+    <Paper
+  sx={{
+    p: 2,
+    mt: 2,
+    height: "50vh",       // ocupa metade da altura visível da janela
+    overflowY: "auto",     // ativa scroll interno se o conteúdo passar
+    display: "flex",
+    flexDirection: "column",
+  }}
+>
       <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
         🎵 Trilha Sonora
       </Typography>
-      {renderList("🎶 Músicas", musicTracks)}
+
+      {/* Playlists */}
+      {renderList("🎶 Músicas", musicTracks, "music")}
       <Divider sx={{ my: 1 }} />
-      {renderList("🌲 Ambientes", ambianceTracks)}
+      {renderList("🌲 Ambientes", ambianceTracks, "ambiance")}
+      <Divider sx={{ my: 1 }} />
+      {renderList("🎧 Outros", othersTracks, "others")}
+
       {playingTracks.length > 0 && (
-        <Button
-          variant="outlined"
-          color="error"
-          fullWidth
-          sx={{ mt: 1 }}
-          onClick={handleStopAll}
-        >
+        <Button variant="outlined" color="error" fullWidth sx={{ mt: 1 }} onClick={handleStopAll}>
           Parar Todos
         </Button>
       )}
+
+      <LibDialog />
     </Paper>
   );
 }

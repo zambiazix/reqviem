@@ -22,6 +22,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SaveIcon from "@mui/icons-material/Save";
 import UploadIcon from "@mui/icons-material/Upload";
+import CloseIcon from "@mui/icons-material/Close";
 import { useNavigate } from "react-router-dom";
 import { getAuth } from "firebase/auth";
 import ReactMarkdown from "react-markdown";
@@ -57,11 +58,14 @@ export default function MapaMundi() {
   const [globalTitle, setGlobalTitle] = useState("");
   const [globalText, setGlobalText] = useState("");
 
+  // 🖼️ Lightbox (igual ao Chat) — zoom with wheel, click outside to close, click on image stops propagation
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const [zoom, setZoom] = useState(1);
+
   const mapSvgRefs = useRef({});
   const panZoomRef = useRef(null);
   const navigate = useNavigate();
 
-  // estilos para markdown (garante imagens responsivas e texto branco e quebra)
   const markdownStyles = `
     .markdown-content img {
       max-width: 100%;
@@ -69,6 +73,11 @@ export default function MapaMundi() {
       border-radius: 8px;
       display: block;
       margin: 10px 0;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .markdown-content img:hover {
+      transform: scale(1.02);
     }
     .markdown-content video {
       max-width: 100%;
@@ -89,8 +98,30 @@ export default function MapaMundi() {
       line-height: 1.5;
     }
     .markdown-content a { color: #66b3ff !important; text-decoration: underline; }
+
+    /* Lightbox */
+    .lightbox-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 3000;
+      cursor: zoom-in;
+    }
+    .lightbox-overlay img {
+      transform-origin: center center;
+      max-width: 90%;
+      max-height: 90%;
+      border-radius: 10px;
+      transition: transform 0.1s ease;
+      box-shadow: 0 0 15px rgba(0,0,0,0.6);
+    }
   `;
 
+  // 🔹 Verifica se é mestre
   useEffect(() => {
     const auth = getAuth();
     const unsub = auth.onAuthStateChanged((user) => {
@@ -99,7 +130,7 @@ export default function MapaMundi() {
     return () => unsub();
   }, []);
 
-  // snapshots: capítulos por mapa e crônica global
+  // 🔹 Snapshot Firestore (mapas e crônica global)
   useEffect(() => {
     const unsubscribers = MAPS.map((m) => {
       const ref = doc(db, "world", `Chapters_${m.id}`);
@@ -128,12 +159,12 @@ export default function MapaMundi() {
     };
   }, []);
 
-  // cria / destrói panZoom quando SVG muda
+  // 🔹 Controle do SVG e Zoom (svg-pan-zoom para os mapas)
   useEffect(() => {
     if (panZoomRef.current?.destroy) {
       try {
         panZoomRef.current.destroy();
-      } catch (err) {}
+      } catch {}
       panZoomRef.current = null;
     }
 
@@ -162,7 +193,7 @@ export default function MapaMundi() {
       if (panZoomRef.current?.destroy) {
         try {
           panZoomRef.current.destroy();
-        } catch (err) {}
+        } catch {}
         panZoomRef.current = null;
       }
     };
@@ -179,7 +210,7 @@ export default function MapaMundi() {
       const data = snap.data();
       const parts = Object.keys(data)
         .filter((k) => k.startsWith("part_"))
-        .sort((a, b) => parseInt(a.split("_")[1], 10) - parseInt(b.split("_")[1], 10))
+        .sort((a, b) => parseInt(a.split("_")[1]) - parseInt(b.split("_")[1]))
         .map((k) => data[k]);
       const compressed = parts.join("");
       const decompressed = LZString.decompressFromUTF16(compressed);
@@ -197,13 +228,13 @@ export default function MapaMundi() {
       if (panZoomRef.current?.destroy) {
         try {
           panZoomRef.current.destroy();
-        } catch (err) {}
+        } catch {}
         panZoomRef.current = null;
       }
     }
   }, [expanded, loadSvgForMap]);
 
-  // Upload imagem para Cloudinary (reqviem_upload / dwaxw0l83)
+  // --- Upload de imagem (Cloudinary)
   const handleImageUpload = async (e, targetSetter) => {
     if (!isMestre) return;
     const file = e.target.files?.[0];
@@ -218,19 +249,14 @@ export default function MapaMundi() {
       });
       const data = await res.json();
       if (data.secure_url) {
-        // insere markdown da imagem no final do texto
         targetSetter((prev) => (prev ? prev + `\n\n![](${data.secure_url})\n` : `![](${data.secure_url})\n`));
-      } else {
-        console.error("Cloudinary erro:", data);
-        alert("Erro ao enviar imagem para o Cloudinary.");
-      }
-    } catch (err) {
-      console.error("Erro upload imagem:", err);
+      } else alert("Erro ao enviar imagem.");
+    } catch {
       alert("Erro ao enviar imagem. Verifique a conexão.");
     }
   };
 
-  // upload do SVG dividido em partes (mestre)
+  // 🔹 Upload de SVG
   const handleFileUpload = async (e, mapId) => {
     if (!isMestre) return;
     const file = e.target.files?.[0];
@@ -255,9 +281,9 @@ export default function MapaMundi() {
     reader.readAsText(file);
   };
 
-  // abrir diálogo capítulo (mapa) — recebe evento e pára propagação para não fechar/abrir accordion
+  // 🔹 Funções para capítulos dos mapas
   const openChapterDialog = (mapId, index = null, e) => {
-    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+    if (e?.stopPropagation) e.stopPropagation();
     setCurrentMapEditing(mapId);
     setEditIndex(index);
     const list = chaptersMap[mapId] || [];
@@ -274,22 +300,18 @@ export default function MapaMundi() {
     else existing.push({ title: chapterTitle, text: chapterText });
     await setDoc(doc(db, "world", `Chapters_${mapId}`), { list: existing });
     setOpenDialog(false);
-    setEditIndex(null);
-    setCurrentMapEditing(null);
-    setChapterTitle("");
-    setChapterText("");
   };
 
   const deleteChapterForMap = async (mapId, idx, e) => {
-    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-    const existing = Array.isArray(chaptersMap[mapId]) ? [...chaptersMap[mapId]] : [];
+    if (e?.stopPropagation) e.stopPropagation();
+    const existing = [...(chaptersMap[mapId] || [])];
     existing.splice(idx, 1);
     await setDoc(doc(db, "world", `Chapters_${mapId}`), { list: existing });
   };
 
-  // crônica global
+  // 🔹 Crônica Global
   const openGlobalChapterDialog = (index = null, e) => {
-    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+    if (e?.stopPropagation) e.stopPropagation();
     setEditGlobalIndex(index);
     setGlobalTitle(index !== null ? globalChapters[index].title : "");
     setGlobalText(index !== null ? globalChapters[index].text : "");
@@ -297,25 +319,44 @@ export default function MapaMundi() {
   };
 
   const saveGlobalChapter = async () => {
-    const existing = Array.isArray(globalChapters) ? [...globalChapters] : [];
+    const existing = [...(globalChapters || [])];
     if (editGlobalIndex !== null) existing[editGlobalIndex] = { title: globalTitle, text: globalText };
     else existing.push({ title: globalTitle, text: globalText });
     await setDoc(doc(db, "world", "Chapters"), { list: existing });
     setOpenGlobalDialog(false);
-    setEditGlobalIndex(null);
-    setGlobalTitle("");
-    setGlobalText("");
   };
 
   const deleteGlobalChapter = async (idx, e) => {
-    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
-    const existing = Array.isArray(globalChapters) ? [...globalChapters] : [];
+    if (e?.stopPropagation) e.stopPropagation();
+    const existing = [...(globalChapters || [])];
     existing.splice(idx, 1);
     await setDoc(doc(db, "world", "Chapters"), { list: existing });
   };
 
   const handleExpand = (mapId) => setExpanded((prev) => (prev === mapId ? null : mapId));
 
+  // 🔹 Markdown com suporte ao lightbox (click on image opens lightbox)
+  const renderMarkdown = (text) => (
+    <div
+      className="markdown-content"
+      onClick={(e) => {
+        if (e.target.tagName === "IMG") {
+          setLightboxImage(e.target.src);
+          setZoom(1);
+        }
+      }}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    </div>
+  );
+
+  // === Lightbox handlers (igual ao chat) ===
+  const handleLightboxWheel = (e) => {
+    e.preventDefault();
+    setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
+  };
+
+  // --- RENDERIZAÇÃO PRINCIPAL ---
   return (
     <Box sx={{ bgcolor: "#1e1e1e", minHeight: "100vh", color: "#fff", p: 2 }}>
       <style>{markdownStyles}</style>
@@ -329,6 +370,7 @@ export default function MapaMundi() {
         </Typography>
       </Box>
 
+      {/* === MAPAS === */}
       {MAPS.map((m) => (
         <Accordion
           key={m.id}
@@ -338,8 +380,6 @@ export default function MapaMundi() {
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: "#fff" }} />}>
             <Typography sx={{ flex: 1, color: "#fff" }}>{m.title}</Typography>
-
-            {/* Upload SVG (mestre) - botão dentro do summary, precisa stopPropagation ao clicar no input */}
             {isMestre && (
               <Button
                 variant="outlined"
@@ -371,23 +411,14 @@ export default function MapaMundi() {
               height: { xs: "auto", md: "75vh" },
             }}
           >
-            {/* mapa 70% */}
-            <Box
-              sx={{
-                flexBasis: { md: "70%" },
-                bgcolor: "#222",
-                borderRadius: 1,
-                overflow: "hidden",
-                p: 1,
-                height: { md: "100%" }, // garante mesma altura que o details (mapa)
-              }}
-            >
+            {/* Mapa */}
+            <Box sx={{ flexBasis: { md: "70%" }, bgcolor: "#222", borderRadius: 1, overflow: "hidden", p: 1 }}>
               {expanded === m.id && (
                 <div ref={(el) => (mapSvgRefs.current[m.id] = el)} style={{ width: "100%", height: "100%" }} />
               )}
             </Box>
 
-            {/* anotações 30% - força altura 100% no desktop e scroll interno para o conteúdo */}
+            {/* Anotações */}
             <Box
               sx={{
                 flexBasis: { md: "30%" },
@@ -395,7 +426,7 @@ export default function MapaMundi() {
                 p: 2,
                 borderRadius: 1,
                 overflow: "hidden",
-                height: { md: "100%" }, // faz as anotações ficarem na mesma altura do mapa
+                height: { md: "100%" },
                 display: "flex",
                 flexDirection: "column",
               }}
@@ -415,18 +446,16 @@ export default function MapaMundi() {
                   </Button>
                 )}
               </Box>
-
               <Divider sx={{ mb: 1 }} />
 
-              {/* conteúdo rolável (preenche o espaço restante) */}
               <Box sx={{ overflowY: "auto", flex: 1 }}>
                 {(chaptersMap[m.id] || []).length === 0 ? (
-                  <Typography sx={{ color: "#999" }}>Nenhuma anotação. Clique em "Novo".</Typography>
+                  <Typography sx={{ color: "#999" }}>Nenhuma anotação.</Typography>
                 ) : (
                   (chaptersMap[m.id] || []).map((ch, idx) => (
                     <Box key={idx} sx={{ mb: 1, p: 1, bgcolor: "#1a1a1a", borderRadius: 1 }}>
                       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <Typography sx={{ fontWeight: "bold", color: "#fff", wordBreak: "break-word" }}>{ch.title}</Typography>
+                        <Typography sx={{ fontWeight: "bold", color: "#fff" }}>{ch.title}</Typography>
                         {isMestre && (
                           <Box>
                             <IconButton size="small" color="info" onClick={(e) => openChapterDialog(m.id, idx, e)}>
@@ -438,11 +467,8 @@ export default function MapaMundi() {
                           </Box>
                         )}
                       </Box>
-
                       <Box sx={{ mt: 1, maxHeight: "calc(100vh - 350px)", overflowY: "auto" }}>
-                        <div className="markdown-content">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{ch.text}</ReactMarkdown>
-                        </div>
+                        {renderMarkdown(ch.text)}
                       </Box>
                     </Box>
                   ))
@@ -453,7 +479,7 @@ export default function MapaMundi() {
         </Accordion>
       ))}
 
-      {/* Crônica Geral (abaixo de todos os mapas) */}
+      {/* === CRÔNICA GLOBAL === */}
       <Box sx={{ bgcolor: "#2a2a2a", p: 2, mt: 3, borderRadius: 1, mb: 3 }}>
         <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
           <Typography variant="h6" sx={{ color: "#fff" }}>
@@ -484,19 +510,18 @@ export default function MapaMundi() {
                   </>
                 )}
               </AccordionSummary>
-              <AccordionDetails>
-                <div className="markdown-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{ch.text}</ReactMarkdown>
-                </div>
-              </AccordionDetails>
+              <AccordionDetails>{renderMarkdown(ch.text)}</AccordionDetails>
             </Accordion>
           ))
         )}
       </Box>
 
-      {/* DIALOG capítulo (mapa) */}
+      {/* === DIALOGOS === */}
+      {/* Capítulos do Mapa */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth maxWidth="md">
-        <DialogTitle sx={{ bgcolor: "#1e1e1e", color: "#fff" }}>{editIndex !== null ? "Editar Capítulo" : "Novo Capítulo"}</DialogTitle>
+        <DialogTitle sx={{ bgcolor: "#1e1e1e", color: "#fff" }}>
+          {editIndex !== null ? "Editar Capítulo" : "Novo Capítulo"}
+        </DialogTitle>
         <DialogContent sx={{ bgcolor: "#1e1e1e" }}>
           <TextField
             label="Título"
@@ -508,7 +533,7 @@ export default function MapaMundi() {
             InputLabelProps={{ style: { color: "#ccc" } }}
           />
           <TextField
-            label="Texto (Markdown, imagens, vídeos)"
+            label="Texto (Markdown, imagens)"
             fullWidth
             multiline
             minRows={8}
@@ -517,25 +542,11 @@ export default function MapaMundi() {
             InputProps={{ style: { color: "#fff" } }}
             InputLabelProps={{ style: { color: "#ccc" } }}
           />
-
           {isMestre && (
             <Box sx={{ mt: 2 }}>
-              <Button
-                variant="contained"
-                component="label"
-                startIcon={<UploadIcon />}
-                onClick={(e) => e.stopPropagation()}
-              >
+              <Button variant="contained" component="label" startIcon={<UploadIcon />}>
                 Upload Imagem
-                <input
-                  hidden
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    handleImageUpload(e, setChapterText);
-                  }}
-                />
+                <input hidden type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setChapterText)} />
               </Button>
             </Box>
           )}
@@ -550,10 +561,10 @@ export default function MapaMundi() {
         </DialogActions>
       </Dialog>
 
-      {/* DIALOG Crônica Global */}
+      {/* Crônica Global */}
       <Dialog open={openGlobalDialog} onClose={() => setOpenGlobalDialog(false)} fullWidth maxWidth="md">
         <DialogTitle sx={{ bgcolor: "#1e1e1e", color: "#fff" }}>
-          {editGlobalIndex !== null ? "Editar Capítulo (Global)" : "Novo Capítulo (Global)"}
+          {editGlobalIndex !== null ? "Editar Crônica Global" : "Nova Crônica Global"}
         </DialogTitle>
         <DialogContent sx={{ bgcolor: "#1e1e1e" }}>
           <TextField
@@ -566,7 +577,7 @@ export default function MapaMundi() {
             InputLabelProps={{ style: { color: "#ccc" } }}
           />
           <TextField
-            label="Texto (Markdown, imagens, vídeos)"
+            label="Texto (Markdown, imagens)"
             fullWidth
             multiline
             minRows={8}
@@ -575,25 +586,11 @@ export default function MapaMundi() {
             InputProps={{ style: { color: "#fff" } }}
             InputLabelProps={{ style: { color: "#ccc" } }}
           />
-
           {isMestre && (
             <Box sx={{ mt: 2 }}>
-              <Button
-                variant="contained"
-                component="label"
-                startIcon={<UploadIcon />}
-                onClick={(e) => e.stopPropagation()}
-              >
+              <Button variant="contained" component="label" startIcon={<UploadIcon />}>
                 Upload Imagem
-                <input
-                  hidden
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    handleImageUpload(e, setGlobalText);
-                  }}
-                />
+                <input hidden type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setGlobalText)} />
               </Button>
             </Box>
           )}
@@ -607,6 +604,71 @@ export default function MapaMundi() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* === LIGHTBOX (igual ao Chat) === */}
+{/* === LIGHTBOX (igual ao Chat, com arrastar) === */}
+{lightboxImage && (
+  <div
+    onClick={() => setLightboxImage(null)}
+    onWheel={handleLightboxWheel}
+    className="lightbox-overlay"
+    onMouseDown={(e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const img = e.currentTarget.querySelector("img");
+      const startX = e.clientX - (parseFloat(img.dataset.x || "0"));
+      const startY = e.clientY - (parseFloat(img.dataset.y || "0"));
+
+      const handleMouseMove = (ev) => {
+        ev.preventDefault();
+        const x = ev.clientX - startX;
+        const y = ev.clientY - startY;
+        img.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+        img.dataset.x = x;
+        img.dataset.y = y;
+      };
+
+      const handleMouseUp = () => {
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }}
+  >
+    <img
+      src={lightboxImage}
+      alt="ampliada"
+      style={{
+        transform: `scale(${zoom})`,
+        transition: "transform 0.1s ease",
+        maxWidth: "90%",
+        maxHeight: "90%",
+        borderRadius: 10,
+        cursor: "grab",
+        userSelect: "none",
+      }}
+      onClick={(e) => e.stopPropagation()}
+      draggable={false}
+      data-x="0"
+      data-y="0"
+    />
+    <IconButton
+      onClick={() => setLightboxImage(null)}
+      sx={{
+        position: "fixed",
+        top: 16,
+        right: 16,
+        color: "#fff",
+        background: "rgba(0,0,0,0.5)",
+        "&:hover": { background: "rgba(0,0,0,0.8)" },
+      }}
+    >
+      <CloseIcon />
+    </IconButton>
+  </div>
+)}
     </Box>
   );
 }
