@@ -8,8 +8,8 @@ import {
   Paper,
   Button,
   Typography,
-  Divider,
   IconButton,
+  TextField,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 
@@ -19,7 +19,7 @@ import {
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
-import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import SoundBoard from "./components/SoundBoard";
 import Chat from "./components/Chat";
 import FichaPersonagem from "./components/FichaPersonagem";
@@ -30,7 +30,7 @@ import VoiceProvider from "./context/VoiceProvider";
 import MesaRPG from "./components/MesaRPG";
 import MapaMundi from "./pages/MapaMundi";
 import Sistema from "./pages/Sistema";
-import HomePage from "./pages/HomePage"; // ✅ usa o componente novo
+import HomePage from "./pages/HomePage";
 
 const theme = createTheme({
   palette: {
@@ -39,22 +39,13 @@ const theme = createTheme({
     background: { default: "#121212", paper: "#1e1e1e" },
     text: { primary: "#ffffff" },
   },
-  components: {
-    MuiInputBase: { styleOverrides: { input: { color: "#ffffff" } } },
-    MuiInputLabel: { styleOverrides: { root: { color: "#ffffff" } } },
-    MuiTextField: {
-      styleOverrides: {
-        root: {
-          "& .MuiInputBase-input": { color: "#fff" },
-          "& .MuiInputLabel-root": { color: "#fff" },
-        },
-      },
-    },
-  },
 });
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
+// =======================================================
+// FORMULÁRIO DE LOGIN CORRIGIDO
+// =======================================================
 const LoginForm = memo(function LoginForm({ onLogin }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -62,7 +53,6 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    e.stopPropagation();
     try {
       await signInWithEmailAndPassword(auth, email, senha);
       onLogin();
@@ -76,6 +66,7 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
       sx={{
         p: 3,
         m: "auto",
+        mt: 10,
         maxWidth: 400,
         display: "flex",
         flexDirection: "row",
@@ -103,6 +94,25 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
         </Typography>
         {erro && <Typography color="error">{erro}</Typography>}
         <form onSubmit={handleSubmit}>
+          <TextField
+            label="E-mail"
+            variant="outlined"
+            size="small"
+            fullWidth
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            sx={{ mb: 1 }}
+          />
+          <TextField
+            label="Senha"
+            type="password"
+            variant="outlined"
+            size="small"
+            fullWidth
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            sx={{ mb: 2 }}
+          />
           <Button variant="contained" type="submit" fullWidth>
             Entrar
           </Button>
@@ -112,8 +122,12 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
   );
 });
 
+// =======================================================
+// APP PRINCIPAL
+// =======================================================
 export default function App() {
   const [user, setUser] = useState(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
   const [userNick, setUserNick] = useState("");
   const [role, setRole] = useState("");
   const [fichasList, setFichasList] = useState([]);
@@ -126,18 +140,25 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // =====================================================
+  // CARREGA FICHAS
+  // =====================================================
   const carregarListaFichas = useCallback(async () => {
     try {
       const col = collection(db, "fichas");
       const snapshot = await getDocs(col);
       const list = snapshot.docs.map((d) => d.id);
       setFichasList(list);
-      if (list.length > 0 && !selectedFichaEmail) setSelectedFichaEmail(list[0]);
+      if (list.length > 0 && !selectedFichaEmail)
+        setSelectedFichaEmail(list[0]);
     } catch (err) {
       console.error("Erro ao carregar fichas:", err);
     }
   }, [selectedFichaEmail]);
 
+  // =====================================================
+  // MONITORA LOGIN / LOGOUT
+  // =====================================================
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u || null);
@@ -166,10 +187,16 @@ export default function App() {
         setFichasList([]);
         setSelectedFichaEmail(null);
       }
+
+      // ✅ Só marca como carregado depois de processar tudo
+      setAuthLoaded(true);
     });
     return () => unsub();
   }, [carregarListaFichas]);
 
+  // =====================================================
+  // LOGOUT
+  // =====================================================
   const handleLogout = async () => {
     await signOut(auth);
     setUser(null);
@@ -179,6 +206,9 @@ export default function App() {
     setSelectedFichaEmail(null);
   };
 
+  // =====================================================
+  // HOME (estrutura original preservada)
+  // =====================================================
   function Home() {
     const isMaster = role === "master";
     const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
@@ -215,10 +245,14 @@ export default function App() {
                   : "1px solid rgba(255,255,255,0.08)",
               }}
             >
-              {!user || !user.email ? (
-  <LoginForm onLogin={() => {}} />
-) : (
-  <>
+              {!authLoaded ? (
+                <Typography align="center" sx={{ mt: 4 }}>
+                  Carregando autenticação...
+                </Typography>
+              ) : !user ? (
+                <LoginForm onLogin={() => {}} />
+              ) : (
+                <>
                   {/* Cabeçalho */}
                   <Paper sx={{ p: 2, flexShrink: 0 }}>
                     <Box
@@ -260,7 +294,11 @@ export default function App() {
                           </Typography>
                         </Box>
                       </Box>
-                      <IconButton color="inherit" onClick={handleLogout} title="Sair">
+                      <IconButton
+                        color="inherit"
+                        onClick={handleLogout}
+                        title="Sair"
+                      >
                         <LogoutIcon />
                       </IconButton>
                     </Box>
@@ -362,7 +400,9 @@ export default function App() {
                         isMestre={true}
                       />
                     ) : (
-                      <Typography>Faça login para editar suas fichas.</Typography>
+                      <Typography>
+                        Faça login para editar suas fichas.
+                      </Typography>
                     )}
                   </Paper>
                 </Grid>
@@ -374,6 +414,9 @@ export default function App() {
     );
   }
 
+  // =====================================================
+  // ROTAS
+  // =====================================================
   return (
     <VoiceProvider>
       <AudioProvider>
