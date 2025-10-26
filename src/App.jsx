@@ -43,9 +43,6 @@ const theme = createTheme({
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
-// =======================================================
-// FORMULÁRIO DE LOGIN CORRIGIDO
-// =======================================================
 const LoginForm = memo(function LoginForm({ onLogin }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -62,69 +59,75 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
   };
 
   return (
-    <Paper
+    <Box
       sx={{
-        p: 3,
-        m: "auto",
-        mt: 10,
-        maxWidth: 400,
+        height: "100vh",
         display: "flex",
-        flexDirection: "row",
+        justifyContent: "center",
         alignItems: "center",
-        gap: 2,
+        backgroundColor: "#121212",
       }}
     >
-      <Box sx={{ flexShrink: 0 }}>
-        <img
-          src="/logo.png"
-          alt="Logo Réquiem RPG"
-          style={{
-            width: "80px",
-            height: "80px",
-            borderRadius: "50%",
-            objectFit: "contain",
-            boxShadow:
-              "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
-          }}
-        />
-      </Box>
-      <Box sx={{ flex: 1 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          Fazer Login
-        </Typography>
-        {erro && <Typography color="error">{erro}</Typography>}
-        <form onSubmit={handleSubmit}>
-          <TextField
-            label="E-mail"
-            variant="outlined"
-            size="small"
-            fullWidth
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            sx={{ mb: 1 }}
+      <Paper
+        sx={{
+          p: 3,
+          m: "auto",
+          maxWidth: 400,
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 2,
+        }}
+      >
+        <Box sx={{ flexShrink: 0 }}>
+          <img
+            src="/logo.png"
+            alt="Logo Réquiem RPG"
+            style={{
+              width: "80px",
+              height: "80px",
+              borderRadius: "50%",
+              objectFit: "contain",
+              boxShadow:
+                "0 0 6px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.2)",
+            }}
           />
-          <TextField
-            label="Senha"
-            type="password"
-            variant="outlined"
-            size="small"
-            fullWidth
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            sx={{ mb: 2 }}
-          />
-          <Button variant="contained" type="submit" fullWidth>
-            Entrar
-          </Button>
-        </form>
-      </Box>
-    </Paper>
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Fazer Login
+          </Typography>
+          {erro && <Typography color="error">{erro}</Typography>}
+          <form onSubmit={handleSubmit}>
+            <TextField
+              label="E-mail"
+              variant="outlined"
+              size="small"
+              fullWidth
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              sx={{ mb: 1 }}
+            />
+            <TextField
+              label="Senha"
+              type="password"
+              variant="outlined"
+              size="small"
+              fullWidth
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              sx={{ mb: 2 }}
+            />
+            <Button variant="contained" type="submit" fullWidth>
+              Entrar
+            </Button>
+          </form>
+        </Box>
+      </Paper>
+    </Box>
   );
 });
 
-// =======================================================
-// APP PRINCIPAL
-// =======================================================
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoaded, setAuthLoaded] = useState(false);
@@ -140,9 +143,6 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // =====================================================
-  // CARREGA FICHAS
-  // =====================================================
   const carregarListaFichas = useCallback(async () => {
     try {
       const col = collection(db, "fichas");
@@ -156,10 +156,9 @@ export default function App() {
     }
   }, [selectedFichaEmail]);
 
-  // =====================================================
-  // MONITORA LOGIN / LOGOUT
-  // =====================================================
   useEffect(() => {
+    let timeout = setTimeout(() => setAuthLoaded(true), 2000); // 🔹 fallback
+
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u || null);
       if (u) {
@@ -187,16 +186,14 @@ export default function App() {
         setFichasList([]);
         setSelectedFichaEmail(null);
       }
-
-      // ✅ Só marca como carregado depois de processar tudo
       setAuthLoaded(true);
     });
-    return () => unsub();
+    return () => {
+      clearTimeout(timeout);
+      unsub();
+    };
   }, [carregarListaFichas]);
 
-  // =====================================================
-  // LOGOUT
-  // =====================================================
   const handleLogout = async () => {
     await signOut(auth);
     setUser(null);
@@ -206,54 +203,56 @@ export default function App() {
     setSelectedFichaEmail(null);
   };
 
-  // =====================================================
-  // HOME (estrutura original preservada)
-  // =====================================================
-  function Home() {
-    const isMaster = role === "master";
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
-
-    useEffect(() => {
-      const handleResize = () => setIsMobile(window.innerWidth < 1024);
-      handleResize();
-      window.addEventListener("resize", handleResize);
-      return () => window.removeEventListener("resize", handleResize);
-    }, []);
-
+  if (!authLoaded) {
     return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Box sx={{ height: "100vh", p: 2 }}>
-          <Grid
-            container
-            sx={{
-              height: "100%",
-              flexWrap: isMobile ? "wrap" : "nowrap",
-              flexDirection: isMobile ? "column" : "row",
-            }}
-          >
-            {/* === COLUNA ESQUERDA === */}
-            <Grid
-              item
-              sx={{
-                flex: isMobile ? "1 1 100%" : "1 1 33%",
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                borderRight: isMobile
-                  ? "none"
-                  : "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              {!authLoaded ? (
-                <Typography align="center" sx={{ mt: 4 }}>
-                  Carregando autenticação...
-                </Typography>
-              ) : !user ? (
-                <LoginForm onLogin={() => {}} />
-              ) : (
-                <>
-                  {/* Cabeçalho */}
+      <Box
+        sx={{
+          height: "100vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          color: "#aaa",
+        }}
+      >
+        Carregando...
+      </Box>
+    );
+  }
+
+  if (!user) {
+    return <LoginForm onLogin={() => {}} />;
+  }
+
+  const isMaster = role === "master";
+
+  return (
+    <VoiceProvider>
+      <AudioProvider>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Router>
+            <Box sx={{ height: "100vh", p: 2 }}>
+              <Grid
+                container
+                sx={{
+                  height: "100%",
+                  flexWrap: isMobile ? "wrap" : "nowrap",
+                  flexDirection: isMobile ? "column" : "row",
+                }}
+              >
+                {/* Coluna esquerda */}
+                <Grid
+                  item
+                  sx={{
+                    flex: isMobile ? "1 1 100%" : "1 1 33%",
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    borderRight: isMobile
+                      ? "none"
+                      : "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
                   <Paper sx={{ p: 2, flexShrink: 0 }}>
                     <Box
                       sx={{
@@ -282,16 +281,6 @@ export default function App() {
                           <Typography variant="caption" display="block">
                             {user?.email}
                           </Typography>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              fontSize: "0.7rem",
-                              color: "rgba(255,255,255,0.5)",
-                              display: "block",
-                            }}
-                          >
-                            APP Réquiem RPG — versão 2.3 - By: Zambiazi
-                          </Typography>
                         </Box>
                       </Box>
                       <IconButton
@@ -302,8 +291,6 @@ export default function App() {
                         <LogoutIcon />
                       </IconButton>
                     </Box>
-
-                    {/* Navegação */}
                     <Box
                       sx={{
                         display: "flex",
@@ -324,12 +311,10 @@ export default function App() {
                     </Box>
                   </Paper>
 
-                  {/* Chat de voz */}
                   <Paper sx={{ p: 1, flexShrink: 0, mt: 2 }}>
                     <MesaRPG userNick={userNick} />
                   </Paper>
 
-                  {/* Chat */}
                   <Paper
                     sx={{
                       flex: 1,
@@ -339,95 +324,68 @@ export default function App() {
                       overflow: "hidden",
                     }}
                   >
-                    <Box
+                    <Chat userNick={userNick} userEmail={user?.email} />
+                  </Paper>
+                </Grid>
+
+                {!isMobile && isMaster && (
+                  <>
+                    <Grid
+                      item
                       sx={{
-                        flex: 1,
-                        overflowY: "auto",
-                        maxHeight: isMobile ? "60vh" : "none",
+                        flex: "1 1 25%",
+                        minWidth: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        borderRight: "1px solid rgba(255,255,255,0.08)",
                       }}
                     >
-                      <Chat userNick={userNick} userEmail={user?.email} />
-                    </Box>
-                  </Paper>
-                </>
-              )}
-            </Grid>
-
-            {/* === COLUNAS EXTRAS (somente DESKTOP) === */}
-            {!isMobile && isMaster && (
-              <>
-                <Grid
-                  item
-                  sx={{
-                    flex: "1 1 25%",
-                    minWidth: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    borderRight: "1px solid rgba(255,255,255,0.08)",
-                  }}
-                >
-                  <HomePage
-                    user={user}
-                    role={role}
-                    fichasList={fichasList}
-                    selectedFichaEmail={selectedFichaEmail}
-                    setSelectedFichaEmail={setSelectedFichaEmail}
-                  />
-                  <Box
-                    sx={{
-                      borderTop: "1px solid rgba(255,255,255,0.1)",
-                      p: 1,
-                    }}
-                  >
-                    <SoundBoard isMaster={true} />
-                  </Box>
-                </Grid>
-
-                <Grid
-                  item
-                  sx={{
-                    flex: "1 1 42%",
-                    minWidth: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
-                    {user ? (
-                      <FichaPersonagem
+                      <HomePage
                         user={user}
-                        fichaId={selectedFichaEmail}
-                        isMestre={true}
+                        role={role}
+                        fichasList={fichasList}
+                        selectedFichaEmail={selectedFichaEmail}
+                        setSelectedFichaEmail={setSelectedFichaEmail}
                       />
-                    ) : (
-                      <Typography>
-                        Faça login para editar suas fichas.
-                      </Typography>
-                    )}
-                  </Paper>
-                </Grid>
-              </>
-            )}
-          </Grid>
-        </Box>
-      </ThemeProvider>
-    );
-  }
+                      <Box
+                        sx={{
+                          borderTop: "1px solid rgba(255,255,255,0.1)",
+                          p: 1,
+                        }}
+                      >
+                        <SoundBoard isMaster={true} />
+                      </Box>
+                    </Grid>
 
-  // =====================================================
-  // ROTAS
-  // =====================================================
-  return (
-    <VoiceProvider>
-      <AudioProvider>
-        <Router>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/map" element={<BattleMap />} />
-            <Route path="/cronica" element={<MapaMundi />} />
-            <Route path="/sistema" element={<Sistema />} />
-          </Routes>
-        </Router>
+                    <Grid
+                      item
+                      sx={{
+                        flex: "1 1 42%",
+                        minWidth: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+                        <FichaPersonagem
+                          user={user}
+                          fichaId={selectedFichaEmail}
+                          isMestre={true}
+                        />
+                      </Paper>
+                    </Grid>
+                  </>
+                )}
+              </Grid>
+            </Box>
+
+            <Routes>
+              <Route path="/map" element={<BattleMap />} />
+              <Route path="/cronica" element={<MapaMundi />} />
+              <Route path="/sistema" element={<Sistema />} />
+            </Routes>
+          </Router>
+        </ThemeProvider>
       </AudioProvider>
     </VoiceProvider>
   );
