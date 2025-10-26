@@ -181,7 +181,7 @@ export default function App() {
 
   function Home() {
     const isMaster = role === "master";
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
 
     useEffect(() => {
       const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -215,10 +215,10 @@ export default function App() {
                   : "1px solid rgba(255,255,255,0.08)",
               }}
             >
-              {!user ? (
-                <LoginForm onLogin={() => {}} />
-              ) : (
-                <>
+              {!user || !user.email ? (
+  <LoginForm onLogin={() => {}} />
+) : (
+  <>
                   {/* Cabeçalho */}
                   <Paper sx={{ p: 2, flexShrink: 0 }}>
                     <Box
