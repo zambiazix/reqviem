@@ -8,7 +8,6 @@ import {
   Paper,
   Button,
   Typography,
-  Divider,
   IconButton,
   TextField,
 } from "@mui/material";
@@ -21,6 +20,7 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
+
 import SoundBoard from "./components/SoundBoard";
 import Chat from "./components/Chat";
 import FichaPersonagem from "./components/FichaPersonagem";
@@ -44,7 +44,7 @@ const theme = createTheme({
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
-const LoginForm = memo(function LoginForm({ onLogin }) {
+const LoginForm = memo(({ onLogin }) => {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
@@ -136,7 +136,6 @@ export default function App() {
   const [role, setRole] = useState("");
   const [fichasList, setFichasList] = useState([]);
   const [selectedFichaEmail, setSelectedFichaEmail] = useState(null);
-  const [createEmailInput, setCreateEmailInput] = useState("");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // Responsividade
@@ -146,48 +145,42 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Carregar fichas
+  // Carregar fichas (para mestre)
   const carregarListaFichas = useCallback(async () => {
     try {
       const col = collection(db, "fichas");
       const snapshot = await getDocs(col);
       const list = snapshot.docs.map((d) => d.id);
       setFichasList(list);
-      if (list.length > 0 && !selectedFichaEmail) {
-        setSelectedFichaEmail(list[0]);
-      }
     } catch (err) {
       console.error("Erro ao carregar fichas:", err);
     }
-  }, [selectedFichaEmail]);
+  }, []);
 
-  // Monitorar login
+  // Login + lógica da ficha
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u || null);
       setAuthLoaded(true);
-
       if (u) {
-        try {
-          const userDocRef = doc(db, "users", u.email);
-          const userSnap = await getDoc(userDocRef);
-          const data = userSnap.exists() ? userSnap.data() : {};
-          const userRole =
-            data.role || (u.email === MASTER_EMAIL ? "master" : "player");
+        setUser(u);
+        const userRef = doc(db, "users", u.email);
+        const snap = await getDoc(userRef);
+        const data = snap.exists() ? snap.data() : {};
+        const papel =
+          data.role || (u.email === MASTER_EMAIL ? "master" : "player");
 
-          setUserNick(data.nick || u.email);
-          setRole(userRole);
+        setUserNick(data.nick || u.email);
+        setRole(papel);
 
-          if (userRole === "master") {
-            carregarListaFichas();
-          } else {
-            // 🔹 Jogador comum vê apenas sua ficha
-            setSelectedFichaEmail(u.email);
-          }
-        } catch (err) {
-          console.error("Erro ao buscar user doc:", err);
+        if (papel === "master") {
+          await carregarListaFichas();
         }
+
+        // 🔥 AQUI é o ponto-chave:
+        // força o selectedFichaEmail para o e-mail logado, SEM depender de carregamento anterior
+        setSelectedFichaEmail(u.email);
       } else {
+        setUser(null);
         setUserNick("");
         setRole("");
         setFichasList([]);
@@ -202,64 +195,18 @@ export default function App() {
     setUser(null);
     setUserNick("");
     setRole("");
-    setFichasList([]);
     setSelectedFichaEmail(null);
   };
 
-  async function criarFichaParaEmail(email) {
-    if (!email) return alert("Digite um e-mail para criar a ficha.");
-    try {
-      const fichaVazia = {
-        nome: "",
-        genero: "",
-        idade: "",
-        altura: "",
-        peso: "",
-        movimentacao: "",
-        defeitos: "",
-        tracos: "",
-        pontosVida: 0,
-        pontosEnergia: 0,
-        armadura: "0/25",
-        caracteristicas: "",
-        atributos: {
-          forca: 1,
-          destreza: 1,
-          agilidade: 1,
-          constituicao: 1,
-          inteligencia: 1,
-          vontade: 1,
-        },
-        pericias: {},
-        habilidades: [],
-        equipamentos: [],
-        vestes: [],
-        diversos: [],
-        moedas: { cobre: 0, prata: 0, ouro: 0 },
-        anotacoes: "",
-        dono: email,
-      };
-
-      await setDoc(doc(db, "fichas", email), fichaVazia);
-      alert("Ficha criada para " + email);
-      await carregarListaFichas();
-      setSelectedFichaEmail(email);
-    } catch (err) {
-      console.error("Erro ao criar ficha:", err);
-      alert("Erro ao criar ficha: " + err.message);
-    }
-  }
-
-  // Aguarda o Firebase
   if (!authLoaded) {
     return (
       <Box
         sx={{
           height: "100vh",
           display: "flex",
-          justifyContent: "center",
           alignItems: "center",
-          color: "#aaa",
+          justifyContent: "center",
+          color: "#888",
         }}
       >
         Carregando...
@@ -299,7 +246,6 @@ export default function App() {
                       : "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
-                  {/* Cabeçalho */}
                   <Paper sx={{ p: 2, flexShrink: 0 }}>
                     <Box
                       sx={{
@@ -357,12 +303,10 @@ export default function App() {
                     </Box>
                   </Paper>
 
-                  {/* Chat de voz */}
                   <Paper sx={{ p: 1, flexShrink: 0, mt: 2 }}>
                     <MesaRPG userNick={userNick} />
                   </Paper>
 
-                  {/* Chat */}
                   <Paper
                     sx={{
                       flex: 1,
@@ -376,7 +320,7 @@ export default function App() {
                   </Paper>
                 </Grid>
 
-                {/* === DIREITA (Fichas e Sons) === */}
+                {/* === COLUNA DIREITA === */}
                 {!isMobile && (
                   <Grid
                     item
@@ -395,7 +339,6 @@ export default function App() {
                           fichasList={fichasList}
                           selectedFichaEmail={selectedFichaEmail}
                           setSelectedFichaEmail={setSelectedFichaEmail}
-                          criarFichaParaEmail={criarFichaParaEmail}
                         />
                         <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
                           <FichaPersonagem
@@ -407,9 +350,10 @@ export default function App() {
                       </>
                     ) : (
                       <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+                        {/* 🔥 Jogador sempre vê a ficha dele */}
                         <FichaPersonagem
                           user={user}
-                          fichaId={selectedFichaEmail}
+                          fichaId={user.email}
                           isMestre={false}
                         />
                       </Paper>
