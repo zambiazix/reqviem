@@ -8,6 +8,7 @@ import {
   Paper,
   Button,
   Typography,
+  Divider,
   IconButton,
   TextField,
 } from "@mui/material";
@@ -19,7 +20,7 @@ import {
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
-import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
 import SoundBoard from "./components/SoundBoard";
 import Chat from "./components/Chat";
 import FichaPersonagem from "./components/FichaPersonagem";
@@ -135,50 +136,56 @@ export default function App() {
   const [role, setRole] = useState("");
   const [fichasList, setFichasList] = useState([]);
   const [selectedFichaEmail, setSelectedFichaEmail] = useState(null);
+  const [createEmailInput, setCreateEmailInput] = useState("");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  // Responsividade
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // Carregar fichas
   const carregarListaFichas = useCallback(async () => {
     try {
       const col = collection(db, "fichas");
       const snapshot = await getDocs(col);
       const list = snapshot.docs.map((d) => d.id);
       setFichasList(list);
-      if (list.length > 0 && !selectedFichaEmail)
+      if (list.length > 0 && !selectedFichaEmail) {
         setSelectedFichaEmail(list[0]);
+      }
     } catch (err) {
       console.error("Erro ao carregar fichas:", err);
     }
   }, [selectedFichaEmail]);
 
+  // Monitorar login
   useEffect(() => {
-    let timeout = setTimeout(() => setAuthLoaded(true), 2000); // 🔹 fallback
-
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u || null);
+      setAuthLoaded(true);
+
       if (u) {
         try {
-          const userDoc = doc(db, "users", u.email);
-          const snap = await getDoc(userDoc);
-          if (snap.exists()) {
-            const data = snap.data();
-            setUserNick(data.nick || u.email);
-            setRole(
-              data.role || (u.email === MASTER_EMAIL ? "master" : "player")
-            );
+          const userDocRef = doc(db, "users", u.email);
+          const userSnap = await getDoc(userDocRef);
+          const data = userSnap.exists() ? userSnap.data() : {};
+          const userRole =
+            data.role || (u.email === MASTER_EMAIL ? "master" : "player");
+
+          setUserNick(data.nick || u.email);
+          setRole(userRole);
+
+          if (userRole === "master") {
+            carregarListaFichas();
           } else {
-            setUserNick(u.email);
-            setRole(u.email === MASTER_EMAIL ? "master" : "player");
+            // 🔹 Jogador comum vê apenas sua ficha
+            setSelectedFichaEmail(u.email);
           }
-          if (u.email === MASTER_EMAIL) carregarListaFichas();
-          else setSelectedFichaEmail(u.email);
         } catch (err) {
-          console.error("Erro userDoc:", err);
+          console.error("Erro ao buscar user doc:", err);
         }
       } else {
         setUserNick("");
@@ -186,12 +193,8 @@ export default function App() {
         setFichasList([]);
         setSelectedFichaEmail(null);
       }
-      setAuthLoaded(true);
     });
-    return () => {
-      clearTimeout(timeout);
-      unsub();
-    };
+    return () => unsub();
   }, [carregarListaFichas]);
 
   const handleLogout = async () => {
@@ -203,6 +206,51 @@ export default function App() {
     setSelectedFichaEmail(null);
   };
 
+  async function criarFichaParaEmail(email) {
+    if (!email) return alert("Digite um e-mail para criar a ficha.");
+    try {
+      const fichaVazia = {
+        nome: "",
+        genero: "",
+        idade: "",
+        altura: "",
+        peso: "",
+        movimentacao: "",
+        defeitos: "",
+        tracos: "",
+        pontosVida: 0,
+        pontosEnergia: 0,
+        armadura: "0/25",
+        caracteristicas: "",
+        atributos: {
+          forca: 1,
+          destreza: 1,
+          agilidade: 1,
+          constituicao: 1,
+          inteligencia: 1,
+          vontade: 1,
+        },
+        pericias: {},
+        habilidades: [],
+        equipamentos: [],
+        vestes: [],
+        diversos: [],
+        moedas: { cobre: 0, prata: 0, ouro: 0 },
+        anotacoes: "",
+        dono: email,
+      };
+
+      await setDoc(doc(db, "fichas", email), fichaVazia);
+      alert("Ficha criada para " + email);
+      await carregarListaFichas();
+      setSelectedFichaEmail(email);
+    } catch (err) {
+      console.error("Erro ao criar ficha:", err);
+      alert("Erro ao criar ficha: " + err.message);
+    }
+  }
+
+  // Aguarda o Firebase
   if (!authLoaded) {
     return (
       <Box
@@ -219,9 +267,7 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return <LoginForm onLogin={() => {}} />;
-  }
+  if (!user) return <LoginForm onLogin={() => {}} />;
 
   const isMaster = role === "master";
 
@@ -240,7 +286,7 @@ export default function App() {
                   flexDirection: isMobile ? "column" : "row",
                 }}
               >
-                {/* Coluna esquerda */}
+                {/* === COLUNA ESQUERDA === */}
                 <Grid
                   item
                   sx={{
@@ -253,6 +299,7 @@ export default function App() {
                       : "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
+                  {/* Cabeçalho */}
                   <Paper sx={{ p: 2, flexShrink: 0 }}>
                     <Box
                       sx={{
@@ -277,20 +324,19 @@ export default function App() {
                         />
                         <Box>
                           <Typography variant="h6">Bem-vindo,</Typography>
-                          <Typography variant="subtitle1">{userNick}</Typography>
+                          <Typography variant="subtitle1">
+                            {userNick}
+                          </Typography>
                           <Typography variant="caption" display="block">
                             {user?.email}
                           </Typography>
                         </Box>
                       </Box>
-                      <IconButton
-                        color="inherit"
-                        onClick={handleLogout}
-                        title="Sair"
-                      >
+                      <IconButton color="inherit" onClick={handleLogout}>
                         <LogoutIcon />
                       </IconButton>
                     </Box>
+
                     <Box
                       sx={{
                         display: "flex",
@@ -311,10 +357,12 @@ export default function App() {
                     </Box>
                   </Paper>
 
+                  {/* Chat de voz */}
                   <Paper sx={{ p: 1, flexShrink: 0, mt: 2 }}>
                     <MesaRPG userNick={userNick} />
                   </Paper>
 
+                  {/* Chat */}
                   <Paper
                     sx={{
                       flex: 1,
@@ -328,53 +376,45 @@ export default function App() {
                   </Paper>
                 </Grid>
 
-                {!isMobile && isMaster && (
-                  <>
-                    <Grid
-                      item
-                      sx={{
-                        flex: "1 1 25%",
-                        minWidth: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        borderRight: "1px solid rgba(255,255,255,0.08)",
-                      }}
-                    >
-                      <HomePage
-                        user={user}
-                        role={role}
-                        fichasList={fichasList}
-                        selectedFichaEmail={selectedFichaEmail}
-                        setSelectedFichaEmail={setSelectedFichaEmail}
-                      />
-                      <Box
-                        sx={{
-                          borderTop: "1px solid rgba(255,255,255,0.1)",
-                          p: 1,
-                        }}
-                      >
-                        <SoundBoard isMaster={true} />
-                      </Box>
-                    </Grid>
-
-                    <Grid
-                      item
-                      sx={{
-                        flex: "1 1 42%",
-                        minWidth: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
+                {/* === DIREITA (Fichas e Sons) === */}
+                {!isMobile && (
+                  <Grid
+                    item
+                    sx={{
+                      flex: "1 1 67%",
+                      display: "flex",
+                      flexDirection: "row",
+                      gap: 2,
+                    }}
+                  >
+                    {isMaster ? (
+                      <>
+                        <HomePage
+                          user={user}
+                          role={role}
+                          fichasList={fichasList}
+                          selectedFichaEmail={selectedFichaEmail}
+                          setSelectedFichaEmail={setSelectedFichaEmail}
+                          criarFichaParaEmail={criarFichaParaEmail}
+                        />
+                        <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+                          <FichaPersonagem
+                            user={user}
+                            fichaId={selectedFichaEmail}
+                            isMestre={true}
+                          />
+                        </Paper>
+                      </>
+                    ) : (
                       <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
                         <FichaPersonagem
                           user={user}
                           fichaId={selectedFichaEmail}
-                          isMestre={true}
+                          isMestre={false}
                         />
                       </Paper>
-                    </Grid>
-                  </>
+                    )}
+                  </Grid>
                 )}
               </Grid>
             </Box>
