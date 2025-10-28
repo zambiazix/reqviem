@@ -27,7 +27,6 @@ export default function VoiceProvider({ children }) {
   const [avatars, setAvatars] = useState({});
 
   const localStreamRef = useRef(null);
-  // peersRef will hold objects: { pc, polite, makingOffer, ignoreOffer, isSettingRemote, audioEl }
   const peersRef = useRef({});
   const pendingCandidatesRef = useRef({});
   const analyserRef = useRef(null);
@@ -105,7 +104,6 @@ export default function VoiceProvider({ children }) {
 
   // 🔈 Cria <audio> oculto para streams remotas (tenta tocar)
   function createHiddenAudio(remoteId, stream) {
-    // re-use if exists
     if (peersRef.current[remoteId]?.audioEl) {
       const el = peersRef.current[remoteId].audioEl;
       el.srcObject = stream;
@@ -120,9 +118,7 @@ export default function VoiceProvider({ children }) {
     el.srcObject = stream;
     document.body.appendChild(el);
 
-    // try to play explicitly (some browsers block autoplay otherwise)
     el.play().catch((err) => {
-      // não crashar, só logar — se autoplay for bloqueado, o usuário precisa interagir (unlockAudio)
       console.debug("createHiddenAudio: play() rejeitado (autoplay bloqueado?)", err);
     });
 
@@ -134,7 +130,6 @@ export default function VoiceProvider({ children }) {
     return el;
   }
 
-  // Aplica ICE candidates pendentes
   async function applyPendingCandidates(remoteId) {
     const arr = pendingCandidatesRef.current[remoteId] || [];
     const pc = peersRef.current[remoteId]?.pc;
@@ -157,7 +152,6 @@ export default function VoiceProvider({ children }) {
     delete pendingCandidatesRef.current[remoteId];
   }
 
-  // Adiciona tracks locais a um PC existente (útil se o usuário ligar microfone depois)
   function addLocalTracksToPeer(pc) {
     if (!localStreamRef.current || !pc) return;
     const existing = pc.getSenders().map((s) => s.track?.id).filter(Boolean);
@@ -172,16 +166,14 @@ export default function VoiceProvider({ children }) {
     });
   }
 
-  // 🔁 Cria ou recupera PeerConnection com proteção polite
   function createPeerIfNeeded(remoteId) {
     if (!remoteId) return null;
     if (peersRef.current[remoteId]?.pc) return peersRef.current[remoteId].pc;
 
     const localId = socket?.id || "";
-    const polite = localId < remoteId; // or other deterministic ordering
+    const polite = localId < remoteId;
     const pc = new RTCPeerConnection(RTC_CONFIG);
 
-    // state flags for polite handling
     peersRef.current[remoteId] = {
       pc,
       polite,
@@ -214,11 +206,11 @@ export default function VoiceProvider({ children }) {
       }
     };
 
-    // onnegotiationneeded => do polite-safe offer
     pc.onnegotiationneeded = async () => {
       const entry = peersRef.current[remoteId];
       if (!entry) return;
       try {
+        if (pc.signalingState !== "stable") return;
         entry.makingOffer = true;
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -233,12 +225,8 @@ export default function VoiceProvider({ children }) {
       }
     };
 
-    // adiciona microfone se já tiver
-    if (localStreamRef.current) {
-      addLocalTracksToPeer(pc);
-    }
+    if (localStreamRef.current) addLocalTracksToPeer(pc);
 
-    // se já há música (stream do AudioProvider), injetar também
     (async () => {
       try {
         const ms = getMusicStream?.();
@@ -258,12 +246,12 @@ export default function VoiceProvider({ children }) {
     return pc;
   }
 
-  // Criar e enviar offer manualmente (p/ quando queremos forçar)
   async function createAndSendOffer(remoteId) {
     const entry = peersRef.current[remoteId] || {};
     const pc = createPeerIfNeeded(remoteId);
     if (!pc) return;
     try {
+      if (pc.signalingState !== "stable") return;
       peersRef.current[remoteId].makingOffer = true;
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -278,7 +266,6 @@ export default function VoiceProvider({ children }) {
     }
   }
 
-  // 🧠 Avatares (mantive a sua lógica)
   async function fetchAvatar(p) {
     try {
       let email = p.email || null;
@@ -295,7 +282,7 @@ export default function VoiceProvider({ children }) {
     return "";
   }
 
-  // 🔌 Eventos do Socket — com tratamento polite/offer collision
+  // --- Eventos Socket ---
   useEffect(() => {
     if (!socket) return;
     setLocalSocketId(socket.id);
@@ -305,19 +292,14 @@ export default function VoiceProvider({ children }) {
       const arr = Array.isArray(list) ? list : [];
       setParticipants(arr);
 
-      // create peers & negotiate if needed
       for (const p of arr) {
         if (!p || p.id === socket.id) continue;
         createPeerIfNeeded(p.id);
-        // deterministically decide who starts offer (the one with lower id already does it elsewhere)
         if ((socket.id || "") < p.id) {
-          // this ordering avoids both starting at same time in many cases,
-          // but the polite logic below handles collisions anyway.
           createAndSendOffer(p.id);
         }
       }
 
-      // fetch avatars
       const avatarsData = {};
       await Promise.all(
         arr.map(async (p) => {
@@ -330,34 +312,24 @@ export default function VoiceProvider({ children }) {
 
     socket.on("voice-signal", async ({ from, data }) => {
       if (!from || !data || from === socket.id) return;
-      const entry = peersRef.current[from] || {};
       const pc = createPeerIfNeeded(from);
       if (!pc) return;
 
       try {
-        // --- SDPs (offer/answer) handling with polite algorithm ---
         if (data.sdp) {
           const sdpType = data.sdp.type;
           const isOffer = sdpType === "offer";
-
-          // collision detection
           const makingOffer = peersRef.current[from]?.makingOffer;
           const polite = peersRef.current[from]?.polite;
 
           if (isOffer && (makingOffer || pc.signalingState !== "stable")) {
-            // offer collision
             if (!polite) {
-              // impolite side ignores the offer
-              console.debug("Offer collision: impolite side ignoring offer from", from);
+              console.debug("Offer collision ignorada (impolite)", from);
               peersRef.current[from].ignoreOffer = true;
               return;
-            } else {
-              // polite side will handle it (proceed)
-              console.debug("Offer collision: polite side will handle offer from", from);
             }
           }
 
-          // setRemoteDescription with guard for isSettingRemote flag
           try {
             peersRef.current[from].isSettingRemote = true;
             await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -365,30 +337,29 @@ export default function VoiceProvider({ children }) {
           } catch (err) {
             peersRef.current[from].isSettingRemote = false;
             console.warn("Erro ao setRemoteDescription:", err);
+
+            // 🔁 REINICIAR CONEXÃO SE SDP INVÁLIDA
+            if (err.message?.includes("m-lines") || err.message?.includes("Failed to set")) {
+              console.log("Reiniciando conexão com peer", from);
+              cleanupPeer(from);
+              createPeerIfNeeded(from);
+              createAndSendOffer(from);
+            }
             return;
           }
 
           if (isOffer) {
-            // answer to the offer
-            try {
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              socket.emit("voice-signal", {
-                target: from,
-                data: { sdp: pc.localDescription },
-              });
-            } catch (e) {
-              console.warn("Erro ao responder offer:", e);
-            }
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit("voice-signal", {
+              target: from,
+              data: { sdp: pc.localDescription },
+            });
           } else {
-            // it's an answer — successful end of negotiation
-            // apply pending ICE if any
             await applyPendingCandidates(from);
           }
         } else if (data.candidate) {
-          // candidate case
           if (!pc.remoteDescription || pc.remoteDescription.type === null) {
-            // remote description not ready yet -> store candidate
             pendingCandidatesRef.current[from] =
               pendingCandidatesRef.current[from] || [];
             pendingCandidatesRef.current[from].push(data.candidate);
@@ -427,25 +398,21 @@ export default function VoiceProvider({ children }) {
       socket.off("voice-signal");
       socket.off("voice-speaking");
     };
-    // intentionally NOT including peersRef / socket.id in deps to avoid re-binding handlers too often
   }, [userNick, inVoice]);
 
   // 🎙 Entrar no chat de voz
   async function startVoice() {
     if (inVoice) return;
     try {
-      // ensure audio unlocked BEFORE creating audio elements or playing remote streams
       await unlockAudio?.();
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
 
-      // if peers already exist, add tracks to them
       Object.values(peersRef.current).forEach((entry) => {
         try {
           addLocalTracksToPeer(entry.pc);
         } catch (e) {
-          console.warn("Erro ao adicionar tracks a peer existente:", e);
+          console.warn("Erro ao adicionar tracks:", e);
         }
       });
 
@@ -458,7 +425,6 @@ export default function VoiceProvider({ children }) {
     }
   }
 
-  // 🚪 Sair do chat
   function leaveVoice() {
     socket.emit("voice-leave");
     if (localStreamRef.current)
@@ -475,8 +441,7 @@ export default function VoiceProvider({ children }) {
     setLocalMuted(muted);
   }
 
-  // cleanup on unmount
-  useEffect(() => () => leaveVoice(), []); // eslint-disable-line
+  useEffect(() => () => leaveVoice(), []); // cleanup
 
   return (
     <VoiceContext.Provider
