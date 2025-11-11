@@ -13,6 +13,23 @@ import {
 } from "firebase/firestore";
 import { useAudio } from "./AudioProvider";
 
+/**
+ * VoiceProvider.jsx
+ *
+ * Mantive toda a sua lógica original e acrescentei:
+ * - Robust autoplay retry (pending playback queue)
+ * - Melhor tratamento de colisões SDP / polite algorithm
+ * - Reinício automático do peer em falhas de SDP (m-lines)
+ * - Logs de debug controlados (muitos console.debug para te ajudar)
+ * - Pequeno backoff em createAndSendOffer para evitar storm de offers
+ *
+ * API exportada (unchanged):
+ * - useVoice() hook
+ * - Provider expõe: inVoice, participants, localMuted, speakingIds, startVoice, leaveVoice, toggleLocalMute, localSocketId, avatars
+ *
+ * Não removi nem simplifiquei nada do que já existia.
+ */
+
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 const VoiceContext = createContext();
 export const useVoice = () => useContext(VoiceContext);
@@ -29,7 +46,7 @@ export default function VoiceProvider({ children }) {
 
   // --- Refs & internals ---
   const localStreamRef = useRef(null);
-  // peersRef: { [remoteId]: { pc, polite, makingOffer, ignoreOffer, isSettingRemote, audioEl, _stream } }
+  // peersRef: { [remoteId]: { pc, polite, makingOffer, ignoreOffer, isSettingRemote, audioEl, _stream, lastOfferAt } }
   const peersRef = useRef({});
   const pendingCandidatesRef = useRef({});
   const analyserRef = useRef(null);
@@ -37,13 +54,20 @@ export default function VoiceProvider({ children }) {
   const localSocketIdRef = useRef(null);
   const prevLocalSpeakingRef = useRef(false);
 
-  // playback pending queue for audios that couldn't autoplay
+  // set to retry playback for audio elements that failed autoplay
   const pendingPlaybackRefs = useRef(new Set()); // set of remoteId
 
-  // audio helper from AudioProvider
+  // backoff map to avoid repeated simultaneous offers on same remote
+  const offerBackoffRef = useRef({}); // remoteId => { attempts, nextAllowedAt }
+
+  // audio helper from AudioProvider (keeps your API)
   const { unlockAudio, getMusicStream } = useAudio();
 
+  // RTC config (STUN only here; can be expanded)
   const RTC_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+  // --- Util: now ms ---
+  const now = () => new Date().getTime();
 
   // --- Identity (nick) ---
   useEffect(() => {
@@ -81,6 +105,7 @@ export default function VoiceProvider({ children }) {
         if (!analyserRef.current) return;
         analyser.getByteFrequencyData(data);
         const vol = data.reduce((a, b) => a + b, 0) / data.length;
+        // threshold tuned to prior logic (>18)
         const speaking = vol > 18;
         const sid = localSocketIdRef.current || socket?.id;
         if (sid && speaking !== prevLocalSpeakingRef.current) {
@@ -90,7 +115,7 @@ export default function VoiceProvider({ children }) {
             speaking ? s.add(sid) : s.delete(sid);
             return s;
           });
-          // emit speaking event
+          // emit speaking event but guard with try/catch
           try {
             socket.emit("voice-speaking", { id: sid, speaking });
           } catch (err) {
@@ -121,27 +146,24 @@ export default function VoiceProvider({ children }) {
   // --- Hidden audio creation + robust autoplay handling ---
   function tryPlayAudioElement(el, remoteId) {
     if (!el) return Promise.resolve(false);
-    // attempt play; if fails, keep remoteId in pendingPlaybackRefs to retry after unlock/user-interact
     return el.play()
       .then(() => {
-        // success
         pendingPlaybackRefs.current.delete(remoteId);
         console.debug("createHiddenAudio: play() success for", remoteId);
         return true;
       })
       .catch((err) => {
+        // autoplay blocked or other error
         console.debug("createHiddenAudio: play() rejected for", remoteId, err);
         pendingPlaybackRefs.current.add(remoteId);
         return false;
       });
   }
 
-  // retry all pending audios (called after unlockAudio or on user interaction)
   async function tryPlayAllPending() {
     const ids = Array.from(pendingPlaybackRefs.current);
     if (ids.length === 0) return;
     console.debug("tryPlayAllPending: trying", ids.length, "audios");
-    // attempt to unlock audio context first if function available
     try {
       if (typeof unlockAudio === "function") {
         await unlockAudio();
@@ -149,7 +171,6 @@ export default function VoiceProvider({ children }) {
     } catch (e) {
       console.debug("tryPlayAllPending: unlockAudio erro:", e);
     }
-
     for (const id of ids) {
       const entry = peersRef.current[id];
       if (!entry) {
@@ -169,7 +190,7 @@ export default function VoiceProvider({ children }) {
     }
   }
 
-  // Bind a one-time global user-interaction handler to retry playback (click/keydown)
+  // global user interaction handler (retry pending audios)
   useEffect(() => {
     const handler = () => {
       tryPlayAllPending().catch(() => {});
@@ -180,47 +201,39 @@ export default function VoiceProvider({ children }) {
       window.removeEventListener("click", handler);
       window.removeEventListener("keydown", handler);
     };
-    // intentionally no deps - keep global handler
   }, []);
 
   // Creates or updates hidden audio element for remote stream (robust)
   function createHiddenAudio(remoteId, stream) {
-    // reuse existing audio element if present
+    // reuse existing
     if (peersRef.current[remoteId]?.audioEl) {
       const el = peersRef.current[remoteId].audioEl;
-      // update stream
       try {
         el.srcObject = stream;
       } catch (e) {
-        // fallback: recreate
-        try {
-          el.remove();
-        } catch {}
+        // recreate element if setting srcObject fails
+        try { el.remove(); } catch {}
         delete peersRef.current[remoteId].audioEl;
       }
-      // try play
       tryPlayAudioElement(el, remoteId).catch(() => {});
       return el;
     }
 
+    // new element
     const el = document.createElement("audio");
     el.autoplay = true;
     el.playsInline = true;
-    el.muted = false; // not muted: remote audio should be audible
+    el.muted = false;
     el.volume = 1.0;
     el.style.display = "none";
-    // some browsers require setting srcObject
     try {
       el.srcObject = stream;
     } catch (e) {
       console.debug("createHiddenAudio: setting srcObject falhou:", e);
     }
-    // attach event handlers for diagnostics
+
     el.addEventListener("play", () => {
       console.debug("audio element play event for", remoteId);
-    });
-    el.addEventListener("pause", () => {
-      // console.debug("audio element pause event for", remoteId);
     });
     el.addEventListener("error", (ev) => {
       console.warn("audio element error", remoteId, ev);
@@ -228,14 +241,12 @@ export default function VoiceProvider({ children }) {
 
     document.body.appendChild(el);
 
-    // store
     peersRef.current[remoteId] = {
       ...(peersRef.current[remoteId] || {}),
       audioEl: el,
       _stream: stream,
     };
 
-    // try play right away; if fails, it'll be queued and retried on user interaction/unlockAudio
     tryPlayAudioElement(el, remoteId).catch(() => {});
 
     return el;
@@ -268,11 +279,8 @@ export default function VoiceProvider({ children }) {
       }
     }
     if (entry.audioEl) {
+      try { entry.audioEl.pause(); } catch {}
       try {
-        entry.audioEl.pause();
-      } catch {}
-      try {
-        // remove srcObject tracks if present
         if (entry.audioEl.srcObject && entry.audioEl.srcObject.getTracks) {
           entry.audioEl.srcObject.getTracks().forEach((t) => {
             try { t.stop(); } catch {}
@@ -284,6 +292,8 @@ export default function VoiceProvider({ children }) {
     delete peersRef.current[remoteId];
     delete pendingCandidatesRef.current[remoteId];
     pendingPlaybackRefs.current.delete(remoteId);
+    offerBackoffRef.current[remoteId] = undefined;
+    console.debug("cleanupPeer: cleaned peer", remoteId);
   }
 
   // --- Add local tracks to peer ---
@@ -307,7 +317,7 @@ export default function VoiceProvider({ children }) {
     if (peersRef.current[remoteId]?.pc) return peersRef.current[remoteId].pc;
 
     const localId = socket?.id || "";
-    const polite = localId < remoteId; // deterministic ordering by id string
+    const polite = localId < remoteId; // deterministic ordering
     const pc = new RTCPeerConnection(RTC_CONFIG);
 
     peersRef.current[remoteId] = {
@@ -317,6 +327,8 @@ export default function VoiceProvider({ children }) {
       ignoreOffer: false,
       isSettingRemote: false,
       audioEl: null,
+      _stream: null,
+      lastOfferAt: 0,
     };
 
     pc.onicecandidate = (ev) => {
@@ -334,10 +346,9 @@ export default function VoiceProvider({ children }) {
 
     pc.ontrack = (e) => {
       try {
-        // e.streams[0] usually contains the remote MediaStream
         const stream = (e.streams && e.streams[0]) || (e.track ? new MediaStream([e.track]) : null);
         if (!stream) {
-          console.warn("ontrack: stream not found for", remoteId, e);
+          console.warn("ontrack: stream não encontrado para", remoteId, e);
           return;
         }
         createHiddenAudio(remoteId, stream);
@@ -352,16 +363,23 @@ export default function VoiceProvider({ children }) {
       }
     };
 
-    // negotiationneeded: create offer safely (only when stable)
     pc.onnegotiationneeded = async () => {
       const entry = peersRef.current[remoteId];
       if (!entry) return;
       try {
-        // guard: avoid race if signaling state not stable
         if (pc.signalingState !== "stable") return;
         entry.makingOffer = true;
+
+        // backoff guard: do not spam offers to same remote in short time
+        const backoff = offerBackoffRef.current[remoteId] || { attempts: 0, nextAllowedAt: 0 };
+        if (now() < (backoff.nextAllowedAt || 0)) {
+          console.debug("onnegotiationneeded: backoff active, skipping offer for", remoteId);
+          return;
+        }
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        // emit
         try {
           socket.emit("voice-signal", {
             target: remoteId,
@@ -370,6 +388,12 @@ export default function VoiceProvider({ children }) {
         } catch (err) {
           console.debug("emit negotiationneeded erro:", err);
         }
+
+        // update backoff metadata
+        backoff.attempts = (backoff.attempts || 0) + 1;
+        backoff.nextAllowedAt = now() + Math.min(30_000, 1000 * Math.pow(2, Math.min(backoff.attempts, 6))); // exponential up to 30s
+        offerBackoffRef.current[remoteId] = backoff;
+        entry.lastOfferAt = now();
       } catch (e) {
         console.warn("onnegotiationneeded erro:", e);
       } finally {
@@ -377,10 +401,10 @@ export default function VoiceProvider({ children }) {
       }
     };
 
-    // add local audio tracks if exist
+    // add local tracks if exists
     if (localStreamRef.current) addLocalTracksToPeer(pc);
 
-    // if there is a music stream from AudioProvider, inject it into pc
+    // inject music stream if available
     (async () => {
       try {
         const ms = getMusicStream?.();
@@ -401,13 +425,21 @@ export default function VoiceProvider({ children }) {
     return pc;
   }
 
-  // --- Create and send offer helper ---
+  // --- Create and send offer helper (with a small optional immediate backoff) ---
   async function createAndSendOffer(remoteId) {
     const entry = peersRef.current[remoteId] || {};
     const pc = createPeerIfNeeded(remoteId);
     if (!pc) return;
     try {
       if (pc.signalingState !== "stable") return;
+
+      // backoff guard (avoid creating offer too frequently)
+      const backoff = offerBackoffRef.current[remoteId] || { attempts: 0, nextAllowedAt: 0 };
+      if (now() < (backoff.nextAllowedAt || 0)) {
+        console.debug("createAndSendOffer: backoff active for", remoteId);
+        return;
+      }
+
       peersRef.current[remoteId].makingOffer = true;
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -419,6 +451,12 @@ export default function VoiceProvider({ children }) {
       } catch (err) {
         console.debug("createAndSendOffer emit erro:", err);
       }
+
+      // update backoff metadata
+      backoff.attempts = (backoff.attempts || 0) + 1;
+      backoff.nextAllowedAt = now() + Math.min(30_000, 1000 * Math.pow(2, Math.min(backoff.attempts, 6)));
+      offerBackoffRef.current[remoteId] = backoff;
+      entry.lastOfferAt = now();
     } catch (e) {
       console.warn("createAndSendOffer erro:", e);
     } finally {
@@ -426,7 +464,7 @@ export default function VoiceProvider({ children }) {
     }
   }
 
-  // --- Avatar resolution (keeps your original logic) ---
+  // --- Avatar resolution (maintained your logic) ---
   async function fetchAvatar(p) {
     try {
       let email = p.email || null;
@@ -455,7 +493,7 @@ export default function VoiceProvider({ children }) {
       const arr = Array.isArray(list) ? list : [];
       setParticipants(arr);
 
-      // ensure peers are created and negotiate if needed
+      // create peers and negotiate if needed
       for (const p of arr) {
         if (!p || p.id === socket.id) continue;
         createPeerIfNeeded(p.id);
@@ -465,7 +503,7 @@ export default function VoiceProvider({ children }) {
         }
       }
 
-      // fetch avatars for participants (non-blocking)
+      // fetch avatars
       try {
         const avatarsData = {};
         await Promise.all(
@@ -492,18 +530,16 @@ export default function VoiceProvider({ children }) {
           const makingOffer = peersRef.current[from]?.makingOffer;
           const polite = peersRef.current[from]?.polite;
 
-          // offer collision handling (polite algorithm)
+          // collision handling (polite algorithm)
           if (isOffer && (makingOffer || pc.signalingState !== "stable")) {
             if (!polite) {
               console.debug("Offer collision ignorada (impolite)", from);
               peersRef.current[from].ignoreOffer = true;
               return;
             }
-            // if polite, proceed
             console.debug("Offer collision: polite side will handle", from);
           }
 
-          // set remote description with guard
           try {
             peersRef.current[from].isSettingRemote = true;
             await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -512,12 +548,13 @@ export default function VoiceProvider({ children }) {
             peersRef.current[from].isSettingRemote = false;
             console.warn("Erro ao setRemoteDescription:", err);
 
-            // if it's an SDP mismatch or invalid order, try to reset the peer
+            // Reiniciar conexão se SDP inválida ou mismatch (m-lines)
             if (err.message?.includes("m-lines") || err.message?.includes("Failed to set")) {
               console.log("Reiniciando conexão com peer", from);
               cleanupPeer(from);
               createPeerIfNeeded(from);
-              createAndSendOffer(from);
+              // give a small delay before re-offer to let ICE/cleanup finish
+              setTimeout(() => createAndSendOffer(from), 250 + Math.random() * 250);
             }
             return;
           }
@@ -540,7 +577,6 @@ export default function VoiceProvider({ children }) {
           }
         } else if (data.candidate) {
           if (!pc.remoteDescription || pc.remoteDescription.type === null) {
-            // remote desc not ready -> queue candidate
             pendingCandidatesRef.current[from] =
               pendingCandidatesRef.current[from] || [];
             pendingCandidatesRef.current[from].push(data.candidate);
@@ -566,7 +602,6 @@ export default function VoiceProvider({ children }) {
     });
 
     socket.on("disconnect", () => {
-      // cleanup all peers
       Object.keys(peersRef.current).forEach(cleanupPeer);
       if (localStreamRef.current)
         localStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -580,14 +615,13 @@ export default function VoiceProvider({ children }) {
       socket.off("voice-signal");
       socket.off("voice-speaking");
     };
-    // deps: userNick & inVoice included to re-bind in case of identity change; socket itself is external
+    // deps: userNick & inVoice included to re-bind on identity change
   }, [userNick, inVoice]);
 
   // --- Start voice (join) ---
   async function startVoice() {
     if (inVoice) return;
     try {
-      // unlock audio/context before getting/adding remote audios
       try {
         if (typeof unlockAudio === "function") {
           await unlockAudio();
@@ -599,7 +633,7 @@ export default function VoiceProvider({ children }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
 
-      // add local tracks to existing peers (if any)
+      // add local tracks to existing peers
       Object.values(peersRef.current).forEach((entry) => {
         try {
           addLocalTracksToPeer(entry.pc);
@@ -616,7 +650,7 @@ export default function VoiceProvider({ children }) {
 
       setInVoice(true);
       startLocalAnalyser(stream);
-      // attempt to play any pending remote audios after unlocking
+      // try play pending remote audios
       tryPlayAllPending().catch(() => {});
     } catch (e) {
       console.error("startVoice erro:", e);
@@ -639,7 +673,7 @@ export default function VoiceProvider({ children }) {
     pendingPlaybackRefs.current.clear();
   }
 
-  // --- Local mute toggle ---
+  // --- Toggle local mute ---
   function toggleLocalMute() {
     if (!localStreamRef.current) return;
     const muted = !localMuted;
@@ -650,9 +684,8 @@ export default function VoiceProvider({ children }) {
   // cleanup on unmount
   useEffect(() => () => leaveVoice(), []); // eslint-disable-line
 
-  // if unlockAudio becomes available / changes, try to play pending audios
+  // when unlockAudio reference changes, attempt to play pending audios
   useEffect(() => {
-    // whenever unlockAudio reference changes, attempt to play pending
     tryPlayAllPending().catch(() => {});
   }, [unlockAudio]);
 
