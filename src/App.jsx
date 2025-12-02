@@ -9,9 +9,6 @@ import {
   Button,
   TextField,
   Typography,
-  List,
-  ListItem,
-  ListItemText,
   Divider,
   IconButton,
 } from "@mui/material";
@@ -24,6 +21,7 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
+
 import SoundBoard from "./components/SoundBoard";
 import Chat from "./components/Chat";
 import FichaPersonagem from "./components/FichaPersonagem";
@@ -35,6 +33,12 @@ import MesaRPG from "./components/MesaRPG";
 import MapaMundi from "./pages/MapaMundi";
 import Sistema from "./pages/Sistema";
 import HomePage from "./pages/HomePage"; // usa o componente novo
+import CommerceHUD from "./components/CommerceHUD";
+import { openCommerceHUD, closeCommerceHUD } from "./CommerceHUDRoot";
+
+// Integrations we added
+import GameProvider from "./context/GameProvider";
+import FloatingHUD from "./components/FloatingHUD";
 
 const theme = createTheme({
   palette: {
@@ -238,7 +242,7 @@ export default function App() {
     diversos: [],
     moedas: { cobre: 0, prata: 0, ouro: 0 },
     anotacoes: "",
-    dono: "", // sera setado quando criar
+    dono: "",
   };
 
   async function criarFichaParaEmail(email) {
@@ -256,7 +260,7 @@ export default function App() {
   }
 
   /* ---------- Componente Home (layout principal) ---------- */
-  function Home() {
+  const Home = memo(function Home({ setShowCommerce }) {
     const isMaster = role === "master";
     const [isMobileLocal, setIsMobileLocal] = useState(window.innerWidth < 1024);
 
@@ -304,10 +308,11 @@ export default function App() {
                           <Typography variant="subtitle1">{userNick}</Typography>
                           <Typography variant="caption" display="block">{user?.email}</Typography>
                           <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>
-                            APP Réquiem RPG — versão 2.3 - By: Zambiazi
+                            APP Réquiem RPG — versão 2.4 — By: Zambiazi
                           </Typography>
                         </Box>
                       </Box>
+
                       <IconButton color="inherit" onClick={handleLogout} title="Sair">
                         <LogoutIcon />
                       </IconButton>
@@ -384,20 +389,32 @@ export default function App() {
         </Box>
       </ThemeProvider>
     );
-  }
+  });
+
+  // Wrap Router with GameProvider so FloatingHUD and other game contexts can consume it
+  const isMasterFlag = role === "master";
+  const currentUserEmail = user?.email || null;
 
   return (
+  <Router>
     <VoiceProvider>
       <AudioProvider>
-        <Router>
+        <GameProvider currentUserEmail={currentUserEmail} isMaster={isMasterFlag}>
+          <FloatingHUD
+  userEmail={currentUserEmail}
+  openCommerce={openCommerceHUD}
+  closeCommerce={closeCommerceHUD}
+/>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/map" element={<BattleMap />} />
             <Route path="/cronica" element={<MapaMundi />} />
             <Route path="/sistema" element={<Sistema />} />
           </Routes>
-        </Router>
+
+        </GameProvider>
       </AudioProvider>
     </VoiceProvider>
-  );
+  </Router>
+);
 }

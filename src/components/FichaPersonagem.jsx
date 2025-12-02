@@ -179,6 +179,7 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
     }
     carregar();
     return () => (mounted = false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fichaId]);
 
   function setCampo(chave, valor) {
@@ -307,13 +308,14 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
   if (loading)
     return (
       <Box p={2}>
-        <Typography>Carregando ficha...</Typography>
+        <Typography component="div">Carregando ficha...</Typography>
       </Box>
     );
 
   return (
     <Paper sx={{ p: 2, bgcolor: "#07121a", color: "#fff", height: "100%", overflowY: "auto" }}>
-      <Typography variant="h5" gutterBottom>{LABELS.titulo}</Typography>
+      {/* título como h5 (mantém sem p) */}
+      <Typography variant="h5" gutterBottom component="h2">{LABELS.titulo}</Typography>
 
       <Grid container spacing={2}>
         <Grid item xs={12} md={9}>
@@ -321,7 +323,8 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
             <Grid item xs={12} md={6}>
               {["nome", "genero", "idade", "altura", "peso", "movimentacao"].map((campo) => (
                 <Box key={campo} sx={{ mb: 1 }}>
-                  <Typography>{LABEL_MAP[campo] || campo}</Typography>
+                  {/* label como div para evitar <p> aninhado */}
+                  <Typography component="div">{LABEL_MAP[campo] || campo}</Typography>
                   <TextField fullWidth size="small" value={ficha[campo]} onChange={(e) => setCampo(campo, e.target.value)} />
                 </Box>
               ))}
@@ -329,7 +332,7 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
             <Grid item xs={12} md={6}>
               {["defeitos", "tracos", "pontosVida", "pontosEnergia", "armadura", "caracteristicas"].map((campo) => (
                 <Box key={campo} sx={{ mb: 1 }}>
-                  <Typography>{LABEL_MAP[campo] || campo}</Typography>
+                  <Typography component="div">{LABEL_MAP[campo] || campo}</Typography>
                   <TextField
                     fullWidth size="small"
                     value={ficha[campo]}
@@ -342,26 +345,27 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
           </Grid>
 
           <Box mt={2}>
-            <Typography>{LABELS.atributosTitulo}</Typography>
+            <Typography component="div">{LABELS.atributosTitulo}</Typography>
             {Object.entries(ficha.atributos).map(([k, v]) => (
               <Box key={k} sx={{ mb: 1 }}>
-                <Typography sx={{ fontSize: 14 }}>{LABEL_MAP[k] || k}</Typography>
+                <Typography component="div" sx={{ fontSize: 14 }}>{LABEL_MAP[k] || k}</Typography>
                 <Slider value={Number(v || 0)} min={0} max={5} step={1} onChange={(e, val) => setSubCampo("atributos", k, val)} valueLabelDisplay="auto" />
               </Box>
             ))}
           </Box>
 
           <Box mt={2}>
-            <Typography>{LABELS.periciasTitulo}</Typography>
+            <Typography component="div">{LABELS.periciasTitulo}</Typography>
             {Object.entries(ficha.pericias).map(([k, v]) => (
               <Box key={k} sx={{ mb: 1 }}>
-                <Typography sx={{ fontSize: 14 }}>{LABEL_MAP[k] || k}</Typography>
+                <Typography component="div" sx={{ fontSize: 14 }}>{LABEL_MAP[k] || k}</Typography>
                 <Slider value={Number(v || 0)} min={0} max={5} step={1} onChange={(e, val) => setSubCampo("pericias", k, val)} valueLabelDisplay="auto" />
               </Box>
             ))}
           </Box>
           <Box mt={2}>
-            <Typography>{LABELS.habilidadesTitulo}</Typography>
+            {/* usar div para evitar p-nested */}
+            <Typography component="div">{LABELS.habilidadesTitulo}</Typography>
             {ficha.habilidades.map((h, i) => (
               <Paper key={i} sx={{ p: 1, mb: 1 }}>
                 <Grid container spacing={1}>
@@ -393,9 +397,9 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
           </Box>
 
           <Box mt={2}>
-            <Typography>{LABELS.itensTitulo}</Typography>
+            <Typography component="div">{LABELS.itensTitulo}</Typography>
             <Box mt={1}>
-              <Typography>Moedas (Cobre / Prata / Ouro)</Typography>
+              <Typography component="div">Moedas (Cobre / Prata / Ouro)</Typography>
               <Grid container spacing={1} sx={{ mt: 1 }}>
                 {["cobre", "prata", "ouro"].map((m) => (
                   <Grid item xs={4} key={m}>
@@ -417,7 +421,7 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
             </Box>
             {["equipamentos", "vestes", "diversos"].map((tipo) => (
               <Box mt={2} key={tipo}>
-                <Typography>{LABEL_MAP[tipo] || tipo}</Typography>
+                <Typography component="div">{LABEL_MAP[tipo] || tipo}</Typography>
                 {ficha[tipo].map((it, i) => (
                   <Grid
                     container
@@ -483,7 +487,7 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
 
           {/* Anotações */}
           <Box mt={2}>
-            <Typography>{LABELS.anotacoesTitulo}</Typography>
+            <Typography component="div">{LABELS.anotacoesTitulo}</Typography>
             <TextField
               fullWidth
               multiline
@@ -538,7 +542,7 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
               gap: 1,
             }}
           >
-            <Typography sx={{ mb: 1 }}>Personagem</Typography>
+            <Typography component="div" sx={{ mb: 1 }}>Personagem</Typography>
             {ficha.imagemPersonagem ? (
               <img
                 src={ficha.imagemPersonagem}
@@ -562,7 +566,7 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
                   justifyContent: "center",
                 }}
               >
-                <Typography>Sem imagem</Typography>
+                <Typography component="div">Sem imagem</Typography>
               </Box>
             )}
 
