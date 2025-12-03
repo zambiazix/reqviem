@@ -252,10 +252,28 @@ export default function GameProvider({ children, currentUserEmail, isMaster }) {
 
       const entry = xpMap[email] || { xp: 0, level: 1 };
       let newXP = (entry.xp || 0) + xpDelta;
+let newLevel = entry.level || 1;
 
-      newXP = Math.max(0, Math.min(100, newXP));
+// SUBIR LEVEL
+while (newXP >= 100) {
+  newXP -= 100;
+  newLevel++;
+}
 
-      xpMap[email] = { ...entry, xp: newXP };
+// DESCER LEVEL
+while (newXP < 0) {
+  if (newLevel > 1) {
+    newXP += 100;
+    newLevel--;
+  } else {
+    newXP = 0;
+    break;
+  }
+}
+
+// SALVAR
+xpMap[email] = { xp: newXP, level: newLevel };
+
 
       // debug
       // eslint-disable-next-line no-console

@@ -41,6 +41,22 @@ const SEASONS = ["Primavera", "Verão", "Outono", "Inverno"];
 
 export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) {
 
+  function playSFX(path) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    fetch(path)
+      .then(r => r.arrayBuffer())
+      .then(b => ctx.decodeAudioData(b))
+      .then(decoded => {
+        const src = ctx.createBufferSource();
+        src.buffer = decoded;
+        src.connect(ctx.destination);
+        src.start(0);
+      })
+      .catch(() => {});
+  } catch {}
+}
+
   const {
     hud,
     loading,
@@ -68,11 +84,6 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
   // ----------------------------------------------------------------------------------
 
   const { playMusic } = useAudio?.() || {};
-  function playSFX(path) {
-  const audio = new Audio(path);
-  audio.volume = 1;
-  audio.play().catch(() => {});
-}
   const refBox = useRef(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
