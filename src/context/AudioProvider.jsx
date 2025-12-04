@@ -20,14 +20,25 @@ export default function AudioProvider({ children }) {
 
   // Helpers
   const getMusicUrl = (urlOrName) => {
-    if (!urlOrName) return "";
-    if (/^https?:\/\//i.test(urlOrName)) return urlOrName.trim();
-    // keep behavior for relative names (if you have backend)
-    const backend = (import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
-    if (urlOrName.startsWith("/musicas/")) return `${backend}${urlOrName}`;
-    if (backend) return `${backend}/musicas/${urlOrName}`;
-    return `/musicas/${urlOrName}`;
-  };
+  if (!urlOrName) return "";
+
+  // Se for uma URL completa, apenas retorna
+  if (/^https?:\/\//i.test(urlOrName)) return urlOrName.trim();
+
+  // SE o arquivo existir no frontend (public/musicas/)
+  // então deve tocar LOCAL, direto do Vercel.
+  if (urlOrName.endsWith(".mp3") || urlOrName.endsWith(".wav")) {
+    return `/musicas/${urlOrName.replace("/musicas/", "")}`;
+  }
+
+  // Somente músicas globais grandes continuam pelo backend:
+  const backend = (import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
+  if (backend) return `${backend}/musicas/${urlOrName}`;
+
+  // fallback
+  return `/musicas/${urlOrName}`;
+};
+
 
   const normalizeUrl = (url = "") =>
     (url || "").trim().replace(/\/+$/, "").toLowerCase();
