@@ -5,7 +5,7 @@ import { VitePWA } from "vite-plugin-pwa";
 import copyStatic from "./vite-plugin-copy-static.js"; // 👈 importa o plugin
 
 export default defineConfig({
-  base: "./",
+  base: "/",
   assetsInclude: ["**/*.mp3", "**/*.m4a"],
 
   plugins: [
