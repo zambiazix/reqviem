@@ -36,26 +36,18 @@ import TurnModal from "./TurnModal";
 import "./FloatingHUDBackgrounds.css";
 import { createPortal } from "react-dom";
 
+function playSFX(path) {
+  try {
+    const audio = new Audio(path);
+    audio.volume = 1;
+    audio.play().catch(() => {});
+  } catch {}
+}
+
 const PHASES = ["manhã", "tarde", "noite", "madrugada"];
 const SEASONS = ["Primavera", "Verão", "Outono", "Inverno"];
 
 export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) {
-
-  function playSFX(path) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    fetch(path)
-      .then(r => r.arrayBuffer())
-      .then(b => ctx.decodeAudioData(b))
-      .then(decoded => {
-        const src = ctx.createBufferSource();
-        src.buffer = decoded;
-        src.connect(ctx.destination);
-        src.start(0);
-      })
-      .catch(() => {});
-  } catch {}
-}
 
   const {
     hud,
