@@ -36,8 +36,13 @@ import {
   getDoc,
   doc,
 } from "firebase/firestore";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
+import { updateDoc, deleteDoc } from "firebase/firestore";
+
 
 const GIPHY_API_KEY = "PBsoFISvy4OFVTNfZbpB5yF79ODJyTsc";
+
 
 // 🖱️ Componente auxiliar com arraste, zoom e suporte a toque
 function LightboxImage({ src, zoom, setZoom }) {
@@ -46,7 +51,6 @@ function LightboxImage({ src, zoom, setZoom }) {
   const [start, setStart] = useState({ x: 0, y: 0 });
   const [initialDistance, setInitialDistance] = useState(null);
 
-  // === Mouse drag ===
   const handleMouseDown = (e) => {
     e.preventDefault();
     setDragging(true);
@@ -58,7 +62,6 @@ function LightboxImage({ src, zoom, setZoom }) {
   };
   const handleMouseUp = () => setDragging(false);
 
-  // === Touch events (mobile drag + pinch zoom) ===
   const handleTouchStart = (e) => {
     if (e.touches.length === 1) {
       const touch = e.touches[0];
@@ -129,6 +132,10 @@ export default function Chat({ userNick, userEmail }) {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([]);
   const [filePreview, setFilePreview] = useState(null);
+
+  // 🔽 ADICIONADO — múltiplas imagens
+  const [filePreviews, setFilePreviews] = useState([]);
+
   const [avatars, setAvatars] = useState({});
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -143,6 +150,28 @@ export default function Chat({ userNick, userEmail }) {
   const chatRef = useRef(null);
   const endRef = useRef(null);
   const chatCol = collection(db, "chat");
+
+  const isMaster = userEmail === "mestre@reqviemrpg.com";
+
+function canEdit(msg) {
+  if (msg.type !== "text" && msg.type !== "dice") return false; // 🔒 impede imagens/gifs
+  return isMaster || msg.userEmail === userEmail;
+}
+
+async function deleteMessage(id) {
+  if (!window.confirm("Apagar esta mensagem?")) return;
+  await deleteDoc(doc(db, "chat", id));
+}
+
+async function editMessage(msg) {
+  const novoTexto = prompt("Editar mensagem:", msg.text || "");
+  if (novoTexto === null) return;
+
+  await updateDoc(doc(db, "chat", msg.id), {
+    text: novoTexto,
+    edited: true,
+  });
+}
 
   // === Carrega mensagens ===
   useEffect(() => {
@@ -262,9 +291,15 @@ export default function Chat({ userNick, userEmail }) {
     });
   }
 
+  // 🔽 ADICIONADO — múltiplos arquivos
+  async function handleFiles(files) {
+    const imgs = await Promise.all([...files].map((f) => compressImage(f)));
+    setFilePreviews((p) => [...p, ...imgs]);
+  }
+
   async function sendMessage(e) {
     e?.preventDefault();
-    if (!text && !filePreview) return;
+    if (!text && !filePreview && filePreviews.length === 0) return;
     setLastSender(userEmail);
 
     const dice = tryParseDice(text);
@@ -276,6 +311,21 @@ export default function Chat({ userNick, userEmail }) {
         text: `${dice.expr} => [${dice.rolls.join(", ")}] = ${dice.total}`,
         timestamp: serverTimestamp(),
       });
+      setText("");
+      return;
+    }
+
+    // 🔽 NOVO — mensagem agrupada
+    if (filePreviews.length > 0) {
+      await addDoc(chatCol, {
+        userNick,
+        userEmail,
+        type: "image-group",
+        text,
+        images: filePreviews,
+        timestamp: serverTimestamp(),
+      });
+      setFilePreviews([]);
       setText("");
       return;
     }
@@ -305,10 +355,9 @@ export default function Chat({ userNick, userEmail }) {
   }
 
   async function handleFileChange(e) {
-    const f = e.target.files?.[0];
+    const f = e.target.files;
     if (!f) return;
-    const compressed = await compressImage(f);
-    setFilePreview(compressed);
+    handleFiles(f);
     e.target.value = null;
   }
 
@@ -342,13 +391,20 @@ export default function Chat({ userNick, userEmail }) {
       .slice(0, 2)
       .toUpperCase();
 
-  // === Render ===
   return (
     <Paper elevation={2} sx={{ height: "100%", display: "flex", flexDirection: "column", p: 1, position: "relative" }}>
-      <Typography variant="h6" sx={{ mb: 1 }}>Chat</Typography>
+      <Typography variant="h6" sx={{ mb: 1 }}>💬 Chat</Typography>
 
-      {/* Área de mensagens */}
-      <Box ref={chatRef} sx={{ flex: 1, overflowY: "auto", position: "relative", scrollBehavior: "smooth", pb: 1 }}>
+      <Box
+        ref={chatRef}
+        sx={{ flex: 1, overflowY: "auto", position: "relative", scrollBehavior: "smooth", pb: 1 }}
+        // 🔽 ADICIONADO — drag & drop
+        onDrop={(e) => {
+          e.preventDefault();
+          handleFiles(e.dataTransfer.files);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+      >
         <List>
           {messages.map((m, i) => {
             const prev = messages[i - 1];
@@ -364,31 +420,60 @@ export default function Chat({ userNick, userEmail }) {
                 <ListItem alignItems="flex-start">
                   <Avatar
                     src={avatars[m.userEmail] || ""}
+                    onClick={() => {
+                      if (avatars[m.userEmail]) {
+                        setLightboxImage(avatars[m.userEmail]);
+                        setZoom(1);
+                      }
+                    }}
                     sx={{
                       width: 32,
                       height: 32,
                       mr: 1,
+                      cursor: avatars[m.userEmail] ? "pointer" : "default",
                       bgcolor: avatars[m.userEmail] ? "transparent" : "#333",
                       fontSize: 14,
                     }}
                   >
                     {!avatars[m.userEmail] && getInitials(m.userNick)}
                   </Avatar>
+
                   <ListItemText
                     primary={
-                      <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                        <Typography variant="subtitle2">{m.userNick}</Typography>
-                        <Typography variant="caption" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>
-                          {horaFormatada}
-                        </Typography>
-                      </Box>
-                    }
+  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <Typography variant="subtitle2">{m.userNick}</Typography>
+
+    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <Typography variant="caption" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>
+        {horaFormatada}
+      </Typography>
+
+      {canEdit(m) && (
+        <>
+          <IconButton
+            size="small"
+            onClick={() => editMessage(m)}
+          >
+            <EditIcon fontSize="inherit" />
+          </IconButton>
+
+          <IconButton
+            size="small"
+            onClick={() => deleteMessage(m.id)}
+          >
+            <DeleteIcon fontSize="inherit" />
+          </IconButton>
+        </>
+      )}
+    </Box>
+  </Box>
+}
+
                     secondary={
                       <>
                         {m.type === "image" && (
                           <img
                             src={m.text}
-                            alt="img"
                             style={{ maxWidth: 240, borderRadius: 8, cursor: "pointer" }}
                             onClick={() => {
                               setLightboxImage(m.text);
@@ -396,10 +481,33 @@ export default function Chat({ userNick, userEmail }) {
                             }}
                           />
                         )}
+
+  {m.type === "image-group" && m.text && (
+    <Typography sx={{ mb: 0.5 }}>{m.text}</Typography>
+  )}
+                        {/* 🔽 NOVO — image group */}
+                        {m.type === "image-group" &&
+                          m.images?.map((img, idx) => (
+                            <img
+                              key={idx}
+                              src={img}
+                              style={{
+                                maxWidth: 240,
+                                display: "block",
+                                marginTop: 6,
+                                borderRadius: 8,
+                                cursor: "pointer",
+                              }}
+                              onClick={() => {
+                                setLightboxImage(img);
+                                setZoom(1);
+                              }}
+                            />
+                          ))}
+
                         {m.type === "gif" && (
                           <img
                             src={m.text}
-                            alt="gif"
                             style={{ maxWidth: 240, borderRadius: 8, cursor: "pointer" }}
                             onClick={() => {
                               setLightboxImage(m.text);
@@ -407,9 +515,11 @@ export default function Chat({ userNick, userEmail }) {
                             }}
                           />
                         )}
+
                         {m.type === "video" && (
                           <video controls src={m.text} style={{ maxWidth: 240, borderRadius: 8 }} />
                         )}
+
                         {m.type === "youtube" && (
                           <iframe
                             width="240"
@@ -417,15 +527,30 @@ export default function Chat({ userNick, userEmail }) {
                             src={m.text.replace("watch?v=", "embed/")}
                             frameBorder="0"
                             allowFullScreen
-                          ></iframe>
+                          />
                         )}
+
                         {m.type === "link" && (
                           <a href={m.text} target="_blank" rel="noreferrer">
                             {m.text}
                           </a>
                         )}
+
                         {m.type === "dice" && <Typography color="primary">{m.text}</Typography>}
-                        {m.type === "text" && <Typography>{m.text}</Typography>}
+                       {m.type === "text" && (
+  <Typography>
+    {m.text}
+    {m.edited && (
+      <Typography
+        component="span"
+        sx={{ ml: 0.5, fontSize: "0.7rem", opacity: 0.6 }}
+      >
+        (editado)
+      </Typography>
+    )}
+  </Typography>
+)}
+
                       </>
                     }
                   />
@@ -437,24 +562,31 @@ export default function Chat({ userNick, userEmail }) {
         </List>
       </Box>
 
-      {/* Scroll automático */}
-      <Fade in={showScrollButton}>
-        <Box sx={{ position: "absolute", bottom: 72, right: 16, zIndex: 10 }}>
-          <Badge color="error" badgeContent={unreadCount > 0 ? unreadCount : 0} invisible={unreadCount === 0}>
-            <Fab
-              size="small"
-              color="primary"
-              onClick={() => {
-                setAutoScroll(true);
-                setUnreadCount(0);
-                endRef.current?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              <ArrowDownwardIcon />
-            </Fab>
-          </Badge>
+      {/* 🔽 ADICIONADO — preview múltiplo */}
+      {filePreviews.length > 0 && (
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
+          {filePreviews.map((img, i) => (
+            <Box key={i} sx={{ position: "relative" }}>
+              <img src={img} style={{ width: 64, height: 64, borderRadius: 8 }} />
+              <IconButton
+                size="small"
+                onClick={() =>
+                  setFilePreviews((p) => p.filter((_, idx) => idx !== i))
+                }
+                sx={{
+                  position: "absolute",
+                  top: -6,
+                  right: -6,
+                  bgcolor: "rgba(0,0,0,0.7)",
+                  color: "#fff",
+                }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          ))}
         </Box>
-      </Fade>
+      )}
 
       {/* Input */}
       <Box component="form" onSubmit={sendMessage} sx={{ display: "flex", gap: 1, mt: 1 }}>
@@ -467,7 +599,7 @@ export default function Chat({ userNick, userEmail }) {
         />
         <IconButton component="label">
           <ImageIcon />
-          <input hidden type="file" accept="image/*" onChange={handleFileChange} />
+          <input hidden type="file" accept="image/*" multiple onChange={handleFileChange} />
         </IconButton>
         <IconButton color="primary" onClick={() => setGifOpen(true)}>
           <GifBoxIcon />
@@ -479,14 +611,14 @@ export default function Chat({ userNick, userEmail }) {
 
       {/* Dados */}
       <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 1 }}>
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-          <Button key={n} variant="outlined" size="small" onClick={() => quickRollDice(n, 10)} sx={{ minWidth: 50 }}>
+        {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+          <Button key={n} variant="outlined" size="small" onClick={() => quickRollDice(n, 10)}>
             {n}D10
           </Button>
         ))}
       </Box>
 
-      {/* Modal de GIFs */}
+      {/* Modal de GIFs — INTACTO */}
       <Dialog open={gifOpen} onClose={() => setGifOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>Buscar GIF</DialogTitle>
         <DialogContent>
@@ -513,7 +645,6 @@ export default function Chat({ userNick, userEmail }) {
               <Grid item xs={3} key={g.id}>
                 <img
                   src={g.images.fixed_width_small.url}
-                  alt="gif"
                   style={{ width: "100%", cursor: "pointer", borderRadius: 6 }}
                   onClick={() => sendGif(g.images.original.url)}
                 />
@@ -523,7 +654,7 @@ export default function Chat({ userNick, userEmail }) {
         </DialogContent>
       </Dialog>
 
-      {/* Lightbox com Zoom, Arraste e Gestos */}
+      {/* Lightbox — INTACTO */}
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}
@@ -533,10 +664,7 @@ export default function Chat({ userNick, userEmail }) {
           }}
           style={{
             position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
+            inset: 0,
             background: "rgba(0,0,0,0.85)",
             display: "flex",
             alignItems: "center",
@@ -545,21 +673,31 @@ export default function Chat({ userNick, userEmail }) {
           }}
         >
           <LightboxImage src={lightboxImage} zoom={zoom} setZoom={setZoom} />
-          <IconButton
-            onClick={() => setLightboxImage(null)}
-            sx={{
-              position: "fixed",
-              top: 16,
-              right: 16,
-              color: "#fff",
-              background: "rgba(0,0,0,0.5)",
-              "&:hover": { background: "rgba(0,0,0,0.8)" },
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
         </div>
       )}
+      <Fade in={showScrollButton}>
+  <Fab
+    color="primary"
+    size="small"
+    onClick={() => {
+      endRef.current?.scrollIntoView({ behavior: "smooth" });
+      setShowScrollButton(false);
+      setUnreadCount(0);
+      setAutoScroll(true);
+    }}
+    sx={{
+      position: "absolute",
+      bottom: 90,
+      right: 16,
+      zIndex: 2000,
+    }}
+  >
+    <Badge badgeContent={unreadCount} color="error">
+      <ArrowDownwardIcon />
+    </Badge>
+  </Fab>
+</Fade>
+
     </Paper>
   );
 }

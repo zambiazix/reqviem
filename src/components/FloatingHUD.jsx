@@ -141,22 +141,22 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
       refBox.current.style.top = `${boundedY}px`;
     }
     function onMouseUp() {
-      if (!dragging) return;
-      setDragging(false);
-      try {
-        const rect = refBox.current.getBoundingClientRect();
-        const pos = { x: rect.left, y: rect.top };
-        setFloatingPosLocal(pos);
-        if (isMaster) saveFloatingPosGlobal(pos);
-      } catch {}
-    }
+  if (!dragging) return;
+  setDragging(false);
+  try {
+    const rect = refBox.current.getBoundingClientRect();
+    const pos = { x: rect.left, y: rect.top };
+    setFloatingPosLocal(pos);
+  } catch {}
+}
+
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [dragging, setFloatingPosLocal, isMaster, saveFloatingPosGlobal]);
+  }, [dragging, setFloatingPosLocal]);
 
   useEffect(() => {
     if (!refBox.current || !hud) return;
