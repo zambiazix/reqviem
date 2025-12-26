@@ -12,16 +12,19 @@ export default function VoiceProvider({ children }) {
   async function joinVoice({ roomName, identity, nick }) {
     if (room) return;
 console.log("🔥 joinVoice FOI CHAMADO");
-    const res = await fetch("/livekit/token", {
-      method: "POST",
-      
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        room: roomName,
-        identity,
-        name: nick,
-      }),
-    });
+    const res = await fetch(
+  `${import.meta.env.VITE_API_URL}/livekit/token`,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      room: roomName,
+      identity,
+      name: nick,
+    }),
+  }
+);
+
 console.log("📡 fetch enviado");
 
     if (!res.ok) {
