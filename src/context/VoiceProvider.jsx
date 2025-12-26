@@ -13,7 +13,7 @@ export default function VoiceProvider({ children }) {
     if (room) return;
 console.log("🔥 joinVoice FOI CHAMADO");
     const res = await fetch(
-  `${import.meta.env.VITE_API_URL}/livekit/token`,
+  `${import.meta.env.VITE_SERVER_URL}/livekit/token`,
   {
     method: "POST",
     headers: { "Content-Type": "application/json" },
