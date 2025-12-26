@@ -11,9 +11,10 @@ export default function VoiceProvider({ children }) {
 
   async function joinVoice({ roomName, identity, nick }) {
     if (room) return;
-
+console.log("🔥 joinVoice FOI CHAMADO");
     const res = await fetch("/livekit/token", {
       method: "POST",
+      
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         room: roomName,
@@ -21,6 +22,7 @@ export default function VoiceProvider({ children }) {
         name: nick,
       }),
     });
+console.log("📡 fetch enviado");
 
     if (!res.ok) {
       console.error("Erro ao obter token");

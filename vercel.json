@@ -6,7 +6,7 @@
   "framework": "vite",
   "routes": [
     {
-      "src": "/livekit/(.*)",
+      "src": "^/livekit/(.*)",
       "dest": "https://reqviem.onrender.com/livekit/$1"
     },
     {
