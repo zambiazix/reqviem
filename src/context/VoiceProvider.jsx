@@ -11,28 +11,44 @@ export default function VoiceProvider({ children }) {
 
   async function joinVoice({ roomName, identity, nick }) {
     if (room) return;
-console.log("🔥 joinVoice FOI CHAMADO");
-    const res = await fetch(
-  `${import.meta.env.VITE_SERVER_URL}/livekit/token`,
-  {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      room: roomName,
-      identity,
-      name: nick,
-    }),
-  }
-);
 
-console.log("📡 fetch enviado");
+    console.log("🔥 joinVoice FOI CHAMADO");
 
-    if (!res.ok) {
-      console.error("Erro ao obter token");
+    const serverUrl = import.meta.env.VITE_SERVER_URL;
+    const livekitUrl = import.meta.env.VITE_LIVEKIT_URL;
+
+    if (!serverUrl || !livekitUrl) {
+      console.error("❌ ENV faltando:", { serverUrl, livekitUrl });
       return;
     }
 
-    const { token } = await res.json();
+    const res = await fetch(`${serverUrl}/livekit/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        room: roomName,
+        identity,
+        name: nick,
+      }),
+    });
+
+    console.log("📡 fetch enviado");
+
+    if (!res.ok) {
+      console.error("❌ Erro ao obter token:", res.status);
+      return;
+    }
+
+    const data = await res.json();
+
+    if (!data?.token || typeof data.token !== "string") {
+      console.error("❌ Token inválido recebido:", data);
+      return;
+    }
+
+    const token = data.token;
+
+    console.log("✅ Token OK (string)");
 
     const livekitRoom = new Room({
       adaptiveStream: false,
@@ -46,10 +62,7 @@ console.log("📡 fetch enviado");
       updateParticipants(livekitRoom)
     );
 
-    await livekitRoom.connect(
-      import.meta.env.VITE_LIVEKIT_URL,
-      token
-    );
+    await livekitRoom.connect(livekitUrl, token);
 
     await livekitRoom.localParticipant.enableMicrophone();
 
