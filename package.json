@@ -12,6 +12,7 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@livekit/components-react": "^2.9.17",
     "@mui/icons-material": "^7.3.2",
     "@mui/material": "^7.3.2",
     "@vercel/blob": "^2.0.0",
@@ -20,6 +21,8 @@
     "firebase": "^12.2.1",
     "jszip": "^3.10.1",
     "konva": "^10.0.2",
+    "livekit-client": "^2.16.1",
+    "livekit-server-sdk": "^2.15.0",
     "lz-string": "^1.5.0",
     "mime": "^4.1.0",
     "react": "^19.1.1",

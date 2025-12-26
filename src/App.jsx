@@ -174,16 +174,19 @@ export default function App() {
       setUser(u || null);
       if (u) {
         try {
-          const userDocRef = doc(db, "users", u.email);
-          const userSnap = await getDoc(userDocRef);
-          if (userSnap.exists()) {
-            const data = userSnap.data();
-            setUserNick(data.nick || u.email);
-            setRole(data.role || (u.email === MASTER_EMAIL ? "master" : "player"));
-          } else {
-            setUserNick(u.email);
-            setRole(u.email === MASTER_EMAIL ? "master" : "player");
-          }
+          // 🔽 BUSCA O NOME DA FICHA (CORRETO)
+const fichaRef = doc(db, "fichas", u.email);
+const fichaSnap = await getDoc(fichaRef);
+
+if (fichaSnap.exists()) {
+  const ficha = fichaSnap.data();
+  setUserNick(ficha.nome || u.email);
+} else {
+  setUserNick(u.email);
+}
+
+// 🔽 Role continua igual
+setRole(u.email === MASTER_EMAIL ? "master" : "player");
 
           if (u.email === MASTER_EMAIL) {
             await carregarListaFichas();
