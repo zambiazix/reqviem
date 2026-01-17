@@ -68,7 +68,7 @@ const token = data.token;
   token
 );
 
-    await livekitRoom.localParticipant.enableMicrophone();
+    await livekitRoom.localParticipant.setMicrophoneEnabled(true);
 
     setRoom(livekitRoom);
     setInVoice(true);
