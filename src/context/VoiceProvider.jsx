@@ -41,12 +41,13 @@ export default function VoiceProvider({ children }) {
 
     const data = await res.json();
 
-    if (!data?.token || typeof data.token !== "string") {
-      console.error("❌ Token inválido recebido:", data);
-      return;
-    }
+if (!data.token || typeof data.token !== "string") {
+  console.error("❌ Token inválido recebido:", data);
+  return;
+}
 
-    const token = data.token;
+const token = data.token;
+
 
     console.log("✅ Token OK (string)");
 
@@ -62,7 +63,10 @@ export default function VoiceProvider({ children }) {
       updateParticipants(livekitRoom)
     );
 
-    await livekitRoom.connect(livekitUrl, token);
+    await livekitRoom.connect(
+  import.meta.env.VITE_LIVEKIT_URL,
+  token
+);
 
     await livekitRoom.localParticipant.enableMicrophone();
 

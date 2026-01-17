@@ -318,10 +318,26 @@ xpMap[email] = { xp: newXP, level: newLevel };
       const data = snap.exists() ? snap.data() : {};
       const xpMap = data.xpMap || {};
 
-      xpMap[email] = {
-        xp: Math.max(0, Math.min(100, xp || 0)),
-        level: level || xpMap[email]?.level || 1,
-      };
+      let adjXP = xp;
+let adjLevel = level || xpMap[email]?.level || 1;
+
+while (adjXP >= 100) {
+  adjXP -= 100;
+  adjLevel++;
+}
+
+while (adjXP < 0) {
+  if (adjLevel > 1) {
+    adjXP += 100;
+    adjLevel--;
+  } else {
+    adjXP = 0;
+    break;
+  }
+}
+
+xpMap[email] = { xp: adjXP, level: adjLevel };
+
 
       // debug
       // eslint-disable-next-line no-console
