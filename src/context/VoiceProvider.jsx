@@ -7,8 +7,11 @@ const VoiceProvider = ({ children }) => {
   const [inVoice, setInVoice] = useState(false);
   const [participants, setParticipants] = useState([]);
   const roomRef = useRef(null);
+  const audioElementsRef = useRef({}); // controla elementos criados
 
-  // Atualiza lista de participantes com controle real de fala
+  // ===============================
+  // Atualiza participantes
+  // ===============================
   const updateParticipants = (activeSpeakers = []) => {
     if (!roomRef.current) return;
 
@@ -32,9 +35,29 @@ const VoiceProvider = ({ children }) => {
     setParticipants(mapped);
   };
 
+  // ===============================
+  // Força reprodução segura (Brave fix)
+  // ===============================
+  const playAudioElement = async (element) => {
+    try {
+      element.autoplay = true;
+      element.playsInline = true;
+      element.muted = false;
+      element.volume = 1;
+
+      await element.play();
+      console.log("🔊 Áudio remoto tocando");
+    } catch (err) {
+      console.warn("⚠️ Autoplay bloqueado, tentando interação:", err);
+    }
+  };
+
+  // ===============================
+  // Entrar na sala
+  // ===============================
   const joinVoice = async ({ roomName, identity, nick }) => {
     try {
-      // 🔓 Garante permissão e libera autoplay (importante!)
+      // 🔓 Libera autoplay e permissão
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
       const response = await fetch(
@@ -60,7 +83,7 @@ const VoiceProvider = ({ children }) => {
 
       await room.connect(import.meta.env.VITE_LIVEKIT_URL, data.token);
 
-      // 🎤 Cria e publica áudio local manualmente
+      // 🎤 Publica áudio local
       const audioTrack = await createLocalAudioTrack({
         echoCancellation: true,
         noiseSuppression: true,
@@ -69,46 +92,80 @@ const VoiceProvider = ({ children }) => {
 
       await room.localParticipant.publishTrack(audioTrack);
 
-      // Eventos de conexão
+      // ===============================
+      // Eventos
+      // ===============================
+
       room.on("participantConnected", () => updateParticipants([]));
       room.on("participantDisconnected", () => updateParticipants([]));
 
-      // Detecção real de fala
       room.on("activeSpeakersChanged", (speakers) => {
         updateParticipants(speakers);
       });
 
-      // 🔊 Reprodução de áudio remoto (com autoplay forçado)
-      room.on("trackSubscribed", (track) => {
-        if (track.kind === "audio") {
-          const element = track.attach();
+      // 🔊 Quando nova track for assinada
+      room.on("trackSubscribed", async (track, publication, participant) => {
+        if (track.kind !== "audio") return;
 
-          element.autoplay = true;
-          element.playsInline = true;
-          element.style.display = "none";
+        const id = participant.identity;
 
-          document.body.appendChild(element);
+        if (audioElementsRef.current[id]) return; // evita duplicado
 
-          // Força tentativa de reprodução
-          element.play().catch((err) => {
-            console.warn("Autoplay bloqueado:", err);
-          });
-        }
+        const element = track.attach();
+        element.style.display = "none";
+
+        document.body.appendChild(element);
+
+        audioElementsRef.current[id] = element;
+
+        await playAudioElement(element);
+      });
+
+      // 🔁 IMPORTANTE: pega tracks já existentes
+      room.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach(async (publication) => {
+          if (
+            publication.kind === "audio" &&
+            publication.isSubscribed &&
+            publication.track
+          ) {
+            const element = publication.track.attach();
+            element.style.display = "none";
+            document.body.appendChild(element);
+
+            audioElementsRef.current[participant.identity] = element;
+
+            await playAudioElement(element);
+          }
+        });
       });
 
       roomRef.current = room;
       setInVoice(true);
       updateParticipants([]);
+
     } catch (err) {
       console.error("Erro ao conectar no voice:", err);
     }
   };
 
+  // ===============================
+  // Sair da sala
+  // ===============================
   const leaveVoice = async () => {
     if (roomRef.current) {
       await roomRef.current.disconnect();
       roomRef.current = null;
     }
+
+    // Remove áudios criados
+    Object.values(audioElementsRef.current).forEach((el) => {
+      el.pause();
+      el.remove();
+    });
+
+    audioElementsRef.current = {};
+
     setParticipants([]);
     setInVoice(false);
   };
