@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef } from "react";
-import { Room } from "livekit-client";
+import { Room, createLocalAudioTrack } from "livekit-client";
 
 const VoiceContext = createContext();
 
@@ -57,8 +57,14 @@ const VoiceProvider = ({ children }) => {
 
       await room.connect(import.meta.env.VITE_LIVEKIT_URL, data.token);
 
-      // ✅ API nova do LiveKit
-      await room.localParticipant.setMicrophoneEnabled(true);
+      // 🔥 CRIA E PUBLICA TRACK DE ÁUDIO MANUALMENTE
+      const audioTrack = await createLocalAudioTrack({
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      });
+
+      await room.localParticipant.publishTrack(audioTrack);
 
       // Eventos de conexão
       room.on("participantConnected", () => updateParticipants([]));
