@@ -57,11 +57,8 @@ const VoiceProvider = ({ children }) => {
 
       await room.connect(import.meta.env.VITE_LIVEKIT_URL, data.token);
 
-      await room.localParticipant.enableMicrophone({
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      });
+      // ✅ API nova do LiveKit
+      await room.localParticipant.setMicrophoneEnabled(true);
 
       // Eventos de conexão
       room.on("participantConnected", () => updateParticipants([]));
