@@ -8,7 +8,7 @@ const VoiceProvider = ({ children }) => {
   const [participants, setParticipants] = useState([]);
   const roomRef = useRef(null);
 
-  // Atualiza lista de participantes com controle real de quem está falando
+  // Atualiza lista de participantes com controle real de fala
   const updateParticipants = (activeSpeakers = []) => {
     if (!roomRef.current) return;
 
@@ -34,6 +34,9 @@ const VoiceProvider = ({ children }) => {
 
   const joinVoice = async ({ roomName, identity, nick }) => {
     try {
+      // 🔓 Garante permissão e libera autoplay (importante!)
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+
       const response = await fetch(
         `${import.meta.env.VITE_SERVER_URL}/livekit/token`,
         {
@@ -57,7 +60,7 @@ const VoiceProvider = ({ children }) => {
 
       await room.connect(import.meta.env.VITE_LIVEKIT_URL, data.token);
 
-      // 🔥 CRIA E PUBLICA TRACK DE ÁUDIO MANUALMENTE
+      // 🎤 Cria e publica áudio local manualmente
       const audioTrack = await createLocalAudioTrack({
         echoCancellation: true,
         noiseSuppression: true,
@@ -70,17 +73,26 @@ const VoiceProvider = ({ children }) => {
       room.on("participantConnected", () => updateParticipants([]));
       room.on("participantDisconnected", () => updateParticipants([]));
 
-      // Evento REAL de detecção de fala
+      // Detecção real de fala
       room.on("activeSpeakersChanged", (speakers) => {
         updateParticipants(speakers);
       });
 
-      // Receber áudio remoto
+      // 🔊 Reprodução de áudio remoto (com autoplay forçado)
       room.on("trackSubscribed", (track) => {
         if (track.kind === "audio") {
           const element = track.attach();
+
+          element.autoplay = true;
+          element.playsInline = true;
           element.style.display = "none";
+
           document.body.appendChild(element);
+
+          // Força tentativa de reprodução
+          element.play().catch((err) => {
+            console.warn("Autoplay bloqueado:", err);
+          });
         }
       });
 
@@ -116,5 +128,4 @@ const VoiceProvider = ({ children }) => {
 };
 
 export const useVoice = () => useContext(VoiceContext);
-
 export default VoiceProvider;
