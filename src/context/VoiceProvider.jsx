@@ -1,95 +1,91 @@
-import React, { createContext, useContext, useState } from "react";
-import { Room, RoomEvent } from "livekit-client";
+import React, { createContext, useContext, useState, useRef } from "react";
+import { Room } from "livekit-client";
 
 const VoiceContext = createContext();
-export const useVoice = () => useContext(VoiceContext);
 
-export default function VoiceProvider({ children }) {
-  const [room, setRoom] = useState(null);
-  const [participants, setParticipants] = useState([]);
+const VoiceProvider = ({ children }) => {
   const [inVoice, setInVoice] = useState(false);
+  const [participants, setParticipants] = useState([]);
+  const roomRef = useRef(null);
 
-  async function joinVoice({ roomName, identity, nick }) {
-    if (room) return;
+  const updateParticipants = () => {
+    if (!roomRef.current) return;
 
-    console.log("🔥 joinVoice FOI CHAMADO");
+    const room = roomRef.current;
 
-    const serverUrl = import.meta.env.VITE_SERVER_URL;
-    const livekitUrl = import.meta.env.VITE_LIVEKIT_URL;
+    const allParticipants = [
+      room.localParticipant,
+      ...Array.from(room.remoteParticipants.values()),
+    ];
 
-    if (!serverUrl || !livekitUrl) {
-      console.error("❌ ENV faltando:", { serverUrl, livekitUrl });
-      return;
+    const mapped = allParticipants.map((p) => ({
+      identity: p.identity,
+      name: p.name || p.identity,
+      isSpeaking: p.isSpeaking || false,
+    }));
+
+    setParticipants(mapped);
+  };
+
+  const joinVoice = async ({ roomName, identity, nick }) => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SERVER_URL}/livekit/token`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            room: roomName,
+            identity,
+            name: nick,
+          }),
+        }
+      );
+
+      const data = await response.json();
+      if (!data.token) return;
+
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+
+      await room.connect(import.meta.env.VITE_LIVEKIT_URL, data.token);
+
+      await room.localParticipant.enableMicrophone({
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      });
+
+      room.on("participantConnected", updateParticipants);
+      room.on("participantDisconnected", updateParticipants);
+      room.on("activeSpeakersChanged", updateParticipants);
+
+      room.on("trackSubscribed", (track) => {
+        if (track.kind === "audio") {
+          const element = track.attach();
+          element.style.display = "none";
+          document.body.appendChild(element);
+        }
+      });
+
+      roomRef.current = room;
+      setInVoice(true);
+      updateParticipants();
+    } catch (err) {
+      console.error("Erro ao conectar no voice:", err);
     }
+  };
 
-    const res = await fetch(`${serverUrl}/livekit/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        room: roomName,
-        identity,
-        name: nick,
-      }),
-    });
-
-    console.log("📡 fetch enviado");
-
-    if (!res.ok) {
-      console.error("❌ Erro ao obter token:", res.status);
-      return;
+  const leaveVoice = async () => {
+    if (roomRef.current) {
+      await roomRef.current.disconnect();
+      roomRef.current = null;
     }
-
-    const data = await res.json();
-
-if (!data.token || typeof data.token !== "string") {
-  console.error("❌ Token inválido recebido:", data);
-  return;
-}
-
-const token = data.token;
-
-
-    console.log("✅ Token OK (string)");
-
-    const livekitRoom = new Room({
-      adaptiveStream: false,
-      dynacast: true,
-    });
-
-    livekitRoom.on(RoomEvent.ParticipantConnected, () =>
-      updateParticipants(livekitRoom)
-    );
-    livekitRoom.on(RoomEvent.ParticipantDisconnected, () =>
-      updateParticipants(livekitRoom)
-    );
-
-    await livekitRoom.connect(
-  import.meta.env.VITE_LIVEKIT_URL,
-  token
-);
-
-    await livekitRoom.localParticipant.setMicrophoneEnabled(true);
-
-    setRoom(livekitRoom);
-    setInVoice(true);
-    updateParticipants(livekitRoom);
-  }
-
-  function updateParticipants(r) {
-    if (!r) return;
-    setParticipants([
-      r.localParticipant,
-      ...Array.from(r.remoteParticipants.values()),
-    ]);
-  }
-
-  function leaveVoice() {
-    if (!room) return;
-    room.disconnect();
-    setRoom(null);
     setParticipants([]);
     setInVoice(false);
-  }
+  };
 
   return (
     <VoiceContext.Provider
@@ -103,4 +99,8 @@ const token = data.token;
       {children}
     </VoiceContext.Provider>
   );
-}
+};
+
+export const useVoice = () => useContext(VoiceContext);
+
+export default VoiceProvider;
