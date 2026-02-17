@@ -8,10 +8,15 @@ const VoiceProvider = ({ children }) => {
   const [participants, setParticipants] = useState([]);
   const roomRef = useRef(null);
 
-  const updateParticipants = () => {
+  // Atualiza lista de participantes com controle real de quem está falando
+  const updateParticipants = (activeSpeakers = []) => {
     if (!roomRef.current) return;
 
     const room = roomRef.current;
+
+    const speakingIds = new Set(
+      activeSpeakers.map((p) => p.identity)
+    );
 
     const allParticipants = [
       room.localParticipant,
@@ -21,7 +26,7 @@ const VoiceProvider = ({ children }) => {
     const mapped = allParticipants.map((p) => ({
       identity: p.identity,
       name: p.name || p.identity,
-      isSpeaking: p.isSpeaking || false,
+      isSpeaking: speakingIds.has(p.identity),
     }));
 
     setParticipants(mapped);
@@ -58,10 +63,16 @@ const VoiceProvider = ({ children }) => {
         autoGainControl: true,
       });
 
-      room.on("participantConnected", updateParticipants);
-      room.on("participantDisconnected", updateParticipants);
-      room.on("activeSpeakersChanged", updateParticipants);
+      // Eventos de conexão
+      room.on("participantConnected", () => updateParticipants([]));
+      room.on("participantDisconnected", () => updateParticipants([]));
 
+      // Evento REAL de detecção de fala
+      room.on("activeSpeakersChanged", (speakers) => {
+        updateParticipants(speakers);
+      });
+
+      // Receber áudio remoto
       room.on("trackSubscribed", (track) => {
         if (track.kind === "audio") {
           const element = track.attach();
@@ -72,7 +83,7 @@ const VoiceProvider = ({ children }) => {
 
       roomRef.current = room;
       setInVoice(true);
-      updateParticipants();
+      updateParticipants([]);
     } catch (err) {
       console.error("Erro ao conectar no voice:", err);
     }
