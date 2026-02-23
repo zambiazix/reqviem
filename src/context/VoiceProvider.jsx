@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef } from "react";
-import { Room, createLocalAudioTrack } from "livekit-client";
+import { Room } from "livekit-client";
 
 const VoiceContext = createContext();
 
@@ -80,75 +80,75 @@ const VoiceProvider = ({ children }) => {
   // Entrar
   // ===============================
   const joinVoice = async ({ roomName, identity, nick, avatar }) => {
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const response = await fetch(`${SERVER_URL}/livekit/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          room: roomName,
-          identity,
-          name: nick,
-          avatar,
-        }),
-      });
+    const response = await fetch(`${SERVER_URL}/livekit/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        room: roomName,
+        identity,
+        name: nick,
+        avatar,
+      }),
+    });
 
-      if (!response.ok) {
-        throw new Error("Erro ao gerar token");
+    if (!response.ok) throw new Error("Erro ao gerar token");
+
+    const { token } = await response.json();
+    if (!token) throw new Error("Token inválido");
+
+    const room = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+    });
+
+    await room.connect(LIVEKIT_URL, token, {
+      autoSubscribe: true,
+    });
+
+    // 🔥 ATIVA MICROFONE DA FORMA CORRETA
+    await room.localParticipant.setMicrophoneEnabled(true);
+
+    // ================= EVENTS =================
+
+    room.on("participantConnected", () => updateParticipants());
+    room.on("participantDisconnected", () => updateParticipants());
+
+    room.on("activeSpeakersChanged", (speakers) => {
+      updateParticipants(speakers);
+    });
+
+    room.on("trackMuted", () => updateParticipants());
+    room.on("trackUnmuted", () => updateParticipants());
+
+    room.on("trackSubscribed", async (track, publication, participant) => {
+      if (track.kind !== "audio") return;
+
+      const id = participant.identity;
+      if (audioElementsRef.current[id]) return;
+
+      const element = track.attach();
+      element.style.display = "none";
+      document.body.appendChild(element);
+
+      audioElementsRef.current[id] = element;
+
+      try {
+        await element.play();
+      } catch (e) {
+        console.warn("Autoplay bloqueado:", e);
       }
+    });
 
-      const { token } = await response.json();
-      if (!token) throw new Error("Token inválido");
-
-      const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-      });
-
-      await room.connect(LIVEKIT_URL, token);
-
-      const audioTrack = await createLocalAudioTrack({
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      });
-
-      await room.localParticipant.publishTrack(audioTrack);
-
-      // 🔥 Eventos robustos
-      room.on("participantConnected", () => updateParticipants());
-      room.on("participantDisconnected", () => updateParticipants());
-
-      room.on("activeSpeakersChanged", (speakers) => {
-        updateParticipants(speakers);
-      });
-
-      room.on("trackMuted", () => updateParticipants());
-      room.on("trackUnmuted", () => updateParticipants());
-
-      room.on("trackSubscribed", async (track, publication, participant) => {
-        if (track.kind !== "audio") return;
-
-        const id = participant.identity;
-        if (audioElementsRef.current[id]) return;
-
-        const element = track.attach();
-        element.style.display = "none";
-        document.body.appendChild(element);
-
-        audioElementsRef.current[id] = element;
-
-        await playAudioElement(element);
-      });
-
-      roomRef.current = room;
-      setInVoice(true);
-      updateParticipants();
-    } catch (err) {
-      console.error("Erro ao conectar:", err);
-    }
-  };
+    roomRef.current = room;
+    setInVoice(true);
+    updateParticipants();
+  } catch (err) {
+    console.error("Erro ao conectar:", err);
+  }
+};
 
   // ===============================
   // 🔥 Mute 100% sincronizado
