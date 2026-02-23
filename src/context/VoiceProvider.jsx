@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef } from "react";
-import { Room } from "livekit-client";
+import { Room, RoomEvent, Track } from "livekit-client";
 
 const VoiceContext = createContext();
 
@@ -19,32 +19,32 @@ const VoiceProvider = ({ children }) => {
     "wss://rpg-app-cu3pb8j9.livekit.cloud";
 
   // ===============================
-  // Atualiza participantes
+  // Atualização de participantes
   // ===============================
   const updateParticipants = (activeSpeakers = []) => {
-    if (!roomRef.current) return;
-
     const room = roomRef.current;
+    if (!room) return;
+
     const speakingIds = new Set(activeSpeakers.map((p) => p.identity));
 
-    const allParticipants = [
+    const all = [
       room.localParticipant,
       ...Array.from(room.remoteParticipants.values()),
     ];
 
-    const mapped = allParticipants.map((p) => {
+    const mapped = all.map((p) => {
       let metadata = {};
       try {
         metadata = p.metadata ? JSON.parse(p.metadata) : {};
       } catch {}
 
-      const audioPub = Array.from(p.audioTrackPublications.values())[0];
+      const audioPub = Array.from(
+        p.audioTrackPublications.values()
+      )[0];
 
-      const micEnabled = audioPub?.track
-        ? !audioPub.track.isMuted
-        : true;
+      const micEnabled =
+        audioPub?.track ? !audioPub.track.isMuted : false;
 
-      // 🔥 Se for o participante local, sincroniza o estado real
       if (p === room.localParticipant) {
         setIsMuted(!micEnabled);
       }
@@ -62,130 +62,150 @@ const VoiceProvider = ({ children }) => {
   };
 
   // ===============================
-  // Reprodução segura
+  // Limpeza segura de áudio
   // ===============================
-  const playAudioElement = async (element) => {
-    try {
-      element.autoplay = true;
-      element.playsInline = true;
-      element.muted = false;
-      element.volume = 1;
-      await element.play();
-    } catch (err) {
-      console.warn("Autoplay bloqueado:", err);
+  const removeAudioElement = (identity) => {
+    const el = audioElementsRef.current[identity];
+    if (el) {
+      try {
+        el.pause();
+        el.srcObject = null;
+        el.remove();
+      } catch {}
+      delete audioElementsRef.current[identity];
     }
   };
 
   // ===============================
-  // Entrar
+  // Entrar na sala
   // ===============================
   const joinVoice = async ({ roomName, identity, nick, avatar }) => {
-  try {
-    await navigator.mediaDevices.getUserMedia({ audio: true });
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    const response = await fetch(`${SERVER_URL}/livekit/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        room: roomName,
-        identity,
-        name: nick,
-        avatar,
-      }),
-    });
+      const response = await fetch(`${SERVER_URL}/livekit/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room: roomName,
+          identity,
+          name: nick,
+          avatar,
+        }),
+      });
 
-    if (!response.ok) throw new Error("Erro ao gerar token");
+      if (!response.ok) throw new Error("Erro ao gerar token");
 
-    const { token } = await response.json();
-    if (!token) throw new Error("Token inválido");
+      const { token } = await response.json();
+      if (!token) throw new Error("Token inválido");
 
-    const room = new Room({
-      adaptiveStream: true,
-      dynacast: true,
-    });
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
 
-    await room.connect(LIVEKIT_URL, token, {
-      autoSubscribe: true,
-    });
+      // Eventos principais
+      room
+        .on(RoomEvent.ParticipantConnected, () =>
+          updateParticipants()
+        )
+        .on(RoomEvent.ParticipantDisconnected, (participant) => {
+          removeAudioElement(participant.identity);
+          updateParticipants();
+        })
+        .on(RoomEvent.ActiveSpeakersChanged, (speakers) =>
+          updateParticipants(speakers)
+        )
+        .on(RoomEvent.TrackMuted, () => updateParticipants())
+        .on(RoomEvent.TrackUnmuted, () => updateParticipants())
+        .on(RoomEvent.TrackSubscribed, async (track, pub, participant) => {
+          if (track.kind !== Track.Kind.Audio) return;
 
-    // 🔥 ATIVA MICROFONE DA FORMA CORRETA
-    await room.localParticipant.setMicrophoneEnabled(true);
+          const id = participant.identity;
 
-    // ================= EVENTS =================
+          // remove qualquer instância anterior
+          removeAudioElement(id);
 
-    room.on("participantConnected", () => updateParticipants());
-    room.on("participantDisconnected", () => updateParticipants());
+          const element = track.attach();
+          element.autoplay = true;
+          element.playsInline = true;
+          element.style.display = "none";
 
-    room.on("activeSpeakersChanged", (speakers) => {
-      updateParticipants(speakers);
-    });
+          document.body.appendChild(element);
 
-    room.on("trackMuted", () => updateParticipants());
-    room.on("trackUnmuted", () => updateParticipants());
+          audioElementsRef.current[id] = element;
 
-    room.on("trackSubscribed", async (track, publication, participant) => {
-      if (track.kind !== "audio") return;
+          try {
+            await element.play();
+          } catch (e) {
+            console.warn("Autoplay bloqueado:", e);
+          }
+        })
+        .on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
+          if (track.kind !== Track.Kind.Audio) return;
+          removeAudioElement(participant.identity);
+        })
+        .on(RoomEvent.Disconnected, () => {
+          Object.keys(audioElementsRef.current).forEach((id) =>
+            removeAudioElement(id)
+          );
+          audioElementsRef.current = {};
+          setParticipants([]);
+          setInVoice(false);
+          setIsMuted(false);
+        });
 
-      const id = participant.identity;
-      if (audioElementsRef.current[id]) return;
+      await room.connect(LIVEKIT_URL, token, {
+        autoSubscribe: true,
+      });
 
-      const element = track.attach();
-      element.style.display = "none";
-      document.body.appendChild(element);
+      await room.localParticipant.setMicrophoneEnabled(true);
 
-      audioElementsRef.current[id] = element;
-
-      try {
-        await element.play();
-      } catch (e) {
-        console.warn("Autoplay bloqueado:", e);
-      }
-    });
-
-    roomRef.current = room;
-    setInVoice(true);
-    updateParticipants();
-  } catch (err) {
-    console.error("Erro ao conectar:", err);
-  }
-};
+      roomRef.current = room;
+      setInVoice(true);
+      updateParticipants();
+    } catch (err) {
+      console.error("Erro ao conectar no voice:", err);
+    }
+  };
 
   // ===============================
-  // 🔥 Mute 100% sincronizado
+  // Toggle Mute real
   // ===============================
   const toggleMute = async () => {
-    if (!roomRef.current) return;
+    const room = roomRef.current;
+    if (!room) return;
 
-    const local = roomRef.current.localParticipant;
+    const local = room.localParticipant;
 
-    const audioPub = Array.from(
+    const pub = Array.from(
       local.audioTrackPublications.values()
     )[0];
 
-    if (!audioPub?.track) return;
+    if (!pub?.track) return;
 
-    if (audioPub.track.isMuted) {
-      await audioPub.track.unmute();
+    if (pub.track.isMuted) {
+      await pub.track.unmute();
     } else {
-      await audioPub.track.mute();
+      await pub.track.mute();
     }
 
     updateParticipants();
   };
 
   // ===============================
-  // Sair
+  // Sair da sala
   // ===============================
   const leaveVoice = async () => {
-    if (roomRef.current) {
-      await roomRef.current.disconnect();
+    const room = roomRef.current;
+    if (room) {
+      await room.disconnect();
       roomRef.current = null;
     }
 
-    Object.values(audioElementsRef.current).forEach((el) => {
-      el.pause();
-      el.remove();
-    });
+    Object.keys(audioElementsRef.current).forEach((id) =>
+      removeAudioElement(id)
+    );
 
     audioElementsRef.current = {};
     setParticipants([]);
