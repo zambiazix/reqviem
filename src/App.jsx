@@ -150,6 +150,7 @@ export default function App() {
   const [selectedFichaEmail, setSelectedFichaEmail] = useState(null);
   const [createEmailInput, setCreateEmailInput] = useState("");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [fichaAtual, setFichaAtual] = useState(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -181,6 +182,7 @@ const fichaSnap = await getDoc(fichaRef);
 if (fichaSnap.exists()) {
   const ficha = fichaSnap.data();
   setUserNick(ficha.nome || u.email);
+  setFichaAtual(ficha);
 } else {
   setUserNick(u.email);
 }
@@ -331,7 +333,11 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
 
                   {/* Chat de voz */}
                   <Paper sx={{ p: 1, flexShrink: 0, mt: 2 }}>
-                    <MesaRPG userNick={userNick} />
+                    <MesaRPG
+  userNick={userNick}
+  userEmail={user?.email}
+  ficha={fichaAtual}
+/>
                   </Paper>
 
                   {/* Chat */}

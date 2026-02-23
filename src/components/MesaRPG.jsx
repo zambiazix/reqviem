@@ -6,13 +6,34 @@ import {
   List,
   ListItem,
   Box,
+  Avatar,
+  Stack,
 } from "@mui/material";
 import { useVoice } from "../context/VoiceProvider";
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
-export default function MesaRPG({ userNick }) {
-  const { inVoice, participants, joinVoice, leaveVoice } = useVoice();
+export default function MesaRPG({ userNick, userEmail, ficha }) {
+  const {
+    inVoice,
+    participants,
+    joinVoice,
+    leaveVoice,
+    toggleMute,
+    isMuted,
+  } = useVoice();
+
+  // 🔥 Pegando avatar salvo (ajuste se necessário)
+  const avatarUrl = ficha?.imagemPersonagem || null;
+
+  const handleJoin = () => {
+    joinVoice({
+      roomName: "mesa-rpg",
+      identity: userEmail || userNick, // 🔥 identity estável
+      nick: userNick || "Jogador",
+      avatar: avatarUrl,
+    });
+  };
 
   return (
     <Paper
@@ -23,6 +44,9 @@ export default function MesaRPG({ userNick }) {
         color: "white",
         borderRadius: 3,
         boxShadow: "0 0 12px rgba(0,0,0,0.3)",
+        maxHeight: 350,              // 🔥 altura fixa
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <Typography variant="h6" sx={{ mb: 2 }}>
@@ -30,32 +54,40 @@ export default function MesaRPG({ userNick }) {
       </Typography>
 
       {!inVoice ? (
-        <Button
-          variant="contained"
-          color="success"
-          onClick={() =>
-            joinVoice({
-              roomName: "mesa-rpg",
-              identity: crypto.randomUUID(),
-              nick: userNick || "Jogador",
-            })
-          }
-        >
+        <Button variant="contained" color="success" onClick={handleJoin}>
           Entrar no Chat de Voz
         </Button>
       ) : (
-        <Button variant="outlined" color="error" onClick={leaveVoice}>
-          Sair do Chat de Voz
-        </Button>
+        <Stack direction="row" spacing={2}>
+          <Button variant="outlined" color="error" onClick={leaveVoice}>
+            Sair
+          </Button>
+
+          <Button
+            variant="contained"
+            color={isMuted ? "warning" : "primary"}
+            onClick={toggleMute}
+          >
+            {isMuted ? "Desmutar" : "Mutar"}
+          </Button>
+        </Stack>
       )}
 
-      <List sx={{ mt: 2 }}>
+      <List
+        sx={{
+          mt: 2,
+          overflowY: "auto",  // 🔥 scroll interno
+          maxHeight: 160,
+          flex: 1,
+        }}
+      >
         {participants.map((p) => {
           const isMaster =
             p.name?.toLowerCase() === "mestre" ||
             p.identity === MASTER_EMAIL;
 
           const isSpeaking = p.isSpeaking;
+          const isYou = p.identity === (userEmail || userNick);
 
           const borderColor = isMaster
             ? "#FFD700"
@@ -79,22 +111,18 @@ export default function MesaRPG({ userNick }) {
                 borderBottom: "1px solid rgba(255,255,255,0.1)",
               }}
             >
-              <Box
+              <Avatar
+                src={p.avatar || undefined}
                 sx={{
                   width: 48,
                   height: 48,
-                  borderRadius: "50%",
-                  bgcolor: "#2f3640",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: "bold",
                   border: `3px solid ${borderColor}`,
                   boxShadow,
+                  bgcolor: "#2f3640",
                 }}
               >
-                {p.name?.charAt(0).toUpperCase() || "?"}
-              </Box>
+                {!p.avatar && p.name?.charAt(0).toUpperCase()}
+              </Avatar>
 
               <Typography
                 sx={{
@@ -102,9 +130,10 @@ export default function MesaRPG({ userNick }) {
                   fontWeight: isSpeaking || isMaster ? "bold" : "normal",
                 }}
               >
-                {p.name || p.identity}
+                {p.name}
+                {isYou && " (Você)"}
                 {isMaster && " 👑"}
-                {p === participants[0] && " (Você)"}
+                {p.isMuted && " 🔇"}
               </Typography>
             </ListItem>
           );

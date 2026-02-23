@@ -6,8 +6,17 @@ const VoiceContext = createContext();
 const VoiceProvider = ({ children }) => {
   const [inVoice, setInVoice] = useState(false);
   const [participants, setParticipants] = useState([]);
+  const [isMuted, setIsMuted] = useState(false);
+
   const roomRef = useRef(null);
-  const audioElementsRef = useRef({}); // controla elementos criados
+  const audioElementsRef = useRef({});
+
+  const SERVER_URL =
+    import.meta.env.VITE_SERVER_URL || "http://localhost:5000";
+
+  const LIVEKIT_URL =
+    import.meta.env.VITE_LIVEKIT_URL ||
+    "wss://rpg-app-cu3pb8j9.livekit.cloud";
 
   // ===============================
   // Atualiza participantes
@@ -16,27 +25,44 @@ const VoiceProvider = ({ children }) => {
     if (!roomRef.current) return;
 
     const room = roomRef.current;
-
-    const speakingIds = new Set(
-      activeSpeakers.map((p) => p.identity)
-    );
+    const speakingIds = new Set(activeSpeakers.map((p) => p.identity));
 
     const allParticipants = [
       room.localParticipant,
       ...Array.from(room.remoteParticipants.values()),
     ];
 
-    const mapped = allParticipants.map((p) => ({
-      identity: p.identity,
-      name: p.name || p.identity,
-      isSpeaking: speakingIds.has(p.identity),
-    }));
+    const mapped = allParticipants.map((p) => {
+      let metadata = {};
+      try {
+        metadata = p.metadata ? JSON.parse(p.metadata) : {};
+      } catch {}
+
+      const audioPub = Array.from(p.audioTrackPublications.values())[0];
+
+      const micEnabled = audioPub?.track
+        ? !audioPub.track.isMuted
+        : true;
+
+      // 🔥 Se for o participante local, sincroniza o estado real
+      if (p === room.localParticipant) {
+        setIsMuted(!micEnabled);
+      }
+
+      return {
+        identity: p.identity,
+        name: p.name || p.identity,
+        avatar: metadata.avatar || null,
+        isSpeaking: speakingIds.has(p.identity),
+        isMuted: !micEnabled,
+      };
+    });
 
     setParticipants(mapped);
   };
 
   // ===============================
-  // Força reprodução segura (Brave fix)
+  // Reprodução segura
   // ===============================
   const playAudioElement = async (element) => {
     try {
@@ -44,46 +70,44 @@ const VoiceProvider = ({ children }) => {
       element.playsInline = true;
       element.muted = false;
       element.volume = 1;
-
       await element.play();
-      console.log("🔊 Áudio remoto tocando");
     } catch (err) {
-      console.warn("⚠️ Autoplay bloqueado, tentando interação:", err);
+      console.warn("Autoplay bloqueado:", err);
     }
   };
 
   // ===============================
-  // Entrar na sala
+  // Entrar
   // ===============================
-  const joinVoice = async ({ roomName, identity, nick }) => {
+  const joinVoice = async ({ roomName, identity, nick, avatar }) => {
     try {
-      // 🔓 Libera autoplay e permissão
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SERVER_URL}/livekit/token`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            room: roomName,
-            identity,
-            name: nick,
-          }),
-        }
-      );
+      const response = await fetch(`${SERVER_URL}/livekit/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room: roomName,
+          identity,
+          name: nick,
+          avatar,
+        }),
+      });
 
-      const data = await response.json();
-      if (!data.token) return;
+      if (!response.ok) {
+        throw new Error("Erro ao gerar token");
+      }
+
+      const { token } = await response.json();
+      if (!token) throw new Error("Token inválido");
 
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
       });
 
-      await room.connect(import.meta.env.VITE_LIVEKIT_URL, data.token);
+      await room.connect(LIVEKIT_URL, token);
 
-      // 🎤 Publica áudio local
       const audioTrack = await createLocalAudioTrack({
         echoCancellation: true,
         noiseSuppression: true,
@@ -92,28 +116,25 @@ const VoiceProvider = ({ children }) => {
 
       await room.localParticipant.publishTrack(audioTrack);
 
-      // ===============================
-      // Eventos
-      // ===============================
-
-      room.on("participantConnected", () => updateParticipants([]));
-      room.on("participantDisconnected", () => updateParticipants([]));
+      // 🔥 Eventos robustos
+      room.on("participantConnected", () => updateParticipants());
+      room.on("participantDisconnected", () => updateParticipants());
 
       room.on("activeSpeakersChanged", (speakers) => {
         updateParticipants(speakers);
       });
 
-      // 🔊 Quando nova track for assinada
+      room.on("trackMuted", () => updateParticipants());
+      room.on("trackUnmuted", () => updateParticipants());
+
       room.on("trackSubscribed", async (track, publication, participant) => {
         if (track.kind !== "audio") return;
 
         const id = participant.identity;
-
-        if (audioElementsRef.current[id]) return; // evita duplicado
+        if (audioElementsRef.current[id]) return;
 
         const element = track.attach();
         element.style.display = "none";
-
         document.body.appendChild(element);
 
         audioElementsRef.current[id] = element;
@@ -121,36 +142,39 @@ const VoiceProvider = ({ children }) => {
         await playAudioElement(element);
       });
 
-      // 🔁 IMPORTANTE: pega tracks já existentes
-      room.remoteParticipants.forEach((participant) => {
-        participant.trackPublications.forEach(async (publication) => {
-          if (
-            publication.kind === "audio" &&
-            publication.isSubscribed &&
-            publication.track
-          ) {
-            const element = publication.track.attach();
-            element.style.display = "none";
-            document.body.appendChild(element);
-
-            audioElementsRef.current[participant.identity] = element;
-
-            await playAudioElement(element);
-          }
-        });
-      });
-
       roomRef.current = room;
       setInVoice(true);
-      updateParticipants([]);
-
+      updateParticipants();
     } catch (err) {
-      console.error("Erro ao conectar no voice:", err);
+      console.error("Erro ao conectar:", err);
     }
   };
 
   // ===============================
-  // Sair da sala
+  // 🔥 Mute 100% sincronizado
+  // ===============================
+  const toggleMute = async () => {
+    if (!roomRef.current) return;
+
+    const local = roomRef.current.localParticipant;
+
+    const audioPub = Array.from(
+      local.audioTrackPublications.values()
+    )[0];
+
+    if (!audioPub?.track) return;
+
+    if (audioPub.track.isMuted) {
+      await audioPub.track.unmute();
+    } else {
+      await audioPub.track.mute();
+    }
+
+    updateParticipants();
+  };
+
+  // ===============================
+  // Sair
   // ===============================
   const leaveVoice = async () => {
     if (roomRef.current) {
@@ -158,16 +182,15 @@ const VoiceProvider = ({ children }) => {
       roomRef.current = null;
     }
 
-    // Remove áudios criados
     Object.values(audioElementsRef.current).forEach((el) => {
       el.pause();
       el.remove();
     });
 
     audioElementsRef.current = {};
-
     setParticipants([]);
     setInVoice(false);
+    setIsMuted(false);
   };
 
   return (
@@ -177,6 +200,8 @@ const VoiceProvider = ({ children }) => {
         participants,
         joinVoice,
         leaveVoice,
+        toggleMute,
+        isMuted,
       }}
     >
       {children}
