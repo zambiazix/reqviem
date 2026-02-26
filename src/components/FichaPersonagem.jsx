@@ -14,12 +14,16 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { db } from "../firebaseConfig";
 import { doc, getDoc, setDoc } from "firebase/firestore";
+import { Checkbox, FormControlLabel } from "@mui/material";
 
 export default function FichaPersonagem({ user, fichaId, isMestre }) {
   const [ficha, setFicha] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mostrarBackground, setMostrarBackground] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+const [zoom, setZoom] = useState(1);
+
 
   const modelo = {
     nome: "",
@@ -31,11 +35,15 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
     defeitos: "",
     tracos: "",
     pontosVida: 0,
-    pontosEnergia: 0,
-    armadura: "0/25",
+pontosEnergia: 0,
+armadura: 0,
     caracteristicas: "",
     imagemPersonagem: "",
+    imagens: [],
+imagemPrincipalIndex: 0,
     background: "",
+tipoAura: "",
+
 
     atributos: {
       forca: 0,
@@ -65,12 +73,14 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
     },
 
     habilidades: [],
-    moedas: { cobre: 0, prata: 0, ouro: 0 },
+    moedas: 0,
     equipamentos: [],
     vestes: [],
     diversos: [],
     anotacoes: "",
     dono: user?.email || "",
+
+    ignorarLimitePeso: false,
   };
 
   const LABELS = {
@@ -83,6 +93,23 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
     backgroundTitulo: "● BACKGROUND ●",
   };
 
+  const TIPOS_AURA = [
+  "Titã",
+  "Alquimista",
+  "Artesão",
+  "Fundador",
+  "Déspota",
+  "Ás",
+];
+
+const CORES_AURA = {
+  "Titã": "#ff3b3b",
+  "Alquimista": "#00e0ff",
+  "Artesão": "#ffd700",
+  "Fundador": "#00ff88",
+  "Déspota": "#a855f7",
+  "Ás": "#e5e5e5",
+};
   // Mapeamento textual com acentos e espaços bonitos
   const LABEL_MAP = {
     // Campos principais
@@ -150,6 +177,10 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const dados = snap.data();
+          if (!dados.imagens && dados.imagemPersonagem) {
+  dados.imagens = [dados.imagemPersonagem];
+  dados.imagemPrincipalIndex = 0;
+}
           const combinado = {
             ...modelo,
             ...dados,
@@ -249,11 +280,7 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
         pericias: Object.fromEntries(
           Object.entries(ficha.pericias || {}).map(([k, v]) => [k, Number(v || 0)])
         ),
-        moedas: {
-          cobre: Number(ficha.moedas?.cobre || 0),
-          prata: Number(ficha.moedas?.prata || 0),
-          ouro: Number(ficha.moedas?.ouro || 0),
-        },
+        moedas: Number(ficha.moedas || 0),
       };
       await setDoc(ref, toSave, { merge: true });
       alert("Ficha salva com sucesso!");
@@ -266,51 +293,108 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
   }
 
   async function handleUploadImagem(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const file = e.target.files?.[0];
+  if (!file || !fichaId) return;
 
-    let apiBase = "";
-    try {
-      apiBase = import.meta?.env?.VITE_SERVER_URL || "";
-    } catch {
-      apiBase = "";
-    }
-
-    if (!apiBase) {
-      apiBase =
-        window.location.hostname === "localhost"
-          ? "http://localhost:5000"
-          : "https://app-rpg.onrender.com";
-    }
-
-    const fd = new FormData();
-    fd.append("file", file);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const res = await fetch(`${apiBase}/upload`, {
-        method: "POST",
-        body: fd,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      if (!data?.url) throw new Error("Sem URL de retorno");
-      setCampo("imagemPersonagem", data.url);
-      await salvarFicha();
-    } catch (err) {
-      alert(`Erro no upload: ${err.message}`);
-    }
+  if ((ficha.imagens?.length || 0) >= 5) {
+    alert("Limite máximo de 5 imagens atingido.");
+    return;
   }
 
+  let apiBase = "";
+  try {
+    apiBase = import.meta?.env?.VITE_SERVER_URL || "";
+  } catch {
+    apiBase = "";
+  }
+
+  if (!apiBase) {
+    apiBase =
+      window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://app-rpg.onrender.com";
+  }
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  try {
+    const res = await fetch(`${apiBase}/upload`, {
+      method: "POST",
+      body: fd,
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (!data?.url) throw new Error("Sem URL");
+
+    const novasImagens = [...(ficha.imagens || []), data.url];
+
+    const novoIndex =
+      ficha.imagens?.length === 0 ? 0 : ficha.imagemPrincipalIndex || 0;
+
+    const novaFicha = {
+      ...ficha,
+      imagens: novasImagens,
+      imagemPrincipalIndex: novoIndex,
+      imagemPersonagem: novasImagens[novoIndex],
+    };
+
+    setFicha(novaFicha);
+
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, novaFicha, { merge: true });
+
+  } catch (err) {
+    alert("Erro no upload: " + err.message);
+  }
+}
+
   if (loading)
+    
     return (
       <Box p={2}>
         <Typography component="div">Carregando ficha...</Typography>
       </Box>
     );
+// ================= PESO AUTOMÁTICO =================
+
+// Peso atual (cada item conta 1 independente da quantidade)
+const pesoAtual =
+  (ficha.equipamentos?.length || 0) +
+  (ficha.vestes?.length || 0) +
+  (ficha.diversos?.length || 0);
+
+// Atributos relevantes
+const forca = Number(ficha.atributos?.forca || 0);
+const atletismo = Number(ficha.pericias?.atletismo || 0);
+
+// Fórmula
+const pesoMaximo = 10 + (forca * 2) + (atletismo * 2);
+
+// Verificação
+const sobrecarregado =
+  !ficha?.ignorarLimitePeso && pesoAtual >= pesoMaximo;
+
+  // ================= STATUS AUTOMÁTICOS =================
+
+// ===== VIDA =====
+const constituicao = Number(ficha?.atributos?.constituicao || 0);
+const sobrevivencia = Number(ficha?.pericias?.sobrevivencia || 0);
+const pontosVidaMax = 100 + (constituicao + sobrevivencia) * 10;
+
+// ===== ENERGIA =====
+const vontade = Number(ficha?.atributos?.vontade || 0);
+const aura = Number(ficha?.pericias?.aura || 0);
+const pontosEnergiaMax = 10 + (vontade + aura) * 5;
+
+// ===== MOVIMENTAÇÃO =====
+const agilidade = Number(ficha?.atributos?.agilidade || 0);
+const furtividade = Number(ficha?.pericias?.furtividade || 0);
+const movimentacaoCalculada = 10 + (agilidade + furtividade) * 5;
+
+// ===== ARMADURA =====
+const armaduraMax = 50;
 
   return (
     <Paper sx={{ p: 2, bgcolor: "#07121a", color: "#fff", height: "100%", overflowY: "auto" }}>
@@ -321,26 +405,106 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
         <Grid item xs={12} md={9}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              {["nome", "genero", "idade", "altura", "peso", "movimentacao"].map((campo) => (
+              {["nome", "genero", "idade", "altura", "peso"].map((campo) => (
+                
                 <Box key={campo} sx={{ mb: 1 }}>
                   {/* label como div para evitar <p> aninhado */}
                   <Typography component="div">{LABEL_MAP[campo] || campo}</Typography>
                   <TextField fullWidth size="small" value={ficha[campo]} onChange={(e) => setCampo(campo, e.target.value)} />
                 </Box>
               ))}
+              <Box sx={{ mb: 1 }}>
+  <Typography component="div">Movimentação</Typography>
+  <TextField
+    fullWidth
+    size="small"
+    value={`${movimentacaoCalculada} m/t`}
+    InputProps={{ readOnly: true }}
+  />
+</Box>
             </Grid>
             <Grid item xs={12} md={6}>
-              {["defeitos", "tracos", "pontosVida", "pontosEnergia", "armadura", "caracteristicas"].map((campo) => (
-                <Box key={campo} sx={{ mb: 1 }}>
-                  <Typography component="div">{LABEL_MAP[campo] || campo}</Typography>
-                  <TextField
-                    fullWidth size="small"
-                    value={ficha[campo]}
-                    type={["pontosVida", "pontosEnergia"].includes(campo) ? "number" : "text"}
-                    onChange={(e) => setCampo(campo, e.target.value)}
-                  />
-                </Box>
-              ))}
+
+              
+              {/* Campos normais */}
+{["defeitos", "tracos", "caracteristicas"].map((campo) => (
+  <Box key={campo} sx={{ mb: 1 }}>
+    <Typography component="div">{LABEL_MAP[campo]}</Typography>
+    <TextField
+      fullWidth
+      size="small"
+      value={ficha[campo]}
+      onChange={(e) => setCampo(campo, e.target.value)}
+    />
+  </Box>
+))}
+
+{/* Pontos de Vida */}
+<Box sx={{ mb: 1 }}>
+  <Typography component="div">Pontos de Vida</Typography>
+  <Grid container spacing={1} alignItems="center">
+    <Grid item xs={6}>
+      <TextField
+        fullWidth
+        size="small"
+        type="number"
+        value={ficha.pontosVida}
+        onChange={(e) => setCampo("pontosVida", Number(e.target.value))}
+      />
+    </Grid>
+    <Grid item xs={6}>
+      <Typography>
+  / <span style={{ color: "#ff4d4f", fontWeight: 600 }}>
+      {pontosVidaMax}
+    </span>
+</Typography>
+    </Grid>
+  </Grid>
+</Box>
+
+{/* Pontos de Energia */}
+<Box sx={{ mb: 1 }}>
+  <Typography component="div">Pontos de Energia</Typography>
+  <Grid container spacing={1} alignItems="center">
+    <Grid item xs={6}>
+      <TextField
+        fullWidth
+        size="small"
+        type="number"
+        value={ficha.pontosEnergia}
+        onChange={(e) => setCampo("pontosEnergia", Number(e.target.value))}
+      />
+    </Grid>
+    <Grid item xs={6}>
+      <Typography>
+  / <span style={{ color: "#facc15", fontWeight: 600 }}>
+      {pontosEnergiaMax}
+    </span>
+</Typography>
+    </Grid>
+  </Grid>
+</Box>
+
+{/* Armadura */}
+<Box sx={{ mb: 1 }}>
+  <Typography component="div">Armadura</Typography>
+  <Grid container spacing={1} alignItems="center">
+    <Grid item xs={6}>
+      <TextField
+        fullWidth
+        size="small"
+        type="number"
+        value={ficha.armadura}
+        onChange={(e) => setCampo("armadura", Number(e.target.value))}
+      />
+    </Grid>
+    <Grid item xs={6}>
+      <Typography>
+        / {armaduraMax}
+      </Typography>
+    </Grid>
+  </Grid>
+</Box>
             </Grid>
           </Grid>
 
@@ -365,7 +529,52 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
           </Box>
           <Box mt={2}>
             {/* usar div para evitar p-nested */}
-            <Typography component="div">{LABELS.habilidadesTitulo}</Typography>
+            <Box
+  display="flex"
+  justifyContent="space-between"
+  alignItems="center"
+  sx={{
+    borderBottom: `2px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
+    pb: 1,
+    mb: 1,
+  }}
+>
+  <Typography component="div" sx={{ fontWeight: "bold" }}>
+    {LABELS.habilidadesTitulo}
+  </Typography>
+
+  {isMestre ? (
+    <TextField
+      select
+      size="small"
+      value={ficha.tipoAura || ""}
+      onChange={(e) => setCampo("tipoAura", e.target.value)}
+      SelectProps={{ native: true }}
+      sx={{
+        minWidth: 160,
+        bgcolor: "#021319",
+        borderRadius: 1,
+      }}
+    >
+      <option value=""></option>
+      {TIPOS_AURA.map((t) => (
+        <option key={t} value={t}>{t}</option>
+      ))}
+    </TextField>
+  ) : (
+    <Typography
+  sx={{
+    fontWeight: "bold",
+    color: CORES_AURA[ficha.tipoAura] || "#00e0ff",
+    textDecoration: "underline",
+    textShadow: `0 0 6px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
+    fontSize: 16,
+  }}
+>
+  ✨ {ficha.tipoAura || "—"}
+</Typography>
+  )}
+</Box>
             {ficha.habilidades.map((h, i) => (
               <Paper key={i} sx={{ p: 1, mb: 1 }}>
                 <Grid container spacing={1}>
@@ -397,28 +606,68 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
           </Box>
 
           <Box mt={2}>
-            <Typography component="div">{LABELS.itensTitulo}</Typography>
-            <Box mt={1}>
-              <Typography component="div">Moedas (Cobre / Prata / Ouro)</Typography>
-              <Grid container spacing={1} sx={{ mt: 1 }}>
-                {["cobre", "prata", "ouro"].map((m) => (
-                  <Grid item xs={4} key={m}>
-                    <TextField
-                      label={LABEL_MAP[m] || m}
-                      size="small"
-                      type="number"
-                      value={ficha.moedas[m]}
-                      onChange={(e) =>
-                        setCampo("moedas", {
-                          ...ficha.moedas,
-                          [m]: Number(e.target.value || 0),
-                        })
-                      }
-                    />
-                  </Grid>
-                ))}
-              </Grid>
-            </Box>
+            <Box
+  display="flex"
+  justifyContent="space-between"
+  alignItems="center"
+  sx={{
+    borderBottom: `2px solid ${
+      ficha?.ignorarLimitePeso
+        ? "#00ffff"
+        : sobrecarregado
+        ? "#ff0000"
+        : "#ffaa00"
+    }`,
+    pb: 1,
+    mb: 1,
+  }}
+>
+  <Typography component="div" sx={{ fontWeight: "bold" }}>
+    {LABELS.itensTitulo}
+  </Typography>
+
+  <Box display="flex" alignItems="center" gap={2}>
+    <Typography
+      sx={{
+        fontWeight: "bold",
+        color: ficha?.ignorarLimitePeso
+          ? "#00ffff"
+          : sobrecarregado
+          ? "#ff4444"
+          : "#ffaa00",
+        textDecoration: "underline",
+        fontSize: 16,
+      }}
+    >
+      🏋️ {pesoAtual} / {pesoMaximo}
+    </Typography>
+
+    {isMestre && (
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={ficha.ignorarLimitePeso || false}
+onChange={async (e) => {
+  const novoValor = e.target.checked;
+
+  // Atualiza estado local
+  setFicha((prev) => ({
+    ...prev,
+    ignorarLimitePeso: novoValor,
+  }));
+
+  // Salva no Firestore
+  const ref = doc(db, "fichas", fichaId);
+  await setDoc(ref, { ignorarLimitePeso: novoValor }, { merge: true });
+}}
+            size="small"
+          />
+        }
+        label="Ignorar limite"
+      />
+    )}
+  </Box>
+</Box>
             {["equipamentos", "vestes", "diversos"].map((tipo) => (
               <Box mt={2} key={tipo}>
                 <Typography component="div">{LABEL_MAP[tipo] || tipo}</Typography>
@@ -474,11 +723,18 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
                   </Grid>
                 ))}
                 <Button
-                  startIcon={<AddIcon />}
-                  variant="outlined"
-                  sx={{ mt: 1 }}
-                  onClick={() => adicionarItem(tipo)}
-                >
+  startIcon={<AddIcon />}
+  variant="outlined"
+  sx={{ mt: 1 }}
+ disabled={!ficha?.ignorarLimitePeso && pesoAtual >= pesoMaximo}
+  onClick={() => {
+    if (!ficha?.ignorarLimitePeso && pesoAtual >= pesoMaximo) {
+  alert("Peso máximo atingido");
+  return;
+}
+    adicionarItem(tipo);
+  }}
+>
                   Adicionar {LABEL_MAP[tipo] || tipo}
                 </Button>
               </Box>
@@ -534,77 +790,318 @@ export default function FichaPersonagem({ user, fichaId, isMestre }) {
         {/* Painel da imagem */}
         <Grid item xs={12} md={3}>
           <Paper
-            sx={{
-              p: 2,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 1,
-            }}
-          >
-            <Typography component="div" sx={{ mb: 1 }}>Personagem</Typography>
-            {ficha.imagemPersonagem ? (
-              <img
-                src={ficha.imagemPersonagem}
-                alt="Personagem"
-                style={{
-                  width: "100%",
-                  height: "auto",
-                  borderRadius: 8,
-                  objectFit: "cover",
-                }}
-              />
-            ) : (
-              <Box
-                sx={{
-                  width: "100%",
-                  height: 180,
-                  bgcolor: "#021319",
-                  borderRadius: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Typography component="div">Sem imagem</Typography>
-              </Box>
-            )}
+  sx={{
+    p: 2,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 1,
+  }}
+>
+  <Typography component="div">Personagem</Typography>
 
-            <Button
-              variant="outlined"
-              component="label"
-              sx={{ mt: 1, width: "100%" }}
-            >
-              Upload Imagem
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={handleUploadImagem}
-              />
-            </Button>
+  {/* IMAGEM PRINCIPAL */}
+  {ficha.imagens?.length > 0 ? (
+    <img
+  src={ficha.imagens[ficha.imagemPrincipalIndex || 0]}
+  onClick={() => {
+    setZoom(1);
+    setLightboxOpen(true);
+  }}
+  style={{
+    width: "100%",
+    borderRadius: 8,
+    objectFit: "cover",
+    cursor: "zoom-in",
+  }}
+/>
+  ) : (
+    <Box
+      sx={{
+        width: "100%",
+        height: 180,
+        bgcolor: "#021319",
+        borderRadius: 1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Typography>Sem imagem</Typography>
+    </Box>
+  )}
 
-            {ficha.imagemPersonagem && (
-              <Button
-                variant="text"
-                sx={{ mt: 0 }}
-                onClick={() => {
-                  if (
-                    confirm(
-                      "Remover imagem da ficha? (Isso apenas remove o link salvo; a imagem hospedada pode permanecer)."
-                    )
-                  ) {
-                    setCampo("imagemPersonagem", "");
-                    salvarFicha();
-                  }
-                }}
-              >
-                Remover imagem
-              </Button>
-            )}
-          </Paper>
-        </Grid>
+  {/* MINIATURAS COM DRAG */}
+  <Box
+    sx={{
+      display: "flex",
+      gap: 1,
+      flexWrap: "wrap",
+      mt: 1,
+    }}
+  >
+   {(ficha.imagens || []).map((url, index) => (
+  <Box
+    key={url}
+    sx={{
+      position: "relative",
+      width: 70,
+      height: 70,
+    }}
+  >
+    <img
+      src={url}
+      draggable
+      onClick={async () => {
+  const novaFicha = {
+    ...ficha,
+    imagemPrincipalIndex: index,
+    imagemPersonagem: ficha.imagens[index],
+  };
+
+  setFicha(novaFicha);
+
+  const ref = doc(db, "fichas", fichaId);
+  await setDoc(ref, {
+    imagemPrincipalIndex: index,
+    imagemPersonagem: ficha.imagens[index],
+  }, { merge: true });
+}}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("index", index);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={async (e) => {
+        const from = Number(e.dataTransfer.getData("index"));
+        const to = index;
+
+        const novas = [...ficha.imagens];
+        const [movida] = novas.splice(from, 1);
+        novas.splice(to, 0, movida);
+
+        const novaFicha = {
+          ...ficha,
+          imagens: novas,
+          imagemPrincipalIndex: 0,
+          imagemPersonagem: novas[0],
+        };
+
+        setFicha(novaFicha);
+
+        const ref = doc(db, "fichas", fichaId);
+        await setDoc(ref, novaFicha, { merge: true });
+      }}
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        borderRadius: 6,
+        cursor: "grab",
+        border:
+          index === (ficha.imagemPrincipalIndex || 0)
+            ? "3px solid gold"
+            : "1px solid #333",
+      }}
+    />
+
+    {/* BOTÃO DEFINIR PRINCIPAL */}
+    {index !== ficha.imagemPrincipalIndex && (
+      <Button
+        size="small"
+        variant="contained"
+        sx={{
+          position: "absolute",
+          bottom: 2,
+          left: 2,
+          fontSize: 10,
+          minWidth: 0,
+          px: 1,
+        }}
+        onClick={async () => {
+          const novaFicha = {
+            ...ficha,
+            imagemPrincipalIndex: index,
+            imagemPersonagem: ficha.imagens[index],
+          };
+
+          setFicha(novaFicha);
+
+          const ref = doc(db, "fichas", fichaId);
+          await setDoc(ref, {
+            imagemPrincipalIndex: index,
+            imagemPersonagem: ficha.imagens[index],
+          }, { merge: true });
+        }}
+      >
+        ⭐
+      </Button>
+    )}
+
+    {/* BOTÃO REMOVER */}
+    <IconButton
+      size="small"
+      color="error"
+      sx={{
+        position: "absolute",
+        top: -10,
+        right: -10,
+        bgcolor: "#111",
+      }}
+      onClick={async () => {
+        const novas = ficha.imagens.filter((_, i) => i !== index);
+
+        const novoIndex =
+          index === ficha.imagemPrincipalIndex ? 0 : ficha.imagemPrincipalIndex;
+
+        const novaFicha = {
+          ...ficha,
+          imagens: novas,
+          imagemPrincipalIndex: novas.length ? novoIndex : 0,
+          imagemPersonagem: novas.length ? novas[novoIndex] : "",
+        };
+
+        setFicha(novaFicha);
+
+        const ref = doc(db, "fichas", fichaId);
+        await setDoc(ref, novaFicha, { merge: true });
+      }}
+    >
+      <DeleteIcon fontSize="small" />
+    </IconButton>
+  </Box>
+))}
+  </Box>
+
+  <Button
+    variant="outlined"
+    component="label"
+    sx={{ mt: 1, width: "100%" }}
+  >
+    Upload Imagem
+    <input
+      type="file"
+      accept="image/*"
+      hidden
+      onChange={handleUploadImagem}
+    />
+  </Button>
+</Paper>
+                </Grid>
       </Grid>
+
+      {lightboxOpen && (
+        <Box
+          onClick={() => setLightboxOpen(false)}
+          sx={{
+            position: "fixed",
+            inset: 0,
+            bgcolor: "rgba(0,0,0,0.85)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <LightboxImage
+            src={ficha.imagens[ficha.imagemPrincipalIndex || 0]}
+            zoom={zoom}
+            setZoom={setZoom}
+          />
+        </Box>
+      )}
+
     </Paper>
+  );
+}
+// ================= LIGHTBOX IMAGE =================
+function LightboxImage({ src, zoom, setZoom }) {
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = React.useState(false);
+  const [start, setStart] = React.useState({ x: 0, y: 0 });
+  const [initialDistance, setInitialDistance] = React.useState(null);
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setDragging(true);
+    setStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!dragging) return;
+    setPosition({ x: e.clientX - start.x, y: e.clientY - start.y });
+  };
+
+  const handleMouseUp = () => setDragging(false);
+
+  const handleWheel = (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.1 : 0.1;
+  setZoom((z) => Math.min(Math.max(z + delta, 0.5), 5));
+};
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setDragging(true);
+      setStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setInitialDistance(dist);
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 1 && dragging) {
+      const touch = e.touches[0];
+      setPosition({ x: touch.clientX - start.x, y: touch.clientY - start.y });
+    } else if (e.touches.length === 2 && initialDistance) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const delta = dist / initialDistance;
+      setZoom((z) => Math.min(Math.max(z * delta, 0.5), 5));
+      setInitialDistance(dist);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setDragging(false);
+    setInitialDistance(null);
+  };
+
+  React.useEffect(() => {
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragging, start]);
+
+  return (
+    <img
+      src={src}
+      alt="ampliada"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={handleMouseDown}
+        onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+        transition: dragging ? "none" : "transform 0.2s ease",
+        maxWidth: "90%",
+        maxHeight: "90%",
+        borderRadius: 10,
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none",
+      }}
+    />
   );
 }

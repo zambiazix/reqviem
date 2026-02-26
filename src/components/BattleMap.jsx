@@ -91,8 +91,14 @@ export default function BattleMap() {
   };
 
   const updateTokenFinal = (token) => {
-    socketRef.current?.emit("updateToken", token);
-  };
+  // Atualiza local primeiro
+  setTokens((prev) =>
+    prev.map((t) => (t.id === token.id ? token : t))
+  );
+
+  // Depois sincroniza
+  socketRef.current?.emit("updateToken", token);
+};
 
   const reorderAndEmit = (newOrder) => {
     if (!isMaster) return;

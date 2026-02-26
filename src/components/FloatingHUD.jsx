@@ -30,7 +30,7 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, getDocs } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import TurnModal from "./TurnModal";
 import "./FloatingHUDBackgrounds.css";
@@ -90,28 +90,28 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
   const [loadingFichas, setLoadingFichas] = useState(false);
 
   const playersFromXp = Object.keys(hud?.xpMap || {});
-  const mergedEmails = Array.from(new Set([...(playersFromXp || []), ...Object.keys(fichasMap || {})]));
+  const mergedEmails = Object.keys(fichasMap || {});
   const textShadow = "0px 0px 3px rgba(0,0,0,0.85)";
 
-  const fetchFichas = useCallback(async () => {
-    setLoadingFichas(true);
-    try {
-      const col = collection(db, "fichas");
-      const snap = await getDocs(col);
-      const map = {};
-      snap.docs.forEach((d) => {
-        const id = d.id;
-        const data = d.data() || {};
-        map[id] = { ...(data || {}), __id: id, nome: data.nome || id };
-      });
-      setFichasMap(map);
-    } catch (e) {
-      console.warn("FloatingHUD.fetchFichas erro:", e);
-      setFichasMap({});
-    } finally {
-      setLoadingFichas(false);
-    }
-  }, []);
+  useEffect(() => {
+  const col = collection(db, "fichas");
+
+  const unsubscribe = onSnapshot(col, (snap) => {
+    const map = {};
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      map[docSnap.id] = {
+        ...data,
+        __id: docSnap.id,
+        nome: data.nome || docSnap.id,
+      };
+    });
+
+    setFichasMap(map);
+  });
+
+  return () => unsubscribe();
+}, []);
 
   useEffect(() => {
     if (refBox.current) {
@@ -125,10 +125,6 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
       setHudRect(null);
     }
   }, [collapsed, hud]); // depende do hud e collapsed para manter atualizado
-
-  useEffect(() => {
-    fetchFichas();
-  }, [fetchFichas, hud?.updatedAt]);
 
   useEffect(() => {
     function onMouseMove(e) {
@@ -251,6 +247,11 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
     default: return "fase-manha text-dark";
   }
 })();
+
+console.log("HUD DEBUG:", {
+  fichasMap,
+  hud
+});
 
 function PortalSelect({ children }) {
   return (
@@ -400,6 +401,30 @@ useEffect(() => {
     return fichasMap[email]?.nome || email;
   };
 
+  const calcularStatus = (email) => {
+  const ficha = fichasMap?.[email];
+  if (!ficha) return null;
+
+  const constituicao = Number(ficha?.atributos?.constituicao || 0);
+  const sobrevivencia = Number(ficha?.pericias?.sobrevivencia || 0);
+  const pvMax = 100 + (constituicao + sobrevivencia) * 10;
+  const pvAtual = Number(ficha?.pontosVida || 0);
+
+  const vontade = Number(ficha?.atributos?.vontade || 0);
+  const aura = Number(ficha?.pericias?.aura || 0);
+  const peMax = 10 + (vontade + aura) * 5;
+  const peAtual = Number(ficha?.pontosEnergia || 0);
+
+  return {
+    pvAtual,
+    pvMax,
+    peAtual,
+    peMax,
+    pvPercent: pvMax > 0 ? (pvAtual / pvMax) * 100 : 0,
+    pePercent: peMax > 0 ? (peAtual / peMax) * 100 : 0,
+  };
+};
+
   const CollapsedView = (
     <Paper
       elevation={12}
@@ -460,6 +485,11 @@ const menuRect = (() => {
   }
 })();
 
+if (!fichasMap) return null;
+console.log("HUD DEBUG:", {
+  fichasMap,
+  hud
+});
   return (
     <>
       <Box
@@ -573,7 +603,7 @@ const menuRect = (() => {
       {mergedEmails.length === 0 ? (
         <Typography variant="caption">Nenhuma ficha registrada</Typography>
       ) : (
-        mergedEmails.map((email) => (
+        (mergedEmails || []).map((email) => (
           <Button
             key={email}
             fullWidth
@@ -763,24 +793,122 @@ const menuRect = (() => {
 )}
 
                   {isMaster &&
-                    mergedEmails.map((email) => (
-                      <Box key={email} sx={{ width: "100%" }}>
-                        <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                          <Typography variant="caption" sx={{ textShadow }}>
-                            {displayNameFor(email)}
-                          </Typography>
-                          <Typography variant="caption" sx={{ textShadow }}>
-                            Lv {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
-                          </Typography>
-                        </Box>
+  (mergedEmails || []).map((email) => {
+    const status = calcularStatus(email);
 
-                        <LinearProgress
-                          variant="determinate"
-                          value={hud.xpMap?.[email]?.xp ?? 0}
-                          sx={{ height: 10, borderRadius: 4, mt: 0.5 }}
-                        />
-                      </Box>
-                    ))}
+    return (
+      <Box key={email} sx={{ width: "100%" }}>
+
+        {/* NOME E XP */}
+        <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+          <Typography variant="caption" sx={{ textShadow }}>
+            {displayNameFor(email)}
+          </Typography>
+          <Typography variant="caption" sx={{ textShadow }}>
+            Lv {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
+          </Typography>
+        </Box>
+        
+        {/* BARRAS PV / PE */}
+        {status && (
+          <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
+            
+            {/* PV */}
+            <Box sx={{ position: "relative", flex: 1 }}>
+              <LinearProgress
+                variant="determinate"
+                value={status.pvPercent}
+                sx={{
+  height: 6,
+  borderRadius: 4,
+  backgroundColor: "#000",
+  boxShadow: "0 0 0 1px #000",
+  "& .MuiLinearProgress-bar": {
+    backgroundColor: "#ff0000",
+    boxShadow: "0 0 4px rgba(0,0,0,0.8)",
+  },
+}}
+              />
+             <Box
+  sx={{
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 9,
+    fontWeight: 700,
+    color:
+      hud?.world?.phase === "noite" ||
+      hud?.world?.phase === "madrugada"
+        ? "#fff"
+        : "#111",
+    textShadow:
+      hud?.world?.phase === "noite" ||
+      hud?.world?.phase === "madrugada"
+        ? "0 0 4px rgba(0,0,0,0.9)"
+        : "0 0 4px rgba(255,255,255,0.9)",
+    pointerEvents: "none",
+  }}
+>
+  {status.pvAtual}/{status.pvMax}
+</Box>
+            </Box>
+
+            {/* PE */}
+            <Box sx={{ position: "relative", flex: 1 }}>
+              <LinearProgress
+                variant="determinate"
+                value={status.pePercent}
+                sx={{
+  height: 6,
+  borderRadius: 4,
+  backgroundColor: "#000",
+  boxShadow: "0 0 0 1px #000",
+  "& .MuiLinearProgress-bar": {
+    backgroundColor: "#facc15",
+    boxShadow: "0 0 4px rgba(0,0,0,0.8)",
+  },
+}}
+              />
+              <Box
+  sx={{
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 9,
+    fontWeight: 700,
+    color:
+      hud?.world?.phase === "noite" ||
+      hud?.world?.phase === "madrugada"
+        ? "#fff"
+        : "#111",
+    textShadow:
+      hud?.world?.phase === "noite" ||
+      hud?.world?.phase === "madrugada"
+        ? "0 0 4px rgba(0,0,0,0.9)"
+        : "0 0 4px rgba(255,255,255,0.9)",
+    pointerEvents: "none",
+  }}
+>
+  {status.peAtual}/{status.peMax}
+</Box>
+            </Box>
+
+          </Box>
+        )}
+
+        <LinearProgress
+          variant="determinate"
+          value={hud.xpMap?.[email]?.xp ?? 0}
+          sx={{ height: 10, borderRadius: 4, mt: 0.5 }}
+        />
+      </Box>
+    );
+  })}
+                  
 
                   {/** ———————————————————————————————————————————————— */}
                   {/** AQUI ENTRA A OPÇÃO A (SELECT DE JOGADOR XP)      */}
@@ -820,7 +948,7 @@ const menuRect = (() => {
     <em>-- selecione --</em>
   </MenuItem>
 
-  {mergedEmails.map((email) => (
+  {(mergedEmails || []).map((email) => (
     <MenuItem key={email} value={email}>
       {displayNameFor(email)}
     </MenuItem>

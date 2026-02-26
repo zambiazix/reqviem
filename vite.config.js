@@ -2,7 +2,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
-import copyStatic from "./vite-plugin-copy-static.js"; // 👈 importa o plugin
+import copyStatic from "./vite-plugin-copy-static.js";
 
 export default defineConfig({
   base: "/",
@@ -10,16 +10,19 @@ export default defineConfig({
 
   plugins: [
     react(),
+
     VitePWA({
       registerType: "autoUpdate",
+
       includeAssets: [
         "favicon.ico",
         "robots.txt",
         "apple-touch-icon.png",
         "logo.png",
         "pwa-192x192.png",
-        "pwa-512x512.png"
+        "pwa-512x512.png",
       ],
+
       manifest: {
         name: "Réquiem RPG",
         short_name: "RPG",
@@ -32,11 +35,34 @@ export default defineConfig({
           { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },
         ],
       },
+
+      // 🔥 AQUI ESTÁ A CORREÇÃO DO ERRO DOS 2MB
+      workbox: {
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
+      },
     }),
-    copyStatic(), // 👈 garante cópia de tudo da pasta public
+
+    copyStatic(),
   ],
 
   build: {
     outDir: "dist",
+
+    // 🔥 Remove warning chato dos 500kb
+    chunkSizeWarningLimit: 1500,
+
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          mui: ["@mui/material"],
+          firebase: [
+            "firebase/app",
+            "firebase/auth",
+            "firebase/firestore",
+          ],
+        },
+      },
+    },
   },
 });

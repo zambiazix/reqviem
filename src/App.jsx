@@ -13,7 +13,7 @@ import {
   IconButton,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
-
+import { useLocation } from "react-router-dom";
 import { auth, db } from "./firebaseConfig";
 import {
   signInWithEmailAndPassword,
@@ -21,7 +21,7 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
-
+import LoadingProvider from "./context/LoadingProvider";
 import SoundBoard from "./components/SoundBoard";
 import Chat from "./components/Chat";
 import FichaPersonagem from "./components/FichaPersonagem";
@@ -35,7 +35,7 @@ import Sistema from "./pages/Sistema";
 import HomePage from "./pages/HomePage"; // usa o componente novo
 import CommerceHUD from "./components/CommerceHUD";
 import { openCommerceHUD, closeCommerceHUD } from "./CommerceHUDRoot";
-
+import { useLoading } from "./context/LoadingProvider";
 // Integrations we added
 import GameProvider from "./context/GameProvider";
 import FloatingHUD from "./components/FloatingHUD";
@@ -141,6 +141,22 @@ const LoginForm = memo(function LoginForm({ onLogin }) {
   );
 });
 
+function RouteLoadingWatcher() {
+  const location = useLocation();
+  const { startLoading, stopLoading } = useLoading();
+
+  useEffect(() => {
+    startLoading();
+
+    const timeout = setTimeout(() => {
+      stopLoading();
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [location]);
+
+  return null;
+}
 /* ----------------- App principal ----------------- */
 export default function App() {
   const [user, setUser] = useState(null);
@@ -281,13 +297,11 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
         <CssBaseline />
         <Box sx={{ height: "100vh", p: 2 }}>
           <Grid
-            container
-            sx={{
-              height: "100%",
-              flexWrap: isMobileLocal ? "wrap" : "nowrap",
-              flexDirection: isMobileLocal ? "column" : "row",
-            }}
-          >
+  container
+  direction={isMobileLocal ? "column" : "row"}
+  wrap="nowrap"
+  sx={{ height: "100%" }}
+>
             {/* === COLUNA ESQUERDA === */}
             <Grid
               item
@@ -313,7 +327,7 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
                           <Typography variant="subtitle1">{userNick}</Typography>
                           <Typography variant="caption" display="block">{user?.email}</Typography>
                           <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>
-                            APP Réquiem RPG — versão 2.4 — By: Zambiazi
+                            APP Réquiem RPG — versão 2.9 — By: Zambiazi
                           </Typography>
                         </Box>
                       </Box>
@@ -351,7 +365,7 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
             </Grid>
 
             {/* === COLUNAS EXTRAS (DESKTOP MASTER) === */}
-            {!isMobileLocal && isMaster && (
+            {isMaster && (
               <>
                 <Grid item sx={{ flex: "1 1 25%", minWidth: 0, display: "flex", flexDirection: "column", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
                   {/* HomePage (lista de fichas + criação) */}
@@ -383,7 +397,7 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
             )}
 
             {/* VIEW para players (desktop) */}
-            {!isMobileLocal && !isMaster && (
+            {!isMaster && (
               <Grid item sx={{ flex: "1 1 67%", minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
                   {user ? (
@@ -406,24 +420,32 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
 
   return (
   <Router>
-    <VoiceProvider>
-      <AudioProvider>
+  <VoiceProvider>
+    <AudioProvider>
+      <LoadingProvider>
+
+        <RouteLoadingWatcher />
+
         <GameProvider currentUserEmail={currentUserEmail} isMaster={isMasterFlag}>
-          <FloatingHUD
-  userEmail={currentUserEmail}
-  openCommerce={openCommerceHUD}
-  closeCommerce={closeCommerceHUD}
-/>
+          {!isMobile && (
+            <FloatingHUD
+              userEmail={currentUserEmail}
+              openCommerce={openCommerceHUD}
+              closeCommerce={closeCommerceHUD}
+            />
+          )}
+
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/map" element={<BattleMap />} />
             <Route path="/cronica" element={<MapaMundi />} />
             <Route path="/sistema" element={<Sistema />} />
           </Routes>
-
         </GameProvider>
-      </AudioProvider>
-    </VoiceProvider>
-  </Router>
+
+      </LoadingProvider>
+    </AudioProvider>
+  </VoiceProvider>
+</Router>
 );
 }

@@ -39,6 +39,8 @@ import {
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { updateDoc, deleteDoc } from "firebase/firestore";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
 
 
 const GIPHY_API_KEY = "PBsoFISvy4OFVTNfZbpB5yF79ODJyTsc";
@@ -144,8 +146,13 @@ export default function Chat({ userNick, userEmail }) {
   const [gifOpen, setGifOpen] = useState(false);
   const [gifResults, setGifResults] = useState([]);
   const [gifSearch, setGifSearch] = useState("");
+  const [gifOffset, setGifOffset] = useState(0);
+  const [gifLoading, setGifLoading] = useState(false);
+const [gifHasMore, setGifHasMore] = useState(true);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
+  const [diceAnchor, setDiceAnchor] = useState(null);
+const openDiceMenu = Boolean(diceAnchor);
 
   const chatRef = useRef(null);
   const endRef = useRef(null);
@@ -154,13 +161,24 @@ export default function Chat({ userNick, userEmail }) {
   const isMaster = userEmail === "mestre@reqviemrpg.com";
 
 function canEdit(msg) {
-  if (msg.type !== "text" && msg.type !== "dice") return false; // 🔒 impede imagens/gifs
+  if (msg.type === "dice") return false; // 🔒 DADO NUNCA EDITÁVEL
   return isMaster || msg.userEmail === userEmail;
 }
 
-async function deleteMessage(id) {
+function canDelete(msg) {
+  if (msg.type === "dice") return false; // 🔒 DADO NUNCA DELETÁVEL
+  return isMaster || msg.userEmail === userEmail;
+}
+
+async function deleteMessage(msg) {
+  if (msg.type === "dice") {
+    alert("Dados D10 não podem ser apagados.");
+    return;
+  }
+
   if (!window.confirm("Apagar esta mensagem?")) return;
-  await deleteDoc(doc(db, "chat", id));
+
+  await deleteDoc(doc(db, "chat", msg.id));
 }
 
 async function editMessage(msg) {
@@ -240,6 +258,27 @@ async function editMessage(msg) {
     container.addEventListener("scroll", handleScroll);
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+  const handlePaste = async (e) => {
+    if (!e.clipboardData) return;
+
+    const items = e.clipboardData.items;
+
+    for (let item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          const img = await compressImage(file);
+          setFilePreviews((prev) => [...prev, img]);
+        }
+      }
+    }
+  };
+
+  window.addEventListener("paste", handlePaste);
+  return () => window.removeEventListener("paste", handlePaste);
+}, []);
 
   // === Dado ===
   function tryParseDice(cmd) {
@@ -361,16 +400,73 @@ async function editMessage(msg) {
     e.target.value = null;
   }
 
-  async function searchGifs() {
-    if (!gifSearch) return;
+  async function searchGifs(query = gifSearch, offset = 0) {
+  if (gifLoading) return;
+  if (!gifHasMore && offset !== 0) return;
+
+  setGifLoading(true);
+
+  const endpoint = query
+    ? "https://api.giphy.com/v1/gifs/search"
+    : "https://api.giphy.com/v1/gifs/trending";
+
+  try {
     const res = await fetch(
-      `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(
-        gifSearch
-      )}&limit=24&rating=g`
+      `${endpoint}?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(
+        query || ""
+      )}&limit=25&offset=${offset}&rating=g&lang=pt`
     );
+
     const data = await res.json();
-    setGifResults(data.data);
+
+    if (!data.data || data.data.length === 0) {
+      setGifHasMore(false);
+      setGifLoading(false);
+      return;
+    }
+
+    if (offset === 0) {
+      setGifResults(data.data);
+    } else {
+      setGifResults((prev) => [...prev, ...data.data]);
+    }
+
+    setGifOffset(offset + 25);
+    setGifHasMore(true);
+  } catch (err) {
+    console.error("Erro ao buscar GIF:", err);
   }
+
+  setGifLoading(false);
+}
+
+async function searchStickers() {
+  const res = await fetch(
+    `https://api.giphy.com/v1/stickers/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(
+      gifSearch
+    )}&limit=50`
+  );
+  const data = await res.json();
+  setGifResults(data.data);
+}
+
+async function randomGif() {
+  try {
+    const res = await fetch(
+      `https://api.giphy.com/v1/gifs/random?api_key=${GIPHY_API_KEY}&tag=${encodeURIComponent(
+        gifSearch
+      )}&rating=g`
+    );
+
+    const data = await res.json();
+
+    if (data.data) {
+      setGifResults((prev) => [data.data, ...prev]);
+    }
+  } catch (err) {
+    console.error("Erro GIF aleatório:", err);
+  }
+}
 
   async function sendGif(url) {
     await addDoc(chatCol, {
@@ -450,20 +546,24 @@ async function editMessage(msg) {
 
       {canEdit(m) && (
         <>
-          <IconButton
-            size="small"
-            onClick={() => editMessage(m)}
-          >
-            <EditIcon fontSize="inherit" />
-          </IconButton>
+  {canEdit(m) && (
+    <IconButton
+      size="small"
+      onClick={() => editMessage(m)}
+    >
+      <EditIcon fontSize="inherit" />
+    </IconButton>
+  )}
 
-          <IconButton
-            size="small"
-            onClick={() => deleteMessage(m.id)}
-          >
-            <DeleteIcon fontSize="inherit" />
-          </IconButton>
-        </>
+  {canDelete(m) && (
+    <IconButton
+      size="small"
+      onClick={() => deleteMessage(m)}
+    >
+      <DeleteIcon fontSize="inherit" />
+    </IconButton>
+  )}
+</>
       )}
     </Box>
   </Box>
@@ -601,7 +701,17 @@ async function editMessage(msg) {
           <ImageIcon />
           <input hidden type="file" accept="image/*" multiple onChange={handleFileChange} />
         </IconButton>
-        <IconButton color="primary" onClick={() => setGifOpen(true)}>
+        <IconButton
+  color="primary"
+  onClick={() => {
+    setGifResults([]);
+    setGifOffset(0);
+    setGifHasMore(true);
+    setGifSearch("");
+    setGifOpen(true);
+    searchGifs("", 0);
+  }}
+>
           <GifBoxIcon />
         </IconButton>
         <Button type="submit" variant="contained" endIcon={<SendIcon />}>
@@ -609,14 +719,46 @@ async function editMessage(msg) {
         </Button>
       </Box>
 
-      {/* Dados */}
-      <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 1 }}>
-        {[1,2,3,4,5,6,7,8,9,10].map((n) => (
-          <Button key={n} variant="outlined" size="small" onClick={() => quickRollDice(n, 10)}>
+      {/* D10 Menu */}
+<Box sx={{ mt: 1 }}>
+  <Button
+    variant="outlined"
+    size="small"
+    onClick={(e) => setDiceAnchor(e.currentTarget)}
+  >
+    D10
+  </Button>
+
+  <Menu
+    anchorEl={diceAnchor}
+    open={openDiceMenu}
+    onClose={() => setDiceAnchor(null)}
+    PaperProps={{
+      sx: {
+        maxHeight: 320,
+        width: 220,
+      },
+    }}
+  >
+    <Grid container spacing={1} sx={{ p: 1 }}>
+      {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
+        <Grid item xs={4} key={n}>
+          <Button
+            fullWidth
+            size="small"
+            variant="outlined"
+            onClick={() => {
+              quickRollDice(n, 10);
+              setDiceAnchor(null);
+            }}
+          >
             {n}D10
           </Button>
-        ))}
-      </Box>
+        </Grid>
+      ))}
+    </Grid>
+  </Menu>
+</Box>
 
       {/* Modal de GIFs — INTACTO */}
       <Dialog open={gifOpen} onClose={() => setGifOpen(false)} fullWidth maxWidth="md">
@@ -636,17 +778,69 @@ async function editMessage(msg) {
               value={gifSearch}
               onChange={(e) => setGifSearch(e.target.value)}
             />
-            <Button variant="contained" onClick={searchGifs}>
+            <Button
+  variant="contained"
+  onClick={() => {
+    setGifOffset(0);
+    setGifHasMore(true);
+    searchGifs(gifSearch, 0);
+  }}
+>
               Buscar
             </Button>
           </Box>
-          <Grid container spacing={1}>
+          <Box sx={{ mb: 2, display: "flex", gap: 1, flexWrap: "wrap" }}>
+  <Button size="small" variant="outlined" onClick={randomGif}>
+    🎲 Aleatório
+  </Button>
+
+  <Button size="small" variant="outlined" onClick={searchStickers}>
+    ⭐ Stickers
+  </Button>
+
+  {["rpg", "magic", "explosion", "anime", "fight", "laugh"].map((tag) => (
+    <Button
+      key={tag}
+      size="small"
+      variant="outlined"
+      onClick={() => {
+        setGifSearch(tag);
+        setGifOffset(0);
+        searchGifs(tag, 0);
+      }}
+    >
+      {tag}
+    </Button>
+  ))}
+</Box>
+          <Grid
+  container
+  spacing={1}
+  sx={{ maxHeight: 400, overflowY: "auto" }}
+  onScroll={(e) => {
+  const el = e.currentTarget;
+
+  const nearBottom =
+    el.scrollTop + el.clientHeight >= el.scrollHeight - 100;
+
+  if (nearBottom && !gifLoading && gifHasMore) {
+    searchGifs(gifSearch, gifOffset);
+  }
+}}
+>
             {gifResults.map((g) => (
               <Grid item xs={3} key={g.id}>
                 <img
-                  src={g.images.fixed_width_small.url}
+                  src={
+  g.images.fixed_height?.url ||
+  g.images.downsized?.url ||
+  g.images.original?.url
+}
                   style={{ width: "100%", cursor: "pointer", borderRadius: 6 }}
-                  onClick={() => sendGif(g.images.original.url)}
+                  onClick={() => sendGif(
+  g.images.original?.url ||
+  g.images.downsized?.url
+)}
                 />
               </Grid>
             ))}
