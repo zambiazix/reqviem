@@ -7,7 +7,7 @@ import { getAuth } from "firebase/auth";
 
 const GRID_SIZE = 50;
 const MESTRE_EMAIL = "mestre@reqviemrpg.com";
-const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:5000";
+const serverUrl = import.meta.env.VITE_SERVER_URL
 
 export default function BattleMap() {
   const navigate = useNavigate();

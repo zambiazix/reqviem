@@ -30,7 +30,8 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { collection, onSnapshot, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, getDocs, addDoc, deleteDoc, doc } from "firebase/firestore";
+import { updateDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import TurnModal from "./TurnModal";
 import "./FloatingHUDBackgrounds.css";
@@ -65,14 +66,6 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
     saveFloatingPosGlobal,
   } = useGame();
 
-  // ---------- PATCH: força re-render quando valores críticos do HUD mudarem ----------
-  // (adição mínima para garantir real-time sem alterar lógica existente)
-  const [, __forceRender] = useState(0);
-  useEffect(() => {
-  if (!hud) return;
-  __forceRender(n => n + 1);
-}, [hud]);
-
   // ----------------------------------------------------------------------------------
 
   const { playMusic } = useAudio?.() || {};
@@ -88,6 +81,21 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
   const [hudRect, setHudRect] = useState(null);
   const [fichasMap, setFichasMap] = useState({});
   const [loadingFichas, setLoadingFichas] = useState(false);
+  // ================= PERFIS =================
+const [profilesOpen, setProfilesOpen] = useState(false);
+const [perfis, setPerfis] = useState([]);
+const [openProfileDialog, setOpenProfileDialog] = useState(false);
+const [lightboxOpen, setLightboxOpen] = useState(false);
+const [lightboxSrc, setLightboxSrc] = useState(null);
+const [zoom, setZoom] = useState(1);
+
+const [novoPerfil, setNovoPerfil] = useState({
+  nome: "",
+  tipo: "npc",
+  foto: "",
+  descricao: "",
+  resumo: "",
+});
 
   const playersFromXp = Object.keys(hud?.xpMap || {});
   const mergedEmails = Object.keys(fichasMap || {});
@@ -108,6 +116,25 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
     });
 
     setFichasMap(map);
+  });
+
+  return () => unsubscribe();
+}, []);
+
+// ================= PERFIS REALTIME =================
+useEffect(() => {
+  const col = collection(db, "perfis");
+
+  const unsubscribe = onSnapshot(col, (snap) => {
+    const arr = [];
+    snap.forEach((docSnap) => {
+      arr.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    const unique = Array.from(
+  new Map(arr.map(p => [p.id, p])).values()
+);
+
+setPerfis(unique);
   });
 
   return () => unsubscribe();
@@ -596,6 +623,7 @@ console.log("HUD DEBUG:", {
       }}
       onClick={(e) => e.stopPropagation()}
     >
+      
       <Typography sx={{ fontWeight: 700, mb: 1 }}>
         Selecionar turno
       </Typography>
@@ -771,145 +799,161 @@ console.log("HUD DEBUG:", {
                 </Typography>
 
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  {!isMaster && (
-  <Box sx={{ width: "100%" }}>
-    <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-      <Typography variant="caption" sx={{ textShadow }}>
-        {displayNameFor(currentUserEmail)}
-      </Typography>
+                  
 
-      <Typography variant="caption" sx={{ textShadow }}>
-        Lv {hud.xpMap?.[currentUserEmail]?.level ?? 1} —{" "}
-        {hud.xpMap?.[currentUserEmail]?.xp ?? 0}/100
-      </Typography>
-    </Box>
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
 
-    <LinearProgress
-      variant="determinate"
-      value={hud.xpMap?.[currentUserEmail]?.xp ?? 0}
-      sx={{ height: 10, borderRadius: 4, mt: 0.5 }}
-    />
-  </Box>
-)}
-
-                  {isMaster &&
-  (mergedEmails || []).map((email) => {
+  {(isMaster ? mergedEmails : [currentUserEmail]).map((email) => {
     const status = calcularStatus(email);
 
     return (
       <Box key={email} sx={{ width: "100%" }}>
 
-        {/* NOME E XP */}
+        {/* NOME + LEVEL */}
         <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-          <Typography variant="caption" sx={{ textShadow }}>
-            {displayNameFor(email)}
-          </Typography>
-          <Typography variant="caption" sx={{ textShadow }}>
-            Lv {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
-          </Typography>
-        </Box>
-        
+  <Typography variant="caption" sx={{ textShadow }}>
+    {displayNameFor(email)}
+  </Typography>
+</Box>
+
         {/* BARRAS PV / PE */}
         {status && (
           <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
-            
+
             {/* PV */}
             <Box sx={{ position: "relative", flex: 1 }}>
               <LinearProgress
-                variant="determinate"
-                value={status.pvPercent}
-                sx={{
-  height: 6,
-  borderRadius: 4,
-  backgroundColor: "#000",
-  boxShadow: "0 0 0 1px #000",
-  "& .MuiLinearProgress-bar": {
-    backgroundColor: "#ff0000",
-    boxShadow: "0 0 4px rgba(0,0,0,0.8)",
-  },
-}}
-              />
-             <Box
+  variant="determinate"
+  value={status.pvPercent}
   sx={{
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 9,
-    fontWeight: 700,
-    color:
-      hud?.world?.phase === "noite" ||
-      hud?.world?.phase === "madrugada"
-        ? "#fff"
-        : "#111",
-    textShadow:
-      hud?.world?.phase === "noite" ||
-      hud?.world?.phase === "madrugada"
-        ? "0 0 4px rgba(0,0,0,0.9)"
-        : "0 0 4px rgba(255,255,255,0.9)",
-    pointerEvents: "none",
+    height: 6,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.25)", // cinza claro translúcido
+    boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
+    "& .MuiLinearProgress-bar": {
+      backgroundColor: "#ff0000",
+    },
   }}
->
-  {status.pvAtual}/{status.pvMax}
-</Box>
+/>
+              <Box
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color:
+                    hud?.world?.phase === "noite" ||
+                    hud?.world?.phase === "madrugada"
+                      ? "#fff"
+                      : "#111",
+                  textShadow:
+                    hud?.world?.phase === "noite" ||
+                    hud?.world?.phase === "madrugada"
+                      ? "0 0 4px rgba(0,0,0,0.9)"
+                      : "0 0 4px rgba(255,255,255,0.9)",
+                  pointerEvents: "none",
+                }}
+              >
+                {status.pvAtual}/{status.pvMax}
+              </Box>
             </Box>
 
             {/* PE */}
             <Box sx={{ position: "relative", flex: 1 }}>
               <LinearProgress
-                variant="determinate"
-                value={status.pePercent}
-                sx={{
-  height: 6,
-  borderRadius: 4,
-  backgroundColor: "#000",
-  boxShadow: "0 0 0 1px #000",
-  "& .MuiLinearProgress-bar": {
-    backgroundColor: "#facc15",
-    boxShadow: "0 0 4px rgba(0,0,0,0.8)",
-  },
-}}
-              />
-              <Box
+  variant="determinate"
+  value={status.pePercent}
   sx={{
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 9,
-    fontWeight: 700,
-    color:
-      hud?.world?.phase === "noite" ||
-      hud?.world?.phase === "madrugada"
-        ? "#fff"
-        : "#111",
-    textShadow:
-      hud?.world?.phase === "noite" ||
-      hud?.world?.phase === "madrugada"
-        ? "0 0 4px rgba(0,0,0,0.9)"
-        : "0 0 4px rgba(255,255,255,0.9)",
-    pointerEvents: "none",
+    height: 6,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.25)", // cinza claro
+    boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
+    "& .MuiLinearProgress-bar": {
+      backgroundColor: "#facc15",
+    },
   }}
->
-  {status.peAtual}/{status.peMax}
-</Box>
+/>
+              <Box
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color:
+                    hud?.world?.phase === "noite" ||
+                    hud?.world?.phase === "madrugada"
+                      ? "#fff"
+                      : "#111",
+                  textShadow:
+                    hud?.world?.phase === "noite" ||
+                    hud?.world?.phase === "madrugada"
+                      ? "0 0 4px rgba(0,0,0,0.9)"
+                      : "0 0 4px rgba(255,255,255,0.9)",
+                  pointerEvents: "none",
+                }}
+              >
+                {status.peAtual}/{status.peMax}
+              </Box>
             </Box>
 
           </Box>
         )}
 
-        <LinearProgress
-          variant="determinate"
-          value={hud.xpMap?.[email]?.xp ?? 0}
-          sx={{ height: 10, borderRadius: 4, mt: 0.5 }}
-        />
+        {/* XP */}
+        <Box sx={{ position: "relative", mt: 0.5 }}>
+  <LinearProgress
+    variant="determinate"
+    value={hud.xpMap?.[email]?.xp ?? 0}
+    sx={{
+  height: 12,
+  borderRadius: 6,
+  backgroundColor: "rgba(255,255,255,0.15)", // fundo neutro visível em qualquer tema
+  backdropFilter: "blur(4px)",
+  boxShadow: "inset 0 0 4px rgba(0,0,0,0.6)",
+  "& .MuiLinearProgress-bar": {
+    backgroundColor: "#8ecaff", // azul bebê
+    boxShadow: "0 0 8px rgba(142,202,255,0.7)",
+  },
+}}
+  />
+
+  <Box
+    sx={{
+      position: "absolute",
+      inset: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 10,
+      fontWeight: 800,
+      letterSpacing: 0.5,
+      pointerEvents: "none",
+      color:
+        hud?.world?.phase === "noite" ||
+        hud?.world?.phase === "madrugada"
+          ? "#fff"
+          : "#111",
+      textShadow:
+        hud?.world?.phase === "noite" ||
+        hud?.world?.phase === "madrugada"
+          ? "0 0 4px rgba(0,0,0,0.9)"
+          : "0 0 4px rgba(255,255,255,0.9)",
+    }}
+  >
+    LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
+  </Box>
+</Box>
       </Box>
     );
   })}
-                  
 
+</Box>
                   {/** ———————————————————————————————————————————————— */}
                   {/** AQUI ENTRA A OPÇÃO A (SELECT DE JOGADOR XP)      */}
                   {/** ———————————————————————————————————————————————— */}
@@ -1008,6 +1052,7 @@ console.log("HUD DEBUG:", {
   type="button"
   aria-label="Abrir comércio"
   className="commerce-button"
+  
  onClick={(e) => {
   e.stopPropagation();
   e.preventDefault();
@@ -1037,7 +1082,27 @@ console.log("HUD DEBUG:", {
 >
   <span style={{ fontSize: 20, pointerEvents: "none" }}>🏪</span>
 </IconButton>
-
+<IconButton
+  size="small"
+  aria-label="Abrir perfis"
+  onClick={(e) => {
+    e.stopPropagation();
+    setProfilesOpen((prev) => !prev);
+  }}
+  sx={{
+    position: "absolute",
+    left: 10,
+    bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    color: "white",
+    "&:hover": { backgroundColor: "rgba(0,0,0,0.7)" },
+    width: 40,
+    height: 40,
+    zIndex: 20,
+  }}
+>
+  <span style={{ fontSize: 20, pointerEvents: "none" }}>👥</span>
+</IconButton>
                 {isMaster && (
                   <Box
                     sx={{
@@ -1102,7 +1167,311 @@ console.log("HUD DEBUG:", {
           </Paper>
         )}
       </Box>
+      {profilesOpen &&
+  createPortal(
+    <Paper
+      elevation={16}
+      sx={{
+  position: "fixed",
+  bottom: 100,
+  left: 30,
+  width: 500,            // 🔥 um pouco maior
+  maxHeight: "80vh",     // 🔥 maior
+  overflowY: "auto",     // 🔥 scroll ativo
+  p: 2,
+  borderRadius: 2,
+  zIndex: 999999999,
+  background: "rgba(20,20,20,0.95)",
+  backdropFilter: "blur(6px)",
+  color: "white",
+}}
+    >
+      <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
+        <Typography variant="h6">Perfis</Typography>
 
+        {isMaster && (
+          <Button
+  size="small"
+  variant="contained"
+  onClick={() => {
+    setNovoPerfil({
+      nome: "",
+      tipo: "npc",
+      foto: "",
+      descricao: "",
+      resumo: "",
+    });
+    setOpenProfileDialog(true);
+  }}
+>
+  + Novo
+</Button>
+        )}
+      </Box>
+
+      {perfis.map((p) => (
+        <Paper
+          key={`perfil-${p.id}`}
+          sx={{
+            p: 1.5,
+            mb: 1.5,
+            background: "rgba(255,255,255,0.05)",
+          }}
+        >
+          <Box sx={{ display: "flex", gap: 1 }}>
+            {p.foto && (
+  <img
+  src={p.foto}
+  alt={p.nome}
+  style={{ width: 60, height: 60, borderRadius: 8, cursor: "pointer" }}
+  onClick={() => {
+    setLightboxSrc(p.foto);
+    setZoom(1);
+    setLightboxOpen(true);
+  }}
+/>
+)}
+            <Box sx={{ flex: 1 }}>
+              <Typography
+  variant="subtitle1"
+  sx={{
+    color: "#fff",
+    textShadow: "1px 1px 2px #000",
+    fontWeight: 600
+  }}
+>
+  {p.nome}
+</Typography>
+
+              <Typography
+  variant="body2"
+  sx={{
+    color: "#fff",
+    textShadow: "1px 1px 2px #000",
+    whiteSpace: "pre-line"
+  }}
+>
+  {p.descricao}
+</Typography>
+
+<Typography
+  variant="body2"
+  sx={{
+    color: "#fff",
+    textShadow: "1px 1px 2px #000",
+    whiteSpace: "pre-line"
+  }}
+>
+  {p.resumo}
+</Typography>
+            </Box>
+          </Box>
+
+          {isMaster && (
+  <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+    <Button
+  size="small"
+  variant="outlined"
+  onClick={() => {
+    setNovoPerfil({
+      id: p.id,
+      nome: p.nome || "",
+      tipo: p.tipo || "npc",
+      foto: p.foto || "",
+      descricao: p.descricao || "",
+      resumo: p.resumo || "",
+    });
+    setOpenProfileDialog(true);
+  }}
+>
+  Editar
+</Button>
+
+    <Button
+  size="small"
+  color="error"
+  onClick={async () => {
+    if (!p.id) return;
+
+    await deleteDoc(doc(db, "perfis", p.id));
+  }}
+>
+  Remover
+</Button>
+  </Box>
+)}
+        </Paper>
+      ))}
+
+      <Box sx={{ textAlign: "right", mt: 2 }}>
+        <Button onClick={() => setProfilesOpen(false)}>
+          Fechar
+        </Button>
+      </Box>
+    </Paper>,
+    document.body
+  )
+}
+<Dialog
+  open={openProfileDialog}
+  onClose={() => setOpenProfileDialog(false)}
+  maxWidth="sm"
+  fullWidth
+>
+  <DialogTitle>Novo Perfil</DialogTitle>
+
+  <DialogContent
+    sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}
+  >
+    <TextField
+      label="Nome"
+      value={novoPerfil.nome}
+      onChange={(e) =>
+        setNovoPerfil({ ...novoPerfil, nome: e.target.value })
+      }
+    />
+<FormControl fullWidth>
+  <InputLabel>Tipo</InputLabel>
+  <Select
+    value={novoPerfil.tipo}
+    label="Tipo"
+    onChange={(e) =>
+      setNovoPerfil({ ...novoPerfil, tipo: e.target.value })
+    }
+  >
+    <MenuItem value="npc">NPC (PM)</MenuItem>
+    <MenuItem value="player">Player (PJ)</MenuItem>
+  </Select>
+</FormControl>
+    <Button
+  variant="outlined"
+  component="label"
+  sx={{ mt: 2 }}
+>
+  Selecionar imagem
+  <input
+    type="file"
+    hidden
+    accept="image/*"
+    onChange={async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // 🔹 preview imediata
+      const previewUrl = URL.createObjectURL(file);
+
+      setNovoPerfil((p) => ({
+        ...p,
+        foto: previewUrl,
+      }));
+
+      // 🔹 upload para seu backend
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(
+        "https://reqviem.onrender.com/upload",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.url) {
+        setNovoPerfil((p) => ({
+          ...p,
+          foto: data.url,
+        }));
+      }
+    }}
+  />
+</Button>
+
+{novoPerfil.foto ? (
+  <Box
+    component="img"
+    src={novoPerfil.foto}
+    sx={{
+      mt: 2,
+      width: 120,
+      height: 120,
+      borderRadius: 2,
+      objectFit: "cover",
+    }}
+  />
+) : null}
+
+    <TextField
+      label="Descrição"
+      value={novoPerfil.descricao}
+      onChange={(e) =>
+        setNovoPerfil({ ...novoPerfil, descricao: e.target.value })
+      }
+    />
+
+    <TextField
+      label="Resumo"
+      multiline
+      rows={3}
+      value={novoPerfil.resumo}
+      onChange={(e) =>
+        setNovoPerfil({ ...novoPerfil, resumo: e.target.value })
+      }
+    />
+  </DialogContent>
+
+  <DialogActions>
+    <Button onClick={() => setOpenProfileDialog(false)}>
+      Cancelar
+    </Button>
+
+    <Button
+  variant="contained"
+  onClick={async () => {
+    try {
+      const payload = {
+        nome: novoPerfil.nome,
+        tipo: novoPerfil.tipo,
+        foto: novoPerfil.foto,
+        descricao: novoPerfil.descricao,
+        resumo: novoPerfil.resumo,
+      };
+
+      if (novoPerfil.id) {
+        // 🔥 Atualiza se existir
+        await updateDoc(
+          doc(db, "perfis", novoPerfil.id),
+          payload
+        );
+      } else {
+        // 🔥 Cria novo
+        await addDoc(
+          collection(db, "perfis"),
+          payload
+        );
+      }
+
+      setOpenProfileDialog(false);
+
+      setNovoPerfil({
+        nome: "",
+        tipo: "npc",
+        foto: "",
+        descricao: "",
+        resumo: "",
+      });
+
+    } catch (err) {
+      console.error("ERRO AO SALVAR PERFIL:", err);
+    }
+  }}
+>
+  Salvar
+</Button>
+  </DialogActions>
+</Dialog>
       <Dialog
         open={openMasterDialogFallback}
         onClose={() => setOpenMasterDialogFallback(false)}
@@ -1145,6 +1514,29 @@ console.log("HUD DEBUG:", {
           <Button onClick={() => setOpenMasterDialogFallback(false)}>Fechar</Button>
         </DialogActions>
       </Dialog>
+      {lightboxOpen &&
+  createPortal(
+    <Box
+      onClick={() => setLightboxOpen(false)}
+      sx={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.92)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9999999999,
+      }}
+    >
+      <LightboxImage
+        src={lightboxSrc}
+        zoom={zoom}
+        setZoom={setZoom}
+      />
+    </Box>,
+    document.body
+  )
+}
     </>
   );
 }
@@ -1160,3 +1552,54 @@ Popover.defaultProps = {
     },
   },
 };
+
+function LightboxImage({ src, zoom, setZoom }) {
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = React.useState(false);
+  const [start, setStart] = React.useState({ x: 0, y: 0 });
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setDragging(true);
+    setStart({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!dragging) return;
+    setPosition({
+      x: e.clientX - start.x,
+      y: e.clientY - start.y,
+    });
+  };
+
+  const handleMouseUp = () => setDragging(false);
+
+  React.useEffect(() => {
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragging, start]);
+
+  return (
+    <img
+      src={src}
+      alt="ampliada"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={handleMouseDown}
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+        maxWidth: "90vw",
+        maxHeight: "90vh",
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        transition: dragging ? "none" : "transform 0.2s ease",
+      }}
+    />
+  );
+}
