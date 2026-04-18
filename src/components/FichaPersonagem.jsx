@@ -495,29 +495,22 @@ const combinado = {
     }
 
     async function salvarFicha() {
-      if (!fichaId) return alert("FichaId inválido.");
-      setSaving(true);
-      try {
-        const ref = doc(db, "fichas", fichaId);
-        const toSave = {
-          ...ficha,
-          atributos: Object.fromEntries(
-            Object.entries(ficha.atributos || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
-          ),
-          pericias: Object.fromEntries(
-            Object.entries(ficha.pericias || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
-          ),
-          moedas: Number(ficha.moedas || 0),
-        };
-        await setDoc(ref, toSave, { merge: true });
-        alert("Ficha salva com sucesso!");
-      } catch (err) {
-        console.error(err);
-        alert("Erro ao salvar.");
-      } finally {
-        setSaving(false);
-      }
-    }
+  if (!fichaId) return alert("FichaId inválido.");
+  setSaving(true);
+  try {
+    const ref = doc(db, "fichas", fichaId);
+    
+    // Salva TUDO exatamente como está no estado ficha
+    await setDoc(ref, ficha, { merge: true });
+    
+    alert("Ficha salva com sucesso!");
+  } catch (err) {
+    console.error("Erro ao salvar:", err);
+    alert("Erro ao salvar.");
+  } finally {
+    setSaving(false);
+  }
+}
 
     async function handleUploadImagem(e) {
     const file = e.target.files?.[0];
