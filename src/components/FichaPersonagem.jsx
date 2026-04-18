@@ -407,20 +407,8 @@ useEffect(() => {
 // 🔴 AQUI É O PONTO CRÍTICO
 const combinado = {
   ...combinadoBase,
-
-  atributos: Object.fromEntries(
-    Object.entries(combinadoBase.atributos).map(([k, v]) => [
-      k,
-      Math.min(Math.max(Number(v || 1), 1), 5) // Mínimo 1, máximo 5
-    ])
-  ),
-
-  pericias: Object.fromEntries(
-    Object.entries(combinadoBase.pericias).map(([k, v]) => [
-      k,
-      Math.min(Number(v || 0), 5),
-    ])
-  ),
+  atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
+  pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
 };
             if (mounted) setFicha(combinado);
           } else {
@@ -499,13 +487,20 @@ const combinado = {
   setSaving(true);
   try {
     const ref = doc(db, "fichas", fichaId);
-    
-    // Salva TUDO exatamente como está no estado ficha
-    await setDoc(ref, ficha, { merge: true });
-    
+    const toSave = {
+      ...ficha,
+      atributos: Object.fromEntries(
+        Object.entries(ficha.atributos || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
+      ),
+      pericias: Object.fromEntries(
+        Object.entries(ficha.pericias || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
+      ),
+      moedas: Number(ficha.moedas || 0),
+    };
+    await setDoc(ref, toSave, { merge: true });
     alert("Ficha salva com sucesso!");
   } catch (err) {
-    console.error("Erro ao salvar:", err);
+    console.error(err);
     alert("Erro ao salvar.");
   } finally {
     setSaving(false);
