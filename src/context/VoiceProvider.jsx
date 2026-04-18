@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef } from "react";
 import { Room, RoomEvent, Track } from "livekit-client";
+import { useAudio } from "./AudioProvider";
 
 const VoiceContext = createContext();
 
@@ -7,6 +8,8 @@ const VoiceProvider = ({ children }) => {
   const [inVoice, setInVoice] = useState(false);
   const [participants, setParticipants] = useState([]);
   const [isMuted, setIsMuted] = useState(false);
+  const { getMusicStream } = useAudio();
+  const musicTrackRef = useRef(null);
 
   const roomRef = useRef(null);
   const audioElementsRef = useRef({});
@@ -76,6 +79,44 @@ const VoiceProvider = ({ children }) => {
     }
   };
 
+  // 🎵 PUBLICAR MÚSICA
+  const publishMusicTrack = async (room) => {
+    let musicStream = getMusicStream();
+    
+    if (!musicStream) {
+      console.log("Criando stream de música silencioso...");
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      const dest = ctx.createMediaStreamDestination();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start();
+      musicStream = dest.stream;
+    }
+    
+    if (musicStream && room.localParticipant) {
+      try {
+        const audioTrack = musicStream.getAudioTracks()[0];
+        if (audioTrack) {
+          const musicTrack = await room.localParticipant.publishTrack(
+            audioTrack,
+            {
+              name: "music",
+              source: "unknown",
+            }
+          );
+          musicTrackRef.current = musicTrack;
+          console.log("✅ Track de música publicado!");
+        }
+      } catch (err) {
+        console.warn("Erro ao publicar música:", err);
+      }
+    }
+  };
+
   // ===============================
   // Entrar na sala
   // ===============================
@@ -118,6 +159,12 @@ const VoiceProvider = ({ children }) => {
         )
         .on(RoomEvent.TrackMuted, () => updateParticipants())
         .on(RoomEvent.TrackUnmuted, () => updateParticipants())
+        .on(RoomEvent.TrackPublished, (pub, participant) => {
+          if (pub.trackName === "music" || pub.source === "unknown") {
+            pub.setSubscribed(true);
+            console.log("🎵 Inscrito na track de música de:", participant.identity);
+          }
+        })
         .on(RoomEvent.TrackSubscribed, async (track, pub, participant) => {
           if (track.kind !== Track.Kind.Audio) return;
 
@@ -160,6 +207,9 @@ const VoiceProvider = ({ children }) => {
       });
 
       await room.localParticipant.setMicrophoneEnabled(true);
+      
+      // 🎵 PUBLICAR MÚSICA
+      await publishMusicTrack(room);
 
       roomRef.current = room;
       setInVoice(true);
@@ -197,6 +247,16 @@ const VoiceProvider = ({ children }) => {
   // Sair da sala
   // ===============================
   const leaveVoice = async () => {
+    // Despublicar track de música
+    if (musicTrackRef.current) {
+      try {
+        await roomRef.current?.localParticipant.unpublishTrack(
+          musicTrackRef.current
+        );
+      } catch {}
+      musicTrackRef.current = null;
+    }
+
     const room = roomRef.current;
     if (room) {
       await room.disconnect();

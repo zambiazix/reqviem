@@ -212,7 +212,13 @@ export default function AudioProvider({ children }) {
     return (desiredVolumesRef.current[full] ?? 100) / 100;
   };
 
-  const getMusicStream = () => streamRef.current || null;
+  const getMusicStream = () => {
+  if (!streamRef.current) {
+    console.warn("Nenhum stream de música disponível");
+    return null;
+  }
+  return streamRef.current;
+};
 
   // Persist state to Firestore (writes canonical full urls)
   const syncFirestoreState = async () => {

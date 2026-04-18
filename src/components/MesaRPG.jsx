@@ -150,7 +150,7 @@ export default function MesaRPG({ userNick, userEmail, ficha }) {
       avatar: avatarUrl,
     });
   };
-
+  
   const playerCount = participants.length;
 
   return (
