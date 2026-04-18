@@ -344,32 +344,7 @@ useEffect(() => {
   }
 }, [ficha?.pericias]);
 
-    // Adicione isso DEPOIS do useEffect que carrega a ficha
-useEffect(() => {
-  if (!ficha || !fichaId) return;
-  
-  const donoEmail = ficha.dono || user?.email;
-  const nivelDono = hud?.xpMap?.[donoEmail]?.level ?? 1;
-  const maxAtributos = 2 + (nivelDono - 1);
-  const maxPericias = 7 + ((nivelDono - 1) * 2);
-  
-  const gastoAtributos = Object.values(ficha.atributos || {}).reduce((a, b) => a + Number(b || 0), 0);
-  const gastoPericias = Object.values(ficha.pericias || {}).reduce((a, b) => a + Number(b || 0), 0);
-  
-  // Se os valores estão absurdos, reseta
-  if (gastoAtributos > maxAtributos || gastoPericias > maxPericias) {
-    const ref = doc(db, "fichas", fichaId);
-    const resetAtributos = Object.fromEntries(
-      Object.keys(ficha.atributos).map(k => [k, 1])
-    );
-    const resetPericias = Object.fromEntries(
-      Object.keys(ficha.pericias).map(k => [k, 0])
-    );
-    
-    setFicha(p => ({ ...p, atributos: resetAtributos, pericias: resetPericias }));
-    setDoc(ref, { atributos: resetAtributos, pericias: resetPericias }, { merge: true });
-  }
-}, [ficha?.dono, hud?.xpMap]);
+
 
     useEffect(() => {
       let mounted = true;
