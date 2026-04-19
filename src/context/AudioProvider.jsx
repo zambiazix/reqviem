@@ -222,17 +222,23 @@ export default function AudioProvider({ children }) {
 
   // Persist state to Firestore (writes canonical full urls)
   const syncFirestoreState = async () => {
-    try {
-      const list = Object.keys(audioObjects.current).map((u) => ({
-        url: u,
-        playing: true,
-        volume: Math.round((audioObjects.current[u]?.volume ?? 1) * 100),
-      }));
-      await setDoc(currentSoundDoc, { sounds: list, updatedAt: serverTimestamp() });
-    } catch (e) {
-      console.warn("Erro ao atualizar Firestore:", e);
-    }
-  };
+  try {
+    const list = Object.keys(audioObjects.current).map((u) => ({
+      url: u,
+      playing: true,
+      volume: Math.round((audioObjects.current[u]?.volume ?? 1) * 100),
+    }));
+    
+    // 🟢 Adiciona o ID do socket para identificar mudanças locais
+    await setDoc(currentSoundDoc, { 
+      sounds: list, 
+      updatedAt: serverTimestamp(),
+      updatedBy: socketRef.current?.id || 'local'
+    });
+  } catch (e) {
+    console.warn("Erro ao atualizar Firestore:", e);
+  }
+};
 
   // SOCKET listeners (realtime)
   useEffect(() => {
@@ -262,6 +268,12 @@ export default function AudioProvider({ children }) {
   useEffect(() => {
     const unsub = onSnapshot(currentSoundDoc, (snap) => {
       const data = snap?.data?.() ?? null;
+
+      if (data?.updatedBy === socketRef.current?.id) {
+      console.log('🔄 Ignorando mudança local do Firestore');
+      return;
+    }
+
       if (!data || !Array.isArray(data.sounds)) {
         setPlayingTracks([]);
         prevSoundsRef.current = [];

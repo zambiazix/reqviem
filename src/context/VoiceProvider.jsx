@@ -165,25 +165,27 @@ const VoiceProvider = ({ children }) => {
             console.log("🎵 Inscrito na track de música de:", participant.identity);
           }
         })
-        .on(RoomEvent.TrackSubscribed, async (track, pub, participant) => {
+                .on(RoomEvent.TrackSubscribed, async (track, pub, participant) => {
+          console.log('🎤 Track recebida:', track.kind, 'de:', participant.identity, 'Nome:', pub.trackName);
+          
           if (track.kind !== Track.Kind.Audio) return;
 
           const id = participant.identity;
-
-          // remove qualquer instância anterior
           removeAudioElement(id);
 
           const element = track.attach();
           element.autoplay = true;
           element.playsInline = true;
+          element.volume = 1.0;
+          element.muted = false;
           element.style.display = "none";
 
           document.body.appendChild(element);
-
           audioElementsRef.current[id] = element;
 
           try {
             await element.play();
+            console.log('✅ Áudio reproduzindo para:', participant.identity);
           } catch (e) {
             console.warn("Autoplay bloqueado:", e);
           }
@@ -206,7 +208,17 @@ const VoiceProvider = ({ children }) => {
         autoSubscribe: true,
       });
 
-      await room.localParticipant.setMicrophoneEnabled(true);
+            await room.localParticipant.setMicrophoneEnabled(true);
+      
+      // 🟢 FORÇA a publicação do áudio do microfone
+      console.log('🎙️ Publicando microfone...');
+      const audioTracks = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const audioTrack = audioTracks.getAudioTracks()[0];
+      await room.localParticipant.publishTrack(audioTrack, {
+        name: `microphone-${identity}`,
+        source: Track.Source.Microphone,
+      });
+      console.log('✅ Microfone publicado!');
       
       // 🎵 PUBLICAR MÚSICA
       await publishMusicTrack(room);
