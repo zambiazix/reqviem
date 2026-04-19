@@ -239,7 +239,10 @@ export default function AudioProvider({ children }) {
     const s = socketRef.current;
     if (!s) return;
     s.on("play-music", (url) => _playLocal(url, { initiatedByLocal: false }));
-    s.on("stop-music", (url) => pauseMusic(url, { initiatedByLocal: false }));
+    s.on("stop-music", (url) => {
+  console.log('🎵 Recebido stop-music via socket para:', url);
+  pauseMusic(url, { initiatedByLocal: false });
+});
     s.on("stop-all-music", () => stopAllMusic({ initiatedByLocal: false }));
     s.on("volume-music", ({ url, value }) => setVolume(url, value, { initiatedByLocal: false }));
     s.on("connect", () => console.log("Socket conectado:", s.id));

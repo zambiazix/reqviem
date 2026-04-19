@@ -801,40 +801,59 @@ console.log("HUD DEBUG:", {
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   
 
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-
+                  <Box 
+  sx={{ 
+    display: "flex", 
+    flexDirection: "column", 
+    gap: 1,
+    maxHeight: "400px",      // 🟢 ALTURA MÁXIMA FIXA
+    overflowY: "auto",       // 🟢 ATIVA SCROLL VERTICAL
+    pr: 1,                   // 🟢 Espaço para a barra de scroll
+    "&::-webkit-scrollbar": {
+      width: "6px",
+    },
+    "&::-webkit-scrollbar-track": {
+      background: "rgba(255,255,255,0.1)",
+      borderRadius: "10px",
+    },
+    "&::-webkit-scrollbar-thumb": {
+      background: "rgba(255,255,255,0.3)",
+      borderRadius: "10px",
+      "&:hover": {
+        background: "rgba(255,255,255,0.5)",
+      },
+    },
+  }}
+>
   {(isMaster ? mergedEmails : [currentUserEmail]).map((email) => {
     const status = calcularStatus(email);
-
     return (
       <Box key={email} sx={{ width: "100%" }}>
-
         {/* NOME + LEVEL */}
         <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-  <Typography variant="caption" sx={{ textShadow }}>
-    {displayNameFor(email)}
-  </Typography>
-</Box>
+          <Typography variant="caption" sx={{ textShadow }}>
+            {displayNameFor(email)}
+          </Typography>
+        </Box>
 
         {/* BARRAS PV / PE */}
         {status && (
           <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
-
             {/* PV */}
             <Box sx={{ position: "relative", flex: 1 }}>
               <LinearProgress
-  variant="determinate"
-  value={status.pvPercent}
-  sx={{
-    height: 6,
-    borderRadius: 4,
-    backgroundColor: "rgba(255,255,255,0.25)", // cinza claro translúcido
-    boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
-    "& .MuiLinearProgress-bar": {
-      backgroundColor: "#ff0000",
-    },
-  }}
-/>
+                variant="determinate"
+                value={status.pvPercent}
+                sx={{
+                  height: 6,
+                  borderRadius: 4,
+                  backgroundColor: "rgba(255,255,255,0.25)",
+                  boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
+                  "& .MuiLinearProgress-bar": {
+                    backgroundColor: "#ff0000",
+                  },
+                }}
+              />
               <Box
                 sx={{
                   position: "absolute",
@@ -844,16 +863,8 @@ console.log("HUD DEBUG:", {
                   justifyContent: "center",
                   fontSize: 9,
                   fontWeight: 700,
-                  color:
-                    hud?.world?.phase === "noite" ||
-                    hud?.world?.phase === "madrugada"
-                      ? "#fff"
-                      : "#111",
-                  textShadow:
-                    hud?.world?.phase === "noite" ||
-                    hud?.world?.phase === "madrugada"
-                      ? "0 0 4px rgba(0,0,0,0.9)"
-                      : "0 0 4px rgba(255,255,255,0.9)",
+                  color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111",
+                  textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)",
                   pointerEvents: "none",
                 }}
               >
@@ -864,18 +875,18 @@ console.log("HUD DEBUG:", {
             {/* PE */}
             <Box sx={{ position: "relative", flex: 1 }}>
               <LinearProgress
-  variant="determinate"
-  value={status.pePercent}
-  sx={{
-    height: 6,
-    borderRadius: 4,
-    backgroundColor: "rgba(255,255,255,0.25)", // cinza claro
-    boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
-    "& .MuiLinearProgress-bar": {
-      backgroundColor: "#facc15",
-    },
-  }}
-/>
+                variant="determinate"
+                value={status.pePercent}
+                sx={{
+                  height: 6,
+                  borderRadius: 4,
+                  backgroundColor: "rgba(255,255,255,0.25)",
+                  boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
+                  "& .MuiLinearProgress-bar": {
+                    backgroundColor: "#facc15",
+                  },
+                }}
+              />
               <Box
                 sx={{
                   position: "absolute",
@@ -885,74 +896,55 @@ console.log("HUD DEBUG:", {
                   justifyContent: "center",
                   fontSize: 9,
                   fontWeight: 700,
-                  color:
-                    hud?.world?.phase === "noite" ||
-                    hud?.world?.phase === "madrugada"
-                      ? "#fff"
-                      : "#111",
-                  textShadow:
-                    hud?.world?.phase === "noite" ||
-                    hud?.world?.phase === "madrugada"
-                      ? "0 0 4px rgba(0,0,0,0.9)"
-                      : "0 0 4px rgba(255,255,255,0.9)",
+                  color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111",
+                  textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)",
                   pointerEvents: "none",
                 }}
               >
                 {status.peAtual}/{status.peMax}
               </Box>
             </Box>
-
           </Box>
         )}
 
         {/* XP */}
         <Box sx={{ position: "relative", mt: 0.5 }}>
-  <LinearProgress
-    variant="determinate"
-    value={hud.xpMap?.[email]?.xp ?? 0}
-    sx={{
-  height: 12,
-  borderRadius: 6,
-  backgroundColor: "rgba(255,255,255,0.15)", // fundo neutro visível em qualquer tema
-  backdropFilter: "blur(4px)",
-  boxShadow: "inset 0 0 4px rgba(0,0,0,0.6)",
-  "& .MuiLinearProgress-bar": {
-    backgroundColor: "#8ecaff", // azul bebê
-    boxShadow: "0 0 8px rgba(142,202,255,0.7)",
-  },
-}}
-  />
-
-  <Box
-    sx={{
-      position: "absolute",
-      inset: 0,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 10,
-      fontWeight: 800,
-      letterSpacing: 0.5,
-      pointerEvents: "none",
-      color:
-        hud?.world?.phase === "noite" ||
-        hud?.world?.phase === "madrugada"
-          ? "#fff"
-          : "#111",
-      textShadow:
-        hud?.world?.phase === "noite" ||
-        hud?.world?.phase === "madrugada"
-          ? "0 0 4px rgba(0,0,0,0.9)"
-          : "0 0 4px rgba(255,255,255,0.9)",
-    }}
-  >
-    LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
-  </Box>
-</Box>
+          <LinearProgress
+            variant="determinate"
+            value={hud.xpMap?.[email]?.xp ?? 0}
+            sx={{
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: "rgba(255,255,255,0.15)",
+              backdropFilter: "blur(4px)",
+              boxShadow: "inset 0 0 4px rgba(0,0,0,0.6)",
+              "& .MuiLinearProgress-bar": {
+                backgroundColor: "#8ecaff",
+                boxShadow: "0 0 8px rgba(142,202,255,0.7)",
+              },
+            }}
+          />
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: 0.5,
+              pointerEvents: "none",
+              color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111",
+              textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)",
+            }}
+          >
+            LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
+          </Box>
+        </Box>
       </Box>
     );
   })}
-
 </Box>
                   {/** ———————————————————————————————————————————————— */}
                   {/** AQUI ENTRA A OPÇÃO A (SELECT DE JOGADOR XP)      */}

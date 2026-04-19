@@ -113,22 +113,25 @@ export default function SoundBoard({ isMaster }) {
 
   // 🎵 Reproduzir
   async function handlePlay(url) {
-    await unlockAudio();
-    const normalizedUrl = normalizeUrl(getMusicUrl(url));
-    playMusic(normalizedUrl);
-    setVolumes((p) => ({ ...p, [normalizedUrl]: 100 }));
-    scheduleSave(buildState(normalizedUrl, true, 100));
-  }
+  console.log('🎵 SoundBoard: handlePlay chamado para:', url);
+  await unlockAudio();
+  const normalizedUrl = normalizeUrl(getMusicUrl(url));
+  console.log('🎵 SoundBoard: URL normalizada:', normalizedUrl);
+  playMusic(normalizedUrl);
+  setVolumes((p) => ({ ...p, [normalizedUrl]: 100 }));
+  scheduleSave(buildState(normalizedUrl, true, 100));
+}
 
   function handleStop(url) {
-    pauseMusic(url);
-    setVolumes((p) => {
-      const copy = { ...p };
-      delete copy[url];
-      return copy;
-    });
-    scheduleSave(buildState(url, false));
-  }
+  console.log('🎵 SoundBoard: handleStop chamado para:', url);
+  pauseMusic(url);
+  setVolumes((p) => {
+    const copy = { ...p };
+    delete copy[url];
+    return copy;
+  });
+  scheduleSave(buildState(url, false));
+}
 
   function handleStopAll() {
     stopAllMusic();

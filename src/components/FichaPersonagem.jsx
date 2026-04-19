@@ -559,6 +559,14 @@ useEffect(() => {
   }
 }, [ficha?.carteiras]);
 
+// 🟢 Carregar defeitos ao carregar a ficha
+useEffect(() => {
+  if (ficha?.defeitos) {
+    const defeitosArray = ficha.defeitos.split('; ').filter(d => d.trim() !== '');
+    setDefeitosSelecionados(defeitosArray);
+  }
+}, [ficha?.defeitos]);
+
 // Carregar lista de jogadores para transferência
 useEffect(() => {
   const carregarJogadores = async () => {
@@ -638,6 +646,11 @@ if (jogadorSelecionado === fichaId) {
   setCarteiraDestino("");
   setValorTransferencia(0);
   return; // Importante: sair da função para não executar o resto
+  // 🟢 FORÇA ATUALIZAÇÃO IMEDIATA DAS CARTEIRAS
+const fichaAtualizada = await getDoc(doc(db, "fichas", fichaId));
+if (fichaAtualizada.exists()) {
+  setCarteiras(fichaAtualizada.data().carteiras || []);
+}
 } 
     else {
     // Transferência para outro jogador
@@ -2171,7 +2184,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
       
       <TextField
         label="Valor"
-        type="number"
+        type="text"
         value={valorTransferencia}
         onChange={(e) => {
           const valor = Number(e.target.value);
