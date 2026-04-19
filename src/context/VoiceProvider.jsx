@@ -165,8 +165,8 @@ const VoiceProvider = ({ children }) => {
             console.log("🎵 Inscrito na track de música de:", participant.identity);
           }
         })
-                .on(RoomEvent.TrackSubscribed, async (track, pub, participant) => {
-          console.log('🎤 Track recebida:', track.kind, 'de:', participant.identity, 'Nome:', pub.trackName);
+                        .on(RoomEvent.TrackSubscribed, async (track, pub, participant) => {
+          console.log('🎤 Track recebida:', track.kind, 'de:', participant.identity);
           
           if (track.kind !== Track.Kind.Audio) return;
 
@@ -183,12 +183,30 @@ const VoiceProvider = ({ children }) => {
           document.body.appendChild(element);
           audioElementsRef.current[id] = element;
 
-          try {
-            await element.play();
-            console.log('✅ Áudio reproduzindo para:', participant.identity);
-          } catch (e) {
-            console.warn("Autoplay bloqueado:", e);
-          }
+          const tryPlay = async (retries = 3) => {
+            for (let i = 0; i < retries; i++) {
+              try {
+                await element.play();
+                console.log('✅ Áudio reproduzindo para:', participant.identity);
+                return true;
+              } catch (e) {
+                console.warn(`Tentativa ${i + 1} falhou:`, e.message);
+                if (i === retries - 1) {
+                  console.warn('Aguardando interação do usuário...');
+                  const unlockPlay = () => {
+                    element.play().catch(err => console.warn('Falha final:', err));
+                    document.removeEventListener('click', unlockPlay);
+                    document.removeEventListener('keydown', unlockPlay);
+                  };
+                  document.addEventListener('click', unlockPlay, { once: true });
+                  document.addEventListener('keydown', unlockPlay, { once: true });
+                }
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            }
+          };
+          
+          tryPlay();
         })
         .on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
           if (track.kind !== Track.Kind.Audio) return;
@@ -208,17 +226,19 @@ const VoiceProvider = ({ children }) => {
         autoSubscribe: true,
       });
 
-            await room.localParticipant.setMicrophoneEnabled(true);
+                  await room.localParticipant.setMicrophoneEnabled(true);
       
-      // 🟢 FORÇA a publicação do áudio do microfone
-      console.log('🎙️ Publicando microfone...');
-      const audioTracks = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      const audioTrack = audioTracks.getAudioTracks()[0];
-      await room.localParticipant.publishTrack(audioTrack, {
-        name: `microphone-${identity}`,
-        source: Track.Source.Microphone,
-      });
-      console.log('✅ Microfone publicado!');
+      // 🟢 Desbloqueia áudio no primeiro clique
+      const unlockAudio = () => {
+        const audio = new Audio();
+        audio.play().then(() => {
+          console.log('🔓 Áudio desbloqueado!');
+        }).catch(() => {});
+        document.removeEventListener('click', unlockAudio);
+        document.removeEventListener('touchstart', unlockAudio);
+      };
+      document.addEventListener('click', unlockAudio);
+      document.addEventListener('touchstart', unlockAudio);
       
       // 🎵 PUBLICAR MÚSICA
       await publishMusicTrack(room);
