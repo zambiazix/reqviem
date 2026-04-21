@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  web:
+    image: jitsi/web:stable
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ${CONFIG}/web:/config
+    environment:
+      - PUBLIC_URL
+      - ENABLE_LETSENCRYPT
+      - LETSENCRYPT_DOMAIN
+      - LETSENCRYPT_EMAIL
+      - ENABLE_AUTH
+      - ENABLE_GUESTS
+      - JICOFO_AUTH_PASSWORD
+      - JVB_AUTH_PASSWORD
+      - TZ
+    networks:
+      meet.jitsi:
+
+  prosody:
+    image: jitsi/prosody:stable
+    restart: unless-stopped
+    expose:
+      - '5222'
+      - '5347'
+      - '5280'
+    volumes:
+      - ${CONFIG}/prosody:/config
+    environment:
+      - PUBLIC_URL
+      - ENABLE_AUTH
+      - ENABLE_GUESTS
+      - JICOFO_AUTH_PASSWORD
+      - JVB_AUTH_PASSWORD
+      - JIGASI_XMPP_PASSWORD
+      - JIBRI_RECORDER_PASSWORD
+      - JIBRI_XMPP_PASSWORD
+      - TZ
+    networks:
+      meet.jitsi:
+        aliases:
+          - prosody
+
+  jicofo:
+    image: jitsi/jicofo:stable
+    restart: unless-stopped
+    volumes:
+      - ${CONFIG}/jicofo:/config
+    environment:
+      - PUBLIC_URL
+      - ENABLE_AUTH
+      - XMPP_DOMAIN=prosody
+      - JICOFO_AUTH_PASSWORD
+      - JICOFO_MAX_MEMORY
+      - TZ
+    depends_on:
+      - prosody
+    networks:
+      meet.jitsi:
+
+  jvb:
+    image: jitsi/jvb:stable
+    restart: unless-stopped
+    ports:
+      - '10000:10000/udp'
+    volumes:
+      - ${CONFIG}/jvb:/config
+    environment:
+      - PUBLIC_URL
+      - XMPP_DOMAIN=prosody
+      - JVB_AUTH_PASSWORD
+      - VIDEOBRIDGE_MAX_MEMORY
+      - TZ
+    depends_on:
+      - prosody
+    networks:
+      meet.jitsi:
+
+networks:
+  meet.jitsi:
+    driver: bridge

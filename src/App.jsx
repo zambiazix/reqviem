@@ -19,6 +19,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  createUserWithEmailAndPassword,
 } from "firebase/auth";
 import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
 import LoadingProvider from "./context/LoadingProvider";
@@ -29,6 +30,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import BattleMap from "./components/BattleMap";
 import AudioProvider from "./context/AudioProvider";
 import VoiceProvider from "./context/VoiceProvider";
+import JitsiProvider from "./context/JitsiProvider";
 import MesaRPG from "./components/MesaRPG";
 import MapaMundi from "./pages/MapaMundi";
 import Sistema from "./pages/Sistema";
@@ -187,44 +189,73 @@ export default function App() {
   }, [selectedFichaEmail]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u || null);
-      if (u) {
-        try {
-          // 🔽 BUSCA O NOME DA FICHA (CORRETO)
-const fichaRef = doc(db, "fichas", u.email);
-const fichaSnap = await getDoc(fichaRef);
+  const unsub = onAuthStateChanged(auth, async (u) => {
+    setUser(u || null);
+    if (u) {
+      try {
+        // 🔽 BUSCA O NOME DA FICHA (CORRETO)
+        const fichaRef = doc(db, "fichas", u.email);
+        const fichaSnap = await getDoc(fichaRef);
 
-if (fichaSnap.exists()) {
-  const ficha = fichaSnap.data();
-  setUserNick(ficha.nome || u.email);
-  setFichaAtual(ficha);
-} else {
-  setUserNick(u.email);
-}
-
-// 🔽 Role continua igual
-setRole(u.email === MASTER_EMAIL ? "master" : "player");
-
-          if (u.email === MASTER_EMAIL) {
-            await carregarListaFichas();
-          } else {
-            setSelectedFichaEmail(u.email);
+        if (fichaSnap.exists()) {
+          const ficha = fichaSnap.data();
+          setUserNick(ficha.nome || u.email);
+          
+          // 🟢 GARANTE QUE A IMAGEM ESTÁ CORRETA
+          const imagemPrincipal = ficha.imagens?.[ficha.imagemPrincipalIndex || 0] || ficha.imagemPersonagem || null;
+          
+          setFichaAtual({
+            ...ficha,
+            imagemPrincipal: imagemPrincipal
+          });
+          
+          // 🟢🟢🟢 CORREÇÃO: MOVER PARA DENTRO DO IF! 🟢🟢🟢
+          localStorage.setItem('userName', ficha.nome || u.email);
+          localStorage.setItem('userEmail', u.email);
+          if (ficha.imagemPersonagem) {
+            localStorage.setItem('userAvatar', ficha.imagemPersonagem);
           }
-        } catch (err) {
-          console.error("Erro ao buscar user doc:", err);
+          
+        } else {
           setUserNick(u.email);
-          setRole(u.email === MASTER_EMAIL ? "master" : "player");
+          
+          // 🟢 VALORES PADRÃO QUANDO NÃO TEM FICHA
+          localStorage.setItem('userName', u.email);
+          localStorage.setItem('userEmail', u.email);
+          localStorage.removeItem('userAvatar'); // Remove avatar antigo se existir
         }
-      } else {
-        setUserNick("");
-        setRole("");
-        setFichasList([]);
-        setSelectedFichaEmail(null);
+
+        // 🔽 Role continua igual
+        setRole(u.email === MASTER_EMAIL ? "master" : "player");
+
+        if (u.email === MASTER_EMAIL) {
+          await carregarListaFichas();
+        } else {
+          setSelectedFichaEmail(u.email);
+        }
+      } catch (err) {
+        console.error("Erro ao buscar user doc:", err);
+        setUserNick(u.email);
+        setRole(u.email === MASTER_EMAIL ? "master" : "player");
+        
+        // 🟢 VALORES PADRÃO EM CASO DE ERRO
+        localStorage.setItem('userName', u.email);
+        localStorage.setItem('userEmail', u.email);
       }
-    });
-    return () => unsub();
-  }, [carregarListaFichas]);
+    } else {
+      setUserNick("");
+      setRole("");
+      setFichasList([]);
+      setSelectedFichaEmail(null);
+      
+      // 🟢 LIMPA LOCALSTORAGE AO DESLOGAR
+      localStorage.removeItem('userName');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('userAvatar');
+    }
+  });
+  return () => unsub();
+}, [carregarListaFichas]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -266,19 +297,52 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
     dono: "",
   };
 
-  async function criarFichaParaEmail(email) {
-    if (!email) return alert("Digite um e-mail para criar a ficha.");
-    try {
-      const payload = { ...initialFichaBlank, dono: email };
-      await setDoc(doc(db, "fichas", email), payload);
-      alert("Ficha criada para " + email);
-      await carregarListaFichas();
-      setSelectedFichaEmail(email);
-    } catch (err) {
-      console.error("Erro ao criar ficha:", err);
-      alert("Erro ao criar ficha: " + err.message);
+  async function criarContaEJogador(email, senha) {
+  if (!email || !senha) {
+    alert("Digite e-mail e senha para criar a conta.");
+    return;
+  }
+  
+  if (senha.length < 6) {
+    alert("A senha deve ter pelo menos 6 caracteres.");
+    return;
+  }
+  
+  try {
+    // 🟢 1. CRIA A CONTA NO FIREBASE AUTH
+    const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
+    console.log("✅ Conta criada:", userCredential.user.email);
+    
+    // 🟢 2. CRIA A FICHA VAZIA AUTOMATICAMENTE
+    const payload = { 
+      ...initialFichaBlank, 
+      dono: email,
+      nome: email.split('@')[0], // Nome padrão: parte antes do @
+    };
+    
+    await setDoc(doc(db, "fichas", email), payload);
+    console.log("✅ Ficha criada para:", email);
+    
+    // 🟢 3. ATUALIZA A LISTA E SELECIONA A NOVA FICHA
+    await carregarListaFichas();
+    setSelectedFichaEmail(email);
+    
+    alert(`Conta criada com sucesso! Bem-vindo(a), ${email}`);
+    
+  } catch (err) {
+    console.error("❌ Erro ao criar conta:", err);
+    
+    if (err.code === 'auth/email-already-in-use') {
+      alert("Este e-mail já está cadastrado. Tente fazer login.");
+    } else if (err.code === 'auth/invalid-email') {
+      alert("E-mail inválido. Verifique e tente novamente.");
+    } else if (err.code === 'auth/weak-password') {
+      alert("Senha muito fraca. Use pelo menos 6 caracteres.");
+    } else {
+      alert("Erro ao criar conta: " + err.message);
     }
   }
+}
 
   /* ---------- Componente Home (layout principal) ---------- */
   const Home = memo(function Home({ setShowCommerce }) {
@@ -338,21 +402,32 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
                     </Box>
 
                     {/* Navegação */}
-                    <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, flexWrap: "wrap" }}>
-                      <Button variant="contained" component={Link} to="/map">Grid</Button>
-                      <Button variant="contained" component={Link} to="/cronica">Crônica</Button>
-                      <Button variant="contained" component={Link} to="/sistema">Sistema</Button>
-                    </Box>
+<Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, flexWrap: "wrap" }}>
+  <Button variant="contained" component={Link} to="/map">Grid</Button>
+  <Button variant="contained" component={Link} to="/cronica">Crônica</Button>
+  <Button variant="contained" component={Link} to="/sistema">Sistema</Button>
+  
+  {/* 🟢 BOTÃO DE VOICE - VERMELHO */}
+    <Button 
+  variant="contained" 
+  onClick={() => {
+    window.__startJitsiMeeting?.({
+      name: fichaAtual?.nome || userNick,
+      email: user?.email,
+      avatar: fichaAtual?.imagemPrincipal || fichaAtual?.imagemPersonagem || null
+    });
+  }}
+    sx={{ 
+      bgcolor: '#e74c3c', 
+      '&:hover': { bgcolor: '#c0392b' },
+    }}
+  >
+    🎙️ Voice
+  </Button>
+</Box>
                   </Paper>
 
-                  {/* Chat de voz */}
-                  <Paper sx={{ p: 1, flexShrink: 0, mt: 2 }}>
-                    <MesaRPG
-  userNick={userNick}
-  userEmail={user?.email}
-  ficha={fichaAtual}
-/>
-                  </Paper>
+              
 
                   {/* Chat */}
                   <Paper sx={{ flex: 1, display: "flex", flexDirection: "column", mt: 2, overflow: "hidden" }}>
@@ -375,7 +450,7 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
                     fichasList={fichasList}
                     selectedFichaEmail={selectedFichaEmail}
                     setSelectedFichaEmail={setSelectedFichaEmail}
-                    criarFichaParaEmail={criarFichaParaEmail}
+                    criarContaEJogador={criarContaEJogador}
                   />
 
                   {/* SoundBoard — força altura máxima para não espremer demais */}
@@ -419,10 +494,11 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
   const currentUserEmail = user?.email || null;
 
   return (
-  <Router>
-  <VoiceProvider>
-    <AudioProvider>
-      <LoadingProvider>
+    <Router>
+  <JitsiProvider>     {/* 🟢 NOVO PROVIDER */}
+    <VoiceProvider>    {/* Mantido para música/Socket.IO */}
+      <AudioProvider>
+        <LoadingProvider>
 
         <RouteLoadingWatcher />
 
@@ -443,9 +519,10 @@ setRole(u.email === MASTER_EMAIL ? "master" : "player");
           </Routes>
         </GameProvider>
 
-      </LoadingProvider>
+            </LoadingProvider>
     </AudioProvider>
   </VoiceProvider>
+  </JitsiProvider>    {/* 🟢 FECHAR NOVO PROVIDER */}
 </Router>
 );
 }

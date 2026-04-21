@@ -10,9 +10,6 @@ import {
   TextField,
   Box,
 } from "@mui/material";
-import { auth, db } from "../firebaseConfig";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
 import FichaPersonagem from "../components/FichaPersonagem";
 
 export default function HomePage({
@@ -21,55 +18,26 @@ export default function HomePage({
   fichasList,
   selectedFichaEmail,
   setSelectedFichaEmail,
-  criarFichaParaEmail,
+  criarContaEJogador, // 🟢 Recebe a função do App.jsx
 }) {
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // 🔹 Criação de conta + ficha vazia
+  // 🟢 Função simplificada que usa a lógica do App.jsx
   const handleCreateAccountAndFicha = async () => {
     if (!newEmail || !newPassword) {
       alert("Preencha o e-mail e a senha para criar a conta.");
       return;
     }
-
+    
     setCreating(true);
     try {
-      // 1️⃣ Cria o usuário no Firebase Authentication
-      await createUserWithEmailAndPassword(auth, newEmail, newPassword);
-
-      // 2️⃣ Cria uma ficha vazia associada a esse e-mail
-      const fichaRef = doc(db, "fichas", newEmail);
-      await setDoc(fichaRef, {
-        nome: "",
-        genero: "",
-        idade: "",
-        altura: "",
-        peso: "",
-        movimentacao: "",
-        pontosVida: 0,
-        pontosEnergia: 0,
-        armadura: "0/0",
-        caracteristicas: "",
-        atributos: {
-          forca: 0,
-          destreza: 0,
-          agilidade: 0,
-          constituicao: 0,
-          inteligencia: 0,
-        },
-        defeit: "",
-        tracos: "",
-        criadoEm: new Date().toISOString(),
-      });
-
-      alert(`Conta e ficha criadas com sucesso para ${newEmail}!`);
+      await criarContaEJogador(newEmail, newPassword);
       setNewEmail("");
       setNewPassword("");
     } catch (err) {
-      console.error("Erro ao criar conta e ficha:", err);
-      alert("Erro ao criar conta: " + err.message);
+      console.error("Erro:", err);
     } finally {
       setCreating(false);
     }
@@ -103,7 +71,7 @@ export default function HomePage({
           </List>
           <Divider sx={{ my: 1 }} />
 
-          {/* 🔹 Novo formulário de criação de conta + ficha */}
+          {/* Formulário de criação de conta + ficha */}
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
             Criar nova conta + ficha vazia
           </Typography>

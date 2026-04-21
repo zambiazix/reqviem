@@ -14,6 +14,7 @@ import {
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useVoice } from "../context/VoiceProvider";
+import { useJitsi } from "../context/JitsiProvider";
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
@@ -127,14 +128,13 @@ function LightboxImage({ src, zoom, setZoom }) {
    COMPONENTE PRINCIPAL
 ================================ */
 export default function MesaRPG({ userNick, userEmail, ficha }) {
-  const {
-    inVoice,
-    participants,
-    joinVoice,
-    leaveVoice,
-    toggleMute,
-    isMuted,
-  } = useVoice();
+  // 🟢 Substituir Voice pelo Jitsi
+  const { startMeeting, endMeeting, showMeeting } = useJitsi();
+  
+  // Estados simulados para manter a UI funcionando
+  const [inVoice, setInVoice] = useState(false);
+  const [participants, setParticipants] = useState([]);
+  const [isMuted, setIsMuted] = useState(false);
 
   const [collapsed, setCollapsed] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null);
@@ -143,13 +143,14 @@ export default function MesaRPG({ userNick, userEmail, ficha }) {
   const avatarUrl = ficha?.imagemPersonagem || null;
 
   const handleJoin = () => {
-    joinVoice({
-      roomName: "mesa-rpg",
-      identity: userEmail || userNick,
-      nick: userNick || "Jogador",
-      avatar: avatarUrl,
-    });
-  };
+  // 🟢 Usar Jitsi em vez de LiveKit
+  startMeeting("requiem-rpg-mesa", {
+    name: userNick || "Jogador",
+    email: userEmail,
+    avatar: avatarUrl,
+  });
+  setInVoice(true);
+};
   
   const playerCount = participants.length;
 
@@ -205,17 +206,14 @@ export default function MesaRPG({ userNick, userEmail, ficha }) {
           </Button>
         ) : (
           <Stack direction="row" spacing={2} sx={{ mb: collapsed ? 0 : 2 }}>
-            <Button variant="outlined" color="error" onClick={leaveVoice}>
-              Sair
-            </Button>
+            <Button variant="outlined" color="error" onClick={() => {
+  endMeeting();
+  setInVoice(false);
+}}>
+  Sair
+</Button>
 
-            <Button
-              variant="contained"
-              color={isMuted ? "warning" : "primary"}
-              onClick={toggleMute}
-            >
-              {isMuted ? "Desmutar" : "Mutar"}
-            </Button>
+            
           </Stack>
         )}
 
