@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react"; // 🟢 useRef importado
 import {
   Box,
   Button,
@@ -21,7 +21,6 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { getAuth } from "firebase/auth";
 import { db } from "../firebaseConfig";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -32,7 +31,7 @@ export default function Sistema() {
   const auth = getAuth();
   const currentUser = auth.currentUser;
   const isMaster = currentUser?.email === MESTRE_EMAIL;
-  const storage = getStorage();
+  const contentInputRef = useRef(null); // 🟢 ref para o textarea
 
   // estados
   const [topicsLeft, setTopicsLeft] = useState([]);
@@ -44,7 +43,7 @@ export default function Sistema() {
   const [content, setContent] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // 🖼️ Lightbox (imagem ampliável e arrastável)
+  // 🖼️ Lightbox
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
 
@@ -68,7 +67,7 @@ export default function Sistema() {
     }
   `;
 
-  // 🔹 Carrega tópicos do Firestore e ouve atualizações em tempo real
+  // 🔹 Carrega tópicos do Firestore
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "world", "Sistema"), (snap) => {
       if (snap.exists()) {
@@ -80,7 +79,7 @@ export default function Sistema() {
     return () => unsub();
   }, []);
 
-  // 🔹 Abre o modal (criar ou editar)
+  // 🔹 Abre modal
   const handleOpenDialog = (sideSel, index = null) => {
     setSide(sideSel);
     setEditIndex(index);
@@ -95,24 +94,68 @@ export default function Sistema() {
     setOpenDialog(true);
   };
 
-  // 🔹 Upload de imagem (disponível no modal de criação e edição)
+  // 🟢 Upload de imagem via ImgBB (backend)
   const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Arquivo muito grande. Máximo 10 MB.");
+      return;
+    }
+
     setUploading(true);
     try {
-      const storageRef = ref(storage, `sistema/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      setContent((prev) => `${prev}\n\n![](${url})\n`);
-    } catch (error) {
-      console.error("Erro ao enviar imagem:", error);
-      alert("Erro ao enviar imagem.");
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("https://reqviem.onrender.com/upload", {
+        method: "POST",
+        body: formData,
+        mode: "cors",
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("Erro no upload:", errText);
+        throw new Error(`Upload falhou: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const imageUrl = data.url;
+      if (!imageUrl) throw new Error("URL não retornada");
+
+      const markdownImage = `![${file.name}](${imageUrl})`;
+
+      // Insere no ponto do cursor
+      const textarea = contentInputRef.current;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        const before = text.substring(0, start);
+        const after = text.substring(end, text.length);
+        const newText = before + markdownImage + after;
+        setContent(newText);
+        setTimeout(() => {
+          textarea.focus();
+          const newCursorPos = start + markdownImage.length;
+          textarea.setSelectionRange(newCursorPos, newCursorPos);
+        }, 0);
+      } else {
+        setContent(prev => prev + `\n${markdownImage}\n`);
+      }
+    } catch (err) {
+      console.error("Erro no upload:", err);
+      alert("Erro ao enviar imagem. Tente novamente.");
+    } finally {
+      setUploading(false);
+      e.target.value = ""; // limpa input
     }
-    setUploading(false);
   };
 
-  // 🔹 Salvar ou editar tópico
+  // 🔹 Salvar tópico
   const handleSave = async () => {
     const newLeft = [...topicsLeft];
     const newRight = [...topicsRight];
@@ -144,13 +187,13 @@ export default function Sistema() {
     setTopicsRight(newRight);
   };
 
-  // === Lightbox ===
+  // === Lightbox zoom ===
   const handleWheelZoom = (e) => {
     e.preventDefault();
     setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
   };
 
-  // 🔹 Renderiza coluna genérica
+  // 🔹 Renderiza coluna
   const renderColumn = (sideSel, topics) => (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2, height: "100%" }}>
       {isMaster && (
@@ -286,7 +329,6 @@ export default function Sistema() {
             sx={{ mb: 2 }}
           />
 
-          {/* Botão de Upload sempre visível (criar ou editar) */}
           <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
             <Button
               variant="contained"
@@ -313,6 +355,7 @@ export default function Sistema() {
             minRows={6}
             value={content}
             onChange={(e) => setContent(e.target.value)}
+            inputRef={contentInputRef}
           />
         </DialogContent>
         <DialogActions>
@@ -323,7 +366,7 @@ export default function Sistema() {
         </DialogActions>
       </Dialog>
 
-      {/* === LIGHTBOX (com zoom + arrastar) === */}
+      {/* LIGHTBOX */}
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}

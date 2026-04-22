@@ -23,10 +23,12 @@
 import { Divider } from "@mui/material";
   import AddIcon from "@mui/icons-material/Add";
   import DeleteIcon from "@mui/icons-material/Delete";
+  import CloseIcon from "@mui/icons-material/Close";
   import { db } from "../firebaseConfig";
   import { doc, getDoc, setDoc } from "firebase/firestore";
   import { Checkbox, FormControlLabel } from "@mui/material";
   import { collection, getDocs } from "firebase/firestore";
+  import { CircularProgress } from "@mui/material";
 
   export default function FichaPersonagem({ user, fichaId, isMestre }) {
   const { hud } = useGame();
@@ -271,7 +273,22 @@ const [valorTransferencia, setValorTransferencia] = useState(0);
 const [valorPagamento, setValorPagamento] = useState(0);
 const [carteiraPagamento, setCarteiraPagamento] = useState("");
 const [listaJogadores, setListaJogadores] = useState([]);
-
+const [modalInventarioOpen, setModalInventarioOpen] = useState(false);
+const [abaAtiva, setAbaAtiva] = useState("equipamentos"); // equipamentos, vestes, diversos
+const [itemDadoModalOpen, setItemDadoModalOpen] = useState(false);
+const [itemSelecionadoParaDado, setItemSelecionadoParaDado] = useState(null);
+const [dadoQuantidade, setDadoQuantidade] = useState(1);
+const [dadoLados, setDadoLados] = useState(20);
+const [dadoModificador, setDadoModificador] = useState(0);
+const [resultadoDado, setResultadoDado] = useState(null);
+// 🟢 ADICIONE ESTES ESTADOS:
+const [modalTransferirItemOpen, setModalTransferirItemOpen] = useState(false);
+const [modalDroparItemOpen, setModalDroparItemOpen] = useState(false);
+const [itemParaTransferir, setItemParaTransferir] = useState(null);
+const [itemParaDropar, setItemParaDropar] = useState(null);
+const [jogadorDestinoItem, setJogadorDestinoItem] = useState("");
+const [quantidadeTransferir, setQuantidadeTransferir] = useState(1);
+const [quantidadeDropar, setQuantidadeDropar] = useState(1);
 // Lista de Traços (desbloqueados ao atingir nível 5 na perícia)
 const TRACOS_POR_PERICIA = {
   atletismo: "Atleta",
@@ -344,7 +361,29 @@ useEffect(() => {
   }
 }, [ficha?.pericias]);
 
-
+// 🟢 NOVO - Calcular armadura automaticamente das vestimentas
+useEffect(() => {
+  if (!ficha) return;
+  
+  // Garante que vestes existe e é um array
+  const vestes = ficha.vestes || [];
+  
+  // Soma o valor do "dado" de todos os itens de vestimenta
+  const armaduraTotal = vestes.reduce((total, item) => {
+    // Garante que o valor é um número
+    const dado = Number(item.dado) || 0;
+    return total + dado;
+  }, 0);
+  
+  // Limita ao máximo de 50
+  const armaduraFinal = Math.min(armaduraTotal, 50);
+  
+  // Atualiza o campo armadura se for diferente
+  if (ficha.armadura !== armaduraFinal) {
+    console.log(`🛡️ Armadura calculada: ${armaduraTotal} → ${armaduraFinal} (máx 50)`);
+    setFicha(p => ({ ...p, armadura: armaduraFinal }));
+  }
+}, [ficha?.vestes, ficha]); // Adiciona ficha como dependência também
 
     useEffect(() => {
       let mounted = true;
@@ -363,7 +402,16 @@ useEffect(() => {
     dados.imagens = [dados.imagemPersonagem];
     dados.imagemPrincipalIndex = 0;
   }
-            const combinadoBase = {
+            // Garante que os itens tenham o campo "dado"
+const garantirDadoNosItens = (itens) => {
+  if (!Array.isArray(itens)) return [];
+  return itens.map(item => ({
+    ...item,
+    dado: item.dado || 1 // Garante que tem um valor padrão de 1
+  }));
+};
+
+const combinadoBase = {
   ...modelo,
   ...dados,
   atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
@@ -372,11 +420,9 @@ useEffect(() => {
     ? dados.habilidades
     : [],
   moedas: { ...modelo.moedas, ...(dados.moedas || {}) },
-  equipamentos: Array.isArray(dados.equipamentos)
-    ? dados.equipamentos
-    : [],
-  vestes: Array.isArray(dados.vestes) ? dados.vestes : [],
-  diversos: Array.isArray(dados.diversos) ? dados.diversos : [],
+  equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
+  vestes: garantirDadoNosItens(Array.isArray(dados.vestes) ? dados.vestes : []),
+  diversos: garantirDadoNosItens(Array.isArray(dados.diversos) ? dados.diversos : []),
 };
 
 // 🔴 AQUI É O PONTO CRÍTICO
@@ -434,14 +480,14 @@ const combinado = {
     }
 
     function adicionarItem(tipo) {
-      setFicha((p) => ({
-        ...p,
-        [tipo]: [
-          ...(p[tipo] || []),
-          { quantidade: 1, nome: "", durabilidade: 100 },
-        ],
-      }));
-    }
+  setFicha((p) => ({
+    ...p,
+    [tipo]: [
+      ...(p[tipo] || []),
+      { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1 }, // 🟢 Adicionado imagem
+    ],
+  }));
+}
 
     function atualizarItem(tipo, i, campo, valor) {
       setFicha((p) => {
@@ -456,6 +502,43 @@ const combinado = {
         [tipo]: p[tipo].filter((_, idx) => idx !== i),
       }));
     }
+
+    
+    // Adicione estas funções após as funções de item existentes
+
+const rolarDadoItem = (item) => {
+  const quantidade = dadoQuantidade || 1;
+  const lados = dadoLados || 20;
+  const mod = dadoModificador || 0;
+  
+  const rolagens = [];
+  let total = 0;
+  
+  for (let i = 0; i < quantidade; i++) {
+    const valor = Math.floor(Math.random() * lados) + 1;
+    rolagens.push(valor);
+    total += valor;
+  }
+  
+  total += mod;
+  
+  const resultado = {
+    item: item.nome,
+    quantidade,
+    lados,
+    mod,
+    rolagens,
+    total,
+    formula: `${quantidade}d${lados}${mod >= 0 ? '+' : ''}${mod}`
+  };
+  
+  setResultadoDado(resultado);
+};
+
+const abrirModalDado = (item, tipo) => {
+  setItemSelecionadoParaDado({ ...item, tipo });
+  setItemDadoModalOpen(true);
+};
 
     async function salvarFicha() {
   if (!fichaId) return alert("FichaId inválido.");
@@ -639,18 +722,19 @@ if (jogadorSelecionado === fichaId) {
   const ref = doc(db, "fichas", fichaId);
   await setDoc(ref, { carteiras: carteirasAtualizadas }, { merge: true });
   
-  alert(`Transferência de ${valorTransferencia} realizada com sucesso!`);
+    alert(`Transferência de ${valorTransferencia} realizada com sucesso!`);
   setModalTransferenciaOpen(false);
   setJogadorSelecionado("");
   setCarteiraOrigem("");
   setCarteiraDestino("");
   setValorTransferencia(0);
-  return; // Importante: sair da função para não executar o resto
+  
   // 🟢 FORÇA ATUALIZAÇÃO IMEDIATA DAS CARTEIRAS
-const fichaAtualizada = await getDoc(doc(db, "fichas", fichaId));
-if (fichaAtualizada.exists()) {
-  setCarteiras(fichaAtualizada.data().carteiras || []);
-}
+  const fichaAtualizada = await getDoc(doc(db, "fichas", fichaId));
+  if (fichaAtualizada.exists()) {
+    setCarteiras(fichaAtualizada.data().carteiras || []);
+  }
+  return; // Importante: sair da função para não executar o resto
 } 
     else {
     // Transferência para outro jogador
@@ -760,13 +844,100 @@ const salvarTalentos = async (talentos) => {
   setModalTalentosOpen(false);
 };
 
+// 🟢 Função para transferir item
+const transferirItem = async () => {
+  if (!itemParaTransferir || !jogadorDestinoItem) {
+    alert("Selecione um item e um jogador!");
+    return;
+  }
+  
+  if (quantidadeTransferir > itemParaTransferir.quantidade) {
+    alert("Quantidade maior que a disponível!");
+    return;
+  }
+  
+  // Remove item do jogador atual
+  const novosItens = ficha[abaAtiva].map((item, idx) => {
+    if (idx === itemParaTransferir.index) {
+      const novaQuantidade = item.quantidade - quantidadeTransferir;
+      return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+    }
+    return item;
+  }).filter(item => item !== null);
+  
+  setFicha(p => ({ ...p, [abaAtiva]: novosItens }));
+  
+  // Salva no Firestore do jogador atual
+  const refOrigem = doc(db, "fichas", fichaId);
+  await setDoc(refOrigem, { [abaAtiva]: novosItens }, { merge: true });
+  
+  // Adiciona item ao jogador destino
+  const jogadorDestino = listaJogadores.find(j => j.id === jogadorDestinoItem);
+  if (jogadorDestino) {
+    const itemParaAdicionar = {
+      ...itemParaTransferir.item,
+      quantidade: quantidadeTransferir
+    };
+    delete itemParaAdicionar.index;
+    
+    const itensDestino = [...(jogadorDestino[abaAtiva] || []), itemParaAdicionar];
+    
+    const refDestino = doc(db, "fichas", jogadorDestinoItem);
+    await setDoc(refDestino, { [abaAtiva]: itensDestino }, { merge: true });
+    
+    alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} transferido para ${jogadorDestino.nome}!`);
+  }
+  
+  setModalTransferirItemOpen(false);
+  setItemParaTransferir(null);
+  setJogadorDestinoItem("");
+  setQuantidadeTransferir(1);
+};
+
+// 🟢 Função para dropar item
+const droparItem = async () => {
+  if (!itemParaDropar) {
+    alert("Selecione um item!");
+    return;
+  }
+  
+  if (quantidadeDropar > itemParaDropar.quantidade) {
+    alert("Quantidade maior que a disponível!");
+    return;
+  }
+  
+  if (!window.confirm(`Dropar ${quantidadeDropar}x ${itemParaDropar.item.nome}?`)) {
+    return;
+  }
+  
+  // Remove item do inventário
+  const novosItens = ficha[abaAtiva].map((item, idx) => {
+    if (idx === itemParaDropar.index) {
+      const novaQuantidade = item.quantidade - quantidadeDropar;
+      return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+    }
+    return item;
+  }).filter(item => item !== null);
+  
+  setFicha(p => ({ ...p, [abaAtiva]: novosItens }));
+  
+  // Salva no Firestore
+  const ref = doc(db, "fichas", fichaId);
+  await setDoc(ref, { [abaAtiva]: novosItens }, { merge: true });
+  
+  alert(`${quantidadeDropar}x ${itemParaDropar.item.nome} dropado!`);
+  
+  setModalDroparItemOpen(false);
+  setItemParaDropar(null);
+  setQuantidadeDropar(1);
+};
+
     if (loading)
-      
-      return (
-        <Box p={2}>
-          <Typography component="div">Carregando ficha...</Typography>
-        </Box>
-      );
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+      <CircularProgress sx={{ color: '#00e0ff' }} />
+    </Box>
+  );
   // ================= PESO AUTOMÁTICO =================
 
   // Peso atual (cada item conta 1 independente da quantidade)
@@ -1140,28 +1311,36 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
   </Box>
 
   {/* Armadura */}
-  <Box sx={{ mb: 1 }}>
-    <Typography component="div">Armadura</Typography>
-    <Grid container spacing={1} alignItems="center">
-      <Grid item xs={6}>
-        <TextField
-          fullWidth
-          size="small"
-          type="number"
-          value={ficha.armadura}
-          onChange={(e) => {
-    const valor = Math.min(Number(e.target.value), armaduraMax);
-    setCampo("armadura", valor);
-  }}
-        />
-      </Grid>
-      <Grid item xs={6}>
-        <Typography>
-          / {armaduraMax}
-        </Typography>
-      </Grid>
+<Box sx={{ mb: 1 }}>
+  <Typography component="div">Armadura</Typography>
+  <Grid container spacing={1} alignItems="center">
+    <Grid item xs={6}>
+      <TextField
+        fullWidth
+        size="small"
+        type="number"
+        value={ficha.armadura}
+        disabled={!isMestre} // 🟢 Apenas Mestre pode editar manualmente
+        onChange={(e) => {
+          if (!isMestre) return; // Jogador não pode mexer
+          const valor = Math.min(Number(e.target.value), armaduraMax);
+          setCampo("armadura", valor);
+        }}
+        InputProps={{
+          readOnly: !isMestre,
+          sx: { color: '#fff' }
+        }}
+        helperText={!isMestre ? "Calculado pelas vestimentas" : ""}
+        FormHelperTextProps={{ sx: { color: '#00e0ff', fontSize: '0.7rem' } }}
+      />
     </Grid>
-  </Box>
+    <Grid item xs={6}>
+      <Typography>
+        / {armaduraMax}
+      </Typography>
+    </Grid>
+  </Grid>
+</Box>
               </Grid>
             </Grid>
 
@@ -1380,148 +1559,37 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
               </Button>
             </Box>
 
-            <Box mt={2}>
-              <Box
-    display="flex"
-    justifyContent="space-between"
-    alignItems="center"
-    sx={{
-      borderBottom: `2px solid ${
-        ficha?.ignorarLimitePeso
-          ? "#00ffff"
-          : sobrecarregado
-          ? "#ff0000"
-          : "#ffaa00"
-      }`,
-      pb: 1,
-      mb: 1,
+                        {/* 🟢 SUBSTITUA OS DOIS BOTÕES POR ESTE: */}
+<Box mt={2} sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+  <Button
+    variant="contained"
+    startIcon={<span>🎒</span>}
+    onClick={() => setModalInventarioOpen(true)}
+    sx={{ 
+      bgcolor: '#8B4513', 
+      '&:hover': { bgcolor: '#654321' }, 
+      px: 4, 
+      py: 1,
+      fontSize: '1.1rem',
+      fontWeight: 'bold',
+      flex: 1
     }}
   >
-    <Typography component="div" sx={{ fontWeight: "bold" }}>
-      {LABELS.itensTitulo}
-    </Typography>
-
-    <Box display="flex" alignItems="center" gap={2}>
-      <Typography
-        sx={{
-          fontWeight: "bold",
-          color: ficha?.ignorarLimitePeso
-            ? "#00ffff"
-            : sobrecarregado
-            ? "#ff4444"
-            : "#ffaa00",
-          textDecoration: "underline",
-          fontSize: 16,
-        }}
-      >
-        🏋️ {pesoAtual} / {pesoMaximo}
-      </Typography>
-
-      {isMestre && (
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={ficha.ignorarLimitePeso || false}
-  onChange={async (e) => {
-    const novoValor = e.target.checked;
-
-    // Atualiza estado local
-    setFicha((prev) => ({
-      ...prev,
-      ignorarLimitePeso: novoValor,
-    }));
-
-    // Salva no Firestore
-    const ref = doc(db, "fichas", fichaId);
-    await setDoc(ref, { ignorarLimitePeso: novoValor }, { merge: true });
-  }}
-              size="small"
-            />
-          }
-          label="Ignorar limite"
-        />
-      )}
-    </Box>
-  </Box>
-              {["equipamentos", "vestes", "diversos"].map((tipo) => (
-                <Box mt={2} key={tipo}>
-                  <Typography component="div">{LABEL_MAP[tipo] || tipo}</Typography>
-                  {ficha[tipo].map((it, i) => (
-                    <Grid
-                      container
-                      key={i}
-                      spacing={1}
-                      alignItems="center"
-                      sx={{ mt: 1 }}
-                    >
-                      <Grid item xs={2}>
-                        <TextField
-                          label="Quantidade"
-                          type="number"
-                          size="small"
-                          value={it.quantidade}
-                          onChange={(e) =>
-                            atualizarItem(tipo, i, "quantidade", Number(e.target.value))
-                          }
-                        />
-                      </Grid>
-                      <Grid item xs={6}>
-                        <TextField
-                          label="Nome"
-                          fullWidth
-                          size="small"
-                          value={it.nome}
-                          onChange={(e) => atualizarItem(tipo, i, "nome", e.target.value)}
-                        />
-                      </Grid>
-                      <Grid item xs={3}>
-                        <TextField
-                          label="Durabilidade"
-                          type="number"
-                          size="small"
-                          value={it.durabilidade}
-                          onChange={(e) =>
-                            atualizarItem(
-                              tipo,
-                              i,
-                              "durabilidade",
-                              Number(e.target.value)
-                            )
-                          }
-                        />
-                      </Grid>
-                      <Grid item xs={1}>
-                        <IconButton color="error" onClick={() => removerItem(tipo, i)}>
-                          <DeleteIcon />
-                        </IconButton>
-                      </Grid>
-                    </Grid>
-                  ))}
-                  <Button
-    startIcon={<AddIcon />}
-    variant="outlined"
-    sx={{ mt: 1 }}
-  disabled={!ficha?.ignorarLimitePeso && pesoAtual >= pesoMaximo}
-    onClick={() => {
-      if (!ficha?.ignorarLimitePeso && pesoAtual >= pesoMaximo) {
-    alert("Peso máximo atingido");
-    return;
-  }
-      adicionarItem(tipo);
-    }}
-  >
-                    Adicionar {LABEL_MAP[tipo] || tipo}
-                  </Button>
-                </Box>
-              ))}
-            </Box>
-{/* Botão Dinheiro */}
-<Box mt={2} sx={{ display: 'flex', justifyContent: 'center' }}>
+    INVENTÁRIO ({pesoAtual}/{pesoMaximo})
+  </Button>
   <Button
     variant="contained"
     startIcon={<span>💰</span>}
     onClick={() => setModalDinheiroOpen(true)}
-    sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' }, px: 4, py: 1 }}
+    sx={{ 
+      bgcolor: '#2e7d32', 
+      '&:hover': { bgcolor: '#1b5e20' }, 
+      px: 4, 
+      py: 1,
+      fontSize: '1.1rem',
+      fontWeight: 'bold',
+      flex: 1
+    }}
   >
     DINHEIRO
   </Button>
@@ -2447,6 +2515,643 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
         </DialogContent>
         <DialogActions sx={{ bgcolor: '#1a1a2e' }}>
           <Button onClick={() => setModalGaleriaOpen(false)} sx={{ color: '#fff' }}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+      {/* 🟢 ADICIONE AQUI - Modal Inventário */}
+      <Dialog 
+        open={modalInventarioOpen} 
+        onClose={() => setModalInventarioOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: 2,
+            minHeight: "70vh"
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+  bgcolor: '#1a1a2e', 
+  color: '#fff', 
+  display: 'flex', 
+  justifyContent: 'space-between', 
+  alignItems: 'center',
+  borderBottom: '1px solid #1e293b'
+}}>
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+    <span style={{ fontSize: '1.5rem' }}>🎒</span>
+    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+      INVENTÁRIO
+    </Typography>
+    <Typography
+      sx={{
+        fontWeight: "bold",
+        color: ficha?.ignorarLimitePeso
+          ? "#00ffff"
+          : sobrecarregado
+          ? "#ff4444"
+          : "#ffaa00",
+        fontSize: 16,
+        ml: 2
+      }}
+    >
+      🏋️ {pesoAtual} / {pesoMaximo}
+    </Typography>
+  </Box>
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    {/* 🟢 Botão Transferir Item */}
+    <Button
+      variant="contained"
+      size="small"
+      onClick={async () => {
+        // Carregar lista de jogadores
+        const col = collection(db, "fichas");
+        const snapshot = await getDocs(col);
+        const jogadores = [];
+        
+        const fichaAtual = await getDoc(doc(db, "fichas", fichaId));
+        if (fichaAtual.exists()) {
+          jogadores.push({
+            id: fichaId,
+            nome: fichaAtual.data().nome || "Você mesmo",
+            equipamentos: fichaAtual.data().equipamentos || [],
+            vestes: fichaAtual.data().vestes || [],
+            diversos: fichaAtual.data().diversos || []
+          });
+        }
+        
+        snapshot.forEach((doc) => {
+          if (doc.id !== fichaId) {
+            jogadores.push({
+              id: doc.id,
+              nome: doc.data().nome || doc.id,
+              equipamentos: doc.data().equipamentos || [],
+              vestes: doc.data().vestes || [],
+              diversos: doc.data().diversos || []
+            });
+          }
+        });
+        
+        setListaJogadores(jogadores);
+        setModalTransferirItemOpen(true);
+      }}
+      sx={{ mr: 1, bgcolor: '#1976d2', '&:hover': { bgcolor: '#115293' } }}
+    >
+      🔄 Transferir
+    </Button>
+    
+    {/* 🟢 Botão Dropar Item */}
+    <Button
+      variant="contained"
+      size="small"
+      onClick={() => setModalDroparItemOpen(true)}
+      sx={{ mr: 1, bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
+    >
+      🗑️ Dropar
+    </Button>
+    
+    {isMestre && (
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={ficha.ignorarLimitePeso || false}
+            onChange={async (e) => {
+              const novoValor = e.target.checked;
+              setFicha((prev) => ({
+                ...prev,
+                ignorarLimitePeso: novoValor,
+              }));
+              const ref = doc(db, "fichas", fichaId);
+              await setDoc(ref, { ignorarLimitePeso: novoValor }, { merge: true });
+            }}
+            size="small"
+            sx={{ color: '#fff' }}
+          />
+        }
+        label="Ignorar limite"
+      />
+    )}
+    <IconButton onClick={() => setModalInventarioOpen(false)} sx={{ color: '#94a3b8' }}>
+      <CloseIcon />
+    </IconButton>
+  </Box>
+</DialogTitle>
+
+        <DialogContent sx={{ p: 3 }}>
+          {/* Tabs */}
+          <Box sx={{ borderBottom: 1, borderColor: '#334155', mb: 3 }}>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              {[
+                { id: 'equipamentos', label: '⚔️ Equipamentos', desc: '(Armas, ferramentas, itens de acesso rápido)' },
+                { id: 'vestes', label: '👕 Vestimentas', desc: '(Roupas, armaduras, acessórios vestidos)' },
+                { id: 'diversos', label: '📦 Diversos', desc: '(Itens gerais, consumíveis, materiais)' }
+              ].map((aba) => (
+                <Button
+                  key={aba.id}
+                  onClick={() => setAbaAtiva(aba.id)}
+                  sx={{
+                    color: abaAtiva === aba.id ? '#00e0ff' : '#94a3b8',
+                    borderBottom: abaAtiva === aba.id ? '2px solid #00e0ff' : '2px solid transparent',
+                    borderRadius: 0,
+                    px: 3,
+                    py: 1,
+                    '&:hover': {
+                      color: '#00e0ff',
+                      bgcolor: 'transparent'
+                    }
+                  }}
+                >
+                  <Box sx={{ textAlign: 'left' }}>
+                    <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                      {aba.label}
+                    </Typography>
+                    <Typography variant="caption" sx={{ fontSize: '0.7rem', opacity: 0.7 }}>
+                      {aba.desc}
+                    </Typography>
+                  </Box>
+                </Button>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Lista de Itens */}
+          <Box sx={{ mb: 2 }}>
+  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 1 }}>
+    {ficha[abaAtiva]?.length || 0} itens • Clique na imagem para ampliar
+  </Typography>   
+              {ficha[abaAtiva]?.map((item, index) => {
+    const durabilidadePercent = (item.durabilidade || 100) / 100;
+    const barColor = durabilidadePercent > 0.66 ? '#4caf50' : durabilidadePercent > 0.33 ? '#ff9800' : '#f44336';
+    
+    return (
+      <Box key={index} sx={{ mb: 2 }}>
+        {/* TÍTULOS */}
+        <Box sx={{ display: 'flex', mb: 0.5, px: 1 }}>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 90 }}>Imagem</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 60 }}>Qtd</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 2 }}>Nome</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.5 }}>Durabilidade</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 50, textAlign: 'right' }}>Dados</Typography>
+        </Box>
+
+        {/* BOX DO ITEM */}
+        <Paper 
+          sx={{ 
+            p: 1.5, 
+            bgcolor: '#1a1a2e',
+            border: '1px solid #334155',
+            '&:hover': { borderColor: '#00e0ff' }
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Imagem */}
+            <Box sx={{ width: 60, position: 'relative' }}>
+              <Box
+                sx={{
+                  width: 50,
+                  height: 50,
+                  bgcolor: '#0f172a',
+                  borderRadius: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: item.imagem ? 'pointer' : 'default',
+                  border: '1px solid #334155',
+                  overflow: 'hidden'
+                }}
+                onClick={() => {
+                  if (item.imagem) {
+                    setLightboxSrc(item.imagem);
+                    setZoom(1);
+                    setLightboxOpen(true);
+                  }
+                }}
+              >
+                {item.imagem ? (
+                  <img 
+                    src={item.imagem} 
+                    alt={item.nome}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <Typography sx={{ fontSize: '1.2rem', opacity: 0.5 }}>📦</Typography>
+                )}
+              </Box>
+              
+              {item.imagem && (
+                <IconButton
+                  size="small"
+                  onClick={() => atualizarItem(abaAtiva, index, "imagem", "")}
+                  sx={{
+                    position: 'absolute',
+                    top: -5,
+                    right: 5,
+                    bgcolor: '#ef4444',
+                    width: 16,
+                    height: 16,
+                    '&:hover': { bgcolor: '#dc2626' }
+                  }}
+                >
+                  <CloseIcon sx={{ fontSize: 10, color: '#fff' }} />
+                </IconButton>
+              )}
+              
+              <Button
+                size="small"
+                component="label"
+                sx={{ mt: 0.5, fontSize: '0.5rem', minWidth: 'auto', p: 0 }}
+              >
+                📷
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    const fd = new FormData();
+                    fd.append("file", file);
+                    
+                    try {
+                      const res = await fetch("https://reqviem.onrender.com/upload", {
+                        method: "POST",
+                        body: fd,
+                      });
+                      const data = await res.json();
+                      if (data.url) {
+                        atualizarItem(abaAtiva, index, "imagem", data.url);
+                      }
+                    } catch (err) {
+                      console.error("Erro no upload:", err);
+                    }
+                  }}
+                />
+              </Button>
+            </Box>
+
+            {/* Quantidade */}
+            <TextField
+              size="small"
+              type="number"
+              value={item.quantidade || 1}
+              disabled={!isMestre}
+              onChange={(e) => {
+                if (!isMestre) return;
+                atualizarItem(abaAtiva, index, "quantidade", Number(e.target.value));
+              }}
+              InputProps={{ 
+                inputProps: { min: 1 },
+                sx: { color: '#fff' }
+              }}
+              sx={{ 
+                width: 50,
+                bgcolor: '#0f172a',
+                '& input': { textAlign: 'center' }
+              }}
+            />
+
+            {/* Nome - MENOR AGORA (flex: 1) */}
+            <TextField
+              size="small"
+              placeholder="Nome"
+              value={item.nome || ""}
+              disabled={!isMestre && !item.editandoNome}
+              onChange={(e) => {
+                if (!isMestre && !item.editandoNome) return;
+                atualizarItem(abaAtiva, index, "nome", e.target.value);
+              }}
+              InputProps={{ 
+                sx: { color: '#fff', fontWeight: 'bold' },
+                endAdornment: !isMestre && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        const novosItens = [...ficha[abaAtiva]];
+                        novosItens[index] = { 
+                          ...novosItens[index], 
+                          editandoNome: !novosItens[index].editandoNome 
+                        };
+                        setFicha(p => ({ ...p, [abaAtiva]: novosItens }));
+                      }}
+                      sx={{ color: item.editandoNome ? '#4caf50' : '#94a3b8' }}
+                    >
+                      {item.editandoNome ? '✅' : '✏️'}
+                    </IconButton>
+                  </InputAdornment>
+                )
+              }}
+              sx={{ 
+                flex: 1,
+                bgcolor: '#0f172a',
+                '& .MuiInputBase-input': { 
+                  color: '#fff',
+                  fontWeight: 'bold'
+                }
+              }}
+            />
+
+            {/* Durabilidade - MAIOR AGORA (flex: 2.5) */}
+            <Box sx={{ flex: 2.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" sx={{ color: '#94a3b8', minWidth: 30 }}>
+                Dur:
+              </Typography>
+              
+              <Box sx={{ 
+                flex: 1, 
+                height: 12, 
+                bgcolor: '#1e293b', 
+                borderRadius: 6, 
+                overflow: 'hidden',
+                border: '1px solid #475569'
+              }}>
+                <Box 
+                  sx={{ 
+                    width: `${durabilidadePercent * 100}%`, 
+                    height: '100%', 
+                    bgcolor: barColor,
+                    transition: 'width 0.3s'
+                  }} 
+                />
+              </Box>
+              
+              <TextField
+                size="small"
+                type="number"
+                value={item.durabilidade || 100}
+                disabled={!isMestre}
+                onChange={(e) => {
+                  if (!isMestre) return;
+                  const valor = Math.min(100, Math.max(0, Number(e.target.value)));
+                  atualizarItem(abaAtiva, index, "durabilidade", valor);
+                }}
+                InputProps={{ 
+                  inputProps: { min: 0, max: 100 },
+                  sx: { color: '#fff' }
+                }}
+                sx={{ width: 65, bgcolor: '#0f172a' }}
+              />
+              <Typography variant="caption" sx={{ color: '#94a3b8' }}>%</Typography>
+            </Box>
+
+            {/* Dado e Deletar - MAIOR AGORA (width: 90) */}
+            <Box sx={{ width: 90, display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}>
+              <TextField
+                size="small"
+                type="number"
+                value={item.dado || 1}
+                disabled={!isMestre}
+                onChange={(e) => {
+                  if (!isMestre) return;
+                  const valor = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+                  atualizarItem(abaAtiva, index, "dado", valor);
+                }}
+                InputProps={{ 
+                  inputProps: { min: 1, max: 10 },
+                  sx: { color: '#fff' }
+                }}
+                sx={{ 
+                  width: 55,
+                  bgcolor: '#0f172a',
+                  '& input': { textAlign: 'center' },
+                  '& .MuiInputBase-input.Mui-disabled': {
+                    WebkitTextFillColor: '#fff !important',
+                    opacity: 0.7
+                  }
+                }}
+              />
+
+              {isMestre && (
+                <IconButton
+                  color="error"
+                  size="small"
+                  onClick={() => removerItem(abaAtiva, index)}
+                  sx={{ bgcolor: 'rgba(244, 67, 54, 0.1)' }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              )}
+            </Box>
+          </Box>
+        </Paper>
+      </Box>
+    );
+  })}
+          </Box>
+
+         {/* Botão Adicionar Item - Apenas Mestre */}
+{isMestre && (
+  <Button
+    startIcon={<AddIcon />}
+    variant="outlined"
+    fullWidth
+    disabled={!ficha?.ignorarLimitePeso && pesoAtual >= pesoMaximo}
+    onClick={() => {
+              if (!ficha?.ignorarLimitePeso && pesoAtual >= pesoMaximo) {
+                alert("Peso máximo atingido");
+                return;
+              }
+              adicionarItem(abaAtiva);
+            }}
+            sx={{ 
+              color: '#00e0ff',
+              borderColor: '#334155',
+              '&:hover': { borderColor: '#00e0ff', bgcolor: 'rgba(0, 224, 255, 0.1)' }
+            }}
+          >
+            Adicionar {LABEL_MAP[abaAtiva] || abaAtiva}
+          </Button>
+)}
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #1e293b' }}>
+          <Button 
+            onClick={async () => {
+              await salvarFicha();
+              setModalInventarioOpen(false);
+            }}
+            variant="contained"
+            sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+          >
+            Salvar e Fechar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🟢 Modal Transferir Item */}
+      <Dialog
+        open={modalTransferirItemOpen}
+        onClose={() => setModalTransferirItemOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: 2
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff' }}>
+          🔄 Transferir Item
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            {/* Selecionar Item */}
+            <FormControl fullWidth>
+              <InputLabel sx={{ color: '#fff' }}>Item para Transferir</InputLabel>
+              <Select
+                value={itemParaTransferir?.index || ''}
+                onChange={(e) => {
+                  const idx = e.target.value;
+                  setItemParaTransferir({
+                    index: idx,
+                    item: ficha[abaAtiva][idx],
+                    quantidade: ficha[abaAtiva][idx].quantidade
+                  });
+                  setQuantidadeTransferir(1);
+                }}
+                sx={{ color: '#fff' }}
+              >
+                {ficha[abaAtiva]?.map((item, idx) => (
+                  <MenuItem key={idx} value={idx}>
+                    {item.quantidade}x {item.nome || 'Sem nome'}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            {/* Quantidade */}
+            {itemParaTransferir && (
+              <TextField
+                label="Quantidade"
+                type="number"
+                fullWidth
+                value={quantidadeTransferir}
+                onChange={(e) => {
+                  const val = Math.min(itemParaTransferir.quantidade, Math.max(1, Number(e.target.value) || 1));
+                  setQuantidadeTransferir(val);
+                }}
+                InputProps={{ 
+                  inputProps: { min: 1, max: itemParaTransferir.quantidade },
+                  sx: { color: '#fff' }
+                }}
+                helperText={`Máximo: ${itemParaTransferir.quantidade}`}
+                FormHelperTextProps={{ sx: { color: '#aaa' } }}
+              />
+            )}
+            
+            {/* Jogador Destino */}
+            <FormControl fullWidth>
+              <InputLabel sx={{ color: '#fff' }}>Jogador Destino</InputLabel>
+              <Select
+                value={jogadorDestinoItem}
+                onChange={(e) => setJogadorDestinoItem(e.target.value)}
+                sx={{ color: '#fff' }}
+              >
+                {listaJogadores.filter(j => j.id !== fichaId).map(jogador => (
+                  <MenuItem key={jogador.id} value={jogador.id}>
+                    {jogador.nome}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setModalTransferirItemOpen(false)} sx={{ color: '#94a3b8' }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained"
+            onClick={transferirItem}
+            sx={{ bgcolor: '#1976d2' }}
+          >
+            Transferir
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🟢 Modal Dropar Item */}
+      <Dialog
+        open={modalDroparItemOpen}
+        onClose={() => setModalDroparItemOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: 2
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff' }}>
+          🗑️ Dropar Item
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel sx={{ color: '#fff' }}>Item para Dropar</InputLabel>
+              <Select
+                value={itemParaDropar?.index || ''}
+                onChange={(e) => {
+                  const idx = e.target.value;
+                  setItemParaDropar({
+                    index: idx,
+                    item: ficha[abaAtiva][idx],
+                    quantidade: ficha[abaAtiva][idx].quantidade
+                  });
+                  setQuantidadeDropar(1);
+                }}
+                sx={{ color: '#fff' }}
+              >
+                {ficha[abaAtiva]?.map((item, idx) => (
+                  <MenuItem key={idx} value={idx}>
+                    {item.quantidade}x {item.nome || 'Sem nome'}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            {itemParaDropar && (
+              <TextField
+                label="Quantidade"
+                type="number"
+                fullWidth
+                value={quantidadeDropar}
+                onChange={(e) => {
+                  const val = Math.min(itemParaDropar.quantidade, Math.max(1, Number(e.target.value) || 1));
+                  setQuantidadeDropar(val);
+                }}
+                InputProps={{ 
+                  inputProps: { min: 1, max: itemParaDropar.quantidade },
+                  sx: { color: '#fff' }
+                }}
+                helperText={`Máximo: ${itemParaDropar.quantidade}`}
+                FormHelperTextProps={{ sx: { color: '#aaa' } }}
+              />
+            )}
+            
+            <Typography variant="caption" sx={{ color: '#ef4444' }}>
+              ⚠️ Itens dropados serão perdidos permanentemente!
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setModalDroparItemOpen(false)} sx={{ color: '#94a3b8' }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained"
+            onClick={droparItem}
+            sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}
+          >
+            Dropar
+          </Button>
         </DialogActions>
       </Dialog>
 

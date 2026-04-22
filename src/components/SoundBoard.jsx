@@ -16,12 +16,14 @@ import {
   DialogActions,
   TextField,
   IconButton,
+  Chip,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
 import { db } from "../firebaseConfig";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 
@@ -45,9 +47,9 @@ export default function SoundBoard({ isMaster }) {
   const [musicTracks, setMusicTracks] = useState(DEFAULT_MUSIC_LIST);
   const [ambianceTracks, setAmbianceTracks] = useState(DEFAULT_AMBIANCE_LIST);
   const [othersTracks, setOthersTracks] = useState([]);
-  
+
   // 🎵 Estados de reprodução
-  const [currentlyPlaying, setCurrentlyPlaying] = useState(null);
+  const [activeTracks, setActiveTracks] = useState(new Set()); // 🟢 Várias faixas ativas
   const [volumes, setVolumes] = useState({});
   const audioRefs = useRef({});
 
@@ -73,54 +75,58 @@ export default function SoundBoard({ isMaster }) {
     return () => unsubs.forEach((u) => u?.());
   }, []);
 
-  // 🟢 PLAY COM VOLUME INDIVIDUAL
-  const handlePlay = (url, name) => {
-    // Para a música atual se existir
-    if (currentlyPlaying) {
-      const currentAudio = audioRefs.current[currentlyPlaying];
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio.currentTime = 0;
-      }
-    }
-
-    // Cria ou recupera o elemento de áudio
-    if (!audioRefs.current[url]) {
-      const audio = new Audio(url);
-      audio.volume = (volumes[url] ?? 80) / 100;
-      
-      audio.addEventListener('ended', () => {
-        setCurrentlyPlaying(null);
+  // 🟢 PLAY (não para outras músicas)
+const handlePlay = (url, name) => {
+  if (!audioRefs.current[url]) {
+    const audio = new Audio(url);
+    audio.volume = (volumes[url] ?? 80) / 100;
+    audio.addEventListener('ended', () => {
+      setActiveTracks(prev => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
       });
-      
-      audioRefs.current[url] = audio;
-    }
-
-    const audio = audioRefs.current[url];
-    
-    // Toca
-    audio.play().catch(err => {
-      console.error("Erro ao tocar áudio:", err);
-      alert("Erro ao tocar áudio. Verifique o formato do arquivo.");
     });
-    
-    setCurrentlyPlaying(url);
-  };
+    audioRefs.current[url] = audio;
+  }
 
-  const handleStop = () => {
-    if (currentlyPlaying) {
-      const audio = audioRefs.current[currentlyPlaying];
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
-      }
-      setCurrentlyPlaying(null);
+  const audio = audioRefs.current[url];
+  audio.play().catch(err => {
+    console.error("Erro ao tocar áudio:", err);
+    alert("Erro ao tocar áudio. Verifique o formato do arquivo.");
+  });
+
+  setActiveTracks(prev => new Set(prev).add(url));
+};
+
+// 🟢 STOP (apenas a faixa específica)
+const handleStop = (url) => {
+  const audio = audioRefs.current[url];
+  if (audio) {
+    audio.pause();
+    audio.currentTime = 0;
+  }
+  setActiveTracks(prev => {
+    const next = new Set(prev);
+    next.delete(url);
+    return next;
+  });
+};
+
+// 🟢 STOP ALL (para todas as faixas ativas)
+const handleStopAll = () => {
+  activeTracks.forEach(url => {
+    const audio = audioRefs.current[url];
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
     }
-  };
+  });
+  setActiveTracks(new Set());
+};
 
   const handleVolumeChange = (url, newVolume) => {
     setVolumes(prev => ({ ...prev, [url]: newVolume }));
-    
     const audio = audioRefs.current[url];
     if (audio) {
       audio.volume = newVolume / 100;
@@ -134,7 +140,7 @@ export default function SoundBoard({ isMaster }) {
   const [libMode, setLibMode] = useState("music");
   const [editIndex, setEditIndex] = useState(null);
   const [libName, setLibName] = useState("");
-  const [libUrl, setLibUrl] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null); // 🟢 Arquivo selecionado
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef();
 
@@ -146,7 +152,7 @@ export default function SoundBoard({ isMaster }) {
     setLibMode(category);
     setEditIndex(null);
     setLibName("");
-    setLibUrl("");
+    setSelectedFile(null);
     setOpenLibDialog(true);
   };
 
@@ -157,8 +163,22 @@ export default function SoundBoard({ isMaster }) {
                  category === "ambiance" ? ambianceTracks : othersTracks;
     const entry = list[idx];
     setLibName(entry?.name || "");
-    setLibUrl(entry?.url || "");
+    setSelectedFile(null); // na edição, não mexemos no arquivo a menos que seja trocado
     setOpenLibDialog(true);
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
+  const clearSelectedFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const uploadToBackend = async (file) => {
@@ -166,21 +186,17 @@ export default function SoundBoard({ isMaster }) {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      
-      // 🟢 Usa o backend do Render com credenciais
       const res = await fetch("https://reqviem.onrender.com/upload", {
         method: "POST",
         body: formData,
         mode: 'cors',
         credentials: 'include',
       });
-      
       if (!res.ok) {
         const errorText = await res.text();
         console.error('Erro no upload:', errorText);
         throw new Error(`Upload falhou: ${res.status}`);
       }
-      
       const data = await res.json();
       console.log('✅ Upload sucesso:', data.url);
       return data?.url || null;
@@ -194,17 +210,28 @@ export default function SoundBoard({ isMaster }) {
   };
 
   const handleSaveLibrary = async () => {
-    let urlToUse = libUrl?.trim();
-    const file = fileInputRef.current?.files?.[0];
-    
-    if (file) {
-      const uploadedUrl = await uploadToBackend(file);
+    if (!libName.trim()) {
+      alert("Informe o nome da faixa.");
+      return;
+    }
+
+    let urlToUse = null;
+
+    // Se estamos editando e não foi selecionado novo arquivo, mantém a URL original
+    if (editIndex !== null && !selectedFile) {
+      const list = libMode === "music" ? musicTracks : libMode === "ambiance" ? ambianceTracks : othersTracks;
+      urlToUse = list[editIndex]?.url;
+    }
+
+    // Se há arquivo selecionado, faz upload
+    if (selectedFile) {
+      const uploadedUrl = await uploadToBackend(selectedFile);
       if (!uploadedUrl) return;
       urlToUse = uploadedUrl;
     }
 
-    if (!libName.trim() || !urlToUse) {
-      alert("Informe o nome e o link/arquivo da faixa.");
+    if (!urlToUse) {
+      alert("Selecione um arquivo de áudio.");
       return;
     }
 
@@ -226,20 +253,16 @@ export default function SoundBoard({ isMaster }) {
     else setOthersTracks(newList);
 
     setLibName("");
-    setLibUrl("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    setSelectedFile(null);
     setOpenLibDialog(false);
   };
 
   const handleDeleteLibrary = async (category, idx) => {
     if (!confirm("Excluir essa faixa do acervo?")) return;
-    
     const list = category === "music" ? [...musicTracks] : 
                  category === "ambiance" ? [...ambianceTracks] : [...othersTracks];
     list.splice(idx, 1);
-    
     await writeLibraryDoc(category, list);
-    
     if (category === "music") setMusicTracks(list);
     else if (category === "ambiance") setAmbianceTracks(list);
     else setOthersTracks(list);
@@ -267,23 +290,20 @@ export default function SoundBoard({ isMaster }) {
 
         <List dense>
           {tracks.map((t, i) => {
-            const isPlaying = currentlyPlaying === t.url;
+            const isPlaying = activeTracks.has(t.url);
             const trackVolume = volumes[t.url] ?? 80;
-            
             return (
               <ListItem key={i} divider sx={{ flexDirection: "column", alignItems: "stretch" }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
-                  {/* 🟢 BOTÃO PLAY ANTES DO NOME */}
                   {isPlaying ? (
-                    <IconButton color="error" onClick={handleStop} size="small">
-                      <StopIcon />
-                    </IconButton>
-                  ) : (
-                    <IconButton color="primary" onClick={() => handlePlay(t.url, t.name)} size="small">
-                      <PlayArrowIcon />
-                    </IconButton>
-                  )}
-                  
+  <IconButton color="error" onClick={() => handleStop(t.url)} size="small">
+    <StopIcon />
+  </IconButton>
+) : (
+  <IconButton color="primary" onClick={() => handlePlay(t.url, t.name)} size="small">
+    <PlayArrowIcon />
+  </IconButton>
+)}
                   <ListItemText 
                     primary={t.name} 
                     sx={{ 
@@ -294,7 +314,6 @@ export default function SoundBoard({ isMaster }) {
                       }
                     }}
                   />
-                  
                   {isMaster && (
                     <Box>
                       <IconButton size="small" onClick={() => openEditDialog(category, i)}>
@@ -306,8 +325,6 @@ export default function SoundBoard({ isMaster }) {
                     </Box>
                   )}
                 </Box>
-                
-                {/* 🟢 SLIDER DE VOLUME INDIVIDUAL */}
                 {isPlaying && (
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1, pl: 4 }}>
                     <Typography variant="caption" sx={{ minWidth: 45 }}>
@@ -368,24 +385,54 @@ export default function SoundBoard({ isMaster }) {
             onChange={(e) => setLibName(e.target.value)}
             sx={{ mb: 2, mt: 1 }}
           />
-          <TextField
-            label="URL (ou use upload abaixo)"
-            fullWidth
-            value={libUrl}
-            onChange={(e) => setLibUrl(e.target.value)}
-            sx={{ mb: 2 }}
-          />
-          <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-            <Button variant="outlined" component="label" disabled={uploading}>
-              {uploading ? "Enviando..." : "Upload de Arquivo"}
-              <input hidden ref={fileInputRef} type="file" accept="audio/*" />
-            </Button>
+
+          {/* 🟢 Área de upload de arquivo (sem URL) */}
+          <Box sx={{ mb: 2 }}>
+            {!selectedFile ? (
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<AttachFileIcon />}
+                fullWidth
+              >
+                Selecionar arquivo de áudio
+                <input
+                  hidden
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleFileSelect}
+                />
+              </Button>
+            ) : (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                <Chip
+                  icon={<AttachFileIcon />}
+                  label={`${selectedFile.name} (${(selectedFile.size / 1024 / 1024).toFixed(2)} MB)`}
+                  onDelete={clearSelectedFile}
+                  color="primary"
+                  variant="outlined"
+                />
+                <Button size="small" onClick={clearSelectedFile}>
+                  Trocar
+                </Button>
+              </Box>
+            )}
+            {editIndex !== null && !selectedFile && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                Manter arquivo atual (selecione um novo apenas para substituir).
+              </Typography>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenLibDialog(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={handleSaveLibrary} disabled={uploading}>
-            Salvar
+          <Button
+            variant="contained"
+            onClick={handleSaveLibrary}
+            disabled={uploading || (!selectedFile && editIndex === null)}
+          >
+            {uploading ? "Enviando..." : "Salvar"}
           </Button>
         </DialogActions>
       </Dialog>
