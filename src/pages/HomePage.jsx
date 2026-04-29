@@ -75,24 +75,47 @@ export default function HomePage({
     }
   };
 
-  const handleDeleteConta = async (email) => {
-    try {
-      await deleteDoc(doc(db, "fichas", email));
-      
-      alert(`Ficha de ${email} deletada! A conta precisa ser deletada pelo próprio jogador.`);
+  // Função para deletar CONTA COMPLETA (Ficha + Auth)
+const handleDeleteConta = async (email) => {
+  try {
+    // Chama a API do backend para deletar a conta
+    const apiBase = import.meta?.env?.VITE_SERVER_URL || 
+                    (window.location.hostname === "localhost" 
+                      ? "http://localhost:5000" 
+                      : "https://app-rpg.onrender.com");
+    
+    const response = await fetch(`${apiBase}/api/admin/delete-user`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: email,
+        mestreEmail: user?.email // Email do mestre logado
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      alert(`✅ ${data.message || 'Conta deletada com sucesso!'}`);
       
       if (selectedFichaEmail === email) {
         setSelectedFichaEmail(null);
       }
-      
-      setDeleteContaDialogOpen(false);
-      setContaToDelete(null);
-    } catch (err) {
-      console.error("Erro ao deletar conta:", err);
-      alert("Erro ao deletar conta: " + err.message);
-      setDeleteContaDialogOpen(false);
+    } else {
+      alert(`❌ Erro: ${data.error || 'Erro ao deletar conta'}`);
     }
-  };
+    
+    setDeleteContaDialogOpen(false);
+    setContaToDelete(null);
+    
+  } catch (err) {
+    console.error("Erro ao deletar conta:", err);
+    alert("Erro ao conectar com o servidor: " + err.message);
+    setDeleteContaDialogOpen(false);
+  }
+};
 
   const isMestre = (email) => email === "mestre@reqviemrpg.com";
 

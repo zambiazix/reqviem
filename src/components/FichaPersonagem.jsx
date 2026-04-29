@@ -101,6 +101,7 @@ const nivel = hud?.xpMap?.[fichaId]?.level ?? 1;
 
       ignorarLimitePeso: false,
       ignorarLimiteHabilidades: false,
+      permitirRedistribuirPontos: false, // 🟢 NOVO CAMPO
     };
 
     const LABELS = {
@@ -289,6 +290,7 @@ const [itemParaDropar, setItemParaDropar] = useState(null);
 const [jogadorDestinoItem, setJogadorDestinoItem] = useState("");
 const [quantidadeTransferir, setQuantidadeTransferir] = useState(1);
 const [quantidadeDropar, setQuantidadeDropar] = useState(1);
+const [categoriaDestino, setCategoriaDestino] = useState("equipamentos"); // 🟢 NOVO
 // Lista de Traços (desbloqueados ao atingir nível 5 na perícia)
 const TRACOS_POR_PERICIA = {
   atletismo: "Atleta",
@@ -844,7 +846,7 @@ const salvarTalentos = async (talentos) => {
   setModalTalentosOpen(false);
 };
 
-// 🟢 Função para transferir item
+// 🟢 Função para transferir item (ATUALIZADA)
 const transferirItem = async () => {
   if (!itemParaTransferir || !jogadorDestinoItem) {
     alert("Selecione um item e um jogador!");
@@ -856,7 +858,58 @@ const transferirItem = async () => {
     return;
   }
   
-  // Remove item do jogador atual
+  // Verifica se é para SI MESMO (mover entre categorias)
+  if (jogadorDestinoItem === fichaId) {
+    // Mover item para outra categoria
+    const itemMovido = {
+      ...itemParaTransferir.item,
+      quantidade: quantidadeTransferir
+    };
+    delete itemMovido.index;
+    
+    // Remove da categoria atual
+    const novosItensOrigem = ficha[abaAtiva].map((item, idx) => {
+      if (idx === itemParaTransferir.index) {
+        const novaQuantidade = item.quantidade - quantidadeTransferir;
+        return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+      }
+      return item;
+    }).filter(item => item !== null);
+    
+    // Adiciona na nova categoria
+    const itensDestino = [...(ficha[categoriaDestino] || []), itemMovido];
+    
+    // Atualiza estado local
+    setFicha(p => ({ 
+      ...p, 
+      [abaAtiva]: novosItensOrigem,
+      [categoriaDestino]: itensDestino
+    }));
+    
+    // Salva no Firestore
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, { 
+      [abaAtiva]: novosItensOrigem,
+      [categoriaDestino]: itensDestino
+    }, { merge: true });
+    
+    const nomesCategorias = {
+      equipamentos: 'Equipamentos',
+      vestes: 'Vestimentas',
+      diversos: 'Diversos'
+    };
+    
+    alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} movido para ${nomesCategorias[categoriaDestino]}!`);
+    
+    setModalTransferirItemOpen(false);
+    setItemParaTransferir(null);
+    setJogadorDestinoItem("");
+    setQuantidadeTransferir(1);
+    setCategoriaDestino("equipamentos");
+    return;
+  }
+  
+  // Transferência para OUTRO jogador
   const novosItens = ficha[abaAtiva].map((item, idx) => {
     if (idx === itemParaTransferir.index) {
       const novaQuantidade = item.quantidade - quantidadeTransferir;
@@ -867,11 +920,9 @@ const transferirItem = async () => {
   
   setFicha(p => ({ ...p, [abaAtiva]: novosItens }));
   
-  // Salva no Firestore do jogador atual
   const refOrigem = doc(db, "fichas", fichaId);
   await setDoc(refOrigem, { [abaAtiva]: novosItens }, { merge: true });
   
-  // Adiciona item ao jogador destino
   const jogadorDestino = listaJogadores.find(j => j.id === jogadorDestinoItem);
   if (jogadorDestino) {
     const itemParaAdicionar = {
@@ -880,6 +931,7 @@ const transferirItem = async () => {
     };
     delete itemParaAdicionar.index;
     
+    // Adiciona na mesma categoria do jogador destino
     const itensDestino = [...(jogadorDestino[abaAtiva] || []), itemParaAdicionar];
     
     const refDestino = doc(db, "fichas", jogadorDestinoItem);
@@ -1020,7 +1072,36 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     return (
       <Paper sx={{ p: 2, bgcolor: "#07121a", color: "#fff", height: "100%", overflowY: "auto" }}>
         {/* título como h5 (mantém sem p) */}
-        <Typography variant="h5" gutterBottom component="h2">{LABELS.titulo}</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+  <Typography variant="h5" component="h2">{LABELS.titulo}</Typography>
+  
+  {/* 🟢 CHECKBOX PARA PERMITIR REDISTRIBUIR PONTOS */}
+  {isMestre && (
+    <FormControlLabel
+      control={
+        <Checkbox
+          checked={ficha?.permitirRedistribuirPontos || false}
+          onChange={async (e) => {
+            const novoValor = e.target.checked;
+            setFicha((prev) => ({
+              ...prev,
+              permitirRedistribuirPontos: novoValor,
+            }));
+            const ref = doc(db, "fichas", fichaId);
+            await setDoc(ref, { permitirRedistribuirPontos: novoValor }, { merge: true });
+          }}
+          size="small"
+          sx={{ color: '#ff9800' }}
+        />
+      }
+      label={
+        <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+          Permitir redistribuir pontos
+        </Typography>
+      }
+    />
+  )}
+</Box>
 
         <Grid container spacing={2}>
           <Grid item xs={12} md={9}>
@@ -1372,25 +1453,34 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
   max={5}
   step={1}
   onChange={(e, val) => {
-    // Não deixa ir abaixo de 1
-    if (val < 1) return;
-    
-    const atual = Number(v || 1);
-    const diferenca = val - atual;
-    
-    // Se está tentando aumentar mas não tem pontos suficientes
-    if (diferenca > 0) {
-      let custo = 0;
-      for (let i = atual + 1; i <= val; i++) {
-        custo += (i - 1);
-      }
-      
-      if (pontosAtributoRestantes < custo) return; // Não deixa aumentar
+  // Não deixa ir abaixo de 1
+  if (val < 1) return;
+  
+  const atual = Number(v || 1);
+  const diferenca = val - atual;
+  
+  // Se está tentando DIMINUIR (val < atual)
+  if (diferenca < 0) {
+    // Só permite diminuir se:
+    // 1. É o mestre
+    // 2. OU a checkbox "permitirRedistribuirPontos" está marcada
+    if (!isMestre && !ficha?.permitirRedistribuirPontos) {
+      return; // Bloqueia a diminuição
+    }
+  }
+  
+  // Se está tentando AUMENTAR
+  if (diferenca > 0) {
+    let custo = 0;
+    for (let i = atual + 1; i <= val; i++) {
+      custo += (i - 1);
     }
     
-    // Se está diminuindo, sempre permite (desde que não seja abaixo de 1)
-    setSubCampo("atributos", k, val);
-  }}
+    if (pontosAtributoRestantes < custo) return;
+  }
+  
+  setSubCampo("atributos", k, val);
+}}
   valueLabelDisplay="auto"
 />
                 </Box>
@@ -1431,13 +1521,21 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     }) || (pontosPericiaRestantes <= 0 && Number(v || 0) === 0)
   }
   onChange={(e, val) => {
-    const atual = Number(v || 0);
-    const diferenca = val - atual;
-    
-    if (diferenca > 0 && pontosPericiaRestantes < diferenca) return;
-    
-    setSubCampo("pericias", k, val);
-  }}
+  const atual = Number(v || 0);
+  const diferenca = val - atual;
+  
+  // Se está tentando DIMINUIR
+  if (diferenca < 0) {
+    if (!isMestre && !ficha?.permitirRedistribuirPontos) {
+      return; // Bloqueia a diminuição
+    }
+  }
+  
+  // Se está tentando AUMENTAR
+  if (diferenca > 0 && pontosPericiaRestantes < diferenca) return;
+  
+  setSubCampo("pericias", k, val);
+}}
   valueLabelDisplay="auto"
 />
                 </Box>
@@ -2981,99 +3079,121 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
         </DialogActions>
       </Dialog>
 
-      {/* 🟢 Modal Transferir Item */}
-      <Dialog
-        open={modalTransferirItemOpen}
-        onClose={() => setModalTransferirItemOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: "#0f172a",
-            border: "1px solid #1e293b",
-            borderRadius: 2
-          }
-        }}
-      >
-        <DialogTitle sx={{ color: '#fff' }}>
-          🔄 Transferir Item
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
-            {/* Selecionar Item */}
-            <FormControl fullWidth>
-              <InputLabel sx={{ color: '#fff' }}>Item para Transferir</InputLabel>
-              <Select
-                value={itemParaTransferir?.index || ''}
-                onChange={(e) => {
-                  const idx = e.target.value;
-                  setItemParaTransferir({
-                    index: idx,
-                    item: ficha[abaAtiva][idx],
-                    quantidade: ficha[abaAtiva][idx].quantidade
-                  });
-                  setQuantidadeTransferir(1);
-                }}
-                sx={{ color: '#fff' }}
-              >
-                {ficha[abaAtiva]?.map((item, idx) => (
-                  <MenuItem key={idx} value={idx}>
-                    {item.quantidade}x {item.nome || 'Sem nome'}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            {/* Quantidade */}
-            {itemParaTransferir && (
-              <TextField
-                label="Quantidade"
-                type="number"
-                fullWidth
-                value={quantidadeTransferir}
-                onChange={(e) => {
-                  const val = Math.min(itemParaTransferir.quantidade, Math.max(1, Number(e.target.value) || 1));
-                  setQuantidadeTransferir(val);
-                }}
-                InputProps={{ 
-                  inputProps: { min: 1, max: itemParaTransferir.quantidade },
-                  sx: { color: '#fff' }
-                }}
-                helperText={`Máximo: ${itemParaTransferir.quantidade}`}
-                FormHelperTextProps={{ sx: { color: '#aaa' } }}
-              />
-            )}
-            
-            {/* Jogador Destino */}
-            <FormControl fullWidth>
-              <InputLabel sx={{ color: '#fff' }}>Jogador Destino</InputLabel>
-              <Select
-                value={jogadorDestinoItem}
-                onChange={(e) => setJogadorDestinoItem(e.target.value)}
-                sx={{ color: '#fff' }}
-              >
-                {listaJogadores.filter(j => j.id !== fichaId).map(jogador => (
-                  <MenuItem key={jogador.id} value={jogador.id}>
-                    {jogador.nome}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setModalTransferirItemOpen(false)} sx={{ color: '#94a3b8' }}>
-            Cancelar
-          </Button>
-          <Button 
-            variant="contained"
-            onClick={transferirItem}
-            sx={{ bgcolor: '#1976d2' }}
+      {/* 🟢 Modal Transferir Item - ATUALIZADO */}
+<Dialog
+  open={modalTransferirItemOpen}
+  onClose={() => setModalTransferirItemOpen(false)}
+  maxWidth="sm"
+  fullWidth
+  PaperProps={{
+    sx: {
+      bgcolor: "#0f172a",
+      border: "1px solid #1e293b",
+      borderRadius: 2
+    }
+  }}
+>
+  <DialogTitle sx={{ color: '#fff' }}>
+    🔄 Transferir Item
+  </DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+      {/* Selecionar Item */}
+      <FormControl fullWidth>
+        <InputLabel sx={{ color: '#fff' }}>Item para Transferir</InputLabel>
+        <Select
+          value={itemParaTransferir?.index || ''}
+          onChange={(e) => {
+            const idx = e.target.value;
+            setItemParaTransferir({
+              index: idx,
+              item: ficha[abaAtiva][idx],
+              quantidade: ficha[abaAtiva][idx].quantidade
+            });
+            setQuantidadeTransferir(1);
+          }}
+          sx={{ color: '#fff' }}
+        >
+          {ficha[abaAtiva]?.map((item, idx) => (
+            <MenuItem key={idx} value={idx}>
+              {item.quantidade}x {item.nome || 'Sem nome'}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      
+      {/* Quantidade */}
+      {itemParaTransferir && (
+        <TextField
+          label="Quantidade"
+          type="number"
+          fullWidth
+          value={quantidadeTransferir}
+          onChange={(e) => {
+            const val = Math.min(itemParaTransferir.quantidade, Math.max(1, Number(e.target.value) || 1));
+            setQuantidadeTransferir(val);
+          }}
+          InputProps={{ 
+            inputProps: { min: 1, max: itemParaTransferir.quantidade },
+            sx: { color: '#fff' }
+          }}
+          helperText={`Máximo: ${itemParaTransferir.quantidade}`}
+          FormHelperTextProps={{ sx: { color: '#aaa' } }}
+        />
+      )}
+      
+      {/* Jogador Destino (incluindo SI MESMO) */}
+      <FormControl fullWidth>
+        <InputLabel sx={{ color: '#fff' }}>Jogador Destino</InputLabel>
+        <Select
+          value={jogadorDestinoItem}
+          onChange={(e) => setJogadorDestinoItem(e.target.value)}
+          sx={{ color: '#fff' }}
+        >
+          {/* 🟢 Opção para SI MESMO */}
+          <MenuItem value={fichaId}>
+            🔄 Você mesmo (mover para outra categoria)
+          </MenuItem>
+          
+          {/* Outros jogadores */}
+          {listaJogadores.filter(j => j.id !== fichaId).map(jogador => (
+            <MenuItem key={jogador.id} value={jogador.id}>
+              {jogador.nome}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      
+      {/* 🟢 Se for para SI MESMO, mostra seleção de categoria */}
+      {jogadorDestinoItem === fichaId && (
+        <FormControl fullWidth>
+          <InputLabel sx={{ color: '#fff' }}>Categoria Destino</InputLabel>
+          <Select
+            value={categoriaDestino}
+            onChange={(e) => setCategoriaDestino(e.target.value)}
+            sx={{ color: '#fff' }}
           >
-            Transferir
-          </Button>
-        </DialogActions>
-      </Dialog>
+            <MenuItem value="equipamentos">⚔️ Equipamentos</MenuItem>
+            <MenuItem value="vestes">👕 Vestimentas</MenuItem>
+            <MenuItem value="diversos">📦 Diversos</MenuItem>
+          </Select>
+        </FormControl>
+      )}
+    </Box>
+  </DialogContent>
+  <DialogActions sx={{ p: 2 }}>
+    <Button onClick={() => setModalTransferirItemOpen(false)} sx={{ color: '#94a3b8' }}>
+      Cancelar
+    </Button>
+    <Button 
+      variant="contained"
+      onClick={transferirItem}
+      sx={{ bgcolor: '#1976d2' }}
+    >
+      {jogadorDestinoItem === fichaId ? 'Mover' : 'Transferir'}
+    </Button>
+  </DialogActions>
+</Dialog>
 
       {/* 🟢 Modal Dropar Item */}
       <Dialog

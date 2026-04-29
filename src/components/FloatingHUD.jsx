@@ -16,7 +16,9 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Slider,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";  // 🟢 ADICIONE ESTA LINHA
 import { Popover } from "@mui/material";
 import { Portal } from "@mui/material";
 import { useGame } from "../context/GameProvider";
@@ -30,7 +32,7 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { collection, onSnapshot, getDocs, addDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, getDocs, addDoc, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { updateDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import TurnModal from "./TurnModal";
@@ -78,6 +80,11 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
   const [openMasterDialogFallback, setOpenMasterDialogFallback] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [showTurnMenu, setShowTurnMenu] = useState(false);
+  // 🟢 SORTE/AZAR
+const [sorteAzarOpen, setSorteAzarOpen] = useState(false);
+const [sorteAzarJogadores, setSorteAzarJogadores] = useState({});
+const [selectedSorteAzarPlayer, setSelectedSorteAzarPlayer] = useState("");
+const [sorteAzarValue, setSorteAzarValue] = useState(5.5);
   const [hudRect, setHudRect] = useState(null);
   const [fichasMap, setFichasMap] = useState({});
   const [loadingFichas, setLoadingFichas] = useState(false);
@@ -88,6 +95,7 @@ const [openProfileDialog, setOpenProfileDialog] = useState(false);
 const [lightboxOpen, setLightboxOpen] = useState(false);
 const [lightboxSrc, setLightboxSrc] = useState(null);
 const [zoom, setZoom] = useState(1);
+
 
 const [novoPerfil, setNovoPerfil] = useState({
   nome: "",
@@ -100,6 +108,18 @@ const [novoPerfil, setNovoPerfil] = useState({
   const playersFromXp = Object.keys(hud?.xpMap || {});
   const mergedEmails = Object.keys(fichasMap || {});
   const textShadow = "0px 0px 3px rgba(0,0,0,0.85)";
+
+  // 🟢 CARREGAR SORTE/AZAR
+useEffect(() => {
+  const unsub = onSnapshot(doc(db, "game", "sorteAzar"), (snap) => {
+    if (snap.exists()) {
+      setSorteAzarJogadores(snap.data().jogadores || {});
+    } else {
+      setSorteAzarJogadores({});
+    }
+  });
+  return () => unsub();
+}, []);
 
   useEffect(() => {
   const col = collection(db, "fichas");
@@ -257,6 +277,21 @@ setPerfis(unique);
     if (!selectedPlayerForXP) return;
     await addXP(selectedPlayerForXP, -Math.abs(Number(xpEditValue || 0)));
   };
+
+  // 🟢 SALVAR SORTE/AZAR
+const salvarSorteAzar = async (email, valor) => {
+  const novos = { ...sorteAzarJogadores, [email]: valor };
+  setSorteAzarJogadores(novos);
+  await setDoc(doc(db, "game", "sorteAzar"), { jogadores: novos }, { merge: true });
+};
+
+// 🟢 REMOVER SORTE/AZAR
+const removerSorteAzar = async (email) => {
+  const novos = { ...sorteAzarJogadores };
+  delete novos[email];
+  setSorteAzarJogadores(novos);
+  await setDoc(doc(db, "game", "sorteAzar"), { jogadores: novos }, { merge: true });
+};
 
   const [minutesInput, setMinutesInput] = useState(1);
   const [secondsInput, setSecondsInput] = useState(0);
@@ -1000,6 +1035,13 @@ console.log("HUD DEBUG:", {
                       <IconButton color="secondary" onClick={handleRemoveXP}>
                         <RemoveIcon />
                       </IconButton>
+                      <IconButton 
+  onClick={() => setSorteAzarOpen(true)}
+  title="Sorte/Azar"
+  sx={{ color: '#ff9800' }}
+>
+  <span style={{ fontSize: '1.2rem' }}>🎲</span>
+</IconButton>
                     </Box>
                   )}
                 </Box>
@@ -1529,6 +1571,118 @@ console.log("HUD DEBUG:", {
     document.body
   )
 }
+      {/* 🟢 MODAL SORTE/AZAR */}
+      <Dialog 
+        open={sorteAzarOpen} 
+        onClose={() => setSorteAzarOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: 2
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <span style={{ fontSize: '1.5rem' }}>🎲</span>
+          Sorte/Azar
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Selecionar Jogador</InputLabel>
+              <Select
+                value={selectedSorteAzarPlayer}
+                onChange={(e) => {
+                  setSelectedSorteAzarPlayer(e.target.value);
+                  setSorteAzarValue(sorteAzarJogadores[e.target.value] ?? 5.5);
+                }}
+                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+                MenuProps={{
+                  container: document.body,
+                  PaperProps: { sx: { zIndex: 999999, bgcolor: '#1a1a2e', color: '#fff' } }
+                }}
+              >
+                <MenuItem value="">-- selecione --</MenuItem>
+                {mergedEmails.map((email) => (
+                  <MenuItem key={email} value={email}>
+                    {displayNameFor(email)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {selectedSorteAzarPlayer && (
+              <Box sx={{ px: 2 }}>
+                <Typography sx={{ color: '#94a3b8', mb: 1, textAlign: 'center' }}>
+                  Chance de dados bons: {Math.round((sorteAzarValue / 10) * 100)}%
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Typography sx={{ color: '#ef4444', fontWeight: 'bold' }}>😈</Typography>
+                  <Slider
+                    value={sorteAzarValue}
+                    onChange={(e, val) => setSorteAzarValue(val)}
+                    min={1}
+                    max={10}
+                    step={0.5}
+                    marks={[
+                      { value: 1, label: '1' },
+                      { value: 5.5, label: '5.5' },
+                      { value: 10, label: '10' },
+                    ]}
+                    sx={{
+                      color: sorteAzarValue > 5.5 ? '#4caf50' : sorteAzarValue < 5.5 ? '#ef4444' : '#ff9800',
+                      '& .MuiSlider-thumb': { width: 20, height: 20 },
+                      '& .MuiSlider-markLabel': { color: '#94a3b8', fontSize: '0.7rem' },
+                    }}
+                  />
+                  <Typography sx={{ color: '#4caf50', fontWeight: 'bold' }}>🍀</Typography>
+                </Box>
+                <Button 
+                  variant="contained" 
+                  fullWidth
+                  onClick={() => {
+                    salvarSorteAzar(selectedSorteAzarPlayer, sorteAzarValue);
+                    setSelectedSorteAzarPlayer("");
+                    setSorteAzarValue(5.5);
+                  }}
+                  sx={{ mt: 2, bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
+                >
+                  Aplicar
+                </Button>
+              </Box>
+            )}
+            <Divider sx={{ bgcolor: '#334155' }} />
+            <Typography variant="subtitle2" sx={{ color: '#fff' }}>
+              Jogadores afetados:
+            </Typography>
+            <Box sx={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {Object.keys(sorteAzarJogadores).length === 0 && (
+                <Typography variant="caption" sx={{ color: '#64748b' }}>Nenhum</Typography>
+              )}
+              {Object.entries(sorteAzarJogadores).map(([email, valor]) => (
+                <Paper key={email} sx={{ p: 1.5, bgcolor: '#1a1a2e', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #334155' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                      {displayNameFor(email)}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: valor > 5.5 ? '#4caf50' : valor < 5.5 ? '#ef4444' : '#ff9800' }}>
+                      {valor > 5.5 ? '🍀' : valor < 5.5 ? '😈' : '⚖️'} {Math.round((valor / 10) * 100)}%
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" onClick={() => removerSorteAzar(email)} sx={{ color: '#ef4444' }}>
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Paper>
+              ))}
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+          <Button onClick={() => setSorteAzarOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

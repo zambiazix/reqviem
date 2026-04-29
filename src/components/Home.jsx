@@ -5,8 +5,10 @@ import { Link } from "react-router-dom";
 import HomePage from "../pages/HomePage";
 import SoundBoard from "./SoundBoard";
 import FichaPersonagem from "./FichaPersonagem";
-import MemoizedChat from "./Chat"; // ou import Chat e use memo aqui
-import LoginForm from "./LoginForm"; // extraia também
+import MemoizedChat from "./Chat";
+import LoginForm from "./LoginForm";
+import { db } from "../firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
 
 const Home = memo(function Home({ 
   user, 
@@ -23,6 +25,26 @@ const Home = memo(function Home({
 }) {
   const [isMobileLocal, setIsMobileLocal] = useState(window.innerWidth < 1024);
   
+  // 🟢 ESTADOS AQUI DENTRO!
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  
+  // 🟢 Nome da ficha selecionada
+  const [fichaNome, setFichaNome] = useState("");
+  
+  // 🟢 Buscar nome da ficha quando selecionada
+  useEffect(() => {
+    if (selectedFichaEmail && db) {
+      const fichaRef = doc(db, "fichas", selectedFichaEmail);
+      getDoc(fichaRef).then(snap => {
+        if (snap.exists()) {
+          setFichaNome(snap.data().nome || selectedFichaEmail);
+        }
+      });
+    }
+  }, [selectedFichaEmail]);
+  
   useEffect(() => {
     const handleResize = () => setIsMobileLocal(window.innerWidth < 1024);
     window.addEventListener("resize", handleResize);
@@ -30,6 +52,11 @@ const Home = memo(function Home({
   }, []);
 
   const isMaster = role === "master";
+
+  // 🟢 Nome a mostrar: se for mestre, usa o nome da ficha selecionada; senão, o userNick
+  const displayName = isMaster 
+    ? (fichaNome || userNick || "Mestre")
+    : userNick;
 
   return (
     <ThemeProvider theme={theme}>
@@ -45,12 +72,25 @@ const Home = memo(function Home({
                 <Paper sx={{ p: 2, flexShrink: 0 }}>
                   <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                      <img src="/logo.png" alt="Logo" style={{ width: 80, height: 80, borderRadius: "50%", objectFit: "contain" }} />
+                      <Box 
+                        onClick={() => {
+                          setLightboxSrc("/logo.png");
+                          setZoom(1);
+                          setLightboxOpen(true);
+                        }}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        <img src="/logo.png" alt="Logo" style={{ width: 80, height: 80, borderRadius: "50%", objectFit: "contain" }} />
+                      </Box>
                       <Box>
                         <Typography variant="h6">Bem-vindo,</Typography>
-                        <Typography variant="subtitle1">{userNick}</Typography>
+                        <Typography variant="subtitle1">
+  {isMaster ? `👑 MESTRE` : userNick}
+</Typography>
                         <Typography variant="caption" display="block">{user?.email}</Typography>
-                        <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>APP Réquiem RPG — versão 3.0 — By: Zambiazi</Typography>
+                        <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>
+  APP Réquiem RPG — <span style={{ color: '#FFD700', fontWeight: 'bold', textShadow: '0 0 8px rgba(255,215,0,0.5)' }}>Versão 3.5</span> — By: Zambiazi
+</Typography>
                       </Box>
                     </Box>
                     <IconButton color="inherit" onClick={handleLogout} title="Sair">
@@ -76,7 +116,7 @@ const Home = memo(function Home({
                 </Paper>
                 <Paper sx={{ flex: 1, display: "flex", flexDirection: "column", mt: 2, overflow: "hidden" }}>
                   <Box sx={{ flex: 1, overflowY: "auto", maxHeight: isMobileLocal ? "60vh" : "none" }}>
-                    <MemoizedChat userNick={userNick} userEmail={user?.email} />
+                    <MemoizedChat userNick={displayName} userEmail={user?.email} />
                   </Box>
                 </Paper>
               </>
@@ -135,8 +175,81 @@ const Home = memo(function Home({
           )}
         </Grid>
       </Box>
+      
+      {/* 🟢 LIGHTBOX */}
+      {lightboxOpen && (
+        <Box
+          onClick={() => setLightboxOpen(false)}
+          sx={{
+            position: "fixed",
+            inset: 0,
+            bgcolor: "rgba(0,0,0,0.85)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <LightboxImage
+            src={lightboxSrc}
+            zoom={zoom}
+            setZoom={setZoom}
+          />
+        </Box>
+      )}
     </ThemeProvider>
   );
 });
+
+// 🟢 COMPONENTE LIGHTBOX
+function LightboxImage({ src, zoom, setZoom }) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [start, setStart] = useState({ x: 0, y: 0 });
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setDragging(true);
+    setStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+  const handleMouseMove = (e) => {
+    if (!dragging) return;
+    setPosition({ x: e.clientX - start.x, y: e.clientY - start.y });
+  };
+  const handleMouseUp = () => setDragging(false);
+
+  useEffect(() => {
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragging, start]);
+
+  return (
+    <img
+      src={src}
+      alt="ampliada"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={handleMouseDown}
+      onWheel={(e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        setZoom((z) => Math.min(Math.max(z + delta, 0.5), 5));
+      }}
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+        transition: dragging ? "none" : "transform 0.2s ease",
+        maxWidth: "90%",
+        maxHeight: "90%",
+        borderRadius: 10,
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none",
+      }}
+    />
+  );
+}
 
 export default Home;

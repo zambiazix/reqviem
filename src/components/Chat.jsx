@@ -18,7 +18,11 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
   Grid,
+  FormControl,
+  InputLabel,
+  Select,
 } from "@mui/material";
 import ImageIcon from "@mui/icons-material/Image";
 import GifBoxIcon from "@mui/icons-material/GifBox";
@@ -176,6 +180,20 @@ export default function Chat({ userNick, userEmail }) {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [diceAnchor, setDiceAnchor] = useState(null);
+  const [sorteAzarMap, setSorteAzarMap] = useState({});
+  // 🟢 ESTADOS PARA O MODAL DE AÇÃO
+const [acaoOpen, setAcaoOpen] = useState(false);
+const [acaoAtributo, setAcaoAtributo] = useState("");
+const [acaoPericia, setAcaoPericia] = useState("");
+const [acaoItem, setAcaoItem] = useState("");
+const [acaoItemDado, setAcaoItemDado] = useState(0);
+const [acaoCasting, setAcaoCasting] = useState(0);
+const [acaoEmbuicao, setAcaoEmbuicao] = useState(0);
+const [acaoVariavelHabilidade, setAcaoVariavelHabilidade] = useState(0);
+
+// 🟢 DADOS DA FICHA DO JOGADOR
+const [fichaJogador, setFichaJogador] = useState(null);
+const [energiaAtual, setEnergiaAtual] = useState(0);
   const openDiceMenu = Boolean(diceAnchor);
 
   const chatRef = useRef(null);
@@ -198,32 +216,62 @@ export default function Chat({ userNick, userEmail }) {
   };
 
   function canEdit(msg) {
-    if (msg.type === "dice") return false;
-    return isMaster || msg.userEmail === userEmail;
-  }
+  if (msg.type === "dice" || msg.type === "acao") return false; // 🟢 Adicionado "acao"
+  return isMaster || msg.userEmail === userEmail;
+}
 
-  function canDelete(msg) {
-    if (msg.type === "dice") return false;
-    return isMaster || msg.userEmail === userEmail;
-  }
+function canDelete(msg) {
+  if (msg.type === "dice" || msg.type === "acao") return false; // 🟢 Adicionado "acao"
+  return isMaster || msg.userEmail === userEmail;
+}
 
   async function deleteMessage(msg) {
-    if (msg.type === "dice") {
-      alert("Dados não podem ser apagados.");
-      return;
-    }
-    if (!window.confirm("Apagar esta mensagem?")) return;
-    await deleteDoc(doc(db, "chat", msg.id));
+  if (msg.type === "dice" || msg.type === "acao") { // 🟢 Adicionado "acao"
+    alert("Mensagens de dados/ação não podem ser apagadas.");
+    return;
   }
+  if (!window.confirm("Apagar esta mensagem?")) return;
+  await deleteDoc(doc(db, "chat", msg.id));
+}
 
   async function editMessage(msg) {
-    const novoTexto = prompt("Editar mensagem:", msg.text || "");
-    if (novoTexto === null) return;
-    await updateDoc(doc(db, "chat", msg.id), {
-      text: novoTexto,
-      edited: true,
+  if (msg.type === "acao") { // 🟢 Bloqueia edição de ações
+    alert("Mensagens de ação não podem ser editadas.");
+    return;
+  }
+  const novoTexto = prompt("Editar mensagem:", msg.text || "");
+  if (novoTexto === null) return;
+  await updateDoc(doc(db, "chat", msg.id), {
+    text: novoTexto,
+    edited: true,
+  });
+}
+
+  // 🟢 CARREGAR FICHA DO JOGADOR
+useEffect(() => {
+  if (userEmail) {
+    const fichaRef = doc(db, "fichas", userEmail);
+    getDoc(fichaRef).then(snap => {
+      if (snap.exists()) {
+        const dados = snap.data();
+        setFichaJogador(dados);
+        setEnergiaAtual(dados.pontosEnergia || 0);
+      }
     });
   }
+}, [userEmail]);
+
+// 🟢 OUVIR SORTE/AZAR
+useEffect(() => {
+  const unsub = onSnapshot(doc(db, "game", "sorteAzar"), (snap) => {
+    if (snap.exists()) {
+      setSorteAzarMap(snap.data().jogadores || {});
+    } else {
+      setSorteAzarMap({});
+    }
+  });
+  return () => unsub();
+}, []);
 
   useEffect(() => {
     const q = query(chatCol, orderBy("timestamp", "asc"));
@@ -320,16 +368,33 @@ export default function Chat({ userNick, userEmail }) {
   }
 
   async function quickRollDice(num, sides) {
-    const rolls = Array.from({ length: num }, () => Math.floor(Math.random() * sides) + 1);
-    const total = rolls.reduce((a, b) => a + b, 0);
-    await addDoc(chatCol, {
-      userNick,
-      userEmail,
-      type: "dice",
-      text: `${num}d${sides} => [${rolls.join(", ")}] = ${total}`,
-      timestamp: serverTimestamp(),
-    });
+  const fatorSorte = sorteAzarMap[userEmail];
+  const rolls = [];
+  let total = 0;
+  for (let i = 0; i < num; i++) {
+    let valor;
+    if (fatorSorte !== undefined) {
+      const chanceBoa = fatorSorte / 10;
+      if (Math.random() < chanceBoa) {
+        valor = Math.floor(Math.random() * 5) + 6;
+      } else {
+        valor = Math.floor(Math.random() * 5) + 1;
+      }
+    } else {
+      valor = Math.floor(Math.random() * sides) + 1;
+    }
+    rolls.push(valor);
+    total += valor;
   }
+  // 🟢 NÃO ESQUEÇA DESTA PARTE!
+  await addDoc(chatCol, {
+    userNick,
+    userEmail,
+    type: "dice",
+    text: `${num}d${sides} => [${rolls.join(", ")}] = ${total}`,
+    timestamp: serverTimestamp(),
+  });
+}
 
   async function compressImage(file, maxSize = 800, quality = 0.7) {
     return new Promise((resolve) => {
@@ -362,60 +427,67 @@ export default function Chat({ userNick, userEmail }) {
   }
 
   async function sendMessage(e) {
-    e?.preventDefault();
-    if (!text && !filePreview && filePreviews.length === 0) return;
-    setLastSender(userEmail);
+  e?.preventDefault();
+  if (!text && !filePreview && filePreviews.length === 0) return;
+  setLastSender(userEmail);
 
-    const dice = tryParseDice(text);
-    if (dice) {
-      await addDoc(chatCol, {
-        userNick,
-        userEmail,
-        type: "dice",
-        text: `${dice.expr} => [${dice.rolls.join(", ")}] = ${dice.total}`,
-        timestamp: serverTimestamp(),
-      });
-      setText("");
-      return;
-    }
-
-    if (filePreviews.length > 0) {
-      await addDoc(chatCol, {
-        userNick,
-        userEmail,
-        type: "image-group",
-        text,
-        images: filePreviews,
-        timestamp: serverTimestamp(),
-      });
-      setFilePreviews([]);
-      setText("");
-      return;
-    }
-
-    if (filePreview) {
-      await addDoc(chatCol, {
-        userNick,
-        userEmail,
-        type: "image",
-        text: filePreview,
-        timestamp: serverTimestamp(),
-      });
-      setFilePreview(null);
-      return;
-    }
-
-    let type = "text";
-    if (text.startsWith("http")) {
-      if (text.match(/\.(mp4|webm|ogg)$/i)) type = "video";
-      else if (text.match(/\.(jpg|jpeg|png|gif|bmp|webp|avif|tiff)$/i)) type = "image";
-      else if (text.includes("youtube.com") || text.includes("youtu.be")) type = "youtube";
-      else type = "link";
-    }
-
-    await addDoc(chatCol, { userNick, userEmail, type, text, timestamp: serverTimestamp() });
+  const dice = tryParseDice(text);
+  if (dice) {
+    await addDoc(chatCol, {
+      userNick,
+      userEmail,
+      type: "dice",
+      text: `${dice.expr} => [${dice.rolls.join(", ")}] = ${dice.total}`,
+      timestamp: serverTimestamp(),
+    });
     setText("");
+    return;
   }
+
+  if (filePreviews.length > 0) {
+    await addDoc(chatCol, {
+      userNick,
+      userEmail,
+      type: "image-group",
+      text: text || "", // 🟢 Mantém o texto com quebras
+      images: filePreviews,
+      timestamp: serverTimestamp(),
+    });
+    setFilePreviews([]);
+    setText("");
+    return;
+  }
+
+  if (filePreview) {
+    await addDoc(chatCol, {
+      userNick,
+      userEmail,
+      type: "image",
+      text: filePreview,
+      timestamp: serverTimestamp(),
+    });
+    setFilePreview(null);
+    return;
+  }
+
+  let type = "text";
+  if (text.startsWith("http")) {
+    if (text.match(/\.(mp4|webm|ogg)$/i)) type = "video";
+    else if (text.match(/\.(jpg|jpeg|png|gif|bmp|webp|avif|tiff)$/i)) type = "image";
+    else if (text.includes("youtube.com") || text.includes("youtu.be")) type = "youtube";
+    else type = "link";
+  }
+
+  // 🟢 Envia o texto preservando quebras de linha
+  await addDoc(chatCol, { 
+    userNick, 
+    userEmail, 
+    type, 
+    text: text, // Já contém as quebras de linha
+    timestamp: serverTimestamp() 
+  });
+  setText("");
+}
 
   async function handleFileChange(e) {
     const f = e.target.files;
@@ -492,6 +564,130 @@ export default function Chat({ userNick, userEmail }) {
     });
     setGifOpen(false);
   }
+
+  // 🟢 FUNÇÃO PARA ROLAR AÇÃO
+// 🟢 FUNÇÃO PARA ROLAR AÇÃO (ATUALIZADA)
+async function rolarAcao() {
+  if (!acaoAtributo && !acaoPericia) {
+    alert("Selecione pelo menos um Atributo ou uma Perícia!");
+    return;
+  }
+  
+  let totalD10 = 0;
+  let descricao = [];
+  let custoTotalEnergia = 0;
+  
+  // Atributo
+  if (acaoAtributo && fichaJogador?.atributos?.[acaoAtributo]) {
+    const valor = fichaJogador.atributos[acaoAtributo];
+    totalD10 += valor;
+    descricao.push(`Atributo: ${acaoAtributo} (${valor})`);
+  }
+  
+  // Perícia
+  if (acaoPericia && fichaJogador?.pericias?.[acaoPericia]) {
+    const valor = fichaJogador.pericias[acaoPericia];
+    totalD10 += valor;
+    descricao.push(`Perícia: ${acaoPericia} (${valor})`);
+    
+    // 🟢 Se a perícia for "aura", gasta +1 PE
+    if (acaoPericia === "aura") {
+      custoTotalEnergia += 1;
+    }
+  }
+  
+  // Item
+  if (acaoItem) {
+    totalD10 += acaoItemDado;
+    descricao.push(`Item: ${acaoItem} (${acaoItemDado})`);
+  }
+  
+  // Casting - 🟢 Cada ponto gasta 1 PE
+  if (acaoCasting > 0) {
+    totalD10 += acaoCasting;
+    descricao.push(`Casting: ${acaoCasting}`);
+    custoTotalEnergia += acaoCasting; // +1 PE por casting
+  }
+  
+  // Embuição - 5 PE por ponto
+  if (acaoEmbuicao > 0) {
+    totalD10 += acaoEmbuicao;
+    descricao.push(`Embuição: ${acaoEmbuicao}`);
+    custoTotalEnergia += acaoEmbuicao * 5;
+  }
+  
+  // Variável de Habilidade
+  if (acaoVariavelHabilidade > 0) {
+    totalD10 += acaoVariavelHabilidade;
+    descricao.push(`Var. Habilidade: ${acaoVariavelHabilidade}`);
+  }
+  
+  // 🟢 Verifica se tem energia suficiente
+  if (custoTotalEnergia > energiaAtual) {
+    alert(`Energia insuficiente! Necessário: ${custoTotalEnergia} PE | Disponível: ${energiaAtual} PE`);
+    return;
+  }
+  
+  // 🟢 Desconta energia total
+  const novaEnergia = energiaAtual - custoTotalEnergia;
+  setEnergiaAtual(novaEnergia);
+  
+  // 🟢 Atualiza no Firestore em tempo real
+  const fichaRef = doc(db, "fichas", userEmail);
+  await setDoc(fichaRef, { pontosEnergia: novaEnergia }, { merge: true });
+  
+    // Rola os dados
+  const rolls = [];
+  let total = 0;
+  const fatorSorte = sorteAzarMap[userEmail];
+  for (let i = 0; i < totalD10; i++) {
+    let valor;
+    if (fatorSorte !== undefined) {
+      const chanceBoa = fatorSorte / 10;
+      if (Math.random() < chanceBoa) {
+        valor = Math.floor(Math.random() * 5) + 6;
+      } else {
+        valor = Math.floor(Math.random() * 5) + 1;
+      }
+    } else {
+      valor = Math.floor(Math.random() * 10) + 1;
+    }
+    rolls.push(valor);
+    total += valor;
+  }
+  
+  // Mensagem formatada
+  const nomePersonagem = fichaJogador?.nome || userNick;
+  const partesDescricao = descricao.length > 0 ? descricao.join("; ") : "";
+  
+  let mensagem = `⚔️ **AÇÃO** ⚔️\n` +
+    `O personagem **${nomePersonagem}** rodou sua Ação${partesDescricao ? ` com:\n${partesDescricao}` : "!"}\n\n` +
+    `${totalD10}d10 => [${rolls.join(", ")}] = **${total}**`;
+  
+  // 🟢 Adiciona custo de energia na mensagem se houver
+  if (custoTotalEnergia > 0) {
+    mensagem += `\n\n⚡ Energia gasta: ${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
+  }
+  
+  // Envia para o chat
+  await addDoc(chatCol, {
+    userNick,
+    userEmail,
+    type: "acao",
+    text: mensagem,
+    timestamp: serverTimestamp(),
+  });
+  
+  // Limpa o modal
+  setAcaoOpen(false);
+  setAcaoAtributo("");
+  setAcaoPericia("");
+  setAcaoItem("");
+  setAcaoItemDado(0);
+  setAcaoCasting(0);
+  setAcaoEmbuicao(0);
+  setAcaoVariavelHabilidade(0);
+}
 
   const getInitials = (name = "?") =>
     name
@@ -646,9 +842,9 @@ export default function Chat({ userNick, userEmail }) {
                     )}
 
                     {m.type === "image-group" && (
-                      <>
-                        {m.text && <Typography sx={{ mb: 0.5 }}>{m.text}</Typography>}
-                        {m.images?.map((img, idx) => (
+  <>
+    {m.text && <Typography sx={{ mb: 0.5, whiteSpace: 'pre-line' }}>{m.text}</Typography>}
+    {m.images?.map((img, idx) => (
                           <img
                             key={idx}
                             src={img}
@@ -706,19 +902,25 @@ export default function Chat({ userNick, userEmail }) {
                       </Typography>
                     )}
 
+                    {m.type === "acao" && (
+  <Typography sx={{ color: '#00bcd4', whiteSpace: 'pre-line', fontWeight: 'bold' }}>
+    {m.text}
+  </Typography>
+)}
+
                     {m.type === "text" && (
-                      <Typography>
-                        {m.text}
-                        {m.edited && (
-                          <Typography
-                            component="span"
-                            sx={{ ml: 0.5, fontSize: "0.7rem", opacity: 0.6 }}
-                          >
-                            (editado)
-                          </Typography>
-                        )}
-                      </Typography>
-                    )}
+  <Typography sx={{ whiteSpace: 'pre-line' }}>
+    {m.text}
+    {m.edited && (
+      <Typography
+        component="span"
+        sx={{ ml: 0.5, fontSize: "0.7rem", opacity: 0.6 }}
+      >
+        (editado)
+      </Typography>
+    )}
+  </Typography>
+)}
 
                     <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 0.5 }}>
                       <Typography variant="caption" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>
@@ -759,20 +961,27 @@ export default function Chat({ userNick, userEmail }) {
 
       <Box component="form" onSubmit={sendMessage} sx={{ display: "flex", gap: 1, mt: 1 }}>
         <TextField
-          placeholder='Mensagem ou "1d20+3" (Shift+Enter para nova linha)'
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              sendMessage(e);
-            }
-          }}
-          size="small"
-          fullWidth
-          multiline
-          maxRows={4}
-        />
+  placeholder='Mensagem ou "1d20+3" (Shift+Enter para nova linha)'
+  value={text}
+  onChange={(e) => setText(e.target.value)}
+  onKeyDown={(e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(e);
+    }
+  }}
+  size="small"
+  fullWidth
+  multiline
+  minRows={1}
+  maxRows={4}
+  sx={{
+    '& .MuiInputBase-root': {
+      maxHeight: '100px',
+      overflowY: 'auto',
+    }
+  }}
+/>
         <IconButton component="label">
           <ImageIcon />
           <input hidden type="file" accept="image/*" multiple onChange={handleFileChange} />
@@ -796,12 +1005,21 @@ export default function Chat({ userNick, userEmail }) {
       </Box>
 
       <Box sx={{ mt: 1, display: "flex", gap: 1 }}>
-        <Button variant="outlined" size="small" onClick={(e) => setDiceAnchor(e.currentTarget)}>
-          D10
-        </Button>
-        <Button variant="outlined" size="small" onClick={() => quickRollDice(1, 100)}>
-          1D100
-        </Button>
+  <Button variant="outlined" size="small" onClick={(e) => setDiceAnchor(e.currentTarget)}>
+    D10
+  </Button>
+  <Button variant="outlined" size="small" onClick={() => quickRollDice(1, 100)}>
+    1D100
+  </Button>
+  {/* 🟢 BOTÃO AÇÃO */}
+  <Button 
+    variant="contained" 
+    size="small" 
+    onClick={() => setAcaoOpen(true)}
+    sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+  >
+    ⚔️ AÇÃO
+  </Button>
         <Menu
           anchorEl={diceAnchor}
           open={openDiceMenu}
@@ -914,6 +1132,175 @@ export default function Chat({ userNick, userEmail }) {
           </Badge>
         </Fab>
       </Fade>
+            {/* 🟢 MODAL DE AÇÃO */}
+      <Dialog 
+        open={acaoOpen} 
+        onClose={() => setAcaoOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: 2
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <span style={{ fontSize: '1.5rem' }}>⚔️</span>
+          Ação - {fichaJogador?.nome || userNick}
+        </DialogTitle>
+        
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            
+            {/* Atributo */}
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Atributo</InputLabel>
+              <Select
+                value={acaoAtributo}
+                onChange={(e) => setAcaoAtributo(e.target.value)}
+                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+              >
+                <MenuItem value="">Nenhum</MenuItem>
+                {fichaJogador?.atributos && Object.entries(fichaJogador.atributos).map(([k, v]) => (
+                  <MenuItem key={k} value={k} disabled={v < 1}>
+                    {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            {/* Perícia */}
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Perícia</InputLabel>
+              <Select
+                value={acaoPericia}
+                onChange={(e) => setAcaoPericia(e.target.value)}
+                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+              >
+                <MenuItem value="">Nenhuma</MenuItem>
+                {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
+                  <MenuItem key={k} value={k} disabled={v < 1}>
+                    {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            {/* Item */}
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Item</InputLabel>
+              <Select
+                value={acaoItem}
+                onChange={(e) => {
+                  setAcaoItem(e.target.value);
+                  const todosItens = [
+                    ...(fichaJogador?.equipamentos || []),
+                    ...(fichaJogador?.vestes || []),
+                    ...(fichaJogador?.diversos || [])
+                  ];
+                  const itemEncontrado = todosItens.find(it => it.nome === e.target.value);
+                  setAcaoItemDado(itemEncontrado?.dado || 0);
+                }}
+                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+              >
+                <MenuItem value="">Nenhum</MenuItem>
+                {[
+                  ...(fichaJogador?.equipamentos || []).map(it => it.nome),
+                  ...(fichaJogador?.vestes || []).map(it => it.nome),
+                  ...(fichaJogador?.diversos || []).map(it => it.nome)
+                ].filter(n => n).map((nome, i) => (
+                  <MenuItem key={i} value={nome}>{nome}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            {/* Casting */}
+            <TextField
+              label="Casting (turnos carregados)"
+              type="number"
+              size="small"
+              value={acaoCasting}
+              onChange={(e) => setAcaoCasting(Math.max(0, Number(e.target.value) || 0))}
+              InputProps={{ inputProps: { min: 0 }, sx: { color: '#fff' } }}
+              sx={{ bgcolor: '#1a1a2e', '& .MuiInputLabel-root': { color: '#94a3b8' } }}
+              helperText="Cada turno = +1d10"
+              FormHelperTextProps={{ sx: { color: '#64748b' } }}
+            />
+            
+            {/* Embuição */}
+            <TextField
+              label={`Embuição (${energiaAtual} PE disponíveis)`}
+              type="number"
+              size="small"
+              value={acaoEmbuicao}
+              onChange={(e) => {
+                const val = Number(e.target.value) || 0;
+                const maxEmbuicao = Math.floor(energiaAtual / 5);
+                if (val <= maxEmbuicao) {
+                  setAcaoEmbuicao(val);
+                }
+              }}
+              InputProps={{ 
+                inputProps: { min: 0, max: Math.floor(energiaAtual / 5) }, 
+                sx: { color: '#fff' } 
+              }}
+              sx={{ bgcolor: '#1a1a2e', '& .MuiInputLabel-root': { color: '#94a3b8' } }}
+              helperText={`Cada ponto = +1d10 (custa 5 PE) | Máximo: ${Math.floor(energiaAtual / 5)}`}
+              FormHelperTextProps={{ sx: { color: '#64748b' } }}
+            />
+            
+            {/* Variável de Habilidade */}
+            <TextField
+              label="Variável de Habilidade"
+              type="number"
+              size="small"
+              value={acaoVariavelHabilidade}
+              onChange={(e) => setAcaoVariavelHabilidade(Math.max(0, Number(e.target.value) || 0))}
+              InputProps={{ inputProps: { min: 0 }, sx: { color: '#fff' } }}
+              sx={{ bgcolor: '#1a1a2e', '& .MuiInputLabel-root': { color: '#94a3b8' } }}
+              helperText="Bônus de habilidades = +d10 por ponto"
+              FormHelperTextProps={{ sx: { color: '#64748b' } }}
+            />
+            
+            {/* Resumo */}
+            {fichaJogador && (
+              <Paper sx={{ p: 2, bgcolor: '#16213e', border: '1px solid #334155' }}>
+                <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1 }}>
+                  📊 Resumo da Rolagem
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                  Total de d10: <strong style={{ color: '#fff' }}>
+                    {(acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] || 0) + 
+                     (acaoPericia && fichaJogador?.pericias?.[acaoPericia] || 0) + 
+                     acaoItemDado + acaoCasting + acaoEmbuicao + acaoVariavelHabilidade}
+                  </strong>
+                </Typography>
+                {acaoEmbuicao > 0 && (
+                  <Typography variant="caption" sx={{ color: '#facc15' }}>
+                    ⚡ Custo de Energia: {acaoEmbuicao * 5} PE
+                  </Typography>
+                )}
+              </Paper>
+            )}
+          </Box>
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+          <Button onClick={() => setAcaoOpen(false)} sx={{ color: '#94a3b8' }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained"
+            onClick={rolarAcao}
+            sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+          >
+            ⚔️ Rolar Ação
+          </Button>
+        </DialogActions>
+      </Dialog>
+
     </Paper>
   );
 }

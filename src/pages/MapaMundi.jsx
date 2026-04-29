@@ -41,6 +41,19 @@ const MAPS = [
   { id: "Mapa4", title: "Mapa de Religiões" },
 ];
 
+const EMOJIS_MARCADORES = [
+  "📍", "🏰", "🏯", "🏠", "🏘️", "🏙️", "🏚️", "🏛️", "🏟️", "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰",
+  "⛪", "🕌", "🕍", "⛩️", "🕋", "🏔️", "⛰️", "🌋", "🗻", "🏕️", "🏖️", "🏜️", "🏝️", "🏞️",
+  "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "🍀", "🌊", "🌋", "🗿", "🏆", "🎯", "⚔️", "🛡️",
+  "👑", "💀", "☠️", "👻", "🐉", "🐲", "🦄", "🐎", "🦅", "🦉", "🐺", "🦊", "🐻", "🐗",
+  "⭐", "🌟", "✨", "🔥", "💧", "❄️", "🌪️", "🌈", "☀️", "🌙", "⚡", "💎", "🔮", "📜",
+  "🗡️", "🏹", "🪓", "🔨", "⛏️", "🕯️", "🏮", "🎪", "🎭", "🎨", "🎵",
+  "🍺", "🍷", "🍞", "🧀", "🪙", "💎", "👁️", "🧿", "🪬", "💠",
+  "🚪", "🚶", "🏃", "🧭", "🗺️", "📿", "🔔", "📯", "🎺",
+  "💒", "💍", "🤝", "✋", "🫶", "❤️", "💔", "🏁", "🚩", "🎌",
+  "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",
+];
+
 export default function MapaMundi() {
   const [isMestre, setIsMestre] = useState(false);
   const [expanded, setExpanded] = useState(null);
@@ -57,7 +70,18 @@ export default function MapaMundi() {
   const [editGlobalIndex, setEditGlobalIndex] = useState(null);
   const [globalTitle, setGlobalTitle] = useState("");
   const [globalText, setGlobalText] = useState("");
-
+// 🟢 ESTADOS PARA MARCADORES
+const [marcadores, setMarcadores] = useState({}); // { mapId: [{ id, nome, descricao, x, y }] }
+const [marcadorDialogOpen, setMarcadorDialogOpen] = useState(false);
+const [marcadorEditando, setMarcadorEditando] = useState(null); // { mapId, marcadorId }
+const [marcadorNome, setMarcadorNome] = useState("");
+const [marcadorDescricao, setMarcadorDescricao] = useState("");
+const [marcadorX, setMarcadorX] = useState(0);
+const [marcadorY, setMarcadorY] = useState(0);
+const [marcadorIcone, setMarcadorIcone] = useState("📍");
+const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+// 🟢 ESTADO DO BALÃO ABERTO
+const [marcadorBalãoAberto, setMarcadorBalãoAberto] = useState(null); // { mapId, marcador, x, y }
   // 🖼️ Lightbox (igual ao Chat) — zoom with wheel, click outside to close, click on image stops propagation
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -130,6 +154,21 @@ export default function MapaMundi() {
     return () => unsub();
   }, []);
 
+  // 🟢 HANDLER GLOBAL PARA CLIQUES NOS MARCADORES
+useEffect(() => {
+  window.__clickMarcador = (mapId, id, nome, descricao, x, y) => {
+    setMarcadorBalãoAberto({
+      mapId,
+      id,
+      nome,
+      descricao,
+      x: parseInt(x),
+      y: parseInt(y)
+    });
+  };
+  return () => { delete window.__clickMarcador; };
+}, []);
+
   // 🔹 Snapshot Firestore (mapas e crônica global)
   useEffect(() => {
     const unsubscribers = MAPS.map((m) => {
@@ -159,67 +198,196 @@ export default function MapaMundi() {
     };
   }, []);
 
-  // 🔹 Controle do SVG e Zoom (svg-pan-zoom para os mapas)
-  useEffect(() => {
-    if (panZoomRef.current?.destroy) {
-      try {
-        panZoomRef.current.destroy();
-      } catch {}
-      panZoomRef.current = null;
-    }
-
-    if (!expanded) {
+  const loadSvgForMap = useCallback(async (mapId) => {
+  try {
+    const dRef = doc(db, "world", `Map_${mapId}`);
+    const snap = await getDoc(dRef);
+    if (!snap.exists()) {
       setSvgContent("");
       return;
     }
-
-    const host = mapSvgRefs.current[expanded];
-    if (!host) return;
-
-    host.innerHTML = svgContent || "";
-    const svgEl = host.querySelector("svg");
-    if (!svgEl) return;
-
-    panZoomRef.current = svgPanZoom(svgEl, {
-      zoomEnabled: true,
-      controlIconsEnabled: true,
-      fit: true,
-      center: true,
-      minZoom: 0.2,
-      maxZoom: 40,
-    });
-
-    return () => {
-      if (panZoomRef.current?.destroy) {
-        try {
-          panZoomRef.current.destroy();
-        } catch {}
-        panZoomRef.current = null;
-      }
-    };
-  }, [svgContent, expanded]);
-
-  const loadSvgForMap = useCallback(async (mapId) => {
-    try {
-      const dRef = doc(db, "world", `Map_${mapId}`);
-      const snap = await getDoc(dRef);
-      if (!snap.exists()) {
-        setSvgContent("");
-        return;
-      }
-      const data = snap.data();
-      const parts = Object.keys(data)
-        .filter((k) => k.startsWith("part_"))
-        .sort((a, b) => parseInt(a.split("_")[1]) - parseInt(b.split("_")[1]))
-        .map((k) => data[k]);
-      const compressed = parts.join("");
-      const decompressed = LZString.decompressFromUTF16(compressed);
-      setSvgContent(decompressed || "");
-    } catch (err) {
-      console.error("Erro ao carregar SVG:", err);
-      setSvgContent("");
+    const data = snap.data();
+    const parts = Object.keys(data)
+      .filter((k) => k.startsWith("part_"))
+      .sort((a, b) => parseInt(a.split("_")[1]) - parseInt(b.split("_")[1]))
+      .map((k) => data[k]);
+    const compressed = parts.join("");
+    let decompressed = LZString.decompressFromUTF16(compressed) || "";
+    
+    // 🟢 INJETA MARCADORES
+    const lista = marcadores[mapId] || [];
+    if (lista.length > 0) {
+      const mSvg = lista.map(m => {
+  const nomeEscaped = m.nome.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const descEscaped = (m.descricao || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const icone = m.icone || "📍";
+  return `<circle cx="${m.x}" cy="${m.y}" r="10" fill="transparent" stroke="transparent" stroke-width="2" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}')"/>
+  <text x="${m.x}" y="${m.y + 4}" fill="#fff" font-size="18" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none;cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}')">${icone}</text>
+  <text x="${m.x + 14}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
+}).join('');
+      decompressed = decompressed.replace('</svg>', `<g id="marcadores">${mSvg}</g></svg>`);
     }
-  }, []);
+    
+    setSvgContent(decompressed);
+    
+    // 🟢 Aplica SVG ao DOM
+    const host = mapSvgRefs.current[mapId];
+    if (host) {
+      host.innerHTML = decompressed;
+      const svgEl = host.querySelector("svg");
+      if (svgEl) {
+        if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
+        panZoomRef.current = svgPanZoom(svgEl, {
+          zoomEnabled: true,
+          controlIconsEnabled: true,
+          fit: true,
+          center: true,
+          minZoom: 0.2,
+          maxZoom: 40,
+        });
+      }
+    }
+  } catch (err) {
+    console.error("Erro SVG:", err);
+  }
+}, [marcadores, isMestre]);
+
+  // 🟢 ADICIONAR MARCADOR COM BOTÃO DIREITO
+const handleMapaContextMenu = (e, mapId) => {
+  e.preventDefault();
+  if (!isMestre) return;
+  
+  const host = mapSvgRefs.current[mapId];
+  if (!host) return;
+  
+  const svgEl = host.querySelector("svg");
+  if (!svgEl) return;
+  
+  // Pega a posição do SVG na tela
+  const rect = svgEl.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  
+  // Pega os dados de zoom/pan do svg-pan-zoom
+  let svgX, svgY;
+  
+  if (panZoomRef.current && panZoomRef.current.getPan && panZoomRef.current.getZoom) {
+    const pan = panZoomRef.current.getPan();
+    const zoom = panZoomRef.current.getZoom();
+    const sizes = panZoomRef.current.getSizes();
+    
+    // Calcula coordenadas SVG reais considerando zoom e pan
+    svgX = Math.round((mouseX - pan.x) / zoom + sizes.viewBox.x);
+    svgY = Math.round((mouseY - pan.y) / zoom + sizes.viewBox.y);
+  } else {
+    // Fallback se não conseguir do svg-pan-zoom
+    try {
+      const viewBox = svgEl.viewBox.baseVal;
+      const scaleX = viewBox.width / rect.width;
+      const scaleY = viewBox.height / rect.height;
+      svgX = Math.round(viewBox.x + mouseX * scaleX);
+      svgY = Math.round(viewBox.y + mouseY * scaleY);
+    } catch {
+      svgX = Math.round(mouseX);
+      svgY = Math.round(mouseY);
+    }
+  }
+  
+  console.log("🎯 Marcador em:", svgX, svgY);
+  
+  setMarcadorX(svgX);
+  setMarcadorY(svgY);
+  setMarcadorNome("");
+  setMarcadorDescricao("");
+  setMarcadorIcone("📍");
+  setMarcadorEditando({ mapId, marcadorId: null });
+  setMarcadorDialogOpen(true);
+};
+// 🟢 RENDERIZAR MARCADORES NO SVG
+const renderizarMarcadores = (mapId) => {
+  const lista = marcadores[mapId] || [];
+  
+  return lista.map((m) => (
+    <g key={m.id} style={{ cursor: 'pointer' }}>
+      <circle
+        cx={m.x}
+        cy={m.y}
+        r={8}
+        fill={isMestre ? "#ff4444" : "#00e0ff"}
+        stroke="#fff"
+        strokeWidth={2}
+        opacity={0.9}
+        onClick={(e) => {
+          e.stopPropagation();
+          setMarcadorBalãoAberto({
+            mapId,
+            id: m.id,
+            nome: m.nome,
+            descricao: m.descricao,
+            x: m.x,
+            y: m.y
+          });
+        }}
+      />
+      <text
+        x={m.x + 12}
+        y={m.y + 4}
+        fill="#fff"
+        fontSize={11}
+        fontWeight="bold"
+        style={{ textShadow: '0 0 3px rgba(0,0,0,0.9)' }}
+        pointerEvents="none"
+      >
+        {m.nome}
+      </text>
+    </g>
+  ));
+};
+
+// 🟢 SALVAR MARCADOR
+const salvarMarcador = async () => {
+  const { mapId, marcadorId } = marcadorEditando || {};
+  if (!mapId) return;
+  
+  const novosMarcadores = { ...marcadores };
+  if (!novosMarcadores[mapId]) novosMarcadores[mapId] = [];
+  
+  if (marcadorId) {
+    novosMarcadores[mapId] = novosMarcadores[mapId].map(m =>
+      m.id === marcadorId ? { ...m, nome: marcadorNome, descricao: marcadorDescricao, x: marcadorX, y: marcadorY, icone: marcadorIcone } : m
+    );
+  } else {
+    novosMarcadores[mapId].push({
+      id: Date.now().toString(),
+      nome: marcadorNome,
+      descricao: marcadorDescricao,
+      x: marcadorX,
+      y: marcadorY,
+      icone: marcadorIcone || "📍"
+    });
+  }
+  
+  setMarcadores(novosMarcadores);
+  await setDoc(doc(db, "world", "Marcadores"), { mapas: novosMarcadores }, { merge: true });
+  setMarcadorDialogOpen(false);
+  
+  if (expanded) loadSvgForMap(expanded);
+};
+
+// 🟢 DELETAR MARCADOR
+const deletarMarcador = async () => {
+  const { mapId, marcadorId } = marcadorEditando || {};
+  if (!mapId || !marcadorId) return;
+  
+  const novosMarcadores = { ...marcadores };
+  novosMarcadores[mapId] = novosMarcadores[mapId].filter(m => m.id !== marcadorId);
+  
+  setMarcadores(novosMarcadores);
+  await setDoc(doc(db, "world", "Marcadores"), { mapas: novosMarcadores }, { merge: true });
+  setMarcadorDialogOpen(false);
+  
+  if (expanded) loadSvgForMap(expanded);
+};
 
   useEffect(() => {
     if (expanded) loadSvgForMap(expanded);
@@ -233,6 +401,18 @@ export default function MapaMundi() {
       }
     }
   }, [expanded, loadSvgForMap]);
+
+  // 🟢 CARREGAR MARCADORES
+useEffect(() => {
+  const unsub = onSnapshot(doc(db, "world", "Marcadores"), (snap) => {
+    if (snap.exists()) {
+      setMarcadores(snap.data().mapas || {});
+    } else {
+      setMarcadores({});
+    }
+  });
+  return () => unsub();
+}, []);
 
   // --- Upload de imagem (Cloudinary)
   const handleImageUpload = async (e, targetSetter) => {
@@ -412,11 +592,15 @@ export default function MapaMundi() {
             }}
           >
             {/* Mapa */}
-            <Box sx={{ flexBasis: { md: "70%" }, bgcolor: "#222", borderRadius: 1, overflow: "hidden", p: 1 }}>
-              {expanded === m.id && (
-                <div ref={(el) => (mapSvgRefs.current[m.id] = el)} style={{ width: "100%", height: "100%" }} />
-              )}
-            </Box>
+<Box sx={{ flexBasis: { md: "70%" }, bgcolor: "#222", borderRadius: 1, overflow: "hidden", p: 1 }}>
+  {expanded === m.id && (
+    <div 
+      ref={(el) => { mapSvgRefs.current[m.id] = el; }}
+      style={{ width: "100%", height: "100%" }}
+      onContextMenu={(e) => handleMapaContextMenu(e, m.id)}
+    />
+  )}
+</Box>
 
             {/* Anotações */}
             <Box
@@ -669,6 +853,193 @@ export default function MapaMundi() {
     </IconButton>
   </div>
 )}
+{/* 🟢 MODAL EDITAR MARCADOR */}
+<Dialog 
+  open={marcadorDialogOpen} 
+  onClose={() => setMarcadorDialogOpen(false)} 
+  maxWidth="sm" 
+  fullWidth
+  PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff' } }}
+>
+  <DialogTitle>
+    {marcadorEditando?.marcadorId ? 'Editar Marcador' : 'Novo Marcador'}
+  </DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+      <TextField
+        label="Nome do local"
+        fullWidth
+        value={marcadorNome}
+        onChange={(e) => setMarcadorNome(e.target.value)}
+        InputProps={{ style: { color: '#fff' } }}
+        InputLabelProps={{ style: { color: '#ccc' } }}
+        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }}
+      />
+      
+      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+        Descrição (Markdown - use ![](url) para imagens)
+      </Typography>
+      <TextField
+        label="Descrição"
+        fullWidth
+        multiline
+        minRows={4}
+        maxRows={8}
+        value={marcadorDescricao}
+        onChange={(e) => setMarcadorDescricao(e.target.value)}
+        InputProps={{ style: { color: '#fff' } }}
+        InputLabelProps={{ style: { color: '#ccc' } }}
+        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }}
+      />
+      {/* ÍCONE */}
+<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Ícone:</Typography>
+  <Button size="small" variant="outlined" onClick={() => setEmojiPickerOpen(true)}
+    sx={{ color: '#fff', borderColor: '#555', fontSize: '1.2rem', minWidth: 50, height: 36 }}>
+    {marcadorIcone || "📍"}
+  </Button>
+  <Typography variant="caption" sx={{ color: '#64748b' }}>Clique para trocar</Typography>
+</Box>
+
+      {isMestre && (
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Button
+            variant="outlined"
+            component="label"
+            size="small"
+            startIcon={<UploadIcon />}
+            sx={{ color: '#94a3b8', borderColor: '#555' }}
+          >
+            Upload Imagem
+            <input
+              hidden
+              type="file"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const apiBase = window.location.hostname === "localhost"
+                    ? "http://localhost:5000"
+                    : "https://app-rpg.onrender.com";
+                  const fd = new FormData();
+                  fd.append("file", file);
+                  const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+                  const data = await res.json();
+                  if (data.url) {
+                    setMarcadorDescricao(prev => prev + `\n\n![](${data.url})`);
+                  }
+                } catch (err) {
+                  alert("Erro ao enviar imagem");
+                }
+              }}
+            />
+          </Button>
+        </Box>
+      )}
+      
+      <Typography variant="caption" sx={{ color: '#64748b' }}>
+        Posição SVG: X={marcadorX}, Y={marcadorY}
+      </Typography>
+    </Box>
+  </DialogContent>
+  <DialogActions sx={{ borderTop: '1px solid #333' }}>
+    {marcadorEditando?.marcadorId && (
+      <Button onClick={deletarMarcador} sx={{ color: '#ef4444', mr: 'auto' }}>
+        🗑️ Deletar
+      </Button>
+    )}
+    <Button onClick={() => setMarcadorDialogOpen(false)} sx={{ color: '#ccc' }}>
+      Cancelar
+    </Button>
+    <Button variant="contained" onClick={salvarMarcador} disabled={!marcadorNome.trim()}>
+      Salvar
+    </Button>
+  </DialogActions>
+</Dialog>
+{/* MODAL EMOJI */}
+<Dialog open={emojiPickerOpen} onClose={() => setEmojiPickerOpen(false)} maxWidth="sm" fullWidth
+  PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff' } }}>
+  <DialogTitle>Escolha um ícone</DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', maxHeight: 300, overflowY: 'auto' }}>
+      {EMOJIS_MARCADORES.map((emoji, idx) => (
+        <Button key={idx} onClick={() => { setMarcadorIcone(emoji); setEmojiPickerOpen(false); }}
+          sx={{ fontSize: '1.5rem', minWidth: 40, height: 40, bgcolor: marcadorIcone === emoji ? '#333' : 'transparent',
+            border: marcadorIcone === emoji ? '1px solid #ff9800' : '1px solid transparent', '&:hover': { bgcolor: '#333' } }}>
+          {emoji}
+        </Button>
+      ))}
+    </Box>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setEmojiPickerOpen(false)} sx={{ color: '#ccc' }}>Fechar</Button>
+  </DialogActions>
+</Dialog>
+      {/* 🟢 BALÃO DO MARCADOR */}
+      {marcadorBalãoAberto && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            width: 320,
+            maxHeight: 400,
+            bgcolor: 'rgba(15, 23, 42, 0.97)',
+            border: '1px solid #334155',
+            borderRadius: 2,
+            p: 2,
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+          }}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#fff' }}>
+              📍 {marcadorBalãoAberto.nome || 'Novo Marcador'}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5 }}>
+              {isMestre && (
+                <>
+                  <IconButton size="small" onClick={() => {
+                    const m = marcadorBalãoAberto;
+                    setMarcadorX(m.x); setMarcadorY(m.y);
+                    setMarcadorNome(m.nome); setMarcadorDescricao(m.descricao || '');
+                    setMarcadorIcone(m.icone || "📍");
+                    setMarcadorEditando({ mapId: m.mapId, marcadorId: m.id });
+                    setMarcadorDialogOpen(true);
+                    setMarcadorBalãoAberto(null);
+                  }} sx={{ color: '#94a3b8' }}><EditIcon fontSize="small" /></IconButton>
+                  <IconButton size="small" onClick={() => {
+                    if (window.confirm('Deletar marcador?')) {
+                      const m = marcadorBalãoAberto;
+                      const novos = { ...marcadores };
+                      if (novos[m.mapId]) novos[m.mapId] = novos[m.mapId].filter(mr => mr.id !== m.id);
+                      setMarcadores(novos);
+                      setDoc(doc(db, "world", "Marcadores"), { mapas: novos }, { merge: true });
+                      setMarcadorBalãoAberto(null);
+                      if (expanded) loadSvgForMap(expanded);
+                    }
+                  }} sx={{ color: '#ef4444' }}><DeleteIcon fontSize="small" /></IconButton>
+                </>
+              )}
+              <IconButton size="small" onClick={() => setMarcadorBalãoAberto(null)} sx={{ color: '#94a3b8' }}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+          <Box sx={{ flex: 1, overflowY: 'auto', maxHeight: 300, pr: 1 }}>
+            {marcadorBalãoAberto.descricao ? (
+              <Box className="markdown-content" onClick={(e) => { if (e.target.tagName === "IMG") { setLightboxImage(e.target.src); setZoom(1); } }}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{marcadorBalãoAberto.descricao}</ReactMarkdown>
+              </Box>
+            ) : (
+              <Typography variant="body2" sx={{ color: '#64748b', fontStyle: 'italic' }}>Sem descrição</Typography>
+            )}
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }

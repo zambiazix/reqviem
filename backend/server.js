@@ -15,6 +15,20 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import { PassThrough } from 'stream';
+// 🟢 ADICIONE ESTES IMPORTS NO TOPO DO ARQUIVO
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+import serviceAccount from './serviceAccountKey.json' assert { type: 'json' };
+
+// 🟢 ADICIONE APÓS OS IMPORTS
+// Inicializa Firebase Admin SDK
+initializeApp({
+  credential: cert(serviceAccount),
+});
+
+const adminAuth = getAuth();
+const adminDb = getFirestore();
 
 // 🟢 Configurar caminhos do ffmpeg (logo após os imports)
 ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -473,6 +487,120 @@ app.get("/api/giphy/search", async (req, res) => {
   } catch (err) {
     console.error("Giphy error:", err.response?.data || err.message);
     res.status(500).json({ error: "Erro ao buscar Giphy" });
+  }
+});
+
+// 🟢🟢🟢 ROTA PARA DELETAR CONTA (APENAS MESTRE) 🟢🟢🟢
+app.post("/api/admin/delete-user", async (req, res) => {
+  try {
+    const { email, mestreEmail } = req.body;
+    
+    // Verifica se quem está fazendo a requisição é o mestre
+    const MASTER_EMAIL = "mestre@reqviemrpg.com";
+    
+    if (mestreEmail !== MASTER_EMAIL) {
+      return res.status(403).json({ 
+        error: "Apenas o mestre pode deletar contas" 
+      });
+    }
+    
+    if (!email) {
+      return res.status(400).json({ 
+        error: "Email do usuário a ser deletado é obrigatório" 
+      });
+    }
+    
+    // Não permite deletar a conta do próprio mestre
+    if (email === MASTER_EMAIL) {
+      return res.status(403).json({ 
+        error: "Não é possível deletar a conta do mestre" 
+      });
+    }
+    
+    console.log(`🗑️ Tentando deletar conta: ${email}`);
+    
+    try {
+      // 1. Buscar o usuário pelo email no Firebase Auth
+      const userRecord = await adminAuth.getUserByEmail(email);
+      const uid = userRecord.uid;
+      
+      // 2. Deletar o documento da ficha no Firestore
+      try {
+        await adminDb.collection('fichas').doc(email).delete();
+        console.log(`📄 Ficha de ${email} deletada`);
+      } catch (firestoreErr) {
+        console.log(`⚠️ Ficha de ${email} não encontrada ou já deletada`);
+      }
+      
+      // 3. Deletar o usuário do Firebase Auth
+      await adminAuth.deleteUser(uid);
+      console.log(`👤 Usuário ${email} deletado do Firebase Auth`);
+      
+      res.json({ 
+        success: true, 
+        message: `Conta ${email} deletada com sucesso!` 
+      });
+      
+    } catch (authErr) {
+      // Se o usuário não existir no Auth, mas a ficha existir
+      if (authErr.code === 'auth/user-not-found') {
+        // Tenta deletar apenas a ficha
+        try {
+          await adminDb.collection('fichas').doc(email).delete();
+          console.log(`📄 Ficha de ${email} deletada (usuário não existia no Auth)`);
+          
+          res.json({ 
+            success: true, 
+            message: `Ficha de ${email} deletada! (Usuário não existia no Auth)` 
+          });
+        } catch (firestoreErr) {
+          res.status(404).json({ 
+            error: `Nenhum registro encontrado para ${email}` 
+          });
+        }
+      } else {
+        throw authErr;
+      }
+    }
+    
+  } catch (err) {
+    console.error("❌ Erro ao deletar conta:", err);
+    res.status(500).json({ 
+      error: "Erro ao deletar conta",
+      message: err.message 
+    });
+  }
+});
+
+// 🟢 ROTA PARA LISTAR TODAS AS CONTAS (APENAS MESTRE)
+app.post("/api/admin/list-users", async (req, res) => {
+  try {
+    const { mestreEmail } = req.body;
+    const MASTER_EMAIL = "mestre@reqviemrpg.com";
+    
+    if (mestreEmail !== MASTER_EMAIL) {
+      return res.status(403).json({ 
+        error: "Apenas o mestre pode listar contas" 
+      });
+    }
+    
+    const listUsersResult = await adminAuth.listUsers();
+    const users = listUsersResult.users.map(user => ({
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      createdAt: user.metadata.creationTime,
+      lastSignIn: user.metadata.lastSignInTime
+    }));
+    
+    res.json({ users });
+    
+  } catch (err) {
+    console.error("❌ Erro ao listar usuários:", err);
+    res.status(500).json({ 
+      error: "Erro ao listar usuários",
+      message: err.message 
+    });
   }
 });
 
