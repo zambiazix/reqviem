@@ -32,28 +32,47 @@ export default function BattleMap() {
 
   // 🔹 Conexão com o servidor socket
   useEffect(() => {
-    const s = io(serverUrl, { transports: ["websocket"] });
-    socketRef.current = s;
+  const s = io(serverUrl, { transports: ["websocket"] });
+  socketRef.current = s;
 
-    s.on("connect", () => console.log("Socket conectado:", s.id));
-    s.on("init", (data) => setTokens(data || []));
-    s.on("addToken", (token) => {
-      setTokens((prev) => (prev.some((t) => t.id === token.id) ? prev : [...prev, token]));
+  s.on("connect", () => console.log("🟢 Socket conectado:", s.id));
+  
+  s.on("init", (data) => {
+    console.log("📦 Init recebido:", data);
+    setTokens(data || []);
+  });
+  
+  s.on("addToken", (token) => {
+    console.log("➕ Token adicionado:", token.id);
+    setTokens((prev) => (prev.some((t) => t.id === token.id) ? prev : [...prev, token]));
+  });
+  
+  s.on("updateToken", (token) => {
+    console.log("🔄 Token atualizado:", token.id);
+    setTokens((prev) => prev.map((t) => (t.id === token.id ? token : t)));
+  });
+  
+  s.on("deleteToken", (id) => {
+    console.log("🗑️ Token deletado:", id);
+    setTokens((prev) => {
+      const newTokens = prev.filter((t) => t.id !== id);
+      console.log("📊 Tokens restantes:", newTokens.length);
+      return newTokens;
     });
-    s.on("updateToken", (token) => {
-      setTokens((prev) => prev.map((t) => (t.id === token.id ? token : t)));
-    });
-    s.on("deleteToken", (id) => {
-      setTokens((prev) => prev.filter((t) => t.id !== id));
-      if (selectedId === id) setSelectedId(null);
-    });
-    s.on("reorder", (newTokens) => setTokens(newTokens));
+    if (selectedId === id) setSelectedId(null);
+  });
+  
+  s.on("reorder", (newTokens) => {
+    console.log("📋 Reorder recebido");
+    setTokens(newTokens);
+  });
 
-    return () => {
-      s.disconnect();
-      socketRef.current = null;
-    };
-  }, [selectedId]);
+  return () => {
+    console.log("🔴 Desconectando socket");
+    s.disconnect();
+    socketRef.current = null;
+  };
+}, []); // 👈 ARRAY VAZIO - CONECTA APENAS UMA VEZ!
 
   // 🔹 Upload de token (apenas Mestre)
   const handleFileUpload = async (e) => {
@@ -65,23 +84,9 @@ export default function BattleMap() {
   formData.append("file", file);
   
   try {
-    // 🟢 PEGA O TOKEN DO FIREBASE
-    const auth = getAuth();
-    const user = auth.currentUser;
-    
-    if (!user) {
-      alert("Você precisa estar logado!");
-      return;
-    }
-    
-    const token = await user.getIdToken();
-    
     const resp = await fetch(`${serverUrl}/upload`, { 
       method: "POST",
-      headers: {
-        'Authorization': `Bearer ${token}`  // 👈 ADICIONE ESTA LINHA
-      },
-      body: formData
+      body: formData  // SEM headers extras!
     });
     
     if (!resp.ok) {
