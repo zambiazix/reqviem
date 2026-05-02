@@ -144,17 +144,23 @@ const Home = memo(function Home({
               </Grid>
               <Grid item sx={{ flex: "1 1 42%", minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
-                  {user ? (
-                    <FichaPersonagem 
-                      key={selectedFichaEmail || 'empty'} 
-                      user={user} 
-                      fichaId={selectedFichaEmail} 
-                      isMestre={true} 
-                    />
-                  ) : (
-                    <Typography>Faça login para editar suas fichas.</Typography>
-                  )}
-                </Paper>
+  {user ? (
+    selectedFichaEmail && selectedFichaEmail !== user?.email ? (
+      <FichaPersonagem 
+        key={selectedFichaEmail || 'empty'} 
+        user={user} 
+        fichaId={selectedFichaEmail} 
+        isMestre={true} 
+      />
+    ) : (
+      <Typography sx={{ color: '#94a3b8', textAlign: 'center', mt: 4 }}>
+        👑 Selecione uma ficha de jogador para visualizar
+      </Typography>
+    )
+  ) : (
+    <Typography>Faça login para editar suas fichas.</Typography>
+  )}
+</Paper>
               </Grid>
             </>
           )}
