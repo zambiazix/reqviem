@@ -1059,28 +1059,46 @@ console.log("HUD DEBUG:", {
                   position: "relative",
                 }}
               >
-                <Paper
-                  elevation={2}
-                  sx={{
-                    px: 2,
-                    py: 1,
-                    borderRadius: 1,
-                    background: "rgba(0,0,0,0.25)",
-                    mb: 1,
-                  }}
-                >
-                  <Typography
-                    variant="h5"
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <Paper
+                    elevation={2}
                     sx={{
-                      fontWeight: 800,
-                      fontFamily: "monospace",
-                      textAlign: "center",
-                      minWidth: 96,
+                      px: 2,
+                      py: 1,
+                      borderRadius: 1,
+                      background: "rgba(0,0,0,0.25)",
                     }}
                   >
-                    {displayTime(remaining)}
-                  </Typography>
-                </Paper>
+                    <Typography
+                      variant="h5"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: "monospace",
+                        textAlign: "center",
+                        minWidth: 96,
+                      }}
+                    >
+                      {displayTime(remaining)}
+                    </Typography>
+                  </Paper>
+                  
+                                    {/* 🟢 BOTÕES FLUTUANTES */}
+                  <IconButton 
+                    onClick={() => { if (window.__toggleChat) window.__toggleChat(); }}
+                    title="Chat Flutuante"
+                    sx={{ color: '#00e0ff', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}
+                  >
+                    <span style={{ fontSize: '1.1rem' }}>💬</span>
+                  </IconButton>
+                  <IconButton 
+                    onClick={() => { if (window.__toggleFicha) window.__toggleFicha(); }}
+                    title="Ficha Flutuante"
+                    sx={{ color: '#ff9800', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}
+                  >
+                    <span style={{ fontSize: '1.1rem' }}>📋</span>
+                  </IconButton>
+                </Box>
+                
 <IconButton
   size="small"
   type="button"

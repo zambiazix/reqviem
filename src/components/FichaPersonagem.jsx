@@ -45,6 +45,7 @@ import { Divider } from "@mui/material";
 const nivel = hud?.xpMap?.[fichaId]?.level ?? 1;
 
     const modelo = {
+      tipoFicha: "PJ",   // novo campo
       nome: "",
       genero: "",
       idade: "",
@@ -1071,11 +1072,33 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
 
     return (
       <Paper sx={{ p: 2, bgcolor: "#07121a", color: "#fff", height: "100%", overflowY: "auto" }}>
-        {/* título como h5 (mantém sem p) */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-  <Typography variant="h5" component="h2">{LABELS.titulo}</Typography>
-  
-  {/* 🟢 CHECKBOX PARA PERMITIR REDISTRIBUIR PONTOS */}
+        {/* Título, dropdown de tipo e checkbox de redistribuição */}
+<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+    <Typography variant="h5" component="h2">{LABELS.titulo}</Typography>
+    
+    {/* Dropdown PJ / PM (apenas Mestre vê) */}
+    {isMestre && (
+      <FormControl size="small" sx={{ minWidth: 100 }}>
+        <InputLabel sx={{ color: '#94a3b8' }}>Tipo</InputLabel>
+        <Select
+          value={ficha.tipoFicha || "PJ"}
+          label="Tipo"
+          onChange={(e) => setCampo("tipoFicha", e.target.value)}
+          sx={{
+            color: '#fff',
+            '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
+          }}
+        >
+          <MenuItem value="PJ">PJ</MenuItem>
+          <MenuItem value="PM">PM</MenuItem>
+        </Select>
+      </FormControl>
+    )}
+  </Box>
+
+  {/* Checkbox para permitir redistribuir pontos */}
   {isMestre && (
     <FormControlLabel
       control={
@@ -3041,7 +3064,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           </Box>
 
          {/* Botão Adicionar Item - Apenas Mestre */}
-{isMestre && (
+
   <Button
     startIcon={<AddIcon />}
     variant="outlined"
@@ -3062,7 +3085,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           >
             Adicionar {LABEL_MAP[abaAtiva] || abaAtiva}
           </Button>
-)}
+
         </DialogContent>
 
         <DialogActions sx={{ p: 2, borderTop: '1px solid #1e293b' }}>

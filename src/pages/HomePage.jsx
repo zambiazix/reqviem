@@ -1,5 +1,5 @@
 // src/pages/HomePage.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Paper,
   Typography,
@@ -20,7 +20,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import PersonRemoveIcon from "@mui/icons-material/PersonRemove";
 import FichaPersonagem from "../components/FichaPersonagem";
 import { db } from "../firebaseConfig";
-import { doc, deleteDoc } from "firebase/firestore";
+import { doc, deleteDoc, getDoc } from "firebase/firestore";
 
 export default function HomePage({
   user,
@@ -38,6 +38,23 @@ export default function HomePage({
   const [deleteContaDialogOpen, setDeleteContaDialogOpen] = useState(false);
   const [fichaToDelete, setFichaToDelete] = useState(null);
   const [contaToDelete, setContaToDelete] = useState(null);
+  const [fichasDataMap, setFichasDataMap] = useState({});
+
+  useEffect(() => {
+    const carregarTipos = async () => {
+      if (!fichasList.length) return;
+      const map = {};
+      const promises = fichasList.map(async (fid) => {
+        const snap = await getDoc(doc(db, "fichas", fid));
+        if (snap.exists()) {
+          map[fid] = snap.data();
+        }
+      });
+      await Promise.all(promises);
+      setFichasDataMap(map);
+    };
+    carregarTipos();
+  }, [fichasList]);
 
   const handleCreateAccountAndFicha = async () => {
     if (!newEmail || !newPassword) {
@@ -75,51 +92,48 @@ export default function HomePage({
     }
   };
 
-  // Função para deletar CONTA COMPLETA (Ficha + Auth)
-const handleDeleteConta = async (email) => {
-  try {
-    // Chama a API do backend para deletar a conta
-    const apiBase = import.meta?.env?.VITE_SERVER_URL || 
-                    (window.location.hostname === "localhost" 
-                      ? "http://localhost:5000" 
-                      : "https://app-rpg.onrender.com");
-    
-    const response = await fetch(`${apiBase}/api/admin/delete-user`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: email,
-        mestreEmail: user?.email // Email do mestre logado
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      alert(`✅ ${data.message || 'Conta deletada com sucesso!'}`);
+  const handleDeleteConta = async (email) => {
+    try {
+      const apiBase = import.meta?.env?.VITE_SERVER_URL || 
+                      (window.location.hostname === "localhost" 
+                        ? "http://localhost:5000" 
+                        : "https://app-rpg.onrender.com");
       
-      if (selectedFichaEmail === email) {
-        setSelectedFichaEmail(null);
+      const response = await fetch(`${apiBase}/api/admin/delete-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email,
+          mestreEmail: user?.email
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert(`✅ ${data.message || 'Conta deletada com sucesso!'}`);
+        
+        if (selectedFichaEmail === email) {
+          setSelectedFichaEmail(null);
+        }
+      } else {
+        alert(`❌ Erro: ${data.error || 'Erro ao deletar conta'}`);
       }
-    } else {
-      alert(`❌ Erro: ${data.error || 'Erro ao deletar conta'}`);
+      
+      setDeleteContaDialogOpen(false);
+      setContaToDelete(null);
+      
+    } catch (err) {
+      console.error("Erro ao deletar conta:", err);
+      alert("Erro ao conectar com o servidor: " + err.message);
+      setDeleteContaDialogOpen(false);
     }
-    
-    setDeleteContaDialogOpen(false);
-    setContaToDelete(null);
-    
-  } catch (err) {
-    console.error("Erro ao deletar conta:", err);
-    alert("Erro ao conectar com o servidor: " + err.message);
-    setDeleteContaDialogOpen(false);
-  }
-};
+  };
 
   const isMestre = (email) => email === "mestre@reqviemrpg.com";
 
-  // Se não for mestre, mostra a ficha do próprio jogador
   if (role !== "master") {
     return (
       <FichaPersonagem
@@ -130,7 +144,6 @@ const handleDeleteConta = async (email) => {
     );
   }
 
-  // Para o mestre, mostra a lista de fichas
   return (
     <Paper sx={{ p: 2, flex: 1, overflowY: "auto", bgcolor: "#0f172a" }}>
       <Typography variant="h6" sx={{ color: "#fff" }}>Fichas</Typography>
@@ -139,74 +152,110 @@ const handleDeleteConta = async (email) => {
       <Typography sx={{ mb: 1, color: "#94a3b8" }}>
         Lista de fichas (clique para abrir):
       </Typography>
-      <List dense>
-        {fichasList.length === 0 && (
-          <Typography sx={{ color: "#94a3b8" }}>Nenhuma ficha criada.</Typography>
-        )}
-        {fichasList.map((fid) => (
-          <ListItem
-            key={fid}
-            selected={selectedFichaEmail === fid}
-            onClick={() => setSelectedFichaEmail(fid)}
-            sx={{
-              cursor: 'pointer',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.08)' },
-              borderRadius: 1,
-              mb: 0.5,
-              bgcolor: selectedFichaEmail === fid ? '#1e3a5f' : 'transparent'
-            }}
-            secondaryAction={
-              <Box sx={{ display: 'flex', gap: 0.5 }}>
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFichaToDelete(fid);
-                    setDeleteFichaDialogOpen(true);
-                  }}
-                  sx={{ 
-                    color: '#ef4444',
-                    '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' }
-                  }}
-                  title="Deletar Ficha"
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-                
-                {!isMestre(fid) && (
-                  <IconButton
-                    edge="end"
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setContaToDelete(fid);
-                      setDeleteContaDialogOpen(true);
-                    }}
-                    sx={{ 
-                      color: '#dc2626',
-                      '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.1)' }
-                    }}
-                    title="Deletar Conta"
-                  >
-                    <PersonRemoveIcon fontSize="small" />
-                  </IconButton>
-                )}
-              </Box>
-            }
-          >
-            <ListItemText 
-              primary={fid} 
-              primaryTypographyProps={{
-                sx: { 
-                  color: isMestre(fid) ? '#FFD700' : '#fff',
-                  fontWeight: isMestre(fid) ? 'bold' : 'normal'
-                }
+
+      {fichasList.length === 0 ? (
+        <Typography sx={{ color: "#94a3b8" }}>Nenhuma ficha criada.</Typography>
+      ) : (() => {
+        const pjFichas = fichasList.filter(fid => {
+          const fichaData = fichasDataMap[fid];
+          return (fichaData?.tipoFicha || "PJ") === "PJ";
+        });
+        const pmFichas = fichasList.filter(fid => {
+          const fichaData = fichasDataMap[fid];
+          return fichaData?.tipoFicha === "PM";
+        });
+
+        const grupos = [];
+        if (pjFichas.length > 0) {
+          grupos.push({ titulo: '── PERSONAGENS DO JOGADOR ──', fichas: pjFichas, cor: '#4caf50' });
+        }
+        if (pmFichas.length > 0) {
+          grupos.push({ titulo: '── PERSONAGENS DO MESTRE ──', fichas: pmFichas, cor: '#ff9800' });
+        }
+
+        return grupos.map((grupo, gIdx) => (
+          <Box key={gIdx} sx={{ mb: 2 }}>
+            <Typography
+              variant="subtitle2"
+              sx={{
+                color: grupo.cor,
+                fontWeight: 'bold',
+                borderBottom: `1px solid ${grupo.cor}`,
+                pb: 0.5,
+                mb: 1,
               }}
-            />
-          </ListItem>
-        ))}
-      </List>
+            >
+              {grupo.titulo}
+            </Typography>
+            <List dense>
+              {grupo.fichas.map((fid) => (
+                <ListItem
+                  key={fid}
+                  selected={selectedFichaEmail === fid}
+                  onClick={() => setSelectedFichaEmail(fid)}
+                  sx={{
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.08)' },
+                    borderRadius: 1,
+                    mb: 0.5,
+                    bgcolor: selectedFichaEmail === fid ? '#1e3a5f' : 'transparent'
+                  }}
+                  secondaryAction={
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <IconButton
+                        edge="end"
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFichaToDelete(fid);
+                          setDeleteFichaDialogOpen(true);
+                        }}
+                        sx={{ 
+                          color: '#ef4444',
+                          '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' }
+                        }}
+                        title="Deletar Ficha"
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                      
+                      {!isMestre(fid) && (
+                        <IconButton
+                          edge="end"
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setContaToDelete(fid);
+                            setDeleteContaDialogOpen(true);
+                          }}
+                          sx={{ 
+                            color: '#dc2626',
+                            '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.1)' }
+                          }}
+                          title="Deletar Conta"
+                        >
+                          <PersonRemoveIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                    </Box>
+                  }
+                >
+                  <ListItemText 
+  primary={fichasDataMap[fid]?.nome || fid}
+  primaryTypographyProps={{
+    sx: { 
+      color: isMestre(fid) ? '#FFD700' : '#fff',
+      fontWeight: isMestre(fid) ? 'bold' : 'normal'
+    }
+  }}
+/>
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        ));
+      })()}
+
       <Divider sx={{ my: 1, bgcolor: "#334155" }} />
 
       <Typography variant="subtitle2" sx={{ mb: 1, color: "#fff" }}>

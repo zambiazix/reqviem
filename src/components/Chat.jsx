@@ -185,6 +185,7 @@ export default function Chat({ userNick, userEmail }) {
 const [acaoOpen, setAcaoOpen] = useState(false);
 const [acaoAtributo, setAcaoAtributo] = useState("");
 const [acaoPericia, setAcaoPericia] = useState("");
+const [acaoPericia2, setAcaoPericia2] = useState("");
 const [acaoItem, setAcaoItem] = useState("");
 const [acaoItemDado, setAcaoItemDado] = useState(0);
 const [acaoCasting, setAcaoCasting] = useState(0);
@@ -595,6 +596,17 @@ async function rolarAcao() {
       custoTotalEnergia += 1;
     }
   }
+
+  // 🟢 Segunda Perícia (Aura Nv.5)
+if (acaoPericia2 && fichaJogador?.pericias?.[acaoPericia2]) {
+  const valor2 = fichaJogador.pericias[acaoPericia2];
+  totalD10 += valor2;
+  descricao.push(`2ª Perícia: ${acaoPericia2} (${valor2})`);
+  
+  if (acaoPericia2 === "aura") {
+    custoTotalEnergia += 1;
+  }
+}
   
   // Item
   if (acaoItem) {
@@ -682,6 +694,7 @@ async function rolarAcao() {
   setAcaoOpen(false);
   setAcaoAtributo("");
   setAcaoPericia("");
+  setAcaoPericia2("");
   setAcaoItem("");
   setAcaoItemDado(0);
   setAcaoCasting(0);
@@ -1015,7 +1028,7 @@ async function rolarAcao() {
   <Button 
     variant="contained" 
     size="small" 
-    onClick={() => setAcaoOpen(true)}
+    onClick={() => { setAcaoPericia2(""); setAcaoOpen(true); }}
     sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
   >
     ⚔️ AÇÃO
@@ -1187,6 +1200,25 @@ async function rolarAcao() {
                 ))}
               </Select>
             </FormControl>
+
+            {/* 🟢 Segunda Perícia (aparece se Aura = nível 5) */}
+{fichaJogador?.pericias?.aura >= 5 && acaoPericia && (
+  <FormControl fullWidth size="small">
+    <InputLabel sx={{ color: '#94a3b8' }}>Segunda Perícia (Aura Nv.5)</InputLabel>
+    <Select
+      value={acaoPericia2}
+      onChange={(e) => setAcaoPericia2(e.target.value)}
+      sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+    >
+      <MenuItem value="">Nenhuma</MenuItem>
+      {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
+        <MenuItem key={k} value={k} disabled={v < 1 || k === acaoPericia}>
+          {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+        </MenuItem>
+      ))}
+    </Select>
+  </FormControl>
+)}
             
             {/* Item */}
             <FormControl fullWidth size="small">
@@ -1273,7 +1305,8 @@ async function rolarAcao() {
                 <Typography variant="body2" sx={{ color: '#94a3b8' }}>
                   Total de d10: <strong style={{ color: '#fff' }}>
                     {(acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] || 0) + 
-                     (acaoPericia && fichaJogador?.pericias?.[acaoPericia] || 0) + 
+                     (acaoPericia && fichaJogador?.pericias?.[acaoPericia] || 0) +
+(acaoPericia2 && fichaJogador?.pericias?.[acaoPericia2] || 0) +
                      acaoItemDado + acaoCasting + acaoEmbuicao + acaoVariavelHabilidade}
                   </strong>
                 </Typography>

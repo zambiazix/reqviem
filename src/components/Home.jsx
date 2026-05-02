@@ -116,7 +116,10 @@ const Home = memo(function Home({
                 </Paper>
                 <Paper sx={{ flex: 1, display: "flex", flexDirection: "column", mt: 2, overflow: "hidden" }}>
                   <Box sx={{ flex: 1, overflowY: "auto", maxHeight: isMobileLocal ? "60vh" : "none" }}>
-                    <MemoizedChat userNick={displayName} userEmail={user?.email} />
+                    <MemoizedChat 
+  userNick={displayName} 
+  userEmail={isMaster ? selectedFichaEmail : user?.email} 
+/>
                   </Box>
                 </Paper>
               </>

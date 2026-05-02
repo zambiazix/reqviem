@@ -6,6 +6,9 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { auth, db } from "./firebaseConfig";
 import { signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "firebase/auth";
 import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
+import { FloatingWindowsProvider } from "./context/FloatingWindowsContext";
+import FloatingChat from "./components/FloatingChat";
+import FloatingFicha from "./components/FloatingFicha";
 
 // Importe o Home do arquivo separado
 import Home from "./components/Home";
@@ -95,11 +98,20 @@ export default function App() {
             localStorage.setItem('userEmail', u.email);
             if (ficha.imagemPersonagem) localStorage.setItem('userAvatar', ficha.imagemPersonagem);
           } else {
-            setUserNick(u.email);
-            localStorage.setItem('userName', u.email);
-            localStorage.setItem('userEmail', u.email);
-            localStorage.removeItem('userAvatar');
-          }
+  // Ficha NÃO existe
+  if (u.email === MASTER_EMAIL) {
+    // 🚫 NÃO CRIA FICHA DO MESTRE AUTOMATICAMENTE
+    setUserNick("MESTRE");
+    localStorage.setItem('userName', "MESTRE");
+    localStorage.setItem('userEmail', u.email);
+  } else {
+    // Para jogadores normais
+    setUserNick(u.email);
+    localStorage.setItem('userName', u.email);
+    localStorage.setItem('userEmail', u.email);
+  }
+  localStorage.removeItem('userAvatar');
+}
           setRole(u.email === MASTER_EMAIL ? "master" : "player");
           if (u.email === MASTER_EMAIL) {
             await carregarListaFichas();
@@ -136,23 +148,34 @@ export default function App() {
   };
 
   async function criarContaEJogador(email, senha) {
-    if (!email || !senha) return alert("Digite e-mail e senha para criar a conta.");
-    if (senha.length < 6) return alert("A senha deve ter pelo menos 6 caracteres.");
-    try {
-      await createUserWithEmailAndPassword(auth, email, senha);
-      const payload = { ...initialFichaBlank, dono: email, nome: email.split('@')[0] };
-      await setDoc(doc(db, "fichas", email), payload);
-      await carregarListaFichas();
-      setSelectedFichaEmail(email);
-      alert(`Conta criada com sucesso! Bem-vindo(a), ${email}`);
-    } catch (err) {
-      console.error("Erro ao criar conta:", err);
-      if (err.code === 'auth/email-already-in-use') alert("Este e-mail já está cadastrado.");
-      else if (err.code === 'auth/invalid-email') alert("E-mail inválido.");
-      else if (err.code === 'auth/weak-password') alert("Senha muito fraca.");
-      else alert("Erro ao criar conta: " + err.message);
-    }
+  if (!email || !senha) return alert("Digite e-mail e senha para criar a conta.");
+  if (senha.length < 6) return alert("A senha deve ter pelo menos 6 caracteres.");
+  
+  // 🚫 IMPEDIR CRIAÇÃO DE OUTRA CONTA DE MESTRE
+  if (email === MASTER_EMAIL) {
+    return alert("Não é possível criar outra conta de mestre.");
   }
+  
+  try {
+    await createUserWithEmailAndPassword(auth, email, senha);
+    const payload = { 
+      ...initialFichaBlank, 
+      dono: email, 
+      nome: email.split('@')[0],
+      tipoFicha: "PJ"  // 👈 ADICIONE ESTA LINHA
+    };
+    await setDoc(doc(db, "fichas", email), payload);
+    await carregarListaFichas();
+    setSelectedFichaEmail(email);
+    alert(`Conta criada com sucesso! Bem-vindo(a), ${email}`);
+  } catch (err) {
+    console.error("Erro ao criar conta:", err);
+    if (err.code === 'auth/email-already-in-use') alert("Este e-mail já está cadastrado.");
+    else if (err.code === 'auth/invalid-email') alert("E-mail inválido.");
+    else if (err.code === 'auth/weak-password') alert("Senha muito fraca.");
+    else alert("Erro ao criar conta: " + err.message);
+  }
+}
 
   // 🟢 ADICIONE ESTA FUNÇÃO AQUI (linha ~140)
 const handleRegister = useCallback(async (email) => {
@@ -172,6 +195,7 @@ const handleRegister = useCallback(async (email) => {
 
   return (
     <Router>
+      <FloatingWindowsProvider>
       <JitsiProvider>
         <VoiceProvider>
           <AudioProvider>
@@ -204,15 +228,34 @@ const handleRegister = useCallback(async (email) => {
                       />
                     } 
                   />
-                  <Route path="/map" element={<BattleMap />} />
-                  <Route path="/cronica" element={<MapaMundi />} />
-                  <Route path="/sistema" element={<Sistema />} />
+                  <Route path="/map" element={
+  <>
+    <BattleMap />
+    {!isMobile && <FloatingChat userNick={userNick} userEmail={currentUserEmail} />}
+    {!isMobile && <FloatingFicha user={user} fichaId={selectedFichaEmail} isMestre={isMasterFlag} />}
+  </>
+} />
+<Route path="/cronica" element={
+  <>
+    <MapaMundi />
+    {!isMobile && <FloatingChat userNick={userNick} userEmail={currentUserEmail} />}
+    {!isMobile && <FloatingFicha user={user} fichaId={selectedFichaEmail} isMestre={isMasterFlag} />}
+  </>
+} />
+<Route path="/sistema" element={
+  <>
+    <Sistema />
+    {!isMobile && <FloatingChat userNick={userNick} userEmail={currentUserEmail} />}
+    {!isMobile && <FloatingFicha user={user} fichaId={selectedFichaEmail} isMestre={isMasterFlag} />}
+  </>
+} />
                 </Routes>
               </GameProvider>
             </LoadingProvider>
           </AudioProvider>
         </VoiceProvider>
       </JitsiProvider>
+      </FloatingWindowsProvider>
     </Router>
   );
 }

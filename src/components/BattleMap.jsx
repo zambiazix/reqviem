@@ -57,29 +57,55 @@ export default function BattleMap() {
 
   // 🔹 Upload de token (apenas Mestre)
   const handleFileUpload = async (e) => {
-    if (!isMaster) return alert("Apenas o Mestre pode adicionar tokens.");
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const resp = await fetch(`${serverUrl}/upload`, { method: "POST", body: formData });
-      const data = await resp.json();
-      if (!data?.url) throw new Error("Upload falhou");
-      const token = {
-        id: Date.now(),
-        src: data.url,
-        x: 100,
-        y: 100,
-        width: 100,
-        height: 100,
-      };
-      socketRef.current?.emit("addToken", token);
-    } catch (err) {
-      console.error("Erro no upload:", err);
-      alert("Erro no upload: " + (err.message || err));
+  if (!isMaster) return alert("Apenas o Mestre pode adicionar tokens.");
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  try {
+    // 🟢 PEGA O TOKEN DO FIREBASE
+    const auth = getAuth();
+    const user = auth.currentUser;
+    
+    if (!user) {
+      alert("Você precisa estar logado!");
+      return;
     }
-  };
+    
+    const token = await user.getIdToken();
+    
+    const resp = await fetch(`${serverUrl}/upload`, { 
+      method: "POST",
+      headers: {
+        'Authorization': `Bearer ${token}`  // 👈 ADICIONE ESTA LINHA
+      },
+      body: formData
+    });
+    
+    if (!resp.ok) {
+      const errorData = await resp.json();
+      throw new Error(errorData.error || 'Upload falhou');
+    }
+    
+    const data = await resp.json();
+    if (!data?.url) throw new Error("Upload falhou");
+    
+    const tokenObj = {
+      id: Date.now(),
+      src: data.url,
+      x: 100,
+      y: 100,
+      width: 100,
+      height: 100,
+    };
+    socketRef.current?.emit("addToken", tokenObj);
+  } catch (err) {
+    console.error("Erro no upload:", err);
+    alert("Erro no upload: " + (err.message || err));
+  }
+};
 
   const emitUpdate = (token) => {
     const now = Date.now();
