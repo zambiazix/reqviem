@@ -1,5 +1,5 @@
   // src/components/FichaPersonagem.jsx
-  import React, { useEffect, useState } from "react";
+  import React, { useEffect, useState, useRef } from "react";
   import { useGame } from "../context/GameProvider";
   import {
   Box,
@@ -25,10 +25,12 @@ import { Divider } from "@mui/material";
   import DeleteIcon from "@mui/icons-material/Delete";
   import CloseIcon from "@mui/icons-material/Close";
   import { db } from "../firebaseConfig";
-  import { doc, getDoc, setDoc } from "firebase/firestore";
+  import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
   import { Checkbox, FormControlLabel } from "@mui/material";
   import { collection, getDocs } from "firebase/firestore";
   import { CircularProgress } from "@mui/material";
+  import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
   export default function FichaPersonagem({ user, fichaId, isMestre }) {
   const { hud } = useGame();
@@ -134,6 +136,21 @@ const SEASONS = ["Primavera", "Verão", "Outono", "Inverno"];
     "Déspota": "#a855f7",
     "Ás": "#e5e5e5",
   };
+    // 🟢 TIPOS DE DANO DISPONÍVEIS
+  const TIPOS_DANO = [
+    { valor: "Nenhum", label: "Nenhum (sem efeito)", cor: "#888888", descricao: "Sem efeito de dano." },
+    { valor: "Ácido", label: "Ácido", cor: "#7fff00", descricao: "Corrói materiais e tecidos. 100% Eficaz contra tudo." },
+    { valor: "Contundente", label: "Contundente", cor: "#a0522d", descricao: "Impactos e quedas. 50% Chance de soltar itens empunhados." },
+    { valor: "Cortante", label: "Cortante", cor: "#c0c0c0", descricao: "Lâminas e garras. 50% Eficaz contra tecidos." },
+    { valor: "Elétrico", label: "Elétrico", cor: "#ffff00", descricao: "Queimaduras e paralisia. 50% Chance de paralisar o local." },
+    { valor: "Aurano", label: "Aurano", cor: "#00e0ff", descricao: "Dano puro de Aura. Eficaz contra quase todas as defesas." },
+    { valor: "Gélido", label: "Gélido", cor: "#87ceeb", descricao: "Congelamento e lentidão. 20% Chance de causar necrose." },
+    { valor: "Térmico", label: "Térmico", cor: "#ff4500", descricao: "Queima e incendeia. 50% Menos cura/regeneração." },
+    { valor: "Perfurante", label: "Perfurante", cor: "#daa520", descricao: "Penetra armaduras. 50% Eficaz contra armaduras." },
+    { valor: "Psíquico", label: "Psíquico", cor: "#ff69b4", descricao: "Afeta a mente. 50% Chance de perder a Aura no próximo turno." },
+    { valor: "Trovejante", label: "Trovejante", cor: "#4169e1", descricao: "Dano sonoro. 50% Chance de desorientar por 1 turno." },
+    { valor: "Tóxico", label: "Tóxico", cor: "#8b008b", descricao: "Toxinas e venenos. Perde 5 PV a cada turno." },
+  ];
     // Mapeamento textual com acentos e espaços bonitos
     const LABEL_MAP = {
       // Campos principais
@@ -286,6 +303,19 @@ const [resultadoDado, setResultadoDado] = useState(null);
 // 🟢 ADICIONE ESTES ESTADOS:
 const [modalTransferirItemOpen, setModalTransferirItemOpen] = useState(false);
 const [modalDroparItemOpen, setModalDroparItemOpen] = useState(false);
+// 🟢 MODAIS DE ANOTAÇÕES E BACKGROUND
+const [modalAnotacoesOpen, setModalAnotacoesOpen] = useState(false);
+const [modalBackgroundOpen, setModalBackgroundOpen] = useState(false);
+const [anotacoesTexto, setAnotacoesTexto] = useState("");
+const [backgroundTexto, setBackgroundTexto] = useState("");
+const [anotacoesSalvos, setAnotacoesSalvos] = useState([]);
+const [anotacaoEditandoIndex, setAnotacaoEditandoIndex] = useState(null);
+const [anotacaoTitulo, setAnotacaoTitulo] = useState("");
+
+// 🟢 REFERÊNCIA PARA O TEXTAREA (para inserir imagem no cursor)
+const anotacaoTextareaRef = useRef(null);
+const backgroundTextareaRef = useRef(null);
+const lightboxImageAnotacaoRef = useRef(null);
 const [itemParaTransferir, setItemParaTransferir] = useState(null);
 const [itemParaDropar, setItemParaDropar] = useState(null);
 const [jogadorDestinoItem, setJogadorDestinoItem] = useState("");
@@ -388,69 +418,66 @@ useEffect(() => {
   }
 }, [ficha?.vestes, ficha]); // Adiciona ficha como dependência também
 
-    useEffect(() => {
-      let mounted = true;
-      async function carregar() {
-        setLoading(true);
-        try {
-          if (!fichaId) {
-            if (mounted) setFicha({ ...modelo });
-            return;
-          }
-          const ref = doc(db, "fichas", fichaId);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            const dados = snap.data();
-            if (!dados.imagens && dados.imagemPersonagem) {
-    dados.imagens = [dados.imagemPersonagem];
-    dados.imagemPrincipalIndex = 0;
-  }
-            // Garante que os itens tenham o campo "dado"
-const garantirDadoNosItens = (itens) => {
-  if (!Array.isArray(itens)) return [];
-  return itens.map(item => ({
-    ...item,
-    dado: item.dado || 1 // Garante que tem um valor padrão de 1
-  }));
-};
-
-const combinadoBase = {
-  ...modelo,
-  ...dados,
-  atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
-  pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
-  habilidades: Array.isArray(dados.habilidades)
-    ? dados.habilidades
-    : [],
-  moedas: { ...modelo.moedas, ...(dados.moedas || {}) },
-  equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
-  vestes: garantirDadoNosItens(Array.isArray(dados.vestes) ? dados.vestes : []),
-  diversos: garantirDadoNosItens(Array.isArray(dados.diversos) ? dados.diversos : []),
-};
-
-// 🔴 AQUI É O PONTO CRÍTICO
-const combinado = {
-  ...combinadoBase,
-  atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
-  pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
-};
-            if (mounted) setFicha(combinado);
-          } else {
-            await setDoc(ref, modelo);
-            if (mounted) setFicha({ ...modelo });
-          }
-        } catch (err) {
-          console.error("Erro carregar ficha:", err);
-          if (mounted) setFicha({ ...modelo });
-        } finally {
-          if (mounted) setLoading(false);
-        }
+        useEffect(() => {
+      if (!fichaId) {
+        setFicha({ ...modelo });
+        setLoading(false);
+        return;
       }
-      carregar();
-      return () => (mounted = false);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fichaId]);
+      
+      setLoading(true);
+      const ref = doc(db, "fichas", fichaId);
+      
+      // 🟢 USA onSnapshot PARA ATUALIZAR EM TEMPO REAL
+      const unsub = onSnapshot(ref, (snap) => {
+        if (snap.exists()) {
+          const dados = snap.data();
+          if (!dados.imagens && dados.imagemPersonagem) {
+            dados.imagens = [dados.imagemPersonagem];
+            dados.imagemPrincipalIndex = 0;
+          }
+          
+                    const garantirDadoNosItens = (itens) => {
+            if (!Array.isArray(itens)) return [];
+            return itens.map(item => ({
+              ...item,
+              dado: item.dado || 1,
+              tipoDano: item.tipoDano || "Nenhum" // 🟢 Garante tipoDano
+            }));
+          };
 
+          const combinado = {
+            ...modelo,
+            ...dados,
+            atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
+            pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
+                        habilidades: Array.isArray(dados.habilidades) 
+              ? dados.habilidades.map(h => ({ 
+                  dado: 1, 
+                  tipoDano: "Aurano", 
+                  ...h 
+                })) 
+              : [],
+            moedas: { ...modelo.moedas, ...(dados.moedas || {}) },
+            equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
+            vestes: garantirDadoNosItens(Array.isArray(dados.vestes) ? dados.vestes : []),
+            diversos: garantirDadoNosItens(Array.isArray(dados.diversos) ? dados.diversos : []),
+          };
+          
+          setFicha(combinado);
+        } else {
+          setDoc(ref, modelo);
+          setFicha({ ...modelo });
+        }
+        setLoading(false);
+      }, (err) => {
+        console.error("Erro carregar ficha:", err);
+        setFicha({ ...modelo });
+        setLoading(false);
+      });
+      
+      return () => unsub();
+    }, [fichaId]);
 
     function setCampo(chave, valor) {
       setFicha((p) => ({ ...p, [chave]: valor }));
@@ -459,12 +486,12 @@ const combinado = {
       setFicha((p) => ({ ...p, [obj]: { ...p[obj], [chave]: valor } }));
     }
 
-    function adicionarHabilidade() {
+        function adicionarHabilidade() {
       setFicha((p) => ({
         ...p,
         habilidades: [
           ...(p.habilidades || []),
-          { nome: "", descricao: "", condicoes: "", limitacoes: "" },
+          { nome: "", descricao: "", condicoes: "", limitacoes: "", dado: 1, tipoDano: "Aurano" },
         ],
       }));
     }
@@ -482,12 +509,12 @@ const combinado = {
       }));
     }
 
-    function adicionarItem(tipo) {
+        function adicionarItem(tipo) {
   setFicha((p) => ({
     ...p,
     [tipo]: [
       ...(p[tipo] || []),
-      { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1 }, // 🟢 Adicionado imagem
+      { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1, tipoDano: "Nenhum" }, // 🟢 Adicionado tipoDano
     ],
   }));
 }
@@ -645,6 +672,26 @@ useEffect(() => {
   }
 }, [ficha?.carteiras]);
 
+// 🟢 CARREGAR ANOTAÇÕES
+useEffect(() => {
+  if (ficha?.anotacoes) {
+    // Tenta parsear como JSON (novo formato) ou texto simples (antigo)
+    try {
+      const parsed = JSON.parse(ficha.anotacoes);
+      if (Array.isArray(parsed)) {
+        setAnotacoesSalvos(parsed);
+      } else {
+        setAnotacoesSalvos([{ titulo: "Anotação", texto: ficha.anotacoes || "" }]);
+      }
+    } catch {
+      setAnotacoesSalvos([{ titulo: "Anotação", texto: ficha.anotacoes || "" }]);
+    }
+  }
+  if (ficha?.background) {
+    setBackgroundTexto(ficha.background);
+  }
+}, [ficha]);
+
 // 🟢 Carregar defeitos ao carregar a ficha
 useEffect(() => {
   if (ficha?.defeitos) {
@@ -691,6 +738,7 @@ useEffect(() => {
   }
 }, [fichaId, modalTransferenciaOpen]);
 // Função para realizar transferência
+// 🟢 Função para realizar transferência - VERSÃO CORRIGIDA (TEMPO REAL)
 const realizarTransferencia = async () => {
   if (!jogadorSelecionado || !carteiraOrigem || !carteiraDestino || valorTransferencia <= 0) {
     alert("Preencha todos os campos!");
@@ -703,68 +751,73 @@ const realizarTransferencia = async () => {
     return;
   }
   
-  // Atualiza carteiras do jogador atual (origem)
-const novasCarteirasOrig = carteiras.map(c => 
-  c.nome === carteiraOrigem ? { ...c, valor: c.valor - valorTransferencia } : c
-);
-setCarteiras(novasCarteirasOrig);
-
-// Salva no Firestore do jogador atual
-const refOrigem = doc(db, "fichas", fichaId);
-await setDoc(refOrigem, { carteiras: novasCarteirasOrig }, { merge: true });
-  
-  // Verifica se é transferência para si mesmo
-if (jogadorSelecionado === fichaId) {
-  // Transferência entre carteiras do mesmo jogador
-  const carteirasAtualizadas = novasCarteirasOrig.map(c => 
-    c.nome === carteiraDestino ? { ...c, valor: c.valor + valorTransferencia } : c
-  );
-  setCarteiras(carteirasAtualizadas);
-  
-  // Salva no Firestore
-  const ref = doc(db, "fichas", fichaId);
-  await setDoc(ref, { carteiras: carteirasAtualizadas }, { merge: true });
-  
-    alert(`Transferência de ${valorTransferencia} realizada com sucesso!`);
-  setModalTransferenciaOpen(false);
-  setJogadorSelecionado("");
-  setCarteiraOrigem("");
-  setCarteiraDestino("");
-  setValorTransferencia(0);
-  
-  // 🟢 FORÇA ATUALIZAÇÃO IMEDIATA DAS CARTEIRAS
-  const fichaAtualizada = await getDoc(doc(db, "fichas", fichaId));
-  if (fichaAtualizada.exists()) {
-    setCarteiras(fichaAtualizada.data().carteiras || []);
-  }
-  return; // Importante: sair da função para não executar o resto
-} 
-    else {
-    // Transferência para outro jogador
-    // Já setamos as carteiras locais como novasCarteirasOrig
-    setCarteiras(novasCarteirasOrig);
+  try {
+    // Atualiza carteiras do jogador atual (origem)
+    const novasCarteirasOrig = carteiras.map(c => 
+      c.nome === carteiraOrigem ? { ...c, valor: c.valor - valorTransferencia } : c
+    );
     
-    // Atualiza carteiras do jogador destino
-    const jogadorDestino = listaJogadores.find(j => j.id === jogadorSelecionado);
-    if (jogadorDestino) {
-      const carteirasDestino = jogadorDestino.carteiras.map(c => 
-        c.nome === carteiraDestino ? { ...c, valor: (c.valor || 0) + valorTransferencia } : c
+    // Salva no Firestore do jogador atual
+    const refOrigem = doc(db, "fichas", fichaId);
+    await setDoc(refOrigem, { carteiras: novasCarteirasOrig }, { merge: true });
+    
+    // Verifica se é transferência para si mesmo
+    if (jogadorSelecionado === fichaId) {
+      // Transferência entre carteiras do mesmo jogador
+      const carteirasAtualizadas = novasCarteirasOrig.map(c => 
+        c.nome === carteiraDestino ? { ...c, valor: c.valor + valorTransferencia } : c
       );
       
-      // Salva no Firestore do destino
-      const refDestino = doc(db, "fichas", jogadorSelecionado);
-      await setDoc(refDestino, { carteiras: carteirasDestino }, { merge: true });
+      // Salva no Firestore (isso já vai disparar o onSnapshot da própria ficha)
+      await setDoc(refOrigem, { carteiras: carteirasAtualizadas }, { merge: true });
       
       alert(`Transferência de ${valorTransferencia} realizada com sucesso!`);
     } else {
-      alert("Jogador destino não encontrado!");
+      // Transferência para OUTRO jogador
+      
+      // Atualiza carteiras do jogador destino
+      const refDestino = doc(db, "fichas", jogadorSelecionado);
+      const fichaDestino = await getDoc(refDestino);
+      
+      if (fichaDestino.exists()) {
+        const carteirasDestinoAtuais = fichaDestino.data().carteiras || [];
+        
+        // Verifica se a carteira destino existe, se não, cria
+        const carteiraExiste = carteirasDestinoAtuais.find(c => c.nome === carteiraDestino);
+        let carteirasDestinoAtualizadas;
+        
+        if (carteiraExiste) {
+          carteirasDestinoAtualizadas = carteirasDestinoAtuais.map(c => 
+            c.nome === carteiraDestino ? { ...c, valor: (c.valor || 0) + valorTransferencia } : c
+          );
+        } else {
+          // Se a carteira não existe, adiciona nova
+          carteirasDestinoAtualizadas = [
+            ...carteirasDestinoAtuais,
+            { nome: carteiraDestino, valor: valorTransferencia }
+          ];
+        }
+        
+        // Salva no Firestore do destino (isso vai disparar o onSnapshot dele)
+        await setDoc(refDestino, { carteiras: carteirasDestinoAtualizadas }, { merge: true });
+        
+        alert(`Transferência de ${valorTransferencia} para ${listaJogadores.find(j => j.id === jogadorSelecionado)?.nome} realizada!`);
+      } else {
+        alert("Jogador destino não encontrado!");
+        return;
+      }
     }
     
+    // Limpa o modal
     setModalTransferenciaOpen(false);
     setJogadorSelecionado("");
     setCarteiraOrigem("");
     setCarteiraDestino("");
     setValorTransferencia(0);
+    
+  } catch (error) {
+    console.error("Erro na transferência:", error);
+    alert("Erro ao realizar transferência: " + error.message);
   }
 };
 
@@ -848,6 +901,7 @@ const salvarTalentos = async (talentos) => {
 };
 
 // 🟢 Função para transferir item (ATUALIZADA)
+// 🟢 Função para transferir item - VERSÃO CORRIGIDA (TEMPO REAL)
 const transferirItem = async () => {
   if (!itemParaTransferir || !jogadorDestinoItem) {
     alert("Selecione um item e um jogador!");
@@ -859,92 +913,96 @@ const transferirItem = async () => {
     return;
   }
   
-  // Verifica se é para SI MESMO (mover entre categorias)
-  if (jogadorDestinoItem === fichaId) {
-    // Mover item para outra categoria
-    const itemMovido = {
-      ...itemParaTransferir.item,
-      quantidade: quantidadeTransferir
-    };
-    delete itemMovido.index;
-    
-    // Remove da categoria atual
-    const novosItensOrigem = ficha[abaAtiva].map((item, idx) => {
-      if (idx === itemParaTransferir.index) {
-        const novaQuantidade = item.quantidade - quantidadeTransferir;
-        return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+  try {
+    // Verifica se é para SI MESMO (mover entre categorias)
+    if (jogadorDestinoItem === fichaId) {
+      // Mover item para outra categoria
+      const itemMovido = {
+        ...itemParaTransferir.item,
+        quantidade: quantidadeTransferir
+      };
+      delete itemMovido.index;
+      
+      // Remove da categoria atual
+      const novosItensOrigem = ficha[abaAtiva].map((item, idx) => {
+        if (idx === itemParaTransferir.index) {
+          const novaQuantidade = item.quantidade - quantidadeTransferir;
+          return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+        }
+        return item;
+      }).filter(item => item !== null);
+      
+      // Adiciona na nova categoria
+      const itensDestino = [...(ficha[categoriaDestino] || []), itemMovido];
+      
+      // Salva no Firestore (onSnapshot da própria ficha vai atualizar)
+      const ref = doc(db, "fichas", fichaId);
+      await setDoc(ref, { 
+        [abaAtiva]: novosItensOrigem,
+        [categoriaDestino]: itensDestino
+      }, { merge: true });
+      
+      const nomesCategorias = {
+        equipamentos: 'Equipamentos',
+        vestes: 'Vestimentas',
+        diversos: 'Diversos'
+      };
+      
+      alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} movido para ${nomesCategorias[categoriaDestino]}!`);
+      
+    } else {
+      // Transferência para OUTRO jogador
+      
+      // 1. Remove item do jogador atual
+      const novosItens = ficha[abaAtiva].map((item, idx) => {
+        if (idx === itemParaTransferir.index) {
+          const novaQuantidade = item.quantidade - quantidadeTransferir;
+          return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+        }
+        return item;
+      }).filter(item => item !== null);
+      
+      // Salva no Firestore do jogador atual
+      const refOrigem = doc(db, "fichas", fichaId);
+      await setDoc(refOrigem, { [abaAtiva]: novosItens }, { merge: true });
+      
+      // 2. Adiciona item no jogador destino
+      const refDestino = doc(db, "fichas", jogadorDestinoItem);
+      const fichaDestino = await getDoc(refDestino);
+      
+      if (fichaDestino.exists()) {
+        const dadosDestino = fichaDestino.data();
+        const itemParaAdicionar = {
+          ...itemParaTransferir.item,
+          quantidade: quantidadeTransferir
+        };
+        delete itemParaAdicionar.index;
+        
+        // Adiciona na mesma categoria do jogador destino
+        const itensDestino = [...(dadosDestino[abaAtiva] || []), itemParaAdicionar];
+        
+        // Salva no Firestore do destino (onSnapshot dele vai disparar)
+        await setDoc(refDestino, { [abaAtiva]: itensDestino }, { merge: true });
+        
+        const jogadorDestinoNome = listaJogadores.find(j => j.id === jogadorDestinoItem)?.nome || "Desconhecido";
+        alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} transferido para ${jogadorDestinoNome}!`);
+      } else {
+        alert("Jogador destino não encontrado!");
+        return;
       }
-      return item;
-    }).filter(item => item !== null);
+    }
     
-    // Adiciona na nova categoria
-    const itensDestino = [...(ficha[categoriaDestino] || []), itemMovido];
-    
-    // Atualiza estado local
-    setFicha(p => ({ 
-      ...p, 
-      [abaAtiva]: novosItensOrigem,
-      [categoriaDestino]: itensDestino
-    }));
-    
-    // Salva no Firestore
-    const ref = doc(db, "fichas", fichaId);
-    await setDoc(ref, { 
-      [abaAtiva]: novosItensOrigem,
-      [categoriaDestino]: itensDestino
-    }, { merge: true });
-    
-    const nomesCategorias = {
-      equipamentos: 'Equipamentos',
-      vestes: 'Vestimentas',
-      diversos: 'Diversos'
-    };
-    
-    alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} movido para ${nomesCategorias[categoriaDestino]}!`);
-    
+    // Limpa o modal
     setModalTransferirItemOpen(false);
     setItemParaTransferir(null);
     setJogadorDestinoItem("");
     setQuantidadeTransferir(1);
     setCategoriaDestino("equipamentos");
-    return;
+    
+  } catch (error) {
+    console.error("Erro na transferência de item:", error);
+    alert("Erro ao transferir item: " + error.message);
   }
-  
-  // Transferência para OUTRO jogador
-  const novosItens = ficha[abaAtiva].map((item, idx) => {
-    if (idx === itemParaTransferir.index) {
-      const novaQuantidade = item.quantidade - quantidadeTransferir;
-      return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
-    }
-    return item;
-  }).filter(item => item !== null);
-  
-  setFicha(p => ({ ...p, [abaAtiva]: novosItens }));
-  
-  const refOrigem = doc(db, "fichas", fichaId);
-  await setDoc(refOrigem, { [abaAtiva]: novosItens }, { merge: true });
-  
-  const jogadorDestino = listaJogadores.find(j => j.id === jogadorDestinoItem);
-  if (jogadorDestino) {
-    const itemParaAdicionar = {
-      ...itemParaTransferir.item,
-      quantidade: quantidadeTransferir
-    };
-    delete itemParaAdicionar.index;
-    
-    // Adiciona na mesma categoria do jogador destino
-    const itensDestino = [...(jogadorDestino[abaAtiva] || []), itemParaAdicionar];
-    
-    const refDestino = doc(db, "fichas", jogadorDestinoItem);
-    await setDoc(refDestino, { [abaAtiva]: itensDestino }, { merge: true });
-    
-    alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} transferido para ${jogadorDestino.nome}!`);
-  }
-  
-  setModalTransferirItemOpen(false);
-  setItemParaTransferir(null);
-  setJogadorDestinoItem("");
-  setQuantidadeTransferir(1);
 };
 
 // 🟢 Função para dropar item
@@ -1639,7 +1697,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
   </Typography>
 )}
   </Box>
-              {ficha.habilidades.map((h, i) => (
+                            {ficha.habilidades.map((h, i) => (
                 <Paper key={i} sx={{ p: 1, mb: 1 }}>
                   <Grid container spacing={1}>
                     <Grid item xs={11}>
@@ -1655,6 +1713,68 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
                           sx={{ mb: 1 }}
                         />
                       ))}
+                      
+                      {/* 🟢 LINHA: DADO + TIPO DE DANO */}
+                      <Grid container spacing={1}>
+                        <Grid item xs={4}>
+                          <TextField
+                            label="Dado (1-10)"
+                            type="number"
+                            fullWidth
+                            size="small"
+                            value={h.dado || 1}
+                            disabled={!isMestre}
+                            onChange={(e) => {
+                              if (!isMestre) return;
+                              const val = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+                              atualizarHabilidade(i, "dado", val);
+                            }}
+                            InputProps={{ 
+                              inputProps: { min: 1, max: 10 },
+                              sx: { color: '#fff' }
+                            }}
+                            sx={{ bgcolor: '#0f172a' }}
+                          />
+                        </Grid>
+                        <Grid item xs={8}>
+                          <FormControl fullWidth size="small">
+                            <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
+                            <Select
+                              value={h.tipoDano || "Aurano"}
+                              disabled={!isMestre}
+                              onChange={(e) => {
+                                if (!isMestre) return;
+                                atualizarHabilidade(i, "tipoDano", e.target.value);
+                              }}
+                              sx={{ 
+                                color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff',
+                                bgcolor: '#0f172a',
+                                '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+                              }}
+                              MenuProps={{
+                                PaperProps: { 
+                                  sx: { 
+                                    bgcolor: "#0f172a", 
+                                    color: "#fff",
+                                    maxHeight: 300,
+                                  } 
+                                }
+                              }}
+                            >
+                              {TIPOS_DANO.map(td => (
+                                <MenuItem key={td.valor} value={td.valor}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: td.cor }} />
+                                    <Typography sx={{ color: td.cor, fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                      {td.label}
+                                    </Typography>
+                                  </Box>
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                      </Grid>
                     </Grid>
                     <Grid item xs={1}>
                       <IconButton color="error" onClick={() => removerHabilidade(i)}>
@@ -1715,37 +1835,24 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     DINHEIRO
   </Button>
 </Box>
-            {/* Anotações */}
-            <Box mt={2}>
-              <Typography component="div">{LABELS.anotacoesTitulo}</Typography>
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                value={ficha.anotacoes}
-                onChange={(e) => setCampo("anotacoes", e.target.value)}
-              />
-            </Box>
-
-            {/* Background */}
-            <Box mt={2}>
-              <Button
-                variant="outlined"
-                onClick={() => setMostrarBackground(!mostrarBackground)}
-                sx={{ mb: 1 }}
+                        {/* Anotações e Background - Botões */}
+            <Box mt={2} sx={{ display: 'flex', gap: 2 }}>
+              <Button 
+                variant="outlined" 
+                startIcon={<span>📝</span>}
+                onClick={() => setModalAnotacoesOpen(true)}
+                sx={{ color: '#fff', borderColor: '#ff9800', flex: 1 }}
               >
-                {mostrarBackground ? "Esconder Background" : "Mostrar Background"}
+                Anotações ({anotacoesSalvos.length})
               </Button>
-              {mostrarBackground && (
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={6}
-                  value={ficha.background}
-                  onChange={(e) => setCampo("background", e.target.value)}
-                  placeholder="Escreva aqui a história do personagem..."
-                />
-              )}
+              <Button 
+                variant="outlined" 
+                startIcon={<span>📖</span>}
+                onClick={() => { setBackgroundTexto(ficha?.background || ""); setModalBackgroundOpen(true); }}
+                sx={{ color: '#fff', borderColor: '#9c27b0', flex: 1 }}
+              >
+                Background
+              </Button>
             </Box>
 
             {/* Botões Galeria e Salvar */}
@@ -2810,11 +2917,12 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
       <Box key={index} sx={{ mb: 2 }}>
         {/* TÍTULOS */}
         <Box sx={{ display: 'flex', mb: 0.5, px: 1 }}>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 90 }}>Imagem</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 60 }}>Qtd</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 2 }}>Nome</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.5 }}>Durabilidade</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 50, textAlign: 'right' }}>Dados</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 60 }}>Imagem</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 45 }}>Qtd</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Nome</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1 }}>Durabilidade</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Tipo Dano</Typography>
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 50, textAlign: 'right' }}>Dado</Typography>
         </Box>
 
         {/* BOX DO ITEM */}
@@ -3017,7 +3125,47 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
               />
               <Typography variant="caption" sx={{ color: '#94a3b8' }}>%</Typography>
             </Box>
-
+{/* 🟢 TIPO DE DANO */}
+            <Box sx={{ flex: 1.2 }}>
+              <FormControl fullWidth size="small">
+                <Select
+                  value={item.tipoDano || "Nenhum"}
+                  disabled={!isMestre}
+                  onChange={(e) => {
+                    if (!isMestre) return;
+                    atualizarItem(abaAtiva, index, "tipoDano", e.target.value);
+                  }}
+                  sx={{ 
+                    color: TIPOS_DANO.find(t => t.valor === (item.tipoDano || "Nenhum"))?.cor || '#888',
+                    bgcolor: '#0f172a',
+                    fontSize: '0.7rem',
+                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+                  }}
+                  MenuProps={{
+                    PaperProps: { 
+                      sx: { 
+                        bgcolor: "#0f172a", 
+                        color: "#fff",
+                        maxHeight: 300,
+                      } 
+                    }
+                  }}
+                >
+                  {TIPOS_DANO.map(td => (
+                    <MenuItem key={td.valor} value={td.valor}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                        <Typography variant="body2" sx={{ color: td.cor, fontWeight: 'bold' }}>
+                          {td.label}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.6rem' }}>
+                          {td.descricao}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
             {/* Dado e Deletar - MAIOR AGORA (width: 90) */}
             <Box sx={{ width: 90, display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}>
               <TextField
@@ -3297,7 +3445,390 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           </Button>
         </DialogActions>
       </Dialog>
-
+      {/* 🟢 MODAL DE ANOTAÇÕES */}
+      <Dialog 
+        open={modalAnotacoesOpen} 
+        onClose={() => setModalAnotacoesOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2, minHeight: "80vh" } }}
+      >
+        <DialogTitle sx={{ color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <span style={{ fontSize: '1.5rem' }}>📝</span>
+            Anotações - {ficha?.nome || "Personagem"}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button 
+              size="small" 
+              variant="contained" 
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setAnotacaoEditandoIndex(null);
+                setAnotacaoTitulo("");
+                setAnotacoesTexto("");
+              }}
+              sx={{ bgcolor: '#ff9800' }}
+            >
+              Nova Anotação
+            </Button>
+            <IconButton onClick={() => setModalAnotacoesOpen(false)} sx={{ color: '#94a3b8' }}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        
+        <DialogContent sx={{ display: 'flex', gap: 2, p: 2, height: "70vh" }}>
+          {/* Lista de anotações salvas */}
+          <Box sx={{ width: 250, borderRight: '1px solid #334155', pr: 2, overflowY: 'auto' }}>
+            <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
+              {anotacoesSalvos.length} anotações
+            </Typography>
+            {anotacoesSalvos.map((anot, idx) => (
+              <Paper 
+                key={idx}
+                sx={{ 
+                  p: 1.5, mb: 1, 
+                  bgcolor: anotacaoEditandoIndex === idx ? '#1e3a5f' : '#1a1a2e',
+                  cursor: 'pointer',
+                  border: anotacaoEditandoIndex === idx ? '1px solid #ff9800' : '1px solid #334155',
+                  '&:hover': { borderColor: '#ff9800' }
+                }}
+                onClick={() => {
+                  setAnotacaoEditandoIndex(idx);
+                  setAnotacaoTitulo(anot.titulo);
+                  setAnotacoesTexto(anot.texto);
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                    {anot.titulo || `Anotação ${idx + 1}`}
+                  </Typography>
+                  <IconButton 
+                    size="small" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const novas = anotacoesSalvos.filter((_, i) => i !== idx);
+                      setAnotacoesSalvos(novas);
+                      if (anotacaoEditandoIndex === idx) {
+                        setAnotacaoEditandoIndex(null);
+                        setAnotacaoTitulo("");
+                        setAnotacoesTexto("");
+                      }
+                    }}
+                    sx={{ color: '#ef4444' }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5, maxHeight: 30, overflow: 'hidden' }}>
+                  {anot.texto?.substring(0, 50)}...
+                </Typography>
+              </Paper>
+            ))}
+            {anotacoesSalvos.length === 0 && (
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                Nenhuma anotação salva
+              </Typography>
+            )}
+          </Box>
+          
+          {/* Editor de anotação */}
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <TextField
+              label="Título da anotação"
+              fullWidth
+              size="small"
+              value={anotacaoTitulo}
+              onChange={(e) => setAnotacaoTitulo(e.target.value)}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#94a3b8' } }}
+              sx={{ mb: 1 }}
+            />
+            
+            <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
+              <Button 
+                size="small" 
+                variant="outlined" 
+                component="label"
+                startIcon={<span>📷</span>}
+                sx={{ color: '#94a3b8', borderColor: '#555' }}
+              >
+                Inserir Imagem
+                <input
+                  hidden
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://app-rpg.onrender.com";
+                      const fd = new FormData();
+                      fd.append("file", file);
+                      const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+                      const data = await res.json();
+                      if (data.url) {
+                        // Insere no local do cursor
+                        const textarea = document.querySelector('#anotacao-textarea textarea');
+                        if (textarea) {
+                          const start = textarea.selectionStart;
+                          const end = textarea.selectionEnd;
+                          const antes = anotacoesTexto.substring(0, start);
+                          const depois = anotacoesTexto.substring(end);
+                          const imagemMarkdown = `\n![Imagem](${data.url})\n`;
+                          setAnotacoesTexto(antes + imagemMarkdown + depois);
+                          setTimeout(() => {
+                            textarea.focus();
+                            textarea.selectionStart = start + imagemMarkdown.length;
+                            textarea.selectionEnd = start + imagemMarkdown.length;
+                          }, 100);
+                        } else {
+                          setAnotacoesTexto(prev => prev + `\n![Imagem](${data.url})\n`);
+                        }
+                      }
+                    } catch (err) {
+                      alert("Erro ao enviar imagem");
+                    }
+                  }}
+                />
+              </Button>
+              
+              {anotacaoEditandoIndex !== null && (
+                <Button 
+                  size="small" 
+                  variant="contained" 
+                  onClick={async () => {
+                    const novas = [...anotacoesSalvos];
+                    novas[anotacaoEditandoIndex] = { titulo: anotacaoTitulo, texto: anotacoesTexto };
+                    setAnotacoesSalvos(novas);
+                    await setDoc(doc(db, "fichas", fichaId), { anotacoes: JSON.stringify(novas) }, { merge: true });
+                    alert("Anotação atualizada!");
+                  }}
+                  sx={{ bgcolor: '#ff9800' }}
+                >
+                  💾 Atualizar
+                </Button>
+              )}
+              
+              {anotacaoEditandoIndex === null && anotacoesTexto.trim() && (
+                <Button 
+                  size="small" 
+                  variant="contained" 
+                  onClick={async () => {
+                    const novas = [...anotacoesSalvos, { titulo: anotacaoTitulo || "Anotação", texto: anotacoesTexto }];
+                    setAnotacoesSalvos(novas);
+                    setAnotacaoTitulo("");
+                    setAnotacoesTexto("");
+                    await setDoc(doc(db, "fichas", fichaId), { anotacoes: JSON.stringify(novas) }, { merge: true });
+                    alert("Anotação salva!");
+                  }}
+                  sx={{ bgcolor: '#4caf50' }}
+                >
+                  ➕ Salvar
+                </Button>
+              )}
+            </Box>
+            
+            <TextField
+              id="anotacao-textarea"
+              label="Conteúdo (Markdown)"
+              fullWidth
+              multiline
+              minRows={15}
+              maxRows={30}
+              value={anotacoesTexto}
+              onChange={(e) => setAnotacoesTexto(e.target.value)}
+              InputProps={{ 
+                style: { color: '#fff', fontFamily: 'monospace', fontSize: '0.85rem' },
+              }}
+              InputLabelProps={{ style: { color: '#94a3b8' } }}
+              sx={{ 
+                flex: 1, 
+                '& .MuiInputBase-root': { 
+                  height: '100%', 
+                  overflowY: 'auto',
+                  alignItems: 'flex-start'
+                } 
+              }}
+            />
+            
+            {/* Preview do Markdown */}
+            {anotacoesTexto && (
+              <Box 
+                sx={{ 
+                  mt: 2, p: 2, 
+                  bgcolor: '#1a1a2e', 
+                  borderRadius: 1, 
+                  maxHeight: 200, 
+                  overflowY: 'auto',
+                  border: '1px solid #334155'
+                }}
+                className="markdown-content"
+                onClick={(e) => {
+                  if (e.target.tagName === "IMG") {
+                    setLightboxSrc(e.target.src);
+                    setZoom(1);
+                    setLightboxOpen(true);
+                  }
+                }}
+              >
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1 }}>
+                  📄 Preview:
+                </Typography>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{anotacoesTexto}</ReactMarkdown>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+          <Button onClick={() => setModalAnotacoesOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
+          <Button 
+            variant="contained"
+            onClick={async () => {
+              await setDoc(doc(db, "fichas", fichaId), { anotacoes: JSON.stringify(anotacoesSalvos) }, { merge: true });
+              setModalAnotacoesOpen(false);
+            }}
+            sx={{ bgcolor: '#2e7d32' }}
+          >
+            Salvar e Fechar
+          </Button>
+        </DialogActions>
+      </Dialog>
+            {/* 🟢 MODAL DE BACKGROUND */}
+      <Dialog 
+        open={modalBackgroundOpen} 
+        onClose={() => setModalBackgroundOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2, minHeight: "80vh" } }}
+      >
+        <DialogTitle sx={{ color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <span style={{ fontSize: '1.5rem' }}>📖</span>
+            Background - {ficha?.nome || "Personagem"}
+          </Box>
+          <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        
+        <DialogContent sx={{ p: 2, display: 'flex', flexDirection: 'column', height: "70vh" }}>
+          <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
+            <Button 
+              size="small" 
+              variant="outlined" 
+              component="label"
+              startIcon={<span>📷</span>}
+              sx={{ color: '#94a3b8', borderColor: '#555' }}
+            >
+              Inserir Imagem
+              <input
+                hidden
+                type="file"
+                accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://app-rpg.onrender.com";
+                    const fd = new FormData();
+                    fd.append("file", file);
+                    const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+                    const data = await res.json();
+                    if (data.url) {
+                      const textarea = document.querySelector('#background-textarea textarea');
+                      if (textarea) {
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                        const antes = backgroundTexto.substring(0, start);
+                        const depois = backgroundTexto.substring(end);
+                        const imagemMarkdown = `\n![Imagem](${data.url})\n`;
+                        setBackgroundTexto(antes + imagemMarkdown + depois);
+                        setTimeout(() => {
+                          textarea.focus();
+                          textarea.selectionStart = start + imagemMarkdown.length;
+                          textarea.selectionEnd = start + imagemMarkdown.length;
+                        }, 100);
+                      } else {
+                        setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
+                      }
+                    }
+                  } catch (err) {
+                    alert("Erro ao enviar imagem");
+                  }
+                }}
+              />
+            </Button>
+          </Box>
+          
+          <TextField
+            id="background-textarea"
+            label="História do Personagem (Markdown)"
+            fullWidth
+            multiline
+            minRows={20}
+            maxRows={35}
+            value={backgroundTexto}
+            onChange={(e) => setBackgroundTexto(e.target.value)}
+            InputProps={{ 
+              style: { color: '#fff', fontFamily: 'monospace', fontSize: '0.85rem' },
+            }}
+            InputLabelProps={{ style: { color: '#94a3b8' } }}
+            sx={{ 
+              flex: 1, 
+              '& .MuiInputBase-root': { 
+                height: '100%', 
+                overflowY: 'auto',
+                alignItems: 'flex-start'
+              } 
+            }}
+          />
+          
+          {/* Preview */}
+          {backgroundTexto && (
+            <Box 
+              sx={{ 
+                mt: 2, p: 2, 
+                bgcolor: '#1a1a2e', 
+                borderRadius: 1, 
+                maxHeight: 200, 
+                overflowY: 'auto',
+                border: '1px solid #334155'
+              }}
+              className="markdown-content"
+              onClick={(e) => {
+                if (e.target.tagName === "IMG") {
+                  setLightboxSrc(e.target.src);
+                  setZoom(1);
+                  setLightboxOpen(true);
+                }
+              }}
+            >
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1 }}>
+                📄 Preview:
+              </Typography>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{backgroundTexto}</ReactMarkdown>
+            </Box>
+          )}
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+          <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button 
+            variant="contained"
+            onClick={async () => {
+              setCampo("background", backgroundTexto);
+              await setDoc(doc(db, "fichas", fichaId), { background: backgroundTexto }, { merge: true });
+              setModalBackgroundOpen(false);
+            }}
+            sx={{ bgcolor: '#9c27b0' }}
+          >
+            Salvar Background
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
     );
   }

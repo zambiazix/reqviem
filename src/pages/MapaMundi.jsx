@@ -80,6 +80,13 @@ const [marcadorX, setMarcadorX] = useState(0);
 const [marcadorY, setMarcadorY] = useState(0);
 const [marcadorIcone, setMarcadorIcone] = useState("📍");
 const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+// 🟢 ESTADOS PARA CAMINHOS/ROTAS
+const [caminhos, setCaminhos] = useState({});
+const [caminhoAtivo, setCaminhoAtivo] = useState(null);
+const [modoCriarCaminho, setModoCriarCaminho] = useState(false);
+const [caminhoDialogOpen, setCaminhoDialogOpen] = useState(false);
+const [caminhoNome, setCaminhoNome] = useState("");
+const [caminhoCor, setCaminhoCor] = useState("#00e0ff");
 // 🟢 ESTADO DO BALÃO ABERTO
 const [marcadorBalãoAberto, setMarcadorBalãoAberto] = useState(null); // { mapId, marcador, x, y }
   // 🖼️ Lightbox (igual ao Chat) — zoom with wheel, click outside to close, click on image stops propagation
@@ -169,6 +176,29 @@ useEffect(() => {
   return () => { delete window.__clickMarcador; };
 }, []);
 
+// 🟢 CALCULAR DISTÂNCIA ENTRE DOIS PONTOS (em pixels SVG)
+const calcularDistancia = (p1, p2) => {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
+// 🟢 CONVERTER PIXELS SVG PARA KM (ESCALA DO MAPA)
+const pixelsParaKm = (pixels) => {
+  const ESCALA_PX_POR_KM = 0.2336; // 10 pixels = 1 km (ajuste aqui!)
+  return (pixels / ESCALA_PX_POR_KM).toFixed(1);
+};
+
+// 🟢 CALCULAR DISTÂNCIA TOTAL DE UM CAMINHO
+const calcularDistanciaTotal = (pontos) => {
+  if (!pontos || pontos.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pontos.length; i++) {
+    total += calcularDistancia(pontos[i-1], pontos[i]);
+  }
+  return total;
+};
+
   // 🔹 Snapshot Firestore (mapas e crônica global)
   useEffect(() => {
     const unsubscribers = MAPS.map((m) => {
@@ -226,6 +256,52 @@ useEffect(() => {
   <text x="${m.x + 14}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
 }).join('');
       decompressed = decompressed.replace('</svg>', `<g id="marcadores">${mSvg}</g></svg>`);
+        // 🟢 INJETA CAMINHOS
+  const listaCaminhos = caminhos[mapId] || [];
+  if (listaCaminhos.length > 0) {
+    const caminhosSvg = listaCaminhos.map(caminho => {
+      if (caminho.pontos.length < 2) return '';
+      
+      const pathD = caminho.pontos.map((p, i) => 
+        `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+      ).join(' ');
+      
+      const distanciaTotal = calcularDistanciaTotal(caminho.pontos);
+      const kmTotal = pixelsParaKm(distanciaTotal);
+      
+      return `
+        <path d="${pathD}" 
+          fill="none" 
+          stroke="${caminho.cor || '#00e0ff'}" 
+          stroke-width="3" 
+          stroke-dasharray="8,6" 
+          stroke-linecap="round"
+          opacity="0.8">
+          <title>${caminho.nome} - ${kmTotal} km</title>
+        </path>
+        ${caminho.pontos.map((p, i) => `
+          <circle cx="${p.x}" cy="${p.y}" r="${i === 0 ? 6 : 4}" 
+            fill="${caminho.cor || '#00e0ff'}" 
+            stroke="#fff" stroke-width="2" 
+            opacity="0.9">
+            <title>Ponto ${i + 1}: ${caminho.nome}</title>
+          </circle>
+        `).join('')}
+        ${caminho.pontos.length >= 2 ? `
+          <text x="${caminho.pontos[Math.floor(caminho.pontos.length/2)].x}" 
+            y="${caminho.pontos[Math.floor(caminho.pontos.length/2)].y - 10}" 
+            fill="${caminho.cor || '#00e0ff'}" 
+            font-size="12" font-weight="bold" 
+            text-anchor="middle"
+            style="text-shadow:0 0 4px rgba(0,0,0,0.9)">
+            ${kmTotal} km
+          </text>
+        ` : ''}
+      `;
+    }).join('');
+    
+    decompressed = decompressed.replace('</svg>', `<g id="caminhos">${caminhosSvg}</g></svg>`);
+  }
     }
     
     setSvgContent(decompressed);
@@ -293,6 +369,12 @@ const handleMapaContextMenu = (e, mapId) => {
     }
   }
   
+  // 🟢 SE ESTIVER EM MODO CRIAR CAMINHO, ADICIONA PONTO
+  if (modoCriarCaminho && caminhoAtivo?.id) {
+    adicionarPontoAoCaminho(mapId, caminhoAtivo.id, svgX, svgY);
+    return;
+  }
+  
   console.log("🎯 Marcador em:", svgX, svgY);
   
   setMarcadorX(svgX);
@@ -344,6 +426,8 @@ const renderizarMarcadores = (mapId) => {
   ));
 };
 
+
+
 // 🟢 SALVAR MARCADOR
 const salvarMarcador = async () => {
   const { mapId, marcadorId } = marcadorEditando || {};
@@ -389,6 +473,91 @@ const deletarMarcador = async () => {
   if (expanded) loadSvgForMap(expanded);
 };
 
+// 🟢 INICIAR NOVO CAMINHO
+const iniciarNovoCaminho = (mapId) => {
+  setModoCriarCaminho(true);
+  setCaminhoAtivo({ mapId, id: null });
+  setCaminhoDialogOpen(true);
+  setCaminhoNome("");
+  setCaminhoCor("#00e0ff");
+};
+
+// 🟢 CRIAR CAMINHO
+const criarCaminho = async () => {
+  if (!caminhoNome.trim()) return;
+  
+  const mapId = expanded;
+  if (!mapId) return;
+  
+  const novoCaminho = {
+    id: Date.now().toString(),
+    nome: caminhoNome,
+    cor: caminhoCor,
+    pontos: []
+  };
+  
+  const novosCaminhos = { ...caminhos };
+  if (!novosCaminhos[mapId]) novosCaminhos[mapId] = [];
+  novosCaminhos[mapId].push(novoCaminho);
+  
+  setCaminhos(novosCaminhos);
+  setCaminhoAtivo({ mapId, id: novoCaminho.id });
+  setModoCriarCaminho(true);
+  setCaminhoDialogOpen(false);
+  
+  await setDoc(doc(db, "world", "Caminhos"), { mapas: novosCaminhos }, { merge: true });
+};
+
+// 🟢 ADICIONAR PONTO AO CAMINHO ATIVO
+const adicionarPontoAoCaminho = async (mapId, caminhoId, x, y) => {
+  const novosCaminhos = { ...caminhos };
+  const caminho = novosCaminhos[mapId]?.find(c => c.id === caminhoId);
+  if (!caminho) return;
+  
+  caminho.pontos.push({ x, y });
+  setCaminhos(novosCaminhos);
+  
+  await setDoc(doc(db, "world", "Caminhos"), { mapas: novosCaminhos }, { merge: true });
+  
+  // 🟢 CORRIGIDO: Recarrega SVG se o mapa estiver expandido
+  if (expanded === mapId) {
+    loadSvgForMap(mapId);
+  }
+};
+
+// 🟢 FINALIZAR CAMINHO
+const finalizarCaminho = async () => {
+  setModoCriarCaminho(false);
+  setCaminhoAtivo(null);
+};
+
+// 🟢 DELETAR CAMINHO
+const deletarCaminho = async (mapId, caminhoId) => {
+  if (!window.confirm('Deletar este caminho?')) return;
+  
+  const novosCaminhos = { ...caminhos };
+  if (novosCaminhos[mapId]) {
+    novosCaminhos[mapId] = novosCaminhos[mapId].filter(c => c.id !== caminhoId);
+  }
+  
+  // Atualiza estado local
+  setCaminhos(novosCaminhos);
+  
+  // Salva no Firestore
+  await setDoc(doc(db, "world", "Caminhos"), { mapas: novosCaminhos }, { merge: true });
+  
+  // Reseta modo de criação se for o caminho ativo
+  if (caminhoAtivo?.id === caminhoId) {
+    setCaminhoAtivo(null);
+    setModoCriarCaminho(false);
+  }
+  
+  // 🟢 CORRIGIDO: Recarrega SVG se o mapa estiver expandido
+  if (expanded === mapId) {
+    loadSvgForMap(mapId);
+  }
+};
+
   useEffect(() => {
     if (expanded) loadSvgForMap(expanded);
     else {
@@ -409,6 +578,18 @@ useEffect(() => {
       setMarcadores(snap.data().mapas || {});
     } else {
       setMarcadores({});
+    }
+  });
+  return () => unsub();
+}, []);
+
+// 🟢 CARREGAR CAMINHOS
+useEffect(() => {
+  const unsub = onSnapshot(doc(db, "world", "Caminhos"), (snap) => {
+    if (snap.exists()) {
+      setCaminhos(snap.data().mapas || {});
+    } else {
+      setCaminhos({});
     }
   });
   return () => unsub();
@@ -561,25 +742,45 @@ useEffect(() => {
           <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: "#fff" }} />}>
             <Typography sx={{ flex: 1, color: "#fff" }}>{m.title}</Typography>
             {isMestre && (
-              <Button
-                variant="outlined"
-                size="small"
-                component="label"
-                sx={{ ml: 1 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                Upload SVG
-                <input
-                  hidden
-                  accept=".svg"
-                  type="file"
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    handleFileUpload(e, m.id);
-                  }}
-                />
-              </Button>
-            )}
+  <>
+    <Button
+      variant="outlined"
+      size="small"
+      component="label"
+      sx={{ ml: 1 }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      Upload SVG
+      <input
+        hidden
+        accept=".svg"
+        type="file"
+        onChange={(e) => {
+          e.stopPropagation();
+          handleFileUpload(e, m.id);
+        }}
+      />
+    </Button>
+    
+    {/* 🟢 BOTÃO CRIAR CAMINHO */}
+    <Button
+      variant="outlined"
+      size="small"
+      color={modoCriarCaminho && caminhoAtivo?.mapId === m.id ? "error" : "info"}
+      sx={{ ml: 1 }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (modoCriarCaminho && caminhoAtivo?.mapId === m.id) {
+          finalizarCaminho();
+        } else {
+          iniciarNovoCaminho(m.id);
+        }
+      }}
+    >
+      {modoCriarCaminho && caminhoAtivo?.mapId === m.id ? "🛑 Finalizar Rota" : "📏 Criar Rota"}
+    </Button>
+  </>
+)}
           </AccordionSummary>
 
           <AccordionDetails
@@ -648,6 +849,7 @@ useEffect(() => {
                             <IconButton size="small" color="error" onClick={(e) => deleteChapterForMap(m.id, idx, e)}>
                               <DeleteIcon />
                             </IconButton>
+                                      
                           </Box>
                         )}
                       </Box>
@@ -656,6 +858,42 @@ useEffect(() => {
                       </Box>
                     </Box>
                   ))
+                )}
+              </Box>
+                  {/* 🟢 CAMINHOS/ROTAS */}
+              <Box sx={{ mt: 2, borderTop: '1px solid #333', pt: 2 }}>
+                <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1 }}>
+                  📏 Rotas e Caminhos
+                </Typography>
+                {(caminhos[m.id] || []).map(caminho => (
+                  <Box key={caminho.id} sx={{ mb: 1, p: 1, bgcolor: '#1a1a1a', borderRadius: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ width: 12, height: 12, bgcolor: caminho.cor, borderRadius: '50%' }} />
+                        <Typography variant="caption" sx={{ color: '#fff' }}>
+                          {caminho.nome}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1 }}>
+                          {pixelsParaKm(calcularDistanciaTotal(caminho.pontos))} km
+                        </Typography>
+                        {isMestre && (
+                          <IconButton size="small" onClick={() => deletarCaminho(m.id, caminho.id)} sx={{ color: '#ef4444' }}>
+                            <DeleteIcon fontSize="inherit" />
+                          </IconButton>
+                        )}
+                      </Box>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                      {caminho.pontos.length} pontos
+                    </Typography>
+                  </Box>
+                ))}
+                {(caminhos[m.id] || []).length === 0 && (
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    Nenhum caminho criado ainda
+                  </Typography>
                 )}
               </Box>
             </Box>
@@ -975,7 +1213,52 @@ useEffect(() => {
   <DialogActions>
     <Button onClick={() => setEmojiPickerOpen(false)} sx={{ color: '#ccc' }}>Fechar</Button>
   </DialogActions>
-</Dialog>
+      </Dialog>
+      
+      {/* 🟢 MODAL CRIAR CAMINHO */}
+      <Dialog 
+        open={caminhoDialogOpen} 
+        onClose={() => setCaminhoDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff' } }}
+      >
+        <DialogTitle>📏 Nova Rota/Caminho</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Nome da rota (ex: Estrada Real)"
+              fullWidth
+              value={caminhoNome}
+              onChange={(e) => setCaminhoNome(e.target.value)}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#ccc' } }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }}
+            />
+            <Box>
+              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.5 }}>
+                Cor do caminho
+              </Typography>
+              <input
+                type="color"
+                value={caminhoCor}
+                onChange={(e) => setCaminhoCor(e.target.value)}
+                style={{ width: '100%', height: 40, cursor: 'pointer', border: '1px solid #555', borderRadius: 4 }}
+              />
+            </Box>
+            <Typography variant="caption" sx={{ color: '#ff9800' }}>
+              Após criar, clique com botão direito no mapa para adicionar pontos à rota.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCaminhoDialogOpen(false)} sx={{ color: '#ccc' }}>Cancelar</Button>
+          <Button variant="contained" onClick={criarCaminho} disabled={!caminhoNome.trim()}>
+            Criar Rota
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
       {/* 🟢 BALÃO DO MARCADOR */}
       {marcadorBalãoAberto && (
         <Box

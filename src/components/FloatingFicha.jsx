@@ -9,7 +9,7 @@ import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import { useFloatingWindows } from "../context/FloatingWindowsContext";
 import FichaPersonagem from "./FichaPersonagem";
 import { db } from "../firebaseConfig";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, getDoc, doc } from "firebase/firestore";
 
 const darkTheme = createTheme({
   palette: {
@@ -25,6 +25,26 @@ export default function FloatingFicha({ user, fichaId, isMestre }) {
   // 🟢 ESTADO PARA LISTA DE FICHAS
   const [fichasList, setFichasList] = useState([]);
   const [selectedFicha, setSelectedFicha] = useState(fichaId);
+  const [fichasDataMap, setFichasDataMap] = useState({});
+
+  // 🟢 CARREGAR DADOS DAS FICHAS (nome, tipoFicha)
+useEffect(() => {
+  if (!fichasList.length) return;
+  
+  const carregarDados = async () => {
+    const map = {};
+    const promises = fichasList.map(async (fid) => {
+      const snap = await getDoc(doc(db, "fichas", fid));
+      if (snap.exists()) {
+        map[fid] = snap.data();
+      }
+    });
+    await Promise.all(promises);
+    setFichasDataMap(map);
+  };
+  
+  carregarDados();
+}, [fichasList]);
 
   // 🟢 CARREGAR LISTA DE FICHAS
   useEffect(() => {
@@ -96,31 +116,101 @@ export default function FloatingFicha({ user, fichaId, isMestre }) {
       >
         <DragIndicatorIcon sx={{ color: "#94a3b8", fontSize: 18 }} />
         
-        {/* 🟢 SELETOR DE FICHA PARA O MESTRE */}
         {isMestre ? (
-          <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
-            <Select
-              value={selectedFicha || ""}
-              onChange={(e) => setSelectedFicha(e.target.value)}
-              sx={{ 
-                color: "#fff", 
-                fontSize: "0.75rem",
-                "& .MuiSelect-icon": { color: "#94a3b8" },
-                "& .MuiOutlinedInput-notchedOutline": { borderColor: "#334155" },
-              }}
-              MenuProps={{
-                container: document.body,
-                PaperProps: { sx: { bgcolor: "#1a1a2e", color: "#fff" } }
-              }}
-            >
-              {fichasList.map((email) => (
-                <MenuItem key={email} value={email} sx={{ fontSize: "0.75rem" }}>
-                  📋 {email}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        ) : (
+  <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+    <Select
+      value={selectedFicha || ""}
+      onChange={(e) => setSelectedFicha(e.target.value)}
+      sx={{ 
+        color: "#fff", 
+        fontSize: "0.75rem",
+        "& .MuiSelect-icon": { color: "#94a3b8" },
+        "& .MuiOutlinedInput-notchedOutline": { borderColor: "#334155" },
+      }}
+      MenuProps={{
+        container: document.body,
+        PaperProps: { 
+          sx: { 
+            bgcolor: "#0f172a", 
+            color: "#fff",
+            maxHeight: 400,
+            minWidth: 250,
+          } 
+        }
+      }}
+      renderValue={(selected) => {
+        if (!selected) return "📋 Selecionar ficha";
+        const fichaData = fichasDataMap[selected];
+        return `📋 ${fichaData?.nome || selected}`;
+      }}
+    >
+      <MenuItem value="" disabled sx={{ opacity: 0.5 }}>
+        <Typography variant="caption" sx={{ color: "#64748b" }}>
+          Selecione uma ficha
+        </Typography>
+      </MenuItem>
+      
+      {(() => {
+        const pjFichas = fichasList.filter(fid => {
+          const data = fichasDataMap[fid];
+          return (data?.tipoFicha || "PJ") === "PJ";
+        });
+        const pmFichas = fichasList.filter(fid => {
+          const data = fichasDataMap[fid];
+          return data?.tipoFicha === "PM";
+        });
+
+        const items = [];
+        
+        if (pjFichas.length > 0) {
+          items.push(
+            <MenuItem key="header-pj" disabled sx={{ opacity: 1, borderBottom: "1px solid #4caf50", mb: 0.5 }}>
+              <Typography variant="caption" sx={{ color: "#4caf50", fontWeight: "bold" }}>
+                ── PERSONAGENS DO JOGADOR ──
+              </Typography>
+            </MenuItem>
+          );
+          pjFichas.forEach(email => {
+            items.push(
+              <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.75rem" }}>
+                📋 {fichasDataMap[email]?.nome || email}
+              </MenuItem>
+            );
+          });
+        }
+        
+        if (pmFichas.length > 0) {
+          items.push(
+            <MenuItem key="header-pm" disabled sx={{ opacity: 1, borderBottom: "1px solid #ff9800", mb: 0.5, mt: 1 }}>
+              <Typography variant="caption" sx={{ color: "#ff9800", fontWeight: "bold" }}>
+                ── PERSONAGENS DO MESTRE ──
+              </Typography>
+            </MenuItem>
+          );
+          pmFichas.forEach(email => {
+            items.push(
+              <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.75rem" }}>
+                📋 {fichasDataMap[email]?.nome || email}
+              </MenuItem>
+            );
+          });
+        }
+        
+        if (items.length === 0) {
+          items.push(
+            <MenuItem key="empty" disabled>
+              <Typography variant="caption" sx={{ color: "#64748b" }}>
+                Nenhuma ficha encontrada
+              </Typography>
+            </MenuItem>
+          );
+        }
+        
+        return items;
+      })()}
+    </Select>
+  </FormControl>
+) : (
           <Typography variant="caption" sx={{ color: "#fff", fontWeight: "bold", flex: 1 }}>
             📋 Ficha
           </Typography>

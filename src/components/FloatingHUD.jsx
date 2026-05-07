@@ -38,6 +38,7 @@ import { db } from "../firebaseConfig";
 import TurnModal from "./TurnModal";
 import "./FloatingHUDBackgrounds.css";
 import { createPortal } from "react-dom";
+import CommerceHUD from "./CommerceHUD";
 
 function playSFX(path) {
   try {
@@ -90,6 +91,7 @@ const [sorteAzarValue, setSorteAzarValue] = useState(5.5);
   const [loadingFichas, setLoadingFichas] = useState(false);
   // ================= PERFIS =================
 const [profilesOpen, setProfilesOpen] = useState(false);
+const [comercioOpen, setComercioOpen] = useState(false);
 const [perfis, setPerfis] = useState([]);
 const [openProfileDialog, setOpenProfileDialog] = useState(false);
 const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -1104,22 +1106,11 @@ console.log("HUD DEBUG:", {
   type="button"
   aria-label="Abrir comércio"
   className="commerce-button"
-  
- onClick={(e) => {
-  e.stopPropagation();
-  e.preventDefault();
-  if (window.__commerceVisible) {
-    window.closeCommerceHUD?.();
-    window.__commerceVisible = false;
-  } else {
-    window.openCommerceHUD?.({
-      isMaster,
-      currentUserEmail
-    });
-    window.__commerceVisible = true;
-  }
-}}
-
+  onClick={(e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setComercioOpen(prev => !prev);
+  }}
   sx={{
     position: "absolute",
     right: 10,
@@ -1701,6 +1692,13 @@ console.log("HUD DEBUG:", {
           <Button onClick={() => setSorteAzarOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
         </DialogActions>
       </Dialog>
+      {/* 🟢 MODAL DE COMÉRCIO */}
+<CommerceHUD 
+  isMaster={isMaster}
+  visible={comercioOpen}
+  onClose={() => setComercioOpen(false)}
+  currentUserEmail={currentUserEmail}
+/>
     </>
   );
 }

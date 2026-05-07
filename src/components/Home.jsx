@@ -89,7 +89,7 @@ const Home = memo(function Home({
 </Typography>
                         <Typography variant="caption" display="block">{user?.email}</Typography>
                         <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>
-  APP Réquiem RPG — <span style={{ color: '#FFD700', fontWeight: 'bold', textShadow: '0 0 8px rgba(255,215,0,0.5)' }}>Versão 3.5</span> — By: Zambiazi
+  APP Réquiem RPG — <span style={{ color: '#FFD700', fontWeight: 'bold', textShadow: '0 0 8px rgba(255,215,0,0.5)' }}>Versão 4.0</span> — By: Zambiazi
 </Typography>
                       </Box>
                     </Box>
@@ -118,7 +118,7 @@ const Home = memo(function Home({
                   <Box sx={{ flex: 1, overflowY: "auto", maxHeight: isMobileLocal ? "60vh" : "none" }}>
                     <MemoizedChat 
   userNick={displayName} 
-  userEmail={isMaster ? selectedFichaEmail : user?.email} 
+  userEmail={user?.email}
 />
                   </Box>
                 </Paper>

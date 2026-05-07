@@ -57,22 +57,28 @@ export default function HomePage({
   }, [fichasList]);
 
   const handleCreateAccountAndFicha = async () => {
-    if (!newEmail || !newPassword) {
-      alert("Preencha o e-mail e a senha para criar a conta.");
-      return;
-    }
-    
-    setCreating(true);
-    try {
-      await criarContaEJogador(newEmail, newPassword);
-      setNewEmail("");
-      setNewPassword("");
-    } catch (err) {
-      console.error("Erro:", err);
-    } finally {
-      setCreating(false);
-    }
-  };
+  if (!newEmail || !newPassword) {
+    alert("Preencha o e-mail e a senha para criar a conta.");
+    return;
+  }
+  
+  // 🚫 IMPEDIR CRIAÇÃO DE CONTA DO MESTRE
+  if (newEmail === "mestre@reqviemrpg.com") {
+    alert("Não é possível criar conta para o Mestre!");
+    return;
+  }
+  
+  setCreating(true);
+  try {
+    await criarContaEJogador(newEmail, newPassword);
+    setNewEmail("");
+    setNewPassword("");
+  } catch (err) {
+    console.error("Erro:", err);
+  } finally {
+    setCreating(false);
+  }
+};
 
   const handleDeleteFicha = async (email) => {
     try {

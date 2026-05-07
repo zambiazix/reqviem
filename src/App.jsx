@@ -71,16 +71,18 @@ export default function App() {
   }, []);
 
   const carregarListaFichas = useCallback(async () => {
-    try {
-      const col = collection(db, "fichas");
-      const snapshot = await getDocs(col);
-      const list = snapshot.docs.map((d) => d.id);
-      setFichasList(list);
-      if (list.length > 0 && !selectedFichaEmail) setSelectedFichaEmail(list[0]);
-    } catch (err) {
-      console.error("Erro ao carregar lista de fichas:", err);
-    }
-  }, [selectedFichaEmail]);
+  try {
+    const col = collection(db, "fichas");
+    const snapshot = await getDocs(col);
+    const list = snapshot.docs
+      .map((d) => d.id)
+      .filter(id => id !== MASTER_EMAIL); // 👈 IMPEDE MESTRE NA LISTA
+    setFichasList(list);
+    if (list.length > 0 && !selectedFichaEmail) setSelectedFichaEmail(list[0]);
+  } catch (err) {
+    console.error("Erro ao carregar lista de fichas:", err);
+  }
+}, [selectedFichaEmail]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
