@@ -19,6 +19,7 @@
   InputLabel,
   Select,
   MenuItem,
+  Chip,
 } from "@mui/material";
 import { Divider } from "@mui/material";
   import AddIcon from "@mui/icons-material/Add";
@@ -150,6 +151,13 @@ const SEASONS = ["Primavera", "Verão", "Outono", "Inverno"];
     { valor: "Psíquico", label: "Psíquico", cor: "#ff69b4", descricao: "Afeta a mente. 50% Chance de perder a Aura no próximo turno." },
     { valor: "Trovejante", label: "Trovejante", cor: "#4169e1", descricao: "Dano sonoro. 50% Chance de desorientar por 1 turno." },
     { valor: "Tóxico", label: "Tóxico", cor: "#8b008b", descricao: "Toxinas e venenos. Perde 5 PV a cada turno." },
+  ];
+    // 🟢 TIPOS DE CONSUMÍVEL
+  const TIPOS_CONSUMIVEL = [
+    { valor: "Nenhum", label: "Nenhum", cor: "#888888" },
+    { valor: "PV", label: "PV (Vida)", cor: "#ff4d4f" },
+    { valor: "PE", label: "PE (Energia)", cor: "#facc15" },
+    { valor: "RE", label: "R.E (Remover Efeito)", cor: "#00e0ff" },
   ];
     // Mapeamento textual com acentos e espaços bonitos
     const LABEL_MAP = {
@@ -303,6 +311,7 @@ const [resultadoDado, setResultadoDado] = useState(null);
 // 🟢 ADICIONE ESTES ESTADOS:
 const [modalTransferirItemOpen, setModalTransferirItemOpen] = useState(false);
 const [modalDroparItemOpen, setModalDroparItemOpen] = useState(false);
+
 // 🟢 MODAIS DE ANOTAÇÕES E BACKGROUND
 const [modalAnotacoesOpen, setModalAnotacoesOpen] = useState(false);
 const [modalBackgroundOpen, setModalBackgroundOpen] = useState(false);
@@ -437,12 +446,15 @@ useEffect(() => {
             dados.imagemPrincipalIndex = 0;
           }
           
-                    const garantirDadoNosItens = (itens) => {
+                              const garantirDadoNosItens = (itens) => {
             if (!Array.isArray(itens)) return [];
             return itens.map(item => ({
               ...item,
               dado: item.dado || 1,
-              tipoDano: item.tipoDano || "Nenhum" // 🟢 Garante tipoDano
+              tipoDano: item.tipoDano || "Nenhum",
+                            consumivel: item.consumivel || "Nenhum",
+              consumivelValor: item.consumivelValor || 0,
+              consumivelPercentual: item.consumivelPercentual || 100,
             }));
           };
 
@@ -509,12 +521,12 @@ useEffect(() => {
       }));
     }
 
-        function adicionarItem(tipo) {
+                function adicionarItem(tipo) {
   setFicha((p) => ({
     ...p,
     [tipo]: [
       ...(p[tipo] || []),
-      { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1, tipoDano: "Nenhum" }, // 🟢 Adicionado tipoDano
+      { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1, tipoDano: "Nenhum", consumivel: "Nenhum", consumivelValor: 0 },
     ],
   }));
 }
@@ -1042,6 +1054,7 @@ const droparItem = async () => {
   setItemParaDropar(null);
   setQuantidadeDropar(1);
 };
+
 
     if (loading)
   return (
@@ -2921,7 +2934,13 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 45 }}>Qtd</Typography>
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Nome</Typography>
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1 }}>Durabilidade</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Tipo Dano</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Tipo Dano</Typography>
+          {isMestre && (
+            <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Consumível</Typography>
+          )}
+          {!isMestre && (
+            <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 60 }}>Usar</Typography>
+          )}
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 50, textAlign: 'right' }}>Dado</Typography>
         </Box>
 
@@ -3166,6 +3185,92 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
                 </Select>
               </FormControl>
             </Box>
+                        {/* 🟢 CONSUMÍVEL (SÓ MESTRE) */}
+            {isMestre && (
+              <Box sx={{ flex: 1.2 }}>
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={item.consumivel || "Nenhum"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      atualizarItem(abaAtiva, index, "consumivel", val);
+                      if (val === "Nenhum") {
+                        atualizarItem(abaAtiva, index, "consumivelValor", 0);
+                      }
+                    }}
+                    sx={{ 
+                      color: TIPOS_CONSUMIVEL.find(t => t.valor === (item.consumivel || "Nenhum"))?.cor || '#888',
+                      bgcolor: '#0f172a',
+                      fontSize: '0.7rem',
+                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+                    }}
+                    MenuProps={{
+                      PaperProps: { 
+                        sx: { 
+                          bgcolor: "#0f172a", 
+                          color: "#fff",
+                          maxHeight: 200,
+                        } 
+                      }
+                    }}
+                  >
+                    {TIPOS_CONSUMIVEL.map(tc => (
+                      <MenuItem key={tc.valor} value={tc.valor}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: tc.cor }} />
+                          <Typography sx={{ color: tc.cor, fontWeight: 'bold', fontSize: '0.8rem' }}>
+                            {tc.label}
+                          </Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                                {(item.consumivel && item.consumivel !== "Nenhum") && (
+                  <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3 }}>
+                    <TextField
+                      size="small"
+                      type="number"
+                      value={item.consumivelValor || 0}
+                      onChange={(e) => {
+                        atualizarItem(abaAtiva, index, "consumivelValor", Math.max(0, Number(e.target.value) || 0));
+                      }}
+                      InputProps={{ 
+                        inputProps: { min: 0 },
+                        sx: { color: '#fff', fontSize: '0.6rem' }
+                      }}
+                      sx={{ 
+                        flex: 1,
+                        bgcolor: '#0f172a',
+                        '& input': { textAlign: 'center' }
+                      }}
+                      placeholder="Valor"
+                    />
+                    <TextField
+                      size="small"
+                      type="number"
+                      value={item.consumivelPercentual || 100}
+                      onChange={(e) => {
+                        const val = Math.min(100, Math.max(1, Number(e.target.value) || 1));
+                        atualizarItem(abaAtiva, index, "consumivelPercentual", val);
+                      }}
+                      InputProps={{ 
+                        inputProps: { min: 1, max: 100 },
+                        sx: { color: '#fff', fontSize: '0.6rem' },
+                        endAdornment: <InputAdornment position="end" sx={{ '& p': { color: '#888', fontSize: '0.55rem' } }}>%</InputAdornment>
+                      }}
+                      sx={{ 
+                        flex: 1,
+                        bgcolor: '#0f172a',
+                        '& input': { textAlign: 'center' }
+                      }}
+                      placeholder="%"
+                    />
+                  </Box>
+                )}
+              </Box>
+            )}
+          
             {/* Dado e Deletar - MAIOR AGORA (width: 90) */}
             <Box sx={{ width: 90, display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}>
               <TextField
@@ -3829,6 +3934,8 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           </Button>
         </DialogActions>
       </Dialog>
+            {/* 🟢 MODAL USAR CONSUMÍVEL */}
+      
     </Paper>
     );
   }

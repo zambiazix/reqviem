@@ -26,6 +26,7 @@ import {
   Checkbox,           // 🟢 ADICIONE
   FormControlLabel,
   Chip,   // 🟢 ADICIONE
+  Slider,
 } from "@mui/material";
 import ImageIcon from "@mui/icons-material/Image";
 import GifBoxIcon from "@mui/icons-material/GifBox";
@@ -185,6 +186,11 @@ const [acaoCasting, setAcaoCasting] = useState(0);
 const [acaoEmbuicao, setAcaoEmbuicao] = useState(0);
 const [acaoHabilidadeSelecionada, setAcaoHabilidadeSelecionada] = useState("");
 const [acaoHabilidadeDado, setAcaoHabilidadeDado] = useState(0);
+// 🟢 CONSUMÍVEL
+const [acaoItemConsumivel, setAcaoItemConsumivel] = useState(false); // É consumível?
+const [acaoConsumivelTipo, setAcaoConsumivelTipo] = useState(""); // PV, PE, RE
+const [acaoConsumivelValor, setAcaoConsumivelValor] = useState(0); // Valor máximo
+const [acaoConsumivelPercentual, setAcaoConsumivelPercentual] = useState(100); // % a usar
 // 🟢 ESTADOS DO SISTEMA DE COMBATE
 const [acaoModo, setAcaoModo] = useState("acao"); // "acao" = normal, "reacao" = respondendo ataque
 const [acaoAlvo, setAcaoAlvo] = useState(""); // email do alvo
@@ -216,6 +222,24 @@ const [rolagemMorteIndex, setRolagemMorteIndex] = useState(-1);
 
 // 🟢 DADO SECRETO
 const [modoSecreto, setModoSecreto] = useState(false);
+// 🟢 EFEITOS DE TIPO DE DANO
+const EFEITOS_DANO = {
+  "Ácido": { ignoraArmadura: 1.0, desc: "🧪 Ácido: Ignora 100% da armadura!" },
+  "Contundente": { chanceSoltarItens: 0.5, desc: "💥 Contundente: 50% chance de soltar itens" },
+  "Cortante": { eficazTecidos: 0.5, desc: "🔪 Cortante: 50% eficaz contra tecidos" },
+  "Elétrico": { chanceParalisia: 0.5, desc: "⚡ Elétrico: 50% chance de paralisar" },
+  "Aurano": { desc: "✨ Aurano: Dano puro de Aura" },
+  "Gélido": { chanceNecrose: 0.2, desc: "❄️ Gélido: 20% chance de necrose" },
+  "Térmico": { menosCura: 0.5, desc: "🔥 Térmico: 50% menos cura/regeneração" },
+  "Perfurante": { ignoraArmadura: 0.5, desc: "🏹 Perfurante: Ignora 50% da armadura" },
+  "Psíquico": { chancePerderAura: 0.5, desc: "🧠 Psíquico: 50% chance de perder Aura no próximo turno" },
+  "Trovejante": { chanceDesorientar: 0.5, desc: "📢 Trovejante: 50% chance de desorientar por 1 turno" },
+  "Tóxico": { danoTurnos: 5, duracao: 6, desc: "☠️ Tóxico: Perde 5 PV por 6 turnos" },
+};
+
+// 🟢 ESTADO PARA TOXINAS ATIVAS
+const [toxinasAtivas, setToxinasAtivas] = useState({});
+
   const openDiceMenu = Boolean(diceAnchor);
 
   const chatRef = useRef(null);
@@ -471,8 +495,8 @@ useEffect(() => {
     total += valor;
   }
 
-  // 🟢 Verifica se está em modo secreto (mestre)
-  const isDadoSecreto = isMaster && modoSecreto;
+    // 🟢 Verifica se está em modo secreto (mestre ativou para todos)
+  const isDadoSecreto = modoSecreto; // Afeta TODOS os jogadores
   
   await addDoc(chatCol, {
     userNick,
@@ -607,7 +631,7 @@ async function rolarDadoMorte() {
 
     const dice = tryParseDice(text);
   if (dice) {
-    const isDadoSecreto = isMaster && modoSecreto;
+        const isDadoSecreto = modoSecreto; // Afeta TODOS os jogadores
     await addDoc(chatCol, {
       userNick,
       userEmail,
@@ -831,12 +855,16 @@ async function desgastarItem(email, nomeItem, quantidade = 1) {
 async function rolarAcao() {
   if (rolagemEmAndamento) return;
   
-  if (!acaoAtributo && !acaoPericia) {
+    // 🟢 Só atributo é obrigatório (ou perícia)
+  if (!acaoAtributo && !acaoPericia && !acaoItemConsumivel) {
     alert("Selecione pelo menos um Atributo ou uma Perícia!");
     return;
   }
   
-  if (acaoModo === "acao" && acaoAlvo && !acaoTipo) {
+  // 🟢 Consumível sozinho é permitido (sem atributo/perícia)
+  
+    // 🟢 Só valida se NÃO for consumível (consumível não precisa de tipo de dano)
+  if (acaoModo === "acao" && acaoAlvo && !acaoTipo && !acaoItemConsumivel) {
     alert("Selecione o tipo: ☠️ Dano");
     return;
   }
@@ -889,8 +917,8 @@ async function rolarAcao() {
     }
     
         // 🟢 ITEM - VALIDAR DURABILIDADE
+            // 🟢 ITEM - VALIDAR DURABILIDADE (OU CONSUMÍVEL)
     if (acaoItem) {
-      // Busca o item para verificar durabilidade
       const todosItens = [
         ...(fichaJogador?.equipamentos || []),
         ...(fichaJogador?.vestes || []),
@@ -898,15 +926,20 @@ async function rolarAcao() {
       ];
       const itemEncontrado = todosItens.find(it => it.nome === acaoItem);
       
-      if (itemEncontrado && (itemEncontrado.durabilidade || 100) <= 1) {
-        alert(`⚠️ O item "${acaoItem}" está muito danificado (durabilidade ${itemEncontrado.durabilidade || 0}) e não pode ser usado!`);
-        setRolagemEmAndamento(false);
-        return;
+      // 🟢 Se for consumível, não adiciona dado
+      if (acaoItemConsumivel) {
+        descricao.push(`🧪 Consumível: ${acaoItem} (${acaoConsumivelPercentual}%)`);
+      } else {
+        // Item normal - verifica durabilidade
+        if (itemEncontrado && (itemEncontrado.durabilidade || 100) <= 1) {
+          alert(`⚠️ O item "${acaoItem}" está muito danificado e não pode ser usado!`);
+          setRolagemEmAndamento(false);
+          return;
+        }
+        totalD10 += acaoItemDado;
+        descricao.push(`Item: ${acaoItem} (${acaoItemDado})`);
+        await desgastarItem(jogadorSelecionadoEmail, acaoItem, 1);
       }
-      
-      totalD10 += acaoItemDado;
-      descricao.push(`Item: ${acaoItem} (${acaoItemDado})`);
-      await desgastarItem(jogadorSelecionadoEmail, acaoItem, 1);
     }
     
     if (acaoCasting > 0) {
@@ -951,34 +984,123 @@ async function rolarAcao() {
       total += valor;
     }
     
-    const nomePersonagem = fichaJogador?.nome || userNick;
+        const nomePersonagem = fichaJogador?.nome || userNick;
     const partesDescricao = descricao.length > 0 ? descricao.join("; ") : "";
     
-    let mensagem = `⚔️ **AÇÃO** ⚔️\n` +
+    // 🟢 ============= VERIFICAR CRÍTICO E ERRO CRÍTICO =============
+    let isCritico = false;
+    let isErroCritico = false;
+    
+    // Só verifica se tiver mais de 1 dado
+    if (rolls.length >= 1) {
+      const temDez = rolls.some(r => r === 10);  // Pelo menos um 10
+      const temUm = rolls.some(r => r === 1);     // Pelo menos um 1
+      const todosPositivos = rolls.every(r => r >= 6);  // Todos 6-10
+      const todosNegativos = rolls.every(r => r <= 5);  // Todos 1-5
+      
+      // CRÍTICO: um ou mais 10 E todos os outros são positivos (6-10)
+      if (temDez && todosPositivos) {
+        isCritico = true;
+      }
+      
+      // ERRO CRÍTICO: um ou mais 1 E todos os outros são negativos (1-5)
+      if (temUm && todosNegativos) {
+        isErroCritico = true;
+      }
+    }
+    // =============================================================
+    
+        // 🟢 DETERMINAR TIPO DE DANO PARA A MENSAGEM
+    let tipoDanoMensagem = "Nenhum";
+    if (acaoHabilidadeSelecionada && fichaJogador?.habilidades) {
+      const hab = fichaJogador.habilidades.find(h => h.nome === acaoHabilidadeSelecionada);
+      if (hab?.tipoDano && hab.tipoDano !== "Nenhum") tipoDanoMensagem = hab.tipoDano;
+    }
+    if (tipoDanoMensagem === "Nenhum" && acaoItem) {
+      const todosItens = [
+        ...(fichaJogador?.equipamentos || []),
+        ...(fichaJogador?.vestes || []),
+        ...(fichaJogador?.diversos || [])
+      ];
+      const itemEncontrado = todosItens.find(it => it.nome === acaoItem);
+      if (itemEncontrado?.tipoDano && itemEncontrado.tipoDano !== "Nenhum") tipoDanoMensagem = itemEncontrado.tipoDano;
+    }
+    
+        let mensagem = `⚔️ **AÇÃO** ⚔️\n` +
       `O personagem **${nomePersonagem}** rodou sua Ação${partesDescricao ? ` com:\n${partesDescricao}` : "!"}\n\n` +
       `${totalD10}d10 => [${rolls.join(", ")}] = **${total}**`;
+    
+    // 🟢 ADICIONAR FLAG DE CRÍTICO/ERRO CRÍTICO
+    if (isCritico) {
+      mensagem += `\n\n🌟 **CRÍTICO!** Dano direto! O valor total ignora a defesa do oponente.`;
+    }
+    if (isErroCritico) {
+      mensagem += `\n\n💥 **ERRO CRÍTICO!** Fracasso total na ação!`;
+    }
+    
+    if (tipoDanoMensagem !== "Nenhum") {
+      mensagem += `\n\n🗡️ **Tipo de Dano:** ${tipoDanoMensagem}`;
+    }
     
     if (custoTotalEnergia > 0) {
       mensagem += `\n\n⚡ Energia gasta: ${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
     }
 
-        if (acaoModo === "acao" && acaoAlvo && acaoTipo === "dano") {
+                if (acaoModo === "acao" && acaoAlvo && acaoTipo === "dano") {
       const pendenteRef = doc(collection(db, "acoesPendentes"));
-      await setDoc(pendenteRef, {
-  atacante: jogadorSelecionadoEmail, // 🟢 USA O EMAIL DO JOGADOR SELECIONADO
-  alvo: acaoAlvo,
+      
+      // 🟢 DETERMINAR TIPO DE DANO
+      let tipoDanoAcao = "Nenhum";
+      
+      // 1. Verifica habilidade primeiro (tem prioridade)
+      if (acaoHabilidadeSelecionada && fichaJogador?.habilidades) {
+        const hab = fichaJogador.habilidades.find(h => h.nome === acaoHabilidadeSelecionada);
+        if (hab?.tipoDano && hab.tipoDano !== "Nenhum") {
+          tipoDanoAcao = hab.tipoDano;
+        }
+      }
+      
+      // 2. Se não tem habilidade, verifica item
+      if (tipoDanoAcao === "Nenhum" && acaoItem) {
+        const todosItens = [
+          ...(fichaJogador?.equipamentos || []),
+          ...(fichaJogador?.vestes || []),
+          ...(fichaJogador?.diversos || [])
+        ];
+        const itemEncontrado = todosItens.find(it => it.nome === acaoItem);
+        if (itemEncontrado?.tipoDano && itemEncontrado.tipoDano !== "Nenhum") {
+          tipoDanoAcao = itemEncontrado.tipoDano;
+        }
+      }
+      
+      console.log("🗡️ Tipo de Dano da Ação:", tipoDanoAcao, "| Item:", acaoItem, "| Habilidade:", acaoHabilidadeSelecionada);
+      
+            await setDoc(pendenteRef, {
+        atacante: jogadorSelecionadoEmail,
+        alvo: acaoAlvo,
         tipo: "dano",
         valorAtaque: total,
-        dadosRolados: rolls, // 🟢 SALVA OS DADOS ROLADOS
+        dadosRolados: rolls,
+        itemUsado: acaoItem || null,
+        habilidadeUsada: acaoHabilidadeSelecionada || null,
+        tipoDanoAtaque: tipoDanoAcao,
+        isCritico: isCritico,       // 🟢 Flag de crítico
+        isErroCritico: isErroCritico, // 🟢 Flag de erro crítico
         timestamp: serverTimestamp(),
         resolvida: false
       });
       mensagem += `\n\n🎯 Alvo: **${fichasMap[acaoAlvo]?.nome || acaoAlvo}**\n⚠️ Aguardando reação...`;
     }
-    
-        // 🟢 SE FOR REAÇÃO: Envia como o personagem que reagiu
+    // 🟢 SE FOR REAÇÃO: Envia como o personagem que reagiu
     if (acaoModo === "reacao" && acaoPendenteId && acaoTipo) {
-      await resolverCombate(acaoPendenteId, acaoTipo, total, rolls);
+      const resultadoCombate = await resolverCombate(acaoPendenteId, acaoTipo, total, rolls);
+      
+      // 🟢 ADICIONAR XP PARA O DEFENSOR
+      let xpDefensor = 1;
+      if (resultadoCombate?.isCriticoDefensor) xpDefensor = 2;
+      if (resultadoCombate?.isErroCriticoDefensor) xpDefensor = 0;
+      await adicionarXpAcao(jogadorSelecionadoEmail, xpDefensor);
+      
       setAcaoModo("acao");
       setAcaoPendenteId(null);
       setAcaoOpen(false);
@@ -986,14 +1108,156 @@ async function rolarAcao() {
       return;
     }
     
-    await addDoc(chatCol, {
-  userNick: fichaJogador?.nome || userNick,
-  userEmail: jogadorSelecionadoEmail, // 🟢 USA O EMAIL DO JOGADOR
-  type: "acao",
-      text: mensagem,
-      dadosRolados: rolls, // 🟢 ADICIONA OS DADOS
-      timestamp: serverTimestamp(),
-    });
+            // 🟢 SE FOR CONSUMÍVEL, APLICAR EFEITO
+    if (acaoItemConsumivel && acaoItem) {
+      const valorReal = Math.round(acaoConsumivelValor * acaoConsumivelPercentual / 100);
+      const emailAlvo = acaoAlvo || jogadorSelecionadoEmail;
+      const ehOutro = acaoAlvo && acaoAlvo !== jogadorSelecionadoEmail;
+      
+      // Para outro jogador: precisa de 51% do total máximo
+      const totalMaximo = totalD10 * 10; // máximo possível
+      const percentualAcerto = totalMaximo > 0 ? (total / totalMaximo) * 100 : 0;
+      
+      if (ehOutro && percentualAcerto < 51) {
+        // Falhou em aplicar no outro
+        mensagem += `\n\n🧪 **FALHA ao usar ${acaoItem}!** (${Math.round(percentualAcerto)}% < 51% necessário)`;
+                const isDadoSecreto = modoSecreto;
+        await addDoc(chatCol, {
+          userNick: fichaJogador?.nome || userNick,
+          userEmail: jogadorSelecionadoEmail,
+          type: "acao",
+          text: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagem,
+          dadosRolados: rolls,
+          secretRolls: isDadoSecreto ? rolls : null,
+          secretText: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
+          timestamp: serverTimestamp(),
+        });
+      } else {
+        // Sucesso - aplicar efeito
+        const refAlvo = doc(db, "fichas", emailAlvo);
+        const snapAlvo = await getDoc(refAlvo);
+        
+        if (snapAlvo.exists()) {
+          const fichaAlvo = snapAlvo.data();
+          let atualizacoes = {};
+          let msgEfeito = "";
+          const nomeAlvo = ehOutro ? (fichasMap[emailAlvo]?.nome || emailAlvo) : nomePersonagem;
+          
+          if (acaoConsumivelTipo === "PV") {
+            const pvMax = 100 + ((fichaAlvo.atributos?.constituicao || 0) + (fichaAlvo.pericias?.sobrevivencia || 0)) * 10;
+            const novoPV = Math.min(pvMax, (fichaAlvo.pontosVida || 0) + valorReal);
+            atualizacoes.pontosVida = novoPV;
+            msgEfeito = `❤️ +${valorReal} PV → ${nomeAlvo} (${fichaAlvo.pontosVida || 0} → ${novoPV})`;
+          } else if (acaoConsumivelTipo === "PE") {
+            const peMax = 10 + ((fichaAlvo.atributos?.vontade || 0) + (fichaAlvo.pericias?.aura || 0)) * 5;
+            const novoPE = Math.min(peMax, (fichaAlvo.pontosEnergia || 0) + valorReal);
+            atualizacoes.pontosEnergia = novoPE;
+            msgEfeito = `⚡ +${valorReal} PE → ${nomeAlvo} (${fichaAlvo.pontosEnergia || 0} → ${novoPE})`;
+          } else if (acaoConsumivelTipo === "RE") {
+            msgEfeito = `🔄 Efeito removido de ${nomeAlvo}!`;
+          }
+          
+          await setDoc(refAlvo, atualizacoes, { merge: true });
+          
+                    // 🟢 CONSUMO REAL DO ITEM BASEADO NA DURABILIDADE
+          // A durabilidade do item representa o % restante do item
+          // Ex: durabilidade 50% + usar 100% = consome os 50% restantes + 50% do próximo
+          
+          const categoria = Object.keys(fichaJogador).find(cat => 
+            Array.isArray(fichaJogador[cat]) && fichaJogador[cat].some(it => it.nome === acaoItem)
+          );
+          
+          if (categoria) {
+            // Pega TODOS os itens com o mesmo nome (podem estar em slots diferentes)
+            const itensMismoNome = fichaJogador[categoria]
+              .map((it, i) => ({ ...it, __originalIndex: i }))
+              .filter(it => it.nome === acaoItem);
+            
+            let percentualRestanteParaConsumir = acaoConsumivelPercentual;
+            const itensAtualizados = [...fichaJogador[categoria]];
+            
+            for (const itemAtual of itensMismoNome) {
+              if (percentualRestanteParaConsumir <= 0) break;
+              
+              const durabilidadeAtual = itemAtual.durabilidade || 100;
+              const idx = itemAtual.__originalIndex;
+              
+              // Quanto este item ainda tem disponível (%)
+              const disponivelNesteItem = durabilidadeAtual;
+              
+              if (percentualRestanteParaConsumir >= disponivelNesteItem) {
+                // Consome TODO este item
+                percentualRestanteParaConsumir -= disponivelNesteItem;
+                
+                // Marca este item como consumido (remove ou zera)
+                if (itemAtual.quantidade > 1) {
+                  itensAtualizados[idx] = {
+                    ...itensAtualizados[idx],
+                    quantidade: itemAtual.quantidade - 1,
+                    durabilidade: 100 // Reseta durabilidade do próximo
+                  };
+                } else {
+                  itensAtualizados[idx] = null; // Será removido
+                }
+              } else {
+                // Consome PARCIALMENTE este item
+                const novaDurabilidade = durabilidadeAtual - percentualRestanteParaConsumir;
+                itensAtualizados[idx] = {
+                  ...itensAtualizados[idx],
+                  durabilidade: Math.max(0, novaDurabilidade)
+                };
+                percentualRestanteParaConsumir = 0;
+              }
+            }
+            
+            // Filtra itens nulos (removidos)
+            const novosItens = itensAtualizados.filter(it => it !== null);
+            
+            // Atualiza no Firestore
+            await setDoc(doc(db, "fichas", jogadorSelecionadoEmail), { [categoria]: novosItens }, { merge: true });
+            
+            // Atualiza localmente também
+            setFichaJogador(prev => ({ ...prev, [categoria]: novosItens }));
+          }
+          
+          mensagem += `\n\n🧪 **${acaoItem} usado!** ${msgEfeito}`;
+          
+                    const isDadoSecreto = modoSecreto;
+          await addDoc(chatCol, {
+            userNick: fichaJogador?.nome || userNick,
+            userEmail: jogadorSelecionadoEmail,
+            type: "acao",
+            text: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagem,
+            dadosRolados: rolls,
+            secretRolls: isDadoSecreto ? rolls : null,
+            secretText: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
+            timestamp: serverTimestamp(),
+          });
+        }
+      }
+    } else {
+      // Ação normal (não consumível)
+            // 🟢 Verifica modo secreto
+      const isDadoSecreto = modoSecreto;
+      
+      await addDoc(chatCol, {
+        userNick: fichaJogador?.nome || userNick,
+        userEmail: jogadorSelecionadoEmail,
+        type: "acao",
+        text: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagem,
+        dadosRolados: rolls,
+        secretRolls: isDadoSecreto ? rolls : null,
+        secretTotal: isDadoSecreto ? total : null,
+        secretText: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
+        timestamp: serverTimestamp(),
+      });
+    }
+    
+    // 🟢 ADICIONAR XP
+    let xpGanho = 1;
+    if (isCritico) xpGanho = 2;
+    if (isErroCritico) xpGanho = 0;
+    await adicionarXpAcao(jogadorSelecionadoEmail, xpGanho);
     
     setAcaoOpen(false);
     } finally {
@@ -1005,8 +1269,12 @@ async function rolarAcao() {
     setAcaoItemDado(0);
     setAcaoCasting(0);
     setAcaoEmbuicao(0);
-    setAcaoHabilidadeSelecionada("");
+        setAcaoHabilidadeSelecionada("");
     setAcaoHabilidadeDado(0);
+    setAcaoItemConsumivel(false);
+    setAcaoConsumivelTipo("");
+    setAcaoConsumivelValor(0);
+    setAcaoConsumivelPercentual(100);
   }
 }
 
@@ -1017,11 +1285,30 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   
   if (!snap.exists()) return;
   
-  const pendente = snap.data();
+    const pendente = snap.data();
   const valorAtaque = pendente.valorAtaque;
   const atacante = pendente.atacante;
   const alvo = pendente.alvo;
   const dadosAtacante = pendente.dadosRolados || [];
+  const isCritico = pendente.isCritico || false;
+  const isErroCritico = pendente.isErroCritico || false;
+    // 🟢 VERIFICAR CRÍTICO/ERRO CRÍTICO DO DEFENSOR
+  let isCriticoDefensor = false;
+  let isErroCriticoDefensor = false;
+  
+  if (dadosDefesa.length >= 1) {
+    const temDezDef = dadosDefesa.some(r => r === 10);
+    const temUmDef = dadosDefesa.some(r => r === 1);
+    const todosPositivosDef = dadosDefesa.every(r => r >= 6);
+    const todosNegativosDef = dadosDefesa.every(r => r <= 5);
+    
+    if (temDezDef && todosPositivosDef) {
+      isCriticoDefensor = true;
+    }
+    if (temUmDef && todosNegativosDef) {
+      isErroCriticoDefensor = true;
+    }
+  }
   
   // 🟢 Nomes dos personagens
   const nomeAtacante = fichasMap[atacante]?.nome || atacante;
@@ -1031,51 +1318,166 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   let danoBrutoAtacante = 0;
   let danoBrutoAlvo = 0;
   
+    // ============= LÓGICA DE CRÍTICO E ERRO CRÍTICO =============
+  
+    // ============= LÓGICA DE CRÍTICO E ERRO CRÍTICO (ATACANTE + DEFENSOR) =============
+  
   if (tipoDefesa === "esquiva") {
-    danoBrutoAlvo = Math.max(0, valorAtaque - valorDefesa);
-    mensagem = `🛡️ **${nomeDefensor}** tentou esquivar!\n\n`;
-    mensagem += `🎲 **Dados do Ataque** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
-    mensagem += `🎲 **Dados da Esquiva** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n\n`;
-    
-    if (danoBrutoAlvo > 0) {
-      mensagem += `💥 **${valorAtaque}** - **${valorDefesa}** = **${danoBrutoAlvo}** de dano bruto\n`;
-    } else {
-      mensagem += `✅ **Esquiva bem-sucedida!** Nenhum dano recebido.\n`;
+    // 🟢 DEFENSOR com ERRO CRÍTICO: Toma dano cheio
+    if (isErroCriticoDefensor) {
+      danoBrutoAlvo = valorAtaque;
+      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar, mas...\n\n`;
+      mensagem += `💥 **ERRO CRÍTICO NA ESQUIVA!** ${nomeDefensor} falhou completamente!\n`;
+      mensagem += `🎲 **Dados da Esquiva FALHA** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
+      mensagem += `💔 Dano cheio do atacante: **${valorAtaque}** aplicado!\n`;
+    }
+    // 🟢 ATACANTE com ERRO CRÍTICO: Esquiva automática
+    else if (isErroCritico) {
+      danoBrutoAlvo = 0;
+      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar...\n\n`;
+      mensagem += `💥 **ERRO CRÍTICO DO ATACANTE!** Ação falhou completamente!\n`;
+      mensagem += `✅ Esquiva automática! Nenhum dano recebido.\n`;
+    }
+    // 🟢 DEFENSOR com CRÍTICO: Esquiva perfeita
+    else if (isCriticoDefensor) {
+      danoBrutoAlvo = 0;
+      mensagem = `🛡️ **${nomeDefensor}** esquivou perfeitamente!\n\n`;
+      mensagem += `🌟 **CRÍTICO NA ESQUIVA!** ${nomeDefensor} desviou de tudo!\n`;
+      mensagem += `🎲 **Dados da Esquiva PERFEITA** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
+      mensagem += `✅ Nenhum dano recebido!\n`;
+    }
+    // 🟢 ATACANTE com CRÍTICO: Dano direto
+    else if (isCritico) {
+      danoBrutoAlvo = valorAtaque;
+      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar, mas...\n\n`;
+      mensagem += `🌟 **CRÍTICO DO ATACANTE!** A esquiva foi ignorada!\n`;
+      mensagem += `🎲 **Dados do Ataque CRÍTICO** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
+      mensagem += `💥 Dano direto: **${valorAtaque}** aplicado!\n`;
+    }
+    // ⚔️ NORMAL
+    else {
+      danoBrutoAlvo = Math.max(0, valorAtaque - valorDefesa);
+      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar!\n\n`;
+      mensagem += `🎲 **Dados do Ataque** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
+      mensagem += `🎲 **Dados da Esquiva** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n\n`;
+      
+      if (danoBrutoAlvo > 0) {
+        mensagem += `💥 **${valorAtaque}** - **${valorDefesa}** = **${danoBrutoAlvo}** de dano bruto\n`;
+      } else {
+        mensagem += `✅ **Esquiva bem-sucedida!** Nenhum dano recebido.\n`;
+      }
     }
   }
   
   if (tipoDefesa === "contragolpe") {
-    mensagem = `⚔️ **${nomeDefensor}** tentou contra-golpear!\n\n`;
-    mensagem += `🎲 **Dados do Ataque** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
-    mensagem += `🎲 **Dados do Contragolpe** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n\n`;
-    
-    if (valorDefesa > valorAtaque) {
-      danoBrutoAtacante = valorDefesa - valorAtaque;
-      mensagem += `⚡ **${valorDefesa}** - **${valorAtaque}** = **${danoBrutoAtacante}** de dano devolvido!\n`;
-    } else {
-      danoBrutoAlvo = valorAtaque - valorDefesa;
-      mensagem += `⚠️ Contragolpe falhou!\n`;
-      mensagem += `💥 **${valorAtaque}** - **${valorDefesa}** = **${danoBrutoAlvo}** de dano bruto\n`;
+    // 🟢 DEFENSOR com ERRO CRÍTICO: Toma dano cheio do atacante
+    if (isErroCriticoDefensor) {
+      danoBrutoAlvo = valorAtaque;
+      mensagem = `⚔️ **${nomeDefensor}** tentou contra-golpear, mas...\n\n`;
+      mensagem += `💥 **ERRO CRÍTICO NO CONTRAGOLPE!** ${nomeDefensor} falhou completamente!\n`;
+      mensagem += `🎲 **Dados do Contragolpe FALHO** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
+      mensagem += `💔 Dano cheio do atacante: **${valorAtaque}** aplicado!\n`;
+    }
+    // 🟢 ATACANTE com ERRO CRÍTICO: Contragolpe acerta com dano CHEIO
+    else if (isErroCritico) {
+      danoBrutoAtacante = valorDefesa; // Dano inteiro do contragolpe
+      mensagem = `⚔️ **${nomeDefensor}** contra-golpeou!\n\n`;
+      mensagem += `💥 **ERRO CRÍTICO DO ATACANTE!** O contragolpe acertou em cheio!\n`;
+      mensagem += `🎲 **Dados do Contragolpe** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
+      mensagem += `⚡ Dano total do contragolpe: **${valorDefesa}** (mitigado por armadura)!\n`;
+    }
+    // 🟢 DEFENSOR com CRÍTICO: Contragolpe devolve dano CHEIO
+    else if (isCriticoDefensor) {
+      danoBrutoAtacante = valorDefesa; // Dano inteiro do contragolpe
+      mensagem = `⚔️ **${nomeDefensor}** contra-golpeou perfeitamente!\n\n`;
+      mensagem += `🌟 **CRÍTICO NO CONTRAGOLPE!** ${nomeDefensor} devolveu o ataque com tudo!\n`;
+      mensagem += `🎲 **Dados do Contragolpe CRÍTICO** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
+      mensagem += `⚡ Dano total devolvido: **${valorDefesa}** (mitigado por armadura)!\n`;
+    }
+    // 🟢 ATACANTE com CRÍTICO: Contragolpe ignorado
+    else if (isCritico) {
+      danoBrutoAlvo = valorAtaque;
+      mensagem = `⚔️ **${nomeDefensor}** tentou contra-golpear, mas...\n\n`;
+      mensagem += `🌟 **CRÍTICO DO ATACANTE!** O contragolpe foi ignorado!\n`;
+      mensagem += `🎲 **Dados do Ataque CRÍTICO** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
+      mensagem += `💥 Dano direto: **${valorAtaque}** aplicado!\n`;
+    }
+    // ⚔️ NORMAL
+    else {
+      mensagem = `⚔️ **${nomeDefensor}** tentou contra-golpear!\n\n`;
+      mensagem += `🎲 **Dados do Ataque** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
+      mensagem += `🎲 **Dados do Contragolpe** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n\n`;
+      
+      if (valorDefesa > valorAtaque) {
+        danoBrutoAtacante = valorDefesa - valorAtaque;
+        mensagem += `⚡ **${valorDefesa}** - **${valorAtaque}** = **${danoBrutoAtacante}** de dano devolvido!\n`;
+      } else {
+        danoBrutoAlvo = valorAtaque - valorDefesa;
+        mensagem += `⚠️ Contragolpe falhou!\n`;
+        mensagem += `💥 **${valorAtaque}** - **${valorDefesa}** = **${danoBrutoAlvo}** de dano bruto\n`;
+      }
     }
   }
   
+  // 🟢 DETERMINAR TIPO DE DANO DO ATACANTE (APENAS UMA VEZ)
+    // 🟢 DETERMINAR TIPO DE DANO DO ATACANTE
+  // Prioridade: 1. tipoDanoAtaque da pendente, 2. Habilidade, 3. Item
+  let tipoDanoAtacante = pendente.tipoDanoAtaque || "Nenhum";
+  
+  // Se não veio na pendente, tenta buscar dos dados da ficha
+  if (tipoDanoAtacante === "Nenhum") {
+    const fichaAtacante = fichasMap[atacante];
+    if (fichaAtacante) {
+      // Busca nas habilidades (prioridade sobre item)
+      if (pendente.habilidadeUsada) {
+        const habilidadeUsada = (fichaAtacante.habilidades || []).find(h => h.nome === pendente.habilidadeUsada);
+        if (habilidadeUsada?.tipoDano && habilidadeUsada.tipoDano !== "Nenhum") {
+          tipoDanoAtacante = habilidadeUsada.tipoDano;
+        }
+      }
+      
+      // Busca nos itens (se não encontrou na habilidade)
+      if (tipoDanoAtacante === "Nenhum" && pendente.itemUsado) {
+        const todosItens = [
+          ...(fichaAtacante.equipamentos || []),
+          ...(fichaAtacante.vestes || []),
+          ...(fichaAtacante.diversos || [])
+        ];
+        const itemUsado = todosItens.find(it => it.nome === pendente.itemUsado);
+        if (itemUsado?.tipoDano && itemUsado.tipoDano !== "Nenhum") {
+          tipoDanoAtacante = itemUsado.tipoDano;
+        }
+      }
+    }
+  }
+  
+  console.log("🗡️ Tipo de Dano no Combate:", tipoDanoAtacante, "| Pendente:", pendente.tipoDanoAtaque);
+  
   // Aplica dano no ALVO
   if (danoBrutoAlvo > 0) {
-    const resultado = await aplicarDano(alvo, danoBrutoAlvo);
+    const resultado = await aplicarDano(alvo, danoBrutoAlvo, tipoDanoAtacante, atacante);
     mensagem += `\n🛡️ **Armadura de ${nomeDefensor}:** ${resultado.armadura}\n`;
-    if (resultado.armadura > 0) {
+    if (resultado.armadura > 0 && danoBrutoAlvo > resultado.armadura) {
       const absorvido = Math.min(resultado.armadura, danoBrutoAlvo);
       mensagem += `🔄 Absorveu: **${absorvido}** de dano\n`;
     }
     mensagem += `💔 **Dano Final em ${nomeDefensor}:** **${resultado.danoFinal}**\n`;
     mensagem += `❤️ PV restante: **${resultado.pvRestante}**\n`;
+    
+    // 🟢 Mostrar tipo de dano e efeitos
+    if (tipoDanoAtacante !== "Nenhum") {
+      mensagem += `\n🗡️ **Tipo de Dano:** ${tipoDanoAtacante}\n`;
+    }
+    if (resultado.efeitos && resultado.efeitos.length > 0) {
+      mensagem += `\n${resultado.efeitos.join("\n")}\n`;
+    }
   }
   
   // Aplica dano no ATACANTE (contragolpe bem-sucedido)
   if (danoBrutoAtacante > 0) {
     const resultado = await aplicarDano(atacante, danoBrutoAtacante);
     mensagem += `\n🛡️ **Armadura de ${nomeAtacante}:** ${resultado.armadura}\n`;
-    if (resultado.armadura > 0) {
+    if (resultado.armadura > 0 && danoBrutoAtacante > resultado.armadura) {
       const absorvido = Math.min(resultado.armadura, danoBrutoAtacante);
       mensagem += `🔄 Absorveu: **${absorvido}** de dano\n`;
     }
@@ -1106,31 +1508,171 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   // Marca como resolvida
   await setDoc(pendenteRef, { resolvida: true }, { merge: true });
   
-  // 🟢 Envia mensagem como o DEFENSOR (quem reagiu)
+    // 🟢 Envia mensagem como o DEFENSOR (quem reagiu)
+   const isDadoSecreto = modoSecreto;
   await addDoc(chatCol, {
     userNick: nomeDefensor,
     userEmail: alvo,
     type: "acao",
-    text: mensagem,
+    text: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagem,
     dadosRolados: dadosDefesa,
+    secretRolls: isDadoSecreto ? dadosDefesa : null,
+    secretText: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
     timestamp: serverTimestamp(),
   });
   
-  return { mensagem };
+  // 🟢 ADICIONAR XP PARA O ATACANTE (baseado nas flags DELE)
+  let xpAtacante = 1;
+  if (isCritico) xpAtacante = 2;
+  if (isErroCritico) xpAtacante = 0;
+  await adicionarXpAcao(atacante, xpAtacante);
+  
+  // 🟢 ADICIONAR XP PARA O DEFENSOR (baseado nas flags DELE)
+  let xpDefensor = 1;
+  if (isCriticoDefensor) xpDefensor = 2;
+  if (isErroCriticoDefensor) xpDefensor = 0;
+  await adicionarXpAcao(alvo, xpDefensor);
+  
+  return { mensagem, isCriticoDefensor, isErroCriticoDefensor };
 }
-// 🟢 FUNÇÃO PARA APLICAR DANO (PV + ARMADURA) - AGORA RETORNA RESULTADO
-async function aplicarDano(email, danoBruto) {
+// 🟢 FUNÇÃO PARA APLICAR DANO COM EFEITOS REAIS DE TIPO DE DANO
+async function aplicarDano(email, danoBruto, tipoDano = "Nenhum", atacanteEmail = null) {
   const fichaRef = doc(db, "fichas", email);
   const snap = await getDoc(fichaRef);
-  if (!snap.exists()) return { danoFinal: 0, armadura: 0 };
+  if (!snap.exists()) return { danoFinal: 0, armadura: 0, pvRestante: 0, efeitos: [] };
   
   const ficha = snap.data();
-  const armadura = Number(ficha.armadura || 0);
+  let armaduraOriginal = Number(ficha.armadura || 0);
+  let armadura = armaduraOriginal;
+  const efeitos = [];
   
-  // Armadura absorve dano
+  // ==================== PROCESSAR EFEITOS REAIS ====================
+  
+  // 🧪 ÁCIDO: Ignora 100% da armadura (dano vai direto no PV)
+  if (tipoDano === "Ácido") {
+    armadura = 0;
+    efeitos.push("🧪 **Ácido:** Ignorou 100% da armadura! Dano aplicado diretamente nos PV.");
+  }
+  
+  // 🏹 PERFURANTE: Ignora 50% de TODAS as armaduras (0 a 50)
+  if (tipoDano === "Perfurante") {
+    armadura = Math.floor(armadura * 0.5);
+    efeitos.push(`🏹 **Perfurante:** Ignorou 50% da armadura! (${armaduraOriginal} → ${armadura})`);
+  }
+  
+  // 🔪 CORTANTE: Ignora 50% da armadura SE for tecido (armadura ≤ 25)
+  if (tipoDano === "Cortante") {
+    if (armaduraOriginal <= 25) {
+      // Armaduras até 25 são consideradas de tecido
+      armadura = Math.floor(armadura * 0.5);
+      efeitos.push(`🔪 **Cortante:** Armadura de tecido (≤25)! Eficácia reduzida em 50% (${armaduraOriginal} → ${armadura})`);
+    } else {
+      // Armaduras 26+ são de metal - sem efeito
+      efeitos.push(`🔪 **Cortante:** Armadura de metal (${armaduraOriginal}>25) - sem efeito adicional.`);
+    }
+  }
+  
+  // ⚡ ELÉTRICO: 20% de chance de paralisar
+  if (tipoDano === "Elétrico") {
+    const paralisou = Math.random() < 0.2; // 20% de chance
+    if (paralisou) {
+      efeitos.push("⚡ **Elétrico:** O local atingido foi PARALISADO por 1 turno!");
+    } else {
+      efeitos.push("⚡ **Elétrico:** Dano elétrico aplicado. Paralisia não ocorreu.");
+    }
+  }
+  
+  // ✨ AURANO: Apenas informativo
+  if (tipoDano === "Aurano") {
+    efeitos.push("✨ **Aurano:** Dano puro de Aura aplicado.");
+  }
+  
+  // ❄️ GÉLIDO: 20% de chance de necrose
+  if (tipoDano === "Gélido") {
+    const necrose = Math.random() < 0.2; // 20% de chance
+    if (necrose) {
+      efeitos.push("❄️ **Gélido:** NECROSE causada no local atingido!");
+    } else {
+      efeitos.push("❄️ **Gélido:** Dano gélido aplicado. Necrose não ocorreu.");
+    }
+  }
+  
+  // 🔥 TÉRMICO: 50% menos cura/regeneração (mensagem apenas, efeito futuro)
+  if (tipoDano === "Térmico") {
+    efeitos.push("🔥 **Térmico:** 50% menos cura/regeneração na área afetada até se curar completamente!");
+  }
+  
+  // 🧠 PSÍQUICO: 50% chance de perder Aura no próximo turno
+  if (tipoDano === "Psíquico") {
+    const perdeuAura = Math.random() < 0.5;
+    if (perdeuAura) {
+      efeitos.push("🧠 **Psíquico:** O alvo perderá a Aura no próximo turno! (Perícia Aura travada)");
+    } else {
+      efeitos.push("🧠 **Psíquico:** Dano psíquico aplicado. Aura mantida.");
+    }
+  }
+  
+  // 📢 TROVEJANTE: 50% chance de desorientar (apenas se NÃO tiver Percepção Nv.5)
+  if (tipoDano === "Trovejante") {
+    const periciasAlvo = ficha.pericias || {};
+    const temPercepcao5 = (periciasAlvo.percepcao || 0) >= 5;
+    
+    if (!temPercepcao5) {
+      const desorientou = Math.random() < 0.5;
+      if (desorientou) {
+        efeitos.push("📢 **Trovejante:** O alvo foi DESORIENTADO por 1 turno! (Sem esquiva no próximo turno)");
+      } else {
+        efeitos.push("📢 **Trovejante:** Dano trovejante aplicado. Desorientação não ocorreu.");
+      }
+    } else {
+      efeitos.push("📢 **Trovejante:** Alvo IMUNE a desorientação (Percepção Nv.5)!");
+    }
+  }
+  
+  // 💥 CONTUNDENTE: 50% chance de soltar itens (apenas mensagem)
+  if (tipoDano === "Contundente") {
+    const soltou = Math.random() < 0.5;
+    if (soltou) {
+      efeitos.push("💥 **Contundente:** O alvo SOLTOU os itens empunhados!");
+    } else {
+      efeitos.push("💥 **Contundente:** Impacto aplicado. Itens mantidos.");
+    }
+  }
+  
+  // ☠️ TÓXICO: Perde 5 PV por 6 turnos (imune se Sobrevivência Nv.5)
+  if (tipoDano === "Tóxico") {
+    const periciasAlvo = ficha.pericias || {};
+    const temImunidade = (periciasAlvo.sobrevivencia || 0) >= 5;
+    
+    if (!temImunidade) {
+      const toxinaId = `${email}_${Date.now()}`;
+      setToxinasAtivas(prev => ({
+        ...prev,
+        [toxinaId]: {
+          email,
+          dano: 5,
+          turnosRestantes: 6,
+          turnosAplicados: 0,
+        }
+      }));
+      efeitos.push("☠️ **Tóxico:** O alvo perderá 5 PV por turno durante 6 turnos!");
+    } else {
+      efeitos.push("☠️ **Tóxico:** O alvo é IMUNE (Sobrevivência Nv.5)!");
+    }
+  }
+  
+  // ==================== CALCULAR DANO FINAL ====================
+  // Armadura absorve dano (já modificada pelos efeitos acima)
   const danoFinal = Math.max(0, danoBruto - armadura);
   
-  console.log(`🛡️ APLICAR DANO: ${email}`, { danoBruto, armadura, danoFinal });
+  console.log(`🛡️ APLICAR DANO: ${email}`, { 
+    danoBruto, 
+    armaduraOriginal, 
+    armaduraEfetiva: armadura, 
+    danoFinal, 
+    tipoDano, 
+    efeitos 
+  });
   
   // Desgasta durabilidade das vestes (proporcional ao dano absorvido)
   const vestes = ficha.vestes || [];
@@ -1152,9 +1694,89 @@ async function aplicarDano(email, danoBruto) {
   
   await setDoc(fichaRef, { pontosVida: novoPV }, { merge: true });
   
-  // 🟢 RETORNA o resultado para usar na mensagem
-    return { danoFinal, armadura, pvRestante: novoPV };
+  return { danoFinal, armadura, pvRestante: novoPV, efeitos };
 }
+
+// 🟢 FUNÇÃO PARA ADICIONAR XP AO JOGADOR
+async function adicionarXpAcao(emailJogador, quantidade = 1) {
+  if (!emailJogador || emailJogador === "mestre@reqviemrpg.com" || quantidade <= 0) return;
+  
+  try {
+    const xpRef = doc(db, "game", "xp");
+    const snap = await getDoc(xpRef);
+    
+    let xpMap = {};
+    if (snap.exists()) {
+      xpMap = snap.data().xpMap || {};
+    }
+    
+    const jogadorXP = xpMap[emailJogador] || { xp: 0, level: 1 };
+    
+    // Adiciona XP
+    jogadorXP.xp = (jogadorXP.xp || 0) + quantidade;
+    
+    // Verifica se upou de nível (100 XP = 1 nível)
+    while (jogadorXP.xp >= 100) {
+      jogadorXP.xp -= 100;
+      jogadorXP.level = (jogadorXP.level || 1) + 1;
+    }
+    
+    xpMap[emailJogador] = jogadorXP;
+    
+    await setDoc(xpRef, { xpMap }, { merge: true });
+    console.log(`⭐ +${quantidade} XP para ${emailJogador}: LV ${jogadorXP.level} - ${jogadorXP.xp}/100`);
+  } catch (err) {
+    console.error("Erro ao adicionar XP:", err);
+  }
+}
+// 🟢 APLICAR DANO TÓXICO NOS TURNOS
+async function aplicarDanoToxico() {
+  const toxinasAtualizadas = { ...toxinasAtivas };
+  
+  for (const [id, toxina] of Object.entries(toxinasAtivas)) {
+    if (toxina.turnosRestantes > 0) {
+      const fichaRef = doc(db, "fichas", toxina.email);
+      const snap = await getDoc(fichaRef);
+      if (snap.exists()) {
+        const ficha = snap.data();
+        const pvAtual = Number(ficha.pontosVida || 0);
+        const novoPV = Math.max(0, pvAtual - toxina.dano);
+        await setDoc(fichaRef, { pontosVida: novoPV }, { merge: true });
+        
+        await addDoc(chatCol, {
+          userNick: "SISTEMA",
+          userEmail: "sistema@reqviemrpg.com",
+          type: "acao",
+          text: `☠️ **Tóxico:** ${fichasMap[toxina.email]?.nome || toxina.email} perdeu **${toxina.dano} PV**! (Turno ${toxina.turnosAplicados + 1}/6)\n❤️ PV restante: **${novoPV}**`,
+          timestamp: serverTimestamp(),
+        });
+        
+        toxinasAtualizadas[id] = {
+          ...toxina,
+          turnosRestantes: toxina.turnosRestantes - 1,
+          turnosAplicados: toxina.turnosAplicados + 1,
+        };
+      }
+    }
+  }
+  
+  // Remove toxinas expiradas
+  const toxinasFiltradas = {};
+  for (const [id, toxina] of Object.entries(toxinasAtualizadas)) {
+    if (toxina.turnosRestantes > 0) {
+      toxinasFiltradas[id] = toxina;
+    }
+  }
+  
+  setToxinasAtivas(toxinasFiltradas);
+}
+
+// 🟢 DISPARAR DANO TÓXICO AO ROLAR AÇÃO
+useEffect(() => {
+  if (Object.keys(toxinasAtivas).length > 0) {
+    aplicarDanoToxico();
+  }
+}, [rolagemEmAndamento]); // Dispara quando alguém rola uma ação
 
   const getInitials = (name = "?") =>
     name
@@ -1512,15 +2134,48 @@ async function aplicarDano(email, danoBruto) {
                       </Typography>
                     )}
 
-                                        {m.type === "acao" && (
+                                                            {m.type === "acao" && (
   <Box>
     <Typography sx={{ color: '#00bcd4', whiteSpace: 'pre-line', fontWeight: 'bold' }}>
-      {m.text}
+      {!isMaster && m.secretText ? m.secretText : m.text}
     </Typography>
-    {/* 🟢 Mostra os dados rolados se existirem */}
-    {m.dadosRolados && m.dadosRolados.length > 0 && (
+    {/* 🟢 Mostra os dados rolados se existirem e não for secreto */}
+    {m.dadosRolados && m.dadosRolados.length > 0 && !m.secretText && (
       <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
         🎲 Dados: [{m.dadosRolados.join(", ")}]
+      </Typography>
+    )}
+    {/* 🟢 Se for secreto, mostra indicador */}
+    {isMaster && m.secretText && (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+        <Typography variant="caption" sx={{ color: '#ef4444', fontSize: '0.65rem' }}>
+          🔒 SECRETO
+        </Typography>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={async () => {
+            await updateDoc(doc(db, "chat", m.id), {
+              secretText: null,
+              revealed: true
+            });
+          }}
+          sx={{ 
+            fontSize: '0.6rem', 
+            minWidth: 'auto', 
+            px: 0.5, 
+            py: 0.2,
+            color: '#4caf50',
+            borderColor: '#4caf50'
+          }}
+        >
+          👁️ Revelar
+        </Button>
+      </Box>
+    )}
+    {m.revealed && (
+      <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
+        ✅ Revelado pelo Mestre
       </Typography>
     )}
   </Box>
@@ -1901,7 +2556,7 @@ async function aplicarDano(email, danoBruto) {
               <InputLabel sx={{ color: '#94a3b8' }}>Item</InputLabel>
               <Select
                 value={acaoItem}
-                onChange={(e) => {
+                                onChange={(e) => {
                   setAcaoItem(e.target.value);
                   const todosItens = [
                     ...(fichaJogador?.equipamentos || []),
@@ -1910,6 +2565,21 @@ async function aplicarDano(email, danoBruto) {
                   ];
                   const itemEncontrado = todosItens.find(it => it.nome === e.target.value);
                   setAcaoItemDado(itemEncontrado?.dado || 0);
+                  
+                  // 🟢 Verificar se é consumível
+                  if (itemEncontrado?.consumivel && itemEncontrado.consumivel !== "Nenhum") {
+                    setAcaoItemConsumivel(true);
+                    setAcaoConsumivelTipo(itemEncontrado.consumivel);
+                    setAcaoConsumivelValor(itemEncontrado.consumivelValor || 0);
+                    setAcaoConsumivelPercentual(itemEncontrado.consumivelPercentual || 100);
+                    setAcaoItemDado(0); // Consumível não adiciona dado
+                    setAcaoTipo(""); // Remove dano
+                  } else {
+                    setAcaoItemConsumivel(false);
+                    setAcaoConsumivelTipo("");
+                    setAcaoConsumivelValor(0);
+                    setAcaoConsumivelPercentual(100);
+                  }
                 }}
                 sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
               >
@@ -2076,6 +2746,46 @@ async function aplicarDano(email, danoBruto) {
               </Typography>
             )}
             
+                        {/* 🟢 CONFIGURAÇÃO DE CONSUMÍVEL (aparece se item for consumível) */}
+            {acaoItemConsumivel && (
+              <Paper sx={{ p: 2, bgcolor: '#1e1a2e', border: '1px solid #4caf50', mb: 2 }}>
+                <Typography variant="subtitle2" sx={{ color: '#4caf50', mb: 1 }}>
+                  🧪 Item Consumível: {acaoItem}
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                  Tipo: <strong style={{ color: '#fff' }}>{acaoConsumivelTipo}</strong> | 
+                  Valor máximo: <strong style={{ color: '#fff' }}>{acaoConsumivelValor}</strong>
+                </Typography>
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                    Percentual a usar: <strong style={{ color: '#4caf50' }}>{acaoConsumivelPercentual}%</strong>
+                  </Typography>
+                  <Slider
+                    value={acaoConsumivelPercentual}
+                    onChange={(e, val) => setAcaoConsumivelPercentual(val)}
+                    min={1}
+                    max={100}
+                    step={1}
+                    size="small"
+                    sx={{ color: '#4caf50' }}
+                  />
+                </Box>
+                <Typography variant="caption" sx={{ color: '#facc15' }}>
+                  Efeito: <strong>+{Math.round(acaoConsumivelValor * acaoConsumivelPercentual / 100)} {acaoConsumivelTipo}</strong>
+                </Typography>
+                {acaoConsumivelPercentual < 100 && (
+                  <Typography variant="caption" sx={{ color: '#ff9800', display: 'block' }}>
+                    ⚠️ Consumo parcial - durabilidade será reduzida
+                  </Typography>
+                )}
+                {acaoConsumivelPercentual >= 100 && (
+                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block' }}>
+                    ⚠️ Consumo total - 1 unidade será removida
+                  </Typography>
+                )}
+              </Paper>
+            )}
+
             {/* Resumo */}
             {fichaJogador && (
               <Paper sx={{ p: 2, bgcolor: '#16213e', border: '1px solid #334155' }}>
@@ -2083,7 +2793,7 @@ async function aplicarDano(email, danoBruto) {
                   📊 Resumo da Rolagem
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                                    Total de d10: <strong style={{ color: '#fff' }}>
+                  Total de d10: <strong style={{ color: '#fff' }}>
                     {(acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] || 0) + 
                      (acaoPericia && fichaJogador?.pericias?.[acaoPericia] || 0) +
 (acaoPericia2 && fichaJogador?.pericias?.[acaoPericia2] || 0) +

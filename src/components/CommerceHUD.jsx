@@ -31,6 +31,13 @@ const TIPOS_DANO = [
   { valor: "Trovejante", label: "Trovejante", cor: "#4169e1" },
   { valor: "Tóxico", label: "Tóxico", cor: "#8b008b" },
 ];
+// 🟢 TIPOS DE CONSUMÍVEL
+const TIPOS_CONSUMIVEL = [
+  { valor: "Nenhum", label: "Nenhum", cor: "#888888" },
+  { valor: "PV", label: "PV (Vida)", cor: "#ff4d4f" },
+  { valor: "PE", label: "PE (Energia)", cor: "#facc15" },
+  { valor: "RE", label: "R.E (Remover Efeito)", cor: "#00e0ff" },
+];
 
 // ==================== LIGHTBOX ====================
 function LightboxImage({ src, zoom, setZoom }) {
@@ -155,7 +162,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
         const dados = snap.docs.map(d => ({ 
           id: d.id, 
           ...d.data(),
-          tipoDano: d.data().tipoDano || "Nenhum" // 🟢 Garante tipoDano
+                              tipoDano: d.data().tipoDano || "Nenhum",
+          consumivel: d.data().consumivel || "Nenhum",
+          consumivelValor: d.data().consumivelValor || 0,
+          consumivelPercentual: d.data().consumivelPercentual || 100,
         }));
         dados.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
         setItens(dados);
@@ -296,7 +306,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       imagem: editandoItem?.imagem || "",
       ordem: editandoItem?.ordem || itens.length,
       comprasRecentes: editandoItem?.comprasRecentes || 0,
-      tipoDano: editandoItem?.tipoDano || "Nenhum", // 🟢 ADICIONADO
+                  tipoDano: editandoItem?.tipoDano || "Nenhum",
+      consumivel: editandoItem?.consumivel || "Nenhum",
+      consumivelValor: editandoItem?.consumivelValor || 0,
+      consumivelPercentual: editandoItem?.consumivelPercentual || 100,
     };
 
         await setDoc(
@@ -356,7 +369,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       durabilidade: comprandoItem.durabilidade || 100,
       dado: comprandoItem.dado || 1,
       imagem: comprandoItem.imagem || "",
-      tipoDano: comprandoItem.tipoDano || "Nenhum", // 🟢 ADICIONADO
+                  tipoDano: comprandoItem.tipoDano || "Nenhum",
+      consumivel: comprandoItem.consumivel || "Nenhum",
+      consumivelValor: comprandoItem.consumivelValor || 0,
+      consumivelPercentual: comprandoItem.consumivelPercentual || 100,
     };
 
     const categoriaItens = [...(ficha[categoriaDestinoCompra] || []), novoItem];
@@ -608,13 +624,30 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
           )}
 
           <Grid container spacing={2}>
-            {itens.map((item) => {
-              // 🟢 OFERTA E DEMANDA
+                        {itens.map((item) => {
+              // 🟢 OFERTA E DEMANDA (ALEATÓRIO POR ITEM)
               const comprasRecentes = item.comprasRecentes || 0;
               const fatorDemanda = 1 + (comprasRecentes * 0.05); // +5% por compra recente
-              const variacao = 0.3; // ±30%
-              const fatorVariacao = 1 + (Math.sin(Date.now() / 3600000) * variacao);
+              
+              // 🟢 CADA ITEM TEM SUA PRÓPRIA VARIAÇÃO ALEATÓRIA
+              // Usa o ID do item + hora atual como seed para gerar um número "pseudo-aleatório" único
+              const seed = (item.id || "0").split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+              const horaAtual = new Date().getHours();
+              
+              // Gera um fator de variação entre -40% e +40% baseado no seed do item
+              // Itens diferentes terão variações diferentes no mesmo momento
+              const variacaoItem = Math.sin(seed * 7.3 + horaAtual * 2.1) * 0.4;
+              
+              // Adiciona uma pequena variação diária (ciclo de 24h)
+              const variacaoDiaria = Math.sin(horaAtual * 0.5 + seed * 0.3) * 0.15;
+              
+              // Combina as variações (máximo ±55%)
+              const fatorVariacao = 1 + variacaoItem + variacaoDiaria;
+              
               const precoFinal = Math.round((item.valor || 0) * fatorDemanda * fatorVariacao);
+              
+              // Garante que o preço nunca seja menor que 1 (se o valor base > 0)
+              const precoExibicao = (item.valor || 0) > 0 ? Math.max(1, precoFinal) : 0;
 
               return (
                 <Grid item xs={12} key={item.id}>
@@ -641,19 +674,37 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                                 color: TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#fff",
                                 border: `1px solid ${TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#334155"}`,
                               }} 
+                              
+                            />
+                            
+                          )}
+                                                    {item.consumivel && item.consumivel !== "Nenhum" && (
+                            <Chip 
+                              label={`🧪 ${item.consumivel}${item.consumivel !== "RE" ? ` +${item.consumivelValor || 0}` : ''}`}
+                              size="small" 
+                              sx={{ 
+                                bgcolor: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor + "33" || "#1e3a5f",
+                                color: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#fff",
+                                border: `1px solid ${TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#334155"}`,
+                              }} 
                             />
                           )}
                           <Chip label={`📦 Estoque: ${item.estoque || 0}`} size="small" sx={{ bgcolor: item.estoque > 0 ? "#1b5e20" : "#5e1b1b" }} />
                         </Box>
                       </Box>
                       <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                        <Box>
+                                                <Box>
                           <Typography variant="h6" sx={{ color: "#fbbf24", fontWeight: "bold" }}>
-                            💰 {precoFinal}
+                            💰 {precoExibicao}
                           </Typography>
-                          {precoFinal !== (item.valor || 0) && (
-                            <Typography variant="caption" sx={{ color: precoFinal > (item.valor || 0) ? "#ef4444" : "#4caf50" }}>
-                              {precoFinal > (item.valor || 0) ? "📈" : "📉"} Base: {item.valor}
+                          {precoExibicao !== (item.valor || 0) && (
+                            <Typography variant="caption" sx={{ color: precoExibicao > (item.valor || 0) ? "#ef4444" : "#4caf50" }}>
+                              {precoExibicao > (item.valor || 0) ? "📈" : "📉"} Base: {item.valor}
+                            </Typography>
+                          )}
+                          {comprasRecentes > 0 && (
+                            <Typography variant="caption" sx={{ color: "#ff9800", display: "block" }}>
+                              🔥 Demanda: +{comprasRecentes * 5}%
                             </Typography>
                           )}
                         </Box>
@@ -662,8 +713,8 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                           size="small"
                           startIcon={<ShoppingCartIcon />}
                           disabled={(item.estoque || 0) <= 0}
-                          onClick={() => {
-                            setComprandoItem({ ...item, precoFinal });
+                                                    onClick={() => {
+                            setComprandoItem({ ...item, precoFinal: precoExibicao });
                             setCarteiraSelecionada("");
                             setCategoriaDestinoCompra("equipamentos");
                           }}
@@ -779,7 +830,78 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                       ))}
                     </Select>
                   </FormControl>
+                                    {/* 🟢 CONSUMÍVEL */}
+                  <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                    <InputLabel sx={{ color: '#94a3b8' }}>Consumível</InputLabel>
+                    <Select
+                      value={editandoItem?.consumivel || "Nenhum"}
+                      label="Consumível"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditandoItem(prev => ({ 
+                          ...prev, 
+                          consumivel: val,
+                          consumivelValor: val === "Nenhum" ? 0 : (prev?.consumivelValor || 0)
+                        }));
+                      }}
+                      sx={{ 
+                        color: TIPOS_CONSUMIVEL.find(t => t.valor === (editandoItem?.consumivel || "Nenhum"))?.cor || '#888',
+                        '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+                      }}
+                      MenuProps={{
+                        PaperProps: { 
+                          sx: { 
+                            bgcolor: "#0f172a", 
+                            color: "#fff",
+                            maxHeight: 200,
+                          } 
+                        }
+                      }}
+                    >
+                      {TIPOS_CONSUMIVEL.map(tc => (
+                        <MenuItem key={tc.valor} value={tc.valor}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: tc.cor }} />
+                            <Typography sx={{ color: tc.cor, fontWeight: 'bold' }}>
+                              {tc.label}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                   
+                  {/* Valor do consumível */}
+                                    {(editandoItem?.consumivel && editandoItem.consumivel !== "Nenhum") && (
+                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                      <TextField
+                        label="Valor Máximo"
+                        fullWidth
+                        type="number"
+                        value={editandoItem?.consumivelValor || 0}
+                        onChange={(e) => setEditandoItem(prev => ({ 
+                          ...prev, 
+                          consumivelValor: Math.max(0, Number(e.target.value) || 0) 
+                        }))}
+                        sx={{ flex: 1 }}
+                        InputProps={{ inputProps: { min: 0 }, style: { color: '#fff' } }}
+                        InputLabelProps={{ style: { color: '#94a3b8' } }}
+                      />
+                      <TextField
+                        label="% Padrão"
+                        fullWidth
+                        type="number"
+                        value={editandoItem?.consumivelPercentual || 100}
+                        onChange={(e) => setEditandoItem(prev => ({ 
+                          ...prev, 
+                          consumivelPercentual: Math.min(100, Math.max(1, Number(e.target.value) || 1)) 
+                        }))}
+                        sx={{ flex: 1 }}
+                        InputProps={{ inputProps: { min: 1, max: 100 }, style: { color: '#fff' } }}
+                        InputLabelProps={{ style: { color: '#94a3b8' } }}
+                      />
+                    </Box>
+                  )}
                   <Box sx={{ mt: 2 }}>
                     <Button variant="outlined" onClick={uploadImagemItem}>📷 Upload Imagem</Button>
                     {editandoItem.imagem && <img src={editandoItem.imagem} alt="" style={{ width: 80, height: 80, borderRadius: 8, marginTop: 8, cursor: "pointer" }} onClick={() => { setLightboxImage(editandoItem.imagem); setZoom(1); }} />}
