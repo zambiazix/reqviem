@@ -287,6 +287,11 @@ const [calendarioOpen, setCalendarioOpen] = useState(false);
 const [nascimentoDia, setNascimentoDia] = useState(1);
 const [nascimentoEstacao, setNascimentoEstacao] = useState(1);
 const [nascimentoAno, setNascimentoAno] = useState(879);
+// 🟢 NOVOS ESTADOS PARA O MODAL DE HABILIDADES
+const [modalHabilidadesOpen, setModalHabilidadesOpen] = useState(false);
+const [habilidadeExpandida, setHabilidadeExpandida] = useState(null);
+const [avaliacaoIA, setAvaliacaoIA] = useState(null);
+const [carregandoIA, setCarregandoIA] = useState(false);
 const [modalDinheiroOpen, setModalDinheiroOpen] = useState(false);
 const [carteiras, setCarteiras] = useState([]);
 const [novaCarteiraNome, setNovaCarteiraNome] = useState("");
@@ -464,12 +469,28 @@ useEffect(() => {
             atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
             pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
                         habilidades: Array.isArray(dados.habilidades) 
-              ? dados.habilidades.map(h => ({ 
-                  dado: 1, 
-                  tipoDano: "Aurano", 
-                  ...h 
-                })) 
-              : [],
+  ? dados.habilidades.map(h => ({ 
+      dado: 1, 
+      tipoDano: "Aurano",
+      custoPE: 0,
+      condicoes: [],
+      imagem: "",  // 🟢 NOVO
+      ...h,
+      condicoes: Array.isArray(h.condicoes) 
+        ? h.condicoes 
+        : (typeof h.condicoes === 'string' && h.condicoes.trim() 
+            ? [{ 
+                id: Date.now(), 
+                titulo: "Condição 1", 
+                descricao: h.condicoes,
+                dificuldade: 0,
+                janela: 0,
+                custo: 0,
+                risco: 0
+              }] 
+            : [])
+    })) 
+  : [],
             moedas: { ...modelo.moedas, ...(dados.moedas || {}) },
             equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
             vestes: garantirDadoNosItens(Array.isArray(dados.vestes) ? dados.vestes : []),
@@ -499,14 +520,22 @@ useEffect(() => {
     }
 
         function adicionarHabilidade() {
-      setFicha((p) => ({
-        ...p,
-        habilidades: [
-          ...(p.habilidades || []),
-          { nome: "", descricao: "", condicoes: "", limitacoes: "", dado: 1, tipoDano: "Aurano" },
-        ],
-      }));
-    }
+  setFicha((p) => ({
+    ...p,
+    habilidades: [
+      ...(p.habilidades || []),
+      { 
+        nome: "", 
+        descricao: "", 
+        condicoes: [],      // 🟢 Agora é array de objetos, não string
+        dado: 1, 
+        tipoDano: "Aurano",
+        custoPE: 0,           // 🟢 Novo campo
+        imagem: ""
+      },
+    ],
+  }));
+}
     function atualizarHabilidade(i, campo, valor) {
       setFicha((p) => {
         const arr = [...(p.habilidades || [])];
@@ -520,6 +549,350 @@ useEffect(() => {
         habilidades: p.habilidades.filter((_, idx) => idx !== i),
       }));
     }
+    
+    // 🟢 FUNÇÃO DE AVALIAÇÃO DA IA
+const avaliarHabilidadeComIA = async (habilidade) => {
+  setCarregandoIA(true);
+  
+  try {
+    // Prepara os dados para enviar à IA
+    const dadosParaAvaliar = {
+      nome: habilidade.nome,
+      descricao: habilidade.descricao,
+      dado: habilidade.dado || 1,
+      tipoDano: habilidade.tipoDano || "Aurano",
+      custoPE: habilidade.custoPE || 0,
+      condicoes: habilidade.condicoes || []
+    };
+
+    // Aqui você vai integrar com sua API de IA (OpenAI, etc.)
+    // Por enquanto, vou simular uma avaliação
+    const apiBase = window.location.hostname === "localhost" 
+      ? "http://localhost:5000" 
+      : "https://app-rpg.onrender.com";
+
+    const response = await fetch(`${apiBase}/api/avaliar-habilidade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dadosParaAvaliar)
+    });
+
+    if (!response.ok) throw new Error("Erro na avaliação");
+    
+    const resultado = await response.json();
+    setAvaliacaoIA(resultado);
+    return resultado;
+    
+  } catch (error) {
+    console.error("Erro ao avaliar habilidade:", error);
+    
+    // Fallback: avaliação local básica se a IA falhar
+    const avaliacaoLocal = avaliarHabilidadeLocal(habilidade);
+    setAvaliacaoIA(avaliacaoLocal);
+    return avaliacaoLocal;
+    
+  } finally {
+    setCarregandoIA(false);
+  }
+};
+// 🟢 AVALIAÇÃO LOCAL (FALLBACK) - VERSÃO CORRIGIDA E RIGOROSA
+const avaliarHabilidadeLocal = (habilidade) => {
+  // Calcula poder base
+  const poderBase = calcularPoderBase(habilidade);
+  
+  // Calcula nível de restrição
+  const nivelRestricao = calcularNivelRestricao(habilidade.condicoes || []);
+  
+  // Fator de restrição: 0 restrições = fator 1.0, muitas = fator 0.15
+  const fatorRestricao = Math.max(0.15, 1 - (nivelRestricao / 8));
+  const poderEfetivo = poderBase * fatorRestricao;
+  
+  // Limite máximo
+  const limiteMaximo = 3;
+  const percentual = Math.min((poderEfetivo / limiteMaximo) * 100, 200);
+  
+  let status, mensagem, sugestoes = [];
+  
+  if (nivelRestricao === 0 && poderBase > 5) {
+    status = "Muito Desequilibrada 🔴🔴";
+    mensagem = "Habilidade extremamente forte SEM nenhuma condição! Adicione restrições severas.";
+    sugestoes = [
+      "Adicione pelo menos 2 condições severas",
+      "Condições como 'só funciona 1 vez por dia' ajudam muito",
+      "Riscos como 'chance de perder a própria vida' são poderosos balanceadores"
+    ];
+  } else if (percentual <= 40) {
+    status = "Perfeitamente Equilibrada ✅✅";
+    mensagem = "Excelente! As restrições controlam perfeitamente o poder da habilidade.";
+  } else if (percentual <= 70) {
+    status = "Bem Equilibrada ✅";
+    mensagem = "A habilidade está bem balanceada com as restrições atuais.";
+  } else if (percentual <= 100) {
+    status = "Equilibrada ✅";
+    mensagem = "A habilidade está dentro do limite aceitável.";
+  } else if (percentual <= 130) {
+    status = "Pouco Equilibrada ⚠️";
+    mensagem = "A habilidade está um pouco acima do ideal. Considere adicionar mais condições.";
+    sugestoes = [
+      "Adicione condições de dificuldade (ex: requer concentração)",
+      "Restrinja o uso (ex: só funciona à noite)",
+      "Adicione um custo (ex: consome 5 PE adicionais)"
+    ];
+  } else if (percentual <= 180) {
+    status = "Desequilibrada 🔴";
+    mensagem = "Habilidade muito forte para as restrições atuais. Precisa de mais limitações.";
+    sugestoes = [
+      "Adicione múltiplas condições severas",
+      "Condições com risco de vida são as mais eficazes",
+      "Reduza o dado de dano ou poder base"
+    ];
+  } else {
+    status = "Extremamente Desequilibrada 🔴🔴";
+    mensagem = "Esta habilidade quebra completamente o jogo! Necessita de restrições extremas.";
+    sugestoes = [
+      "Adicione uma condição de 'risco de morte' (nível 5)",
+      "Restrinja para '1 uso por dia' ou menos",
+      "Adicione custo de vida/sangue",
+      "Considere reduzir drasticamente o poder base"
+    ];
+  }
+  
+  return {
+    poderBase: Math.min(poderBase, 10),
+    restricoes: Math.min(nivelRestricao, 10),
+    percentual: Math.min(percentual, 200),
+    status,
+    mensagem,
+    sugestoes
+  };
+};
+
+// 🟢 NOVA FUNÇÃO: Calcular nível de restrição
+const calcularNivelRestricao = (condicoes) => {
+  if (!condicoes || condicoes.length === 0) return 0;
+  
+  return condicoes.reduce((total, cond) => {
+    return total + (
+      (cond.dificuldade || 0) * 0.3 +
+      (cond.janela || 0) * 0.5 +
+      (cond.custo || 0) * 0.4 +
+      (cond.risco || 0) * 0.6
+    );
+  }, 0);
+};
+
+// 🟢 CALCULAR PODER BASE - VERSÃO RIGOROSA
+const calcularPoderBase = (habilidade) => {
+  let poder = 0;
+  
+  const descLower = (habilidade.descricao || "").toLowerCase();
+  const nomeLower = (habilidade.nome || "").toLowerCase();
+  
+  // Peso do dado (1-10)
+  poder += (Number(habilidade.dado) || 1) * 0.5;
+  
+  // Tipo de dano
+  const danosFortes = ["Aurano", "Psíquico", "Tóxico", "Térmico"];
+  if (danosFortes.includes(habilidade.tipoDano)) poder += 1.5;
+  
+  // Custo de PE
+  poder -= (Number(habilidade.custoPE) || 0) * 0.15;
+  
+  // 🔴 PODER ABSOLUTO
+  if (descLower.includes("mata instantaneamente") || 
+      descLower.includes("morte instantânea") ||
+      descLower.includes("mata qualquer") ||
+      descLower.includes("matar tudo") ||
+      (descLower.includes("todos os inimigos") && descLower.includes("mata"))) {
+    poder += 8;
+  }
+  
+  // 🔴 MORTE GARANTIDA
+  if (descLower.includes("morte certa") || 
+      descLower.includes("mata na hora") ||
+      descLower.includes("sem chance de defesa") ||
+      descLower.includes("impossível de sobreviver")) {
+    poder += 7;
+  }
+  
+  // 🔴 DANO EM ÁREA MASSIVO
+  if ((descLower.includes("todos") || descLower.includes("todos os inimigos")) && 
+      (descLower.includes("dano") || descLower.includes("mata") || descLower.includes("destrói"))) {
+    poder += 5;
+  }
+  
+  // 🔴 INVENCIBILIDADE
+  if (descLower.includes("invencível") || 
+      descLower.includes("imune a tudo") ||
+      (descLower.includes("nada pode") && descLower.includes("atingir")) ||
+      descLower.includes("invulnerável")) {
+    poder += 6;
+  }
+  
+  // 🟠 PODERES MUITO FORTES
+  if (descLower.includes("controla") && descLower.includes("mente")) poder += 4;
+  if (descLower.includes("controla") && descLower.includes("tempo")) poder += 5;
+  if (descLower.includes("controla") && descLower.includes("realidade")) poder += 6;
+  if (descLower.includes("teleporte")) poder += 2;
+  if (descLower.includes("invisível") || descLower.includes("invisibilidade")) poder += 2;
+  if (descLower.includes("cura") && descLower.includes("tudo")) poder += 3;
+  if (descLower.includes("ressuscita")) poder += 5;
+  if (descLower.includes("paralisa")) poder += 2;
+  
+  // 🟡 DANO MODERADO
+  if (descLower.includes("dano massivo") || descLower.includes("dano devastador")) poder += 4;
+  if (descLower.includes("dano alto") || descLower.includes("dano grande")) poder += 3;
+  if (descLower.includes("explosão")) poder += 2;
+  if (descLower.includes("corte profundo")) poder += 2;
+  
+  // 🟢 DEFESAS
+  if (descLower.includes("escudo") || descLower.includes("defesa")) poder += 1;
+  if (descLower.includes("barreira")) poder += 1.5;
+  
+  // 🔴 ANÁLISE DO NOME
+  if (nomeLower.includes("morte") || nomeLower.includes("destruição")) poder += 3;
+  if (nomeLower.includes("juízo final") || nomeLower.includes("apocalipse")) poder += 5;
+  if (nomeLower.includes("deus") || nomeLower.includes("divino")) poder += 4;
+  
+  return Math.max(0, poder);
+};
+
+// 🟢 REMOVA a função calcularRestricoesTotais antiga se existir
+// e use apenas calcularNivelRestricao no lugar
+
+// 🟢 FUNÇÕES PARA CONDIÇÕES
+const adicionarCondicao = (habilidadeIndex) => {
+  setFicha((p) => {
+    const habilidades = [...p.habilidades];
+    const condicoes = habilidades[habilidadeIndex].condicoes || [];
+    habilidades[habilidadeIndex] = {
+      ...habilidades[habilidadeIndex],
+      condicoes: [
+        ...condicoes,
+        {
+          id: Date.now(),
+          titulo: `Condição ${condicoes.length + 1}`,
+          descricao: "",
+          dificuldade: 0,
+          janela: 0,
+          custo: 0,
+          risco: 0
+        }
+      ]
+    };
+    return { ...p, habilidades };
+  });
+};
+
+const atualizarCondicao = (habilidadeIndex, condicaoId, campo, valor) => {
+  setFicha((p) => {
+    const habilidades = [...p.habilidades];
+    const condicoes = [...(habilidades[habilidadeIndex].condicoes || [])];
+    const idx = condicoes.findIndex(c => c.id === condicaoId);
+    if (idx !== -1) {
+      condicoes[idx] = { ...condicoes[idx], [campo]: valor };
+      habilidades[habilidadeIndex] = { ...habilidades[habilidadeIndex], condicoes };
+    }
+    return { ...p, habilidades };
+  });
+};
+
+const removerCondicao = (habilidadeIndex, condicaoId) => {
+  setFicha((p) => {
+    const habilidades = [...p.habilidades];
+    const condicoes = (habilidades[habilidadeIndex].condicoes || [])
+      .filter(c => c.id !== condicaoId)
+      .map((c, i) => ({ ...c, titulo: `Condição ${i + 1}` }));
+    habilidades[habilidadeIndex] = { ...habilidades[habilidadeIndex], condicoes };
+    return { ...p, habilidades };
+  });
+};
+
+// 🟢 Verificar se alguma habilidade restringe outras
+const temRestricaoHabilidades = () => {
+  return ficha.habilidades.some(h => 
+    (h.condicoes || []).some(c => 
+      c.descricao?.toLowerCase().includes("não pode ter outras habilidades") ||
+      c.descricao?.toLowerCase().includes("única habilidade") ||
+      c.descricao?.toLowerCase().includes("sacrifica outras habilidades")
+    )
+  );
+};
+
+// 🟢 FUNÇÃO PARA SALVAR AVALIAÇÃO DO MESTRE (TREINAMENTO DA IA)
+const salvarAvaliacaoMestre = async (habilidade, avaliacaoFinal) => {
+  if (!isMestre) return;
+  
+  try {
+    const apiBase = window.location.hostname === "localhost" 
+      ? "http://localhost:5000" 
+      : "https://app-rpg.onrender.com";
+      
+    await fetch(`${apiBase}/api/salvar-avaliacao`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fichaId,
+        habilidade: {
+          nome: habilidade.nome,
+          descricao: habilidade.descricao,
+          dado: habilidade.dado,
+          tipoDano: habilidade.tipoDano,
+          custoPE: habilidade.custoPE,
+          condicoes: habilidade.condicoes
+        },
+        avaliacaoMestre: avaliacaoFinal,
+        timestamp: new Date().toISOString(),
+        mestreEmail: user?.email
+      })
+    });
+    
+    console.log("✅ Avaliação do mestre salva para treinamento");
+  } catch (error) {
+    console.error("Erro ao salvar avaliação:", error);
+  }
+};
+
+// 🟢 FUNÇÃO DE ANÁLISE AUTOMÁTICA DE DESCRIÇÕES
+const analisarDescricaoComIA = (habilidade) => {
+  const condicoes = habilidade.condicoes || [];
+  
+  const novasCondicoes = condicoes.map(cond => {
+    const desc = (cond.descricao || "").toLowerCase();
+    let dificuldade = cond.dificuldade;
+    let janela = cond.janela;
+    let custo = cond.custo;
+    let risco = cond.risco;
+    
+    // Só sugere se o mestre não definiu manualmente
+    if (dificuldade === 0 && janela === 0 && custo === 0 && risco === 0) {
+      // Análise de dificuldade
+      if (desc.includes("50 pulos") || desc.includes("100 flexões") || desc.includes("correr 10km")) dificuldade = 4;
+      else if (desc.includes("concentração") || desc.includes("meditar") || desc.includes("foco")) dificuldade = 2;
+      else if (desc.includes("gritar") || desc.includes("falar") || desc.includes("palavra")) dificuldade = 1;
+      
+      // Análise de janela
+      if (desc.includes("eclipse") || desc.includes("lua cheia") || desc.includes("alinhamento")) janela = 5;
+      else if (desc.includes("noite") || desc.includes("escuridão") || desc.includes("meia-noite")) janela = 3;
+      else if (desc.includes("dia") || desc.includes("manhã") || desc.includes("amanhecer")) janela = 2;
+      else if (desc.includes("uma vez por") || desc.includes("1 vez por")) janela = 4;
+      
+      // Análise de custo
+      if (desc.includes("vida") || desc.includes("sangue") || desc.includes("morte") || desc.includes("alma")) custo = 5;
+      else if (desc.includes("energia") || desc.includes("cansaço") || desc.includes("exaustão")) custo = 3;
+      else if (desc.includes("pe") || desc.includes("aura") || desc.includes("nen")) custo = 2;
+      
+      // Análise de risco
+      if (desc.includes("chance de morrer") || desc.includes("morte certa") || desc.includes("sacrifício")) risco = 5;
+      else if (desc.includes("pode falhar") || desc.includes("chance de") || desc.includes("probabilidade")) risco = 3;
+      else if (desc.includes("dano colateral") || desc.includes("aliados") || desc.includes("inocentes")) risco = 2;
+    }
+    
+    return { ...cond, dificuldade, janela, custo, risco };
+  });
+  
+  return novasCondicoes;
+};
 
                 function adicionarItem(tipo) {
   setFicha((p) => ({
@@ -1635,9 +2008,9 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
                 </Box>
               ))}
             </Box>
-            <Box mt={2}>
-              {/* usar div para evitar p-nested */}
-              <Box
+            {/* 🟢 NOVA SEÇÃO DE HABILIDADES - BOTÃO QUE ABRE MODAL */}
+<Box mt={2}>
+  <Box
     display="flex"
     justifyContent="space-between"
     alignItems="center"
@@ -1651,167 +2024,64 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
       {LABELS.habilidadesTitulo}
     </Typography>
 
-    {isMestre ? (
-  <>
-    <TextField
-      select
-      size="small"
-      value={ficha.tipoAura || ""}
-      onChange={(e) => setCampo("tipoAura", e.target.value)}
-      SelectProps={{ native: true }}
-      sx={{
-        minWidth: 160,
-        bgcolor: "#021319",
-        borderRadius: 1,
-      }}
-    >
-      <option value=""></option>
-      {TIPOS_AURA.map((t) => (
-        <option key={t} value={t}>{t}</option>
-      ))}
-    </TextField>
-
-    <FormControlLabel
-      control={
-        <Checkbox
-          checked={ficha.ignorarLimiteHabilidades || false}
-          onChange={async (e) => {
-            const novoValor = e.target.checked;
-
-            setFicha((prev) => ({
-              ...prev,
-              ignorarLimiteHabilidades: novoValor,
-            }));
-
-            const ref = doc(db, "fichas", fichaId);
-            await setDoc(
-              ref,
-              { ignorarLimiteHabilidades: novoValor },
-              { merge: true }
-            );
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      {!isMestre && (
+        <Typography
+          sx={{
+            fontWeight: "bold",
+            color: CORES_AURA[ficha.tipoAura] || "#00e0ff",
+            textDecoration: "underline",
+            textShadow: `0 0 6px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
+            fontSize: 16,
           }}
+        >
+          ✨ {ficha.tipoAura || "—"}
+        </Typography>
+      )}
+      
+      {isMestre && (
+        <TextField
+          select
           size="small"
-        />
-      }
-      label="Ignorar limite"
-    />
-  </>
-) : (
-  <Typography
-    sx={{
-      fontWeight: "bold",
-      color: CORES_AURA[ficha.tipoAura] || "#00e0ff",
-      textDecoration: "underline",
-      textShadow: `0 0 6px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
-      fontSize: 16,
-    }}
-  >
-    ✨ {ficha.tipoAura || "—"}
-  </Typography>
-)}
+          value={ficha.tipoAura || ""}
+          onChange={(e) => setCampo("tipoAura", e.target.value)}
+          SelectProps={{ native: true }}
+          sx={{
+            minWidth: 160,
+            bgcolor: "#021319",
+            borderRadius: 1,
+          }}
+        >
+          <option value=""></option>
+          {TIPOS_AURA.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </TextField>
+      )}
+    </Box>
   </Box>
-                            {ficha.habilidades.map((h, i) => (
-                <Paper key={i} sx={{ p: 1, mb: 1 }}>
-                  <Grid container spacing={1}>
-                    <Grid item xs={11}>
-                      {["nome", "descricao", "condicoes", "limitacoes"].map((campo) => (
-                        <TextField
-                          key={campo}
-                          label={campo.charAt(0).toUpperCase() + campo.slice(1)}
-                          fullWidth
-                          size="small"
-                          multiline={["descricao", "condicoes", "limitacoes"].includes(campo)}
-                          value={h[campo]}
-                          onChange={(e) => atualizarHabilidade(i, campo, e.target.value)}
-                          sx={{ mb: 1 }}
-                        />
-                      ))}
-                      
-                      {/* 🟢 LINHA: DADO + TIPO DE DANO */}
-                      <Grid container spacing={1}>
-                        <Grid item xs={4}>
-                          <TextField
-                            label="Dado (1-10)"
-                            type="number"
-                            fullWidth
-                            size="small"
-                            value={h.dado || 1}
-                            disabled={!isMestre}
-                            onChange={(e) => {
-                              if (!isMestre) return;
-                              const val = Math.min(10, Math.max(1, Number(e.target.value) || 1));
-                              atualizarHabilidade(i, "dado", val);
-                            }}
-                            InputProps={{ 
-                              inputProps: { min: 1, max: 10 },
-                              sx: { color: '#fff' }
-                            }}
-                            sx={{ bgcolor: '#0f172a' }}
-                          />
-                        </Grid>
-                        <Grid item xs={8}>
-                          <FormControl fullWidth size="small">
-                            <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
-                            <Select
-                              value={h.tipoDano || "Aurano"}
-                              disabled={!isMestre}
-                              onChange={(e) => {
-                                if (!isMestre) return;
-                                atualizarHabilidade(i, "tipoDano", e.target.value);
-                              }}
-                              sx={{ 
-                                color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff',
-                                bgcolor: '#0f172a',
-                                '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-                              }}
-                              MenuProps={{
-                                PaperProps: { 
-                                  sx: { 
-                                    bgcolor: "#0f172a", 
-                                    color: "#fff",
-                                    maxHeight: 300,
-                                  } 
-                                }
-                              }}
-                            >
-                              {TIPOS_DANO.map(td => (
-                                <MenuItem key={td.valor} value={td.valor}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: td.cor }} />
-                                    <Typography sx={{ color: td.cor, fontWeight: 'bold', fontSize: '0.85rem' }}>
-                                      {td.label}
-                                    </Typography>
-                                  </Box>
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        </Grid>
-                      </Grid>
-                    </Grid>
-                    <Grid item xs={1}>
-                      <IconButton color="error" onClick={() => removerHabilidade(i)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </Grid>
-                  </Grid>
-                </Paper>
-              ))}
-              <Button
-    variant="outlined"
-    startIcon={<AddIcon />}
-    disabled={habilidadesNoLimite}
-    onClick={() => {
-      if (habilidadesNoLimite) {
-        alert("Limite de habilidades atingido pela Perícia Aura.");
-        return;
+
+  {/* Botão para abrir modal de habilidades */}
+  <Button
+    variant="contained"
+    fullWidth
+    onClick={() => setModalHabilidadesOpen(true)}
+    sx={{
+      bgcolor: CORES_AURA[ficha.tipoAura] || "#00e0ff",
+      color: '#000',
+      fontWeight: 'bold',
+      py: 1.5,
+      fontSize: '1.1rem',
+      '&:hover': {
+        bgcolor: CORES_AURA[ficha.tipoAura] 
+          ? `${CORES_AURA[ficha.tipoAura]}dd` 
+          : '#00bcd4'
       }
-      adicionarHabilidade();
     }}
   >
-                Adicionar Habilidade
-              </Button>
-            </Box>
+    ⚡ HABILIDADES AURANAS ({ficha.habilidades?.length || 0}/{limiteHabilidades})
+  </Button>
+</Box>
 
                         {/* 🟢 SUBSTITUA OS DOIS BOTÕES POR ESTE: */}
 <Box mt={2} sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
@@ -3934,8 +4204,635 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           </Button>
         </DialogActions>
       </Dialog>
-            {/* 🟢 MODAL USAR CONSUMÍVEL */}
-      
+  {/* 🟢🟢🟢 MODAL DE HABILIDADES (VERSÃO FINAL COM IMAGEM + IA FUSIONADA) 🟢🟢🟢 */}
+<Dialog
+  open={modalHabilidadesOpen}
+  onClose={() => {
+    setModalHabilidadesOpen(false);
+    setHabilidadeExpandida(null);
+    setAvaliacaoIA(null);
+  }}
+  maxWidth="lg"
+  fullWidth
+  PaperProps={{
+    sx: {
+      bgcolor: "#0f172a",
+      border: `2px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
+      borderRadius: 2,
+      minHeight: "85vh",
+      maxHeight: "92vh"
+    }
+  }}
+>
+  <DialogTitle sx={{ 
+    color: CORES_AURA[ficha.tipoAura] || "#00e0ff",
+    textAlign: 'center',
+    borderBottom: `2px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22`,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <span style={{ fontSize: '2rem' }}>⚡</span>
+      <Box>
+        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+          HABILIDADES AURANAS
+        </Typography>
+        {ficha.tipoAura && (
+          <Typography variant="caption" sx={{ color: CORES_AURA[ficha.tipoAura] }}>
+            ✨ Tipo de Aura: {ficha.tipoAura}
+          </Typography>
+        )}
+      </Box>
+    </Box>
+    <IconButton onClick={() => {
+      setModalHabilidadesOpen(false);
+      setHabilidadeExpandida(null);
+    }} sx={{ color: '#94a3b8' }}>
+      <CloseIcon />
+    </IconButton>
+  </DialogTitle>
+
+  <DialogContent sx={{ p: 3 }}>
+    {ficha.habilidades.length === 0 && (
+      <Box sx={{ textAlign: 'center', py: 8 }}>
+        <Typography variant="h6" sx={{ color: '#64748b' }}>
+          Nenhuma habilidade criada ainda
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#475569', mt: 1 }}>
+          Use o botão abaixo para criar sua primeira habilidade aurana!
+        </Typography>
+      </Box>
+    )}
+
+    {ficha.habilidades.map((h, i) => (
+      <Paper 
+        key={i}
+        sx={{ 
+          mb: 2,
+          bgcolor: '#1a1a2e',
+          border: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}44`,
+          borderRadius: 2,
+          overflow: 'hidden'
+        }}
+      >
+        {/* ========== CABEÇALHO RECOLHIDO ========== */}
+        <Box
+          onClick={() => setHabilidadeExpandida(habilidadeExpandida === i ? null : i)}
+          sx={{
+            p: 2,
+            cursor: 'pointer',
+            display: 'flex',
+            gap: 2,
+            alignItems: 'center',
+            bgcolor: habilidadeExpandida === i ? `${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22` : 'transparent',
+            transition: 'all 0.2s',
+            '&:hover': {
+              bgcolor: `${CORES_AURA[ficha.tipoAura] || "#00e0ff"}11`
+            }
+          }}
+        >
+          {/* 🟢 IMAGEM QUADRADA (RECOLHIDA) */}
+          <Box
+            sx={{
+              width: 60,
+              height: 60,
+              minWidth: 60,
+              borderRadius: 1,
+              overflow: 'hidden',
+              border: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}44`,
+              bgcolor: '#0f172a',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: h.imagem ? 'pointer' : 'default'
+            }}
+            onClick={(e) => {
+              if (h.imagem) {
+                e.stopPropagation();
+                setLightboxSrc(h.imagem);
+                setZoom(1);
+                setLightboxOpen(true);
+              }
+            }}
+          >
+            {h.imagem ? (
+              <img 
+                src={h.imagem} 
+                alt={h.nome || "Habilidade"}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <Typography sx={{ fontSize: '1.5rem', opacity: 0.4 }}>⚡</Typography>
+            )}
+          </Box>
+
+          {/* INFO DA HABILIDADE */}
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h6" sx={{ color: '#fff', fontWeight: 'bold' }}>
+              {h.nome || `Habilidade ${i + 1}`}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap' }}>
+              <Chip 
+                label={`🎲 ${h.dado || 1}d10`}
+                size="small"
+                sx={{ bgcolor: '#0f172a', color: '#fff' }}
+              />
+              <Chip 
+                label={`⚡ PE: ${h.custoPE || 0}`}
+                size="small"
+                sx={{ bgcolor: '#0f172a', color: '#facc15' }}
+              />
+              <Chip 
+                label={h.tipoDano || "Aurano"}
+                size="small"
+                sx={{ 
+                  bgcolor: '#0f172a', 
+                  color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff'
+                }}
+              />
+              {h.condicoes && h.condicoes.length > 0 && (
+                <Chip 
+                  label={`📜 ${h.condicoes.length} condição(ões)`}
+                  size="small"
+                  sx={{ bgcolor: '#0f172a', color: '#94a3b8' }}
+                />
+              )}
+            </Box>
+          </Box>
+          
+          <Typography sx={{ color: '#94a3b8', fontSize: '1.5rem' }}>
+            {habilidadeExpandida === i ? '▼' : '▶'}
+          </Typography>
+        </Box>
+
+        {/* ========== CONTEÚDO EXPANDIDO ========== */}
+        {habilidadeExpandida === i && (
+          <Box sx={{ p: 3, borderTop: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22` }}>
+            
+            {/* LINHA 1: IMAGEM + NOME + DESCRIÇÃO */}
+            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+              {/* 🟢 IMAGEM QUADRADA GRANDE (EXPANDIDA) */}
+              <Box sx={{ width: 140, minWidth: 140 }}>
+                <Box
+                  sx={{
+                    width: 140,
+                    height: 140,
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    border: `2px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}66`,
+                    bgcolor: '#0f172a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: h.imagem ? 'pointer' : 'default',
+                    position: 'relative'
+                  }}
+                  onClick={() => {
+                    if (h.imagem) {
+                      setLightboxSrc(h.imagem);
+                      setZoom(1);
+                      setLightboxOpen(true);
+                    }
+                  }}
+                >
+                  {h.imagem ? (
+                    <img 
+                      src={h.imagem} 
+                      alt={h.nome || "Habilidade"}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <Typography sx={{ fontSize: '3rem', opacity: 0.3 }}>⚡</Typography>
+                  )}
+                </Box>
+                
+                {/* BOTÕES DE UPLOAD/REMOVER IMAGEM */}
+                <Box sx={{ display: 'flex', gap: 0.5, mt: 1 }}>
+                  <Button
+                    size="small"
+                    component="label"
+                    sx={{ 
+                      flex: 1, 
+                      fontSize: '0.65rem', 
+                      minWidth: 'auto',
+                      bgcolor: '#1e293b',
+                      color: '#94a3b8',
+                      '&:hover': { bgcolor: '#334155' }
+                    }}
+                  >
+                    📷 Upload
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        
+                        try {
+                          const apiBase = window.location.hostname === "localhost" 
+                            ? "http://localhost:5000" 
+                            : "https://app-rpg.onrender.com";
+                          const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+                          const data = await res.json();
+                          if (data.url) {
+                            atualizarHabilidade(i, "imagem", data.url);
+                          }
+                        } catch (err) {
+                          console.error("Erro no upload:", err);
+                          alert("Erro ao enviar imagem");
+                        }
+                      }}
+                    />
+                  </Button>
+                  {h.imagem && (
+                    <Button
+                      size="small"
+                      onClick={() => atualizarHabilidade(i, "imagem", "")}
+                      sx={{ 
+                        fontSize: '0.65rem', 
+                        minWidth: 'auto',
+                        bgcolor: '#7f1d1d',
+                        color: '#fca5a5',
+                        '&:hover': { bgcolor: '#991b1b' }
+                      }}
+                    >
+                      ✕
+                    </Button>
+                  )}
+                </Box>
+              </Box>
+
+              {/* NOME + DESCRIÇÃO */}
+              <Box sx={{ flex: 1 }}>
+                <TextField
+                  fullWidth
+                  label="Nome da Habilidade"
+                  value={h.nome || ""}
+                  onChange={(e) => atualizarHabilidade(i, "nome", e.target.value)}
+                  sx={{ mb: 1 }}
+                  InputProps={{ style: { color: '#fff', fontWeight: 'bold', fontSize: '1.1rem' } }}
+                  InputLabelProps={{ style: { color: '#94a3b8' } }}
+                />
+
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  label="Descrição"
+                  value={h.descricao || ""}
+                  onChange={(e) => atualizarHabilidade(i, "descricao", e.target.value)}
+                  InputProps={{ style: { color: '#fff' } }}
+                  InputLabelProps={{ style: { color: '#94a3b8' } }}
+                />
+              </Box>
+            </Box>
+
+            {/* Grid: Dado, Custo PE, Tipo Dano */}
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={4}>
+                <TextField
+                  fullWidth
+                  label="Dado (1-10)"
+                  type="number"
+                  value={h.dado || 1}
+                  onChange={(e) => {
+                    const val = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+                    atualizarHabilidade(i, "dado", val);
+                  }}
+                  InputProps={{ 
+                    inputProps: { min: 1, max: 10 },
+                    style: { color: '#fff' }
+                  }}
+                  InputLabelProps={{ style: { color: '#94a3b8' } }}
+                />
+              </Grid>
+              <Grid item xs={4}>
+                <TextField
+                  fullWidth
+                  label="Custo de PE"
+                  type="number"
+                  value={h.custoPE || 0}
+                  onChange={(e) => {
+                    atualizarHabilidade(i, "custoPE", Number(e.target.value));
+                  }}
+                  InputProps={{ 
+                    inputProps: { min: 0 },
+                    style: { color: '#facc15' }
+                  }}
+                  InputLabelProps={{ style: { color: '#94a3b8' } }}
+                />
+              </Grid>
+              <Grid item xs={4}>
+                <FormControl fullWidth>
+                  <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
+                  <Select
+                    value={h.tipoDano || "Aurano"}
+                    onChange={(e) => atualizarHabilidade(i, "tipoDano", e.target.value)}
+                    sx={{ 
+                      color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff',
+                    }}
+                    MenuProps={{
+                      PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff" } }
+                    }}
+                  >
+                    {TIPOS_DANO.map(td => (
+                      <MenuItem key={td.valor} value={td.valor}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: td.cor }} />
+                          <Typography sx={{ color: td.cor }}>{td.label}</Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+
+            {/* Condições */}
+            <Box sx={{ mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                  📜 Condições
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<AddIcon />}
+                  onClick={() => adicionarCondicao(i)}
+                  sx={{ color: '#00e0ff', borderColor: '#00e0ff' }}
+                >
+                  Adicionar Condição
+                </Button>
+              </Box>
+
+              {(h.condicoes || []).length === 0 && (
+                <Typography variant="body2" sx={{ color: '#64748b', textAlign: 'center', py: 2 }}>
+                  Nenhuma condição adicionada. Condições fortalecem a habilidade!
+                </Typography>
+              )}
+
+              {(h.condicoes || []).map((cond, ci) => (
+                <Paper 
+                  key={cond.id}
+                  sx={{ 
+                    p: 2, 
+                    mb: 1, 
+                    bgcolor: '#0f172a',
+                    border: '1px solid #334155'
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ color: '#00e0ff', fontWeight: 'bold' }}>
+                      {cond.titulo}
+                    </Typography>
+                    <IconButton 
+                      size="small" 
+                      onClick={() => removerCondicao(i, cond.id)}
+                      sx={{ color: '#ef4444' }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Descreva a condição (ex: Dar 50 pulinhos, só funciona à noite...)"
+                    value={cond.descricao || ""}
+                    onChange={(e) => atualizarCondicao(i, cond.id, "descricao", e.target.value)}
+                    sx={{ mb: 2 }}
+                    InputProps={{ style: { color: '#fff' } }}
+                  />
+
+                  {/* Sliders de avaliação */}
+                  <Grid container spacing={2}>
+                    {[
+                      { campo: 'dificuldade', label: 'Dificuldade', cor: '#ff9800', desc: 'Quão difícil é executar?' },
+                      { campo: 'janela', label: 'Janela', cor: '#2196f3', desc: 'Quão restrito é o momento?' },
+                      { campo: 'custo', label: 'Custo/Preço', cor: '#f44336', desc: 'O que é sacrificado?' },
+                      { campo: 'risco', label: 'Risco', cor: '#9c27b0', desc: 'Chance de falha/consequência?' }
+                    ].map(({ campo, label, cor, desc }) => (
+                      <Grid item xs={6} key={campo}>
+                        <Typography variant="caption" sx={{ color: cor }}>
+                          {label}: {'●'.repeat(cond[campo] || 0)}{'○'.repeat(5 - (cond[campo] || 0))}
+                        </Typography>
+                        <Slider
+                          value={cond[campo] || 0}
+                          min={0}
+                          max={5}
+                          step={1}
+                          onChange={(_, val) => atualizarCondicao(i, cond.id, campo, val)}
+                          sx={{ 
+                            color: cor,
+                            '& .MuiSlider-thumb': { width: 16, height: 16 }
+                          }}
+                        />
+                        <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.65rem' }}>
+                          {desc}
+                        </Typography>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Paper>
+              ))}
+            </Box>
+
+            {/* Avaliação de Poder */}
+            <Box sx={{ mt: 2, p: 2, bgcolor: '#0f172a', borderRadius: 2, border: '1px solid #334155' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                  📊 AVALIAÇÃO DE PODER
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => avaliarHabilidadeComIA(h)}
+                  disabled={carregandoIA}
+                  sx={{ 
+                    bgcolor: '#9c27b0',
+                    '&:hover': { bgcolor: '#7b1fa2' }
+                  }}
+                >
+                  {carregandoIA ? "Analisando..." : "🔄 Avaliar com IA"}
+                </Button>
+              </Box>
+
+              {avaliacaoIA && habilidadeExpandida === i ? (
+                <Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                      Efeito Base: {'●'.repeat(Math.min(5, Math.ceil(avaliacaoIA.poderBase)))}{'○'.repeat(Math.max(0, 5 - Math.ceil(avaliacaoIA.poderBase)))}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                      Restrições: {'●'.repeat(Math.min(5, Math.ceil(avaliacaoIA.restricoes)))}{'○'.repeat(Math.max(0, 5 - Math.ceil(avaliacaoIA.restricoes)))}
+                    </Typography>
+                  </Box>
+
+                  {/* Barra de progresso */}
+                  <Box sx={{ 
+                    height: 14, 
+                    bgcolor: '#1e293b', 
+                    borderRadius: 7, 
+                    overflow: 'hidden',
+                    mb: 1
+                  }}>
+                    <Box sx={{ 
+                      width: `${avaliacaoIA.percentual}%`,
+                      height: '100%',
+                      bgcolor: avaliacaoIA.percentual <= 100 ? '#4caf50' : 
+                               avaliacaoIA.percentual <= 130 ? '#ff9800' : '#f44336',
+                      transition: 'width 0.5s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Typography variant="caption" sx={{ color: '#000', fontWeight: 'bold', fontSize: '0.7rem' }}>
+                        {avaliacaoIA.percentual.toFixed(0)}%
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Typography 
+                    variant="body1" 
+                    sx={{ 
+                      color: avaliacaoIA.percentual <= 100 ? '#4caf50' : 
+                             avaliacaoIA.percentual <= 130 ? '#ff9800' : '#f44336',
+                      fontWeight: 'bold',
+                      mb: 1
+                    }}
+                  >
+                    {avaliacaoIA.status}
+                  </Typography>
+
+                  <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                    {avaliacaoIA.mensagem}
+                  </Typography>
+
+                  {avaliacaoIA.sugestoes && avaliacaoIA.sugestoes.length > 0 && (
+                    <Box sx={{ mt: 1 }}>
+                      <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                        Sugestões:
+                      </Typography>
+                      <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
+                        {avaliacaoIA.sugestoes.map((sug, idx) => (
+                          <li key={idx} style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{sug}</li>
+                        ))}
+                      </ul>
+                    </Box>
+                  )}
+
+                  {/* 🟢 BOTÕES DO MESTRE */}
+                  {isMestre && (
+                    <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={async () => {
+                          const avaliacaoMestre = {
+                            poderBase: avaliacaoIA?.poderBase || calcularPoderBase(h),
+                            restricoes: calcularNivelRestricao(h.condicoes || []),
+                            condicoesAprovadas: h.condicoes || []
+                          };
+                          await salvarAvaliacaoMestre(h, avaliacaoMestre);
+                          alert("✅ Avaliação do mestre registrada! A IA vai aprender com isso.");
+                        }}
+                        sx={{ bgcolor: '#4caf50', '&:hover': { bgcolor: '#388e3c' } }}
+                      >
+                        ✅ Confirmar Avaliação
+                      </Button>
+                      
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+  const condicoesAnalisadas = analisarDescricaoComIA(h);
+  // 🟢 CORRIGIDO: usa 'i' que já está disponível no map
+  setFicha(p => {
+    const habilidades = [...p.habilidades];
+    habilidades[i] = { ...habilidades[i], condicoes: condicoesAnalisadas };
+    return { ...p, habilidades };
+  });
+  avaliarHabilidadeComIA({...h, condicoes: condicoesAnalisadas});
+}}
+                        sx={{ color: '#ff9800', borderColor: '#ff9800' }}
+                      >
+                        🔄 Reavaliar Automaticamente
+                      </Button>
+                    </Box>
+                  )}
+                </Box>
+              ) : (
+                <Typography variant="body2" sx={{ color: '#64748b', textAlign: 'center', py: 2 }}>
+                  Clique em "Avaliar com IA" para ver o balanceamento da habilidade
+                </Typography>
+              )}
+            </Box>
+
+            {/* Botão remover habilidade */}
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => {
+                  if (window.confirm("Remover esta habilidade?")) {
+                    removerHabilidade(i);
+                    setHabilidadeExpandida(null);
+                  }
+                }}
+              >
+                Remover Habilidade
+              </Button>
+            </Box>
+          </Box>
+        )}
+      </Paper>
+    ))}
+  </DialogContent>
+
+  <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+    <Button 
+      onClick={() => {
+        setModalHabilidadesOpen(false);
+        setHabilidadeExpandida(null);
+      }}
+      sx={{ color: '#94a3b8' }}
+    >
+      Fechar
+    </Button>
+
+    <Button
+      variant="contained"
+      startIcon={<AddIcon />}
+      disabled={!podeIgnorarLimiteHab && ficha.habilidades.length >= limiteHabilidades}
+      onClick={() => {
+        if (!podeIgnorarLimiteHab && ficha.habilidades.length >= limiteHabilidades) {
+          alert(`Limite de ${limiteHabilidades} habilidades atingido! Aumente sua Perícia Aura.`);
+          return;
+        }
+        adicionarHabilidade();
+        setHabilidadeExpandida(ficha.habilidades.length);
+      }}
+      sx={{ 
+        bgcolor: CORES_AURA[ficha.tipoAura] || "#00e0ff",
+        color: '#000',
+        fontWeight: 'bold',
+        '&:hover': {
+          bgcolor: CORES_AURA[ficha.tipoAura] 
+            ? `${CORES_AURA[ficha.tipoAura]}dd` 
+            : '#00bcd4'
+        }
+      }}
+    >
+      Nova Habilidade
+    </Button>
+  </DialogActions>
+</Dialog>
     </Paper>
     );
   }
