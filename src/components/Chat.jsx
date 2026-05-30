@@ -186,6 +186,10 @@ const [acaoCasting, setAcaoCasting] = useState(0);
 const [acaoEmbuicao, setAcaoEmbuicao] = useState(0);
 const [acaoHabilidadeSelecionada, setAcaoHabilidadeSelecionada] = useState("");
 const [acaoHabilidadeDado, setAcaoHabilidadeDado] = useState(0);
+// 🟢 CUSTO DE PE DA HABILIDADE
+const [acaoHabilidadeCustoPE, setAcaoHabilidadeCustoPE] = useState(0);
+// 🟢 DEBUFFS (múltiplos valores para subtrair do dado final)
+const [acaoDebuffs, setAcaoDebuffs] = useState([]);
 // 🟢 CONSUMÍVEL
 const [acaoItemConsumivel, setAcaoItemConsumivel] = useState(false); // É consumível?
 const [acaoConsumivelTipo, setAcaoConsumivelTipo] = useState(""); // PV, PE, RE
@@ -954,10 +958,14 @@ async function rolarAcao() {
       custoTotalEnergia += acaoEmbuicao * 5;
     }
     
-        // 🟢 HABILIDADE SELECIONADA
+                // 🟢 HABILIDADE SELECIONADA
     if (acaoHabilidadeSelecionada) {
       totalD10 += acaoHabilidadeDado;
       descricao.push(`Habilidade: ${acaoHabilidadeSelecionada} (${acaoHabilidadeDado})`);
+      custoTotalEnergia += acaoHabilidadeCustoPE; // 🟢 CUSTO DE PE DA HABILIDADE
+      if (acaoHabilidadeCustoPE > 0) {
+        descricao.push(`Custo Habilidade: ${acaoHabilidadeCustoPE} PE`);
+      }
     }
     
     if (custoTotalEnergia > energiaAtual) {
@@ -973,7 +981,7 @@ async function rolarAcao() {
     const rolls = [];
     let total = 0;
     const fatorSorte = sorteAzarMap[userEmail];
-    for (let i = 0; i < totalD10; i++) {
+        for (let i = 0; i < totalD10; i++) {
       let valor;
       if (fatorSorte !== undefined) {
         valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
@@ -982,6 +990,14 @@ async function rolarAcao() {
       }
       rolls.push(valor);
       total += valor;
+    }
+    
+    // 🟢 APLICAR DEBUFFS (subtrai do total)
+    const totalDebuff = acaoDebuffs.reduce((soma, d) => soma + d.valor, 0);
+    if (totalDebuff > 0) {
+      const totalAntes = total;
+      total = Math.max(0, total - totalDebuff); // nunca negativo
+      descricao.push(`Debuffs: -${totalDebuff} (${totalAntes} → ${total})`);
     }
     
         const nomePersonagem = fichaJogador?.nome || userNick;
@@ -1259,7 +1275,7 @@ async function rolarAcao() {
     if (isErroCritico) xpGanho = 0;
     await adicionarXpAcao(jogadorSelecionadoEmail, xpGanho);
     
-    setAcaoOpen(false);
+        setAcaoOpen(false);
     } finally {
     setRolagemEmAndamento(false);
     setAcaoAtributo("");
@@ -1271,6 +1287,8 @@ async function rolarAcao() {
     setAcaoEmbuicao(0);
         setAcaoHabilidadeSelecionada("");
     setAcaoHabilidadeDado(0);
+    setAcaoHabilidadeCustoPE(0);  // 🟢 ADICIONE
+    setAcaoDebuffs([]);            // 🟢 ADICIONE
     setAcaoItemConsumivel(false);
     setAcaoConsumivelTipo("");
     setAcaoConsumivelValor(0);
@@ -1702,7 +1720,7 @@ async function adicionarXpAcao(emailJogador, quantidade = 1) {
   if (!emailJogador || emailJogador === "mestre@reqviemrpg.com" || quantidade <= 0) return;
   
   try {
-    const xpRef = doc(db, "game", "xp");
+    const xpRef = doc(db, "game", "hud");
     const snap = await getDoc(xpRef);
     
     let xpMap = {};
@@ -2705,17 +2723,19 @@ useEffect(() => {
               <Select
                 value={acaoHabilidadeSelecionada}
                 onChange={(e) => {
-                  const nomeHabilidade = e.target.value;
-                  setAcaoHabilidadeSelecionada(nomeHabilidade);
-                  
-                  // Busca o dado da habilidade selecionada
-                  if (nomeHabilidade && fichaJogador?.habilidades) {
-                    const hab = fichaJogador.habilidades.find(h => h.nome === nomeHabilidade);
-                    setAcaoHabilidadeDado(hab?.dado || 0);
-                  } else {
-                    setAcaoHabilidadeDado(0);
-                  }
-                }}
+  const nomeHabilidade = e.target.value;
+  setAcaoHabilidadeSelecionada(nomeHabilidade);
+  
+  // Busca o dado E o custo de PE da habilidade selecionada
+  if (nomeHabilidade && fichaJogador?.habilidades) {
+    const hab = fichaJogador.habilidades.find(h => h.nome === nomeHabilidade);
+    setAcaoHabilidadeDado(hab?.dado || 0);
+    setAcaoHabilidadeCustoPE(hab?.custoPE || 0); // 🟢 Custo de PE
+  } else {
+    setAcaoHabilidadeDado(0);
+    setAcaoHabilidadeCustoPE(0);
+  }
+}}
                 sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
               >
                 <MenuItem value="">Nenhuma</MenuItem>
@@ -2741,11 +2761,89 @@ useEffect(() => {
               </Select>
             </FormControl>
             {acaoHabilidadeSelecionada && (
-              <Typography variant="caption" sx={{ color: '#00e0ff' }}>
-                ⚡ Dado da habilidade: <strong>+{acaoHabilidadeDado}d10</strong>
-              </Typography>
-            )}
-            
+  <Box>
+    <Typography variant="caption" sx={{ color: '#00e0ff', display: 'block' }}>
+      ⚡ Dado da habilidade: <strong>+{acaoHabilidadeDado}d10</strong>
+    </Typography>
+    {acaoHabilidadeCustoPE > 0 && (
+      <Typography variant="caption" sx={{ color: '#facc15', display: 'block' }}>
+        💛 Custo de PE: <strong>{acaoHabilidadeCustoPE} PE</strong>
+      </Typography>
+    )}
+  </Box>
+)}
+            {/* 🟢 DEBUFFS (valores a subtrair do dado final) */}
+<Paper sx={{ p: 2, bgcolor: '#1a1a2e', border: '1px solid #ef4444' }}>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+    <Typography variant="subtitle2" sx={{ color: '#ef4444' }}>
+      🔻 Debuffs (valores subtraídos do resultado final)
+    </Typography>
+    <Button
+      size="small"
+      variant="outlined"
+      onClick={() => setAcaoDebuffs([...acaoDebuffs, { id: Date.now(), valor: 1 }])}
+      sx={{ 
+        color: '#ef4444', 
+        borderColor: '#ef4444',
+        fontSize: '0.65rem',
+        minWidth: 'auto',
+        px: 1
+      }}
+    >
+      + Adicionar
+    </Button>
+  </Box>
+  
+  {acaoDebuffs.length === 0 && (
+    <Typography variant="caption" sx={{ color: '#64748b' }}>
+      Nenhum debuff. Clique em "+ Adicionar" se houver penalidades.
+    </Typography>
+  )}
+  
+  {acaoDebuffs.map((debuff, idx) => (
+    <Box key={debuff.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+      <Typography variant="caption" sx={{ color: '#ef4444', minWidth: 60 }}>
+        Debuff {idx + 1}:
+      </Typography>
+      <TextField
+        size="small"
+        type="number"
+        value={debuff.valor}
+        onChange={(e) => {
+          const val = Math.min(100, Math.max(1, Number(e.target.value) || 1));
+          const novos = [...acaoDebuffs];
+          novos[idx] = { ...novos[idx], valor: val };
+          setAcaoDebuffs(novos);
+        }}
+        InputProps={{ 
+          inputProps: { min: 1, max: 100 },
+          sx: { color: '#ef4444', fontSize: '0.8rem' }
+        }}
+        sx={{ 
+          width: 70, 
+          bgcolor: '#0f172a',
+          '& input': { textAlign: 'center' }
+        }}
+      />
+      <Typography variant="caption" sx={{ color: '#64748b' }}>
+        (-{debuff.valor})
+      </Typography>
+      <IconButton 
+        size="small" 
+        onClick={() => setAcaoDebuffs(acaoDebuffs.filter((_, i) => i !== idx))}
+        sx={{ color: '#ef4444', ml: 'auto' }}
+      >
+        <DeleteIcon fontSize="small" />
+      </IconButton>
+    </Box>
+  ))}
+  
+  {acaoDebuffs.length > 0 && (
+    <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 1, fontWeight: 'bold' }}>
+      🔻 Total de penalidade: -{acaoDebuffs.reduce((soma, d) => soma + d.valor, 0)}
+    </Typography>
+  )}
+</Paper>
                         {/* 🟢 CONFIGURAÇÃO DE CONSUMÍVEL (aparece se item for consumível) */}
             {acaoItemConsumivel && (
               <Paper sx={{ p: 2, bgcolor: '#1e1a2e', border: '1px solid #4caf50', mb: 2 }}>
@@ -2786,7 +2884,7 @@ useEffect(() => {
               </Paper>
             )}
 
-            {/* Resumo */}
+                        {/* Resumo */}
             {fichaJogador && (
               <Paper sx={{ p: 2, bgcolor: '#16213e', border: '1px solid #334155' }}>
                 <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1 }}>
@@ -2803,6 +2901,16 @@ useEffect(() => {
                 {acaoEmbuicao > 0 && (
                   <Typography variant="caption" sx={{ color: '#facc15' }}>
                     ⚡ Custo de Energia: {acaoEmbuicao * 5} PE
+                  </Typography>
+                )}
+                {acaoHabilidadeCustoPE > 0 && (
+                  <Typography variant="caption" sx={{ color: '#facc15', display: 'block' }}>
+                    💛 Custo da Habilidade: {acaoHabilidadeCustoPE} PE
+                  </Typography>
+                )}
+                {acaoDebuffs.length > 0 && (
+                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block' }}>
+                    🔻 Penalidade total: -{acaoDebuffs.reduce((soma, d) => soma + d.valor, 0)}
                   </Typography>
                 )}
               </Paper>

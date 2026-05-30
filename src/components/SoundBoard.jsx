@@ -80,13 +80,7 @@ const handlePlay = (url, name) => {
   if (!audioRefs.current[url]) {
     const audio = new Audio(url);
     audio.volume = (volumes[url] ?? 80) / 100;
-    audio.addEventListener('ended', () => {
-      setActiveTracks(prev => {
-        const next = new Set(prev);
-        next.delete(url);
-        return next;
-      });
-    });
+        audio.loop = true;  // 🟢 ATIVA O LOOP AUTOMÁTICO
     audioRefs.current[url] = audio;
   }
 
@@ -105,6 +99,7 @@ const handleStop = (url) => {
   if (audio) {
     audio.pause();
     audio.currentTime = 0;
+    audio.loop = false; // 🟢 Desativa o loop ao parar
   }
   setActiveTracks(prev => {
     const next = new Set(prev);

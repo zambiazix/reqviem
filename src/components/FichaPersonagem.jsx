@@ -25,8 +25,9 @@ import { Divider } from "@mui/material";
   import AddIcon from "@mui/icons-material/Add";
   import DeleteIcon from "@mui/icons-material/Delete";
   import CloseIcon from "@mui/icons-material/Close";
+  import EditIcon from "@mui/icons-material/Edit";
   import { db } from "../firebaseConfig";
-  import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+  import { doc, getDoc, setDoc, onSnapshot, } from "firebase/firestore";
   import { Checkbox, FormControlLabel } from "@mui/material";
   import { collection, getDocs } from "firebase/firestore";
   import { CircularProgress } from "@mui/material";
@@ -100,6 +101,7 @@ const nivel = hud?.xpMap?.[fichaId]?.level ?? 1;
       equipamentos: [],
       vestes: [],
       diversos: [],
+            inventariosSecundarios: [],  // 🟢 NOVO
       anotacoes: "",
       dono: user?.email || "",
 
@@ -158,6 +160,16 @@ const SEASONS = ["Primavera", "Verão", "Outono", "Inverno"];
     { valor: "PV", label: "PV (Vida)", cor: "#ff4d4f" },
     { valor: "PE", label: "PE (Energia)", cor: "#facc15" },
     { valor: "RE", label: "R.E (Remover Efeito)", cor: "#00e0ff" },
+  ];
+      // 🟢 TIPOS DE INSUMÍVEL (reparam outros itens)
+  const TIPOS_INSUMIVEL = [
+    { valor: "Nenhum", label: "Nenhum", cor: "#888888" },
+    { valor: "Cortante/Perfurante", label: "🪨 Pedra de Amolar (Cortante/Perfurante)", cor: "#c0c0c0", tiposDanoReparados: ["Cortante", "Perfurante"] },
+    { valor: "Elétrico", label: "🔋 Bateria (Elétrico)", cor: "#ffff00", tiposDanoReparados: ["Elétrico"] },
+    { valor: "Térmico", label: "⛽ Combustível (Térmico)", cor: "#ff4500", tiposDanoReparados: ["Térmico"] },
+    { valor: "Vestimenta_Leve", label: "🧵 Remendo (Vestimenta até dado 15)", cor: "#8B4513", categoriaAlvo: "vestes", dadoMaximo: 15 },
+    { valor: "Vestimenta_Pesada", label: "🔨 Kit de Forja (Vestimenta dado 16-50)", cor: "#A0522D", categoriaAlvo: "vestes", dadoMinimo: 16, dadoMaximo: 50 },
+    { valor: "Todos", label: "🔄 Regenerar Tudo", cor: "#00ff88", regenerarTudo: true },
   ];
     // Mapeamento textual com acentos e espaços bonitos
     const LABEL_MAP = {
@@ -292,6 +304,7 @@ const [modalHabilidadesOpen, setModalHabilidadesOpen] = useState(false);
 const [habilidadeExpandida, setHabilidadeExpandida] = useState(null);
 const [avaliacaoIA, setAvaliacaoIA] = useState(null);
 const [carregandoIA, setCarregandoIA] = useState(false);
+const [gerandoHabilidade, setGerandoHabilidade] = useState(false);
 const [modalDinheiroOpen, setModalDinheiroOpen] = useState(false);
 const [carteiras, setCarteiras] = useState([]);
 const [novaCarteiraNome, setNovaCarteiraNome] = useState("");
@@ -316,7 +329,11 @@ const [resultadoDado, setResultadoDado] = useState(null);
 // 🟢 ADICIONE ESTES ESTADOS:
 const [modalTransferirItemOpen, setModalTransferirItemOpen] = useState(false);
 const [modalDroparItemOpen, setModalDroparItemOpen] = useState(false);
-
+// 🟢 MODAL DE INSUMÍVEL (APLICAR EM OUTRO ITEM)
+const [modalInsumivelOpen, setModalInsumivelOpen] = useState(false);
+const [insumivelSelecionado, setInsumivelSelecionado] = useState(null);
+const [itemAlvoInsumivel, setItemAlvoInsumivel] = useState(null);
+const bloqueioRef = useRef(false); // 🟢 useRef é SÍNCRONO, ao contrário de useState
 // 🟢 MODAIS DE ANOTAÇÕES E BACKGROUND
 const [modalAnotacoesOpen, setModalAnotacoesOpen] = useState(false);
 const [modalBackgroundOpen, setModalBackgroundOpen] = useState(false);
@@ -336,6 +353,14 @@ const [jogadorDestinoItem, setJogadorDestinoItem] = useState("");
 const [quantidadeTransferir, setQuantidadeTransferir] = useState(1);
 const [quantidadeDropar, setQuantidadeDropar] = useState(1);
 const [categoriaDestino, setCategoriaDestino] = useState("equipamentos"); // 🟢 NOVO
+// 🟢 INVENTÁRIOS SECUNDÁRIOS
+const [inventariosSecundarios, setInventariosSecundarios] = useState([]);
+const [modalComprarInventarioOpen, setModalComprarInventarioOpen] = useState(false);
+const [modalInventarioSecundarioOpen, setModalInventarioSecundarioOpen] = useState(false);
+const [inventarioSecundarioAtivo, setInventarioSecundarioAtivo] = useState(null);
+const [editandoNomeInventario, setEditandoNomeInventario] = useState(false);
+const [modalTransferirParaSecundarioOpen, setModalTransferirParaSecundarioOpen] = useState(false);
+const [modalTransferirDoSecundarioOpen, setModalTransferirDoSecundarioOpen] = useState(false);
 // Lista de Traços (desbloqueados ao atingir nível 5 na perícia)
 const TRACOS_POR_PERICIA = {
   atletismo: "Atleta",
@@ -442,8 +467,13 @@ useEffect(() => {
       setLoading(true);
       const ref = doc(db, "fichas", fichaId);
       
-      // 🟢 USA onSnapshot PARA ATUALIZAR EM TEMPO REAL
-      const unsub = onSnapshot(ref, (snap) => {
+            const unsub = onSnapshot(ref, (snap) => {
+        // 🟢 BLOQUEIO PARA INSUMÍVEL
+        if (window.__bloqueandoInsumivel) {
+          console.log("⏭️ onSnapshot BLOQUEADO");
+          return;
+        }
+        
         if (snap.exists()) {
           const dados = snap.data();
           if (!dados.imagens && dados.imagemPersonagem) {
@@ -457,9 +487,11 @@ useEffect(() => {
               ...item,
               dado: item.dado || 1,
               tipoDano: item.tipoDano || "Nenhum",
-                            consumivel: item.consumivel || "Nenhum",
+                                          consumivel: item.consumivel || "Nenhum",
               consumivelValor: item.consumivelValor || 0,
               consumivelPercentual: item.consumivelPercentual || 100,
+              insumivel: item.insumivel || "Nenhum",
+              insumivelValor: item.insumivelValor || 0,
             }));
           };
 
@@ -495,9 +527,14 @@ useEffect(() => {
             equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
             vestes: garantirDadoNosItens(Array.isArray(dados.vestes) ? dados.vestes : []),
             diversos: garantirDadoNosItens(Array.isArray(dados.diversos) ? dados.diversos : []),
+                        inventariosSecundarios: Array.isArray(dados.inventariosSecundarios) 
+              ? dados.inventariosSecundarios.map(inv => ({
+                  ...inv,
+                  itens: garantirDadoNosItens(Array.isArray(inv.itens) ? inv.itens : [])
+                }))
+              : [],
           };
-          
-          setFicha(combinado);
+                    setFicha(combinado);
         } else {
           setDoc(ref, modelo);
           setFicha({ ...modelo });
@@ -893,13 +930,121 @@ const analisarDescricaoComIA = (habilidade) => {
   
   return novasCondicoes;
 };
+// 🟢 FUNÇÃO PARA GERAR HABILIDADE COMPLETA COM IA
+const gerarHabilidadeCompleta = async () => {
+  setGerandoHabilidade(true);
+  
+  try {
+    const apiBase = window.location.hostname === "localhost" 
+      ? "http://localhost:5000" 
+      : "https://app-rpg.onrender.com";
 
+    const response = await fetch(`${apiBase}/api/gerar-habilidade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tipoAura: ficha.tipoAura || "Desconhecido" })
+    });
+
+    if (!response.ok) throw new Error("Erro na geração");
+    
+    const habilidadeGerada = await response.json();
+    
+    // Adiciona a habilidade gerada
+    setFicha((p) => ({
+      ...p,
+      habilidades: [
+        ...(p.habilidades || []),
+        {
+          nome: habilidadeGerada.nome || "Nova Habilidade",
+          descricao: habilidadeGerada.descricao || "",
+          dado: habilidadeGerada.dado || 3,
+          tipoDano: habilidadeGerada.tipoDano || "Aurano",
+          custoPE: habilidadeGerada.custoPE || 5,
+          condicoes: habilidadeGerada.condicoes || [],
+          imagem: ""
+        }
+      ]
+    }));
+    
+    // Expande a nova habilidade
+    setHabilidadeExpandida(ficha.habilidades.length);
+    
+    // Avalia automaticamente
+    if (habilidadeGerada) {
+      await avaliarHabilidadeComIA({
+        nome: habilidadeGerada.nome,
+        descricao: habilidadeGerada.descricao,
+        dado: habilidadeGerada.dado || 3,
+        tipoDano: habilidadeGerada.tipoDano || "Aurano",
+        custoPE: habilidadeGerada.custoPE || 5,
+        condicoes: habilidadeGerada.condicoes || []
+      });
+    }
+    
+  } catch (error) {
+    console.error("Erro ao gerar habilidade:", error);
+    alert("Erro ao gerar habilidade. Tente novamente.");
+  } finally {
+    setGerandoHabilidade(false);
+  }
+};
+
+// 🟢 FUNÇÃO PARA GERAR CAMPO ESPECÍFICO COM IA
+const gerarCampoComIA = async (habilidadeIndex, campo) => {
+  setGerandoHabilidade(true);
+  
+  try {
+    const hab = ficha.habilidades[habilidadeIndex];
+    if (!hab) return;
+    
+    const apiBase = window.location.hostname === "localhost" 
+      ? "http://localhost:5000" 
+      : "https://app-rpg.onrender.com";
+
+    const response = await fetch(`${apiBase}/api/gerar-campo-habilidade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        campo,
+        habilidadeAtual: {
+          nome: hab.nome,
+          descricao: hab.descricao,
+          dado: hab.dado,
+          tipoDano: hab.tipoDano,
+          custoPE: hab.custoPE,
+          condicoes: hab.condicoes
+        },
+        tipoAura: ficha.tipoAura || "Desconhecido"
+      })
+    });
+
+    if (!response.ok) throw new Error("Erro na geração");
+    
+    const resultado = await response.json();
+    
+    if (campo === "condicoes") {
+      // Adiciona condições geradas
+      atualizarHabilidade(habilidadeIndex, "condicoes", resultado.condicoes || []);
+    } else if (campo === "nome_descricao") {
+      atualizarHabilidade(habilidadeIndex, "nome", resultado.nome || hab.nome);
+      atualizarHabilidade(habilidadeIndex, "descricao", resultado.descricao || hab.descricao);
+    } else {
+      atualizarHabilidade(habilidadeIndex, campo, resultado.valor || resultado[campo]);
+    }
+    
+  } catch (error) {
+    console.error(`Erro ao gerar campo ${campo}:`, error);
+    alert(`Erro ao gerar ${campo}. Tente novamente.`);
+  } finally {
+    setGerandoHabilidade(false);
+  }
+};
                 function adicionarItem(tipo) {
   setFicha((p) => ({
     ...p,
     [tipo]: [
       ...(p[tipo] || []),
-      { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1, tipoDano: "Nenhum", consumivel: "Nenhum", consumivelValor: 0 },
+            { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1, tipoDano: "Nenhum", consumivel: "Nenhum", consumivelValor: 0, insumivel: "Nenhum", insumivelValor: 0 },
     ],
   }));
 }
@@ -1056,6 +1201,12 @@ useEffect(() => {
     setCarteiras(ficha.carteiras);
   }
 }, [ficha?.carteiras]);
+// 🟢 CARREGAR INVENTÁRIOS SECUNDÁRIOS
+useEffect(() => {
+  if (ficha?.inventariosSecundarios) {
+    setInventariosSecundarios(ficha.inventariosSecundarios);
+  }
+}, [ficha?.inventariosSecundarios]);
 
 // 🟢 CARREGAR ANOTAÇÕES
 useEffect(() => {
@@ -1427,7 +1578,193 @@ const droparItem = async () => {
   setItemParaDropar(null);
   setQuantidadeDropar(1);
 };
-
+// 🟢 FUNÇÃO PARA COMPRAR INVENTÁRIO SECUNDÁRIO (CORRIGIDA)
+const comprarInventarioSecundario = async (tamanho, custo, slots) => {
+  // Encontra a primeira carteira com saldo suficiente
+  const carteiraComSaldo = carteiras.find(c => c.valor >= custo);
+  
+  if (!carteiraComSaldo) {
+    alert(`Saldo insuficiente! Necessário: ${custo.toLocaleString()} 💰\nTotal disponível: ${carteiras.reduce((t, c) => t + c.valor, 0).toLocaleString()} 💰`);
+    return;
+  }
+  
+  try {
+    // Debita da primeira carteira com saldo
+    const novasCarteiras = carteiras.map(c => 
+      c.nome === carteiraComSaldo.nome ? { ...c, valor: c.valor - custo } : c
+    );
+    setCarteiras(novasCarteiras);
+    
+    // Calcula o número do próximo inventário
+    const numeroInventario = inventariosSecundarios.length + 2; // Começa em 2 (1 é o principal)
+    const nomeAutomatico = `Inventário ${numeroInventario}`;
+    
+    // Verifica se já existe um com esse nome e ajusta
+    const nomeExiste = inventariosSecundarios.some(inv => inv.nome === nomeAutomatico);
+    const nomeFinal = nomeExiste 
+      ? `Inventário ${numeroInventario + 1}` 
+      : nomeAutomatico;
+    
+    // Cria novo inventário
+    const novoInventario = {
+      id: Date.now(),
+      nome: nomeFinal,
+      slots: slots,
+      itens: []
+    };
+    
+    const novosInventarios = [...inventariosSecundarios, novoInventario];
+    setInventariosSecundarios(novosInventarios);
+    
+    // Salva no Firestore
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, { 
+      carteiras: novasCarteiras,
+      inventariosSecundarios: novosInventarios 
+    }, { merge: true });
+    
+    alert(`✅ ${nomeFinal} comprado!\n${slots} slots por ${custo.toLocaleString()} 💰\nCarteira usada: ${carteiraComSaldo.nome} (${(carteiraComSaldo.valor - custo).toLocaleString()} restante)`);
+    setModalComprarInventarioOpen(false);
+    
+  } catch (error) {
+    console.error("Erro ao comprar inventário:", error);
+    alert("Erro ao processar compra.");
+  }
+};
+// 🟢 FUNÇÃO PARA TRANSFERIR ITEM DO INVENTÁRIO PRINCIPAL PARA SECUNDÁRIO
+const transferirParaSecundario = async () => {
+  if (!itemParaTransferir || !inventarioSecundarioAtivo) {
+    alert("Selecione um item e um inventário secundário!");
+    return;
+  }
+  
+  if (quantidadeTransferir > itemParaTransferir.quantidade) {
+    alert("Quantidade maior que a disponível!");
+    return;
+  }
+  
+  try {
+    const ref = doc(db, "fichas", fichaId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    
+    const dados = snap.data();
+    const categoria = abaAtiva;
+    
+    // Remove do inventário principal
+    const novosItensPrincipal = dados[categoria].map((item, idx) => {
+      if (idx === itemParaTransferir.index) {
+        const novaQuantidade = item.quantidade - quantidadeTransferir;
+        return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+      }
+      return item;
+    }).filter(item => item !== null);
+    
+    // Adiciona no inventário secundário
+    const itemMovido = {
+      ...itemParaTransferir.item,
+      quantidade: quantidadeTransferir
+    };
+    delete itemMovido.index;
+    
+    const novosInventarios = (dados.inventariosSecundarios || []).map(inv => {
+      if (inv.id === inventarioSecundarioAtivo) {
+        return { ...inv, itens: [...inv.itens, itemMovido] };
+      }
+      return inv;
+    });
+    
+    // Salva
+    await setDoc(ref, {
+      [categoria]: novosItensPrincipal,
+      inventariosSecundarios: novosInventarios
+    }, { merge: true });
+    
+    setFicha(prev => ({
+      ...prev,
+      [categoria]: novosItensPrincipal,
+      inventariosSecundarios: novosInventarios
+    }));
+    setInventariosSecundarios(novosInventarios);
+    
+    alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} transferido para inventário secundário!`);
+    setModalTransferirParaSecundarioOpen(false);
+    setItemParaTransferir(null);
+    setQuantidadeTransferir(1);
+    
+  } catch (error) {
+    console.error("Erro:", error);
+    alert("Erro ao transferir item.");
+  }
+};
+// 🟢 FUNÇÃO FINAL - SALVA USANDO OPERAÇÕES DIRETAS NO ARRAY
+const aplicarInsumivel = async () => {
+  if (!insumivelSelecionado || !itemAlvoInsumivel) {
+    alert("Selecione o insumível e o item alvo!");
+    return;
+  }
+  
+  // 🟢 BLOQUEIA
+  bloqueioRef.current = true;
+  
+  const categoriaInsumo = insumivelSelecionado.tipo;
+  const categoriaAlvo = itemAlvoInsumivel.categoria;
+  const idxInsumo = insumivelSelecionado.index;
+  const idxAlvo = itemAlvoInsumivel.index;
+  
+  try {
+    const ref = doc(db, "fichas", fichaId);
+    
+    // Lê do Firestore
+    const snap = await getDoc(ref);
+    if (!snap.exists()) { bloqueioRef.current = false; return alert("Ficha não encontrada!"); }
+    
+    const dados = snap.data();
+    const insumo = dados[categoriaInsumo]?.[idxInsumo];
+    const alvo = dados[categoriaAlvo]?.[idxAlvo];
+    
+    if (!insumo || !alvo) { bloqueioRef.current = false; return alert("Item não encontrado!"); }
+    
+    const durAlvo = Number(alvo.durabilidade || 100);
+    const durInsumo = Number(insumo.durabilidade || 100);
+    const falta = 100 - durAlvo;
+    
+    if (falta <= 0) { bloqueioRef.current = false; return alert("⚠️ Item já está 100%!"); }
+    
+    const custo = Math.ceil(falta / 2);
+    if (durInsumo < custo) { bloqueioRef.current = false; return alert("⚠️ Durabilidade insuficiente!"); }
+    
+    // 🟢 CRIA O OBJETO COMPLETO DA FICHA
+    const fichaCompleta = JSON.parse(JSON.stringify(dados));
+    fichaCompleta[categoriaInsumo][idxInsumo].durabilidade = durInsumo - custo;
+    fichaCompleta[categoriaAlvo][idxAlvo].durabilidade = 100;
+    
+    // 🟢 USA setDoc PARA SOBRESCREVER O DOCUMENTO INTEIRO (sem merge)
+    await setDoc(ref, fichaCompleta);
+    
+    // 🟢 Atualiza estado local
+    setFicha(fichaCompleta);
+    
+    // 🟢 Aguarda 3 segundos antes de desbloquear
+    console.log("✅ Aguardando 3s para desbloquear...");
+    
+    alert(`✅ ${insumo.nome} aplicado!\n🔧 ${alvo.nome}: ${durAlvo}% → 100%\n🛢️ ${insumo.nome}: ${durInsumo}% → ${durInsumo - custo}%`);
+    
+    setTimeout(() => {
+      bloqueioRef.current = false;
+      console.log("🔓 Bloqueio DESATIVADO");
+    }, 3000);
+    
+  } catch (error) {
+    console.error("Erro:", error);
+    bloqueioRef.current = false;
+    alert("Erro: " + error.message);
+  }
+  
+  setModalInsumivelOpen(false);
+  setInsumivelSelecionado(null);
+  setItemAlvoInsumivel(null);
+};
 
     if (loading)
   return (
@@ -1554,7 +1891,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
               ...prev,
               permitirRedistribuirPontos: novoValor,
             }));
-            const ref = doc(db, "fichas", fichaId);
+                          const ref = doc(db, "fichas", fichaId);
             await setDoc(ref, { permitirRedistribuirPontos: novoValor }, { merge: true });
           }}
           size="small"
@@ -2082,8 +2419,26 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     ⚡ HABILIDADES AURANAS ({ficha.habilidades?.length || 0}/{limiteHabilidades})
   </Button>
 </Box>
+{/* 🟢 BOTÃO COMPRAR INVENTÁRIO (só mestre vê) */}
+{isMestre && (
+  <Box mt={2}>
+    <Button
+      variant="outlined"
+      startIcon={<AddIcon />}
+      fullWidth
+      onClick={() => setModalComprarInventarioOpen(true)}
+      sx={{ 
+        color: '#4caf50', 
+        borderColor: '#4caf50',
+        mb: 1
+      }}
+    >
+      + Comprar Inventário Secundário
+    </Button>
+  </Box>
+)}
 
-                        {/* 🟢 SUBSTITUA OS DOIS BOTÕES POR ESTE: */}
+{/* 🟢 INVENTÁRIO PRINCIPAL + DINHEIRO */}
 <Box mt={2} sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
   <Button
     variant="contained"
@@ -2099,7 +2454,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
       flex: 1
     }}
   >
-    INVENTÁRIO ({pesoAtual}/{pesoMaximo})
+    INVENTÁRIO PRINCIPAL ({pesoAtual}/{pesoMaximo})
   </Button>
   <Button
     variant="contained"
@@ -2118,26 +2473,94 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     DINHEIRO
   </Button>
 </Box>
-                        {/* Anotações e Background - Botões */}
-            <Box mt={2} sx={{ display: 'flex', gap: 2 }}>
-              <Button 
-                variant="outlined" 
-                startIcon={<span>📝</span>}
-                onClick={() => setModalAnotacoesOpen(true)}
-                sx={{ color: '#fff', borderColor: '#ff9800', flex: 1 }}
-              >
-                Anotações ({anotacoesSalvos.length})
-              </Button>
-              <Button 
-                variant="outlined" 
-                startIcon={<span>📖</span>}
-                onClick={() => { setBackgroundTexto(ficha?.background || ""); setModalBackgroundOpen(true); }}
-                sx={{ color: '#fff', borderColor: '#9c27b0', flex: 1 }}
-              >
-                Background
-              </Button>
-            </Box>
 
+{/* 🟢 INVENTÁRIOS SECUNDÁRIOS */}
+{inventariosSecundarios.map((inv, idx) => (
+  <Box key={inv.id} mt={1} sx={{ position: 'relative' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Button
+        variant="contained"
+        fullWidth
+        onClick={() => {
+          setInventarioSecundarioAtivo(inv.id);
+          setModalInventarioSecundarioOpen(true);
+        }}
+        sx={{ 
+          bgcolor: '#5D3A1A', 
+          '&:hover': { bgcolor: '#4A2E15' }, 
+          py: 1,
+          fontSize: '0.95rem',
+          fontWeight: 'bold',
+          textAlign: 'left',
+          justifyContent: 'flex-start'
+        }}
+        startIcon={<span>📦</span>}
+      >
+        {inv.nome} ({inv.itens?.length || 0}/{inv.slots})
+      </Button>
+      {isMestre && (
+        <IconButton 
+          size="small" 
+          onClick={() => setEditandoNomeInventario(inv.id)}
+          sx={{ color: '#ff9800' }}
+        >
+          <EditIcon fontSize="small" />
+        </IconButton>
+      )}
+    </Box>
+    
+    {/* Modal rápido para editar nome */}
+    {editandoNomeInventario === inv.id && (
+      <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+        <TextField
+          size="small"
+          value={inv.nome}
+          onChange={(e) => {
+            const novos = inventariosSecundarios.map(i => 
+              i.id === inv.id ? { ...i, nome: e.target.value } : i
+            );
+            setInventariosSecundarios(novos);
+          }}
+          onBlur={async () => {
+            setEditandoNomeInventario(null);
+            const ref = doc(db, "fichas", fichaId);
+            await setDoc(ref, { inventariosSecundarios }, { merge: true });
+          }}
+          autoFocus
+          sx={{ flex: 1, bgcolor: '#0f172a' }}
+          InputProps={{ style: { color: '#fff' } }}
+        />
+        <Button 
+          size="small" 
+          onClick={() => setEditandoNomeInventario(null)}
+          sx={{ color: '#4caf50' }}
+        >
+          OK
+        </Button>
+      </Box>
+    )}
+  </Box>
+))}
+
+{/* Anotações e Background - Botões (empurrados para baixo) */}
+<Box mt={2} sx={{ display: 'flex', gap: 2 }}>
+  <Button 
+    variant="outlined" 
+    startIcon={<span>📝</span>}
+    onClick={() => setModalAnotacoesOpen(true)}
+    sx={{ color: '#fff', borderColor: '#ff9800', flex: 1 }}
+  >
+    Anotações ({anotacoesSalvos.length})
+  </Button>
+  <Button 
+    variant="outlined" 
+    startIcon={<span>📖</span>}
+    onClick={() => { setBackgroundTexto(ficha?.background || ""); setModalBackgroundOpen(true); }}
+    sx={{ color: '#fff', borderColor: '#9c27b0', flex: 1 }}
+  >
+    Background
+  </Button>
+</Box>
             {/* Botões Galeria e Salvar */}
 <Box mt={2} sx={{ display: "flex", justifyContent: "space-between" }}>
   <Button variant="outlined" startIcon={<span>🖼️</span>} onClick={() => setModalGaleriaOpen(true)} sx={{ color: '#fff', borderColor: '#9c27b0' }}>
@@ -2577,6 +3000,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
 }} sx={{ mr: 1, bgcolor: '#1976d2' }}>
   🔄 Transferir
 </Button>
+    
     <Button variant="contained" size="small" onClick={() => setModalPagamentoOpen(true)} sx={{ bgcolor: '#ff9800' }}>
       💳 Pagar
     </Button>
@@ -3112,7 +3536,22 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     >
       🔄 Transferir
     </Button>
-    
+       {/* 🟢 Botão Transferir para Inventário Secundário */}
+    <Button
+      variant="contained"
+      size="small"
+      onClick={() => {
+        if (inventariosSecundarios.length === 0) {
+          alert("Nenhum inventário secundário! Compre um primeiro no botão '+ Comprar Inventário Secundário'.");
+          return;
+        }
+        // Precisamos carregar os itens atuais da categoria ativa
+        setModalTransferirParaSecundarioOpen(true);
+      }}
+      sx={{ mr: 1, bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+    >
+      📦→📦 Secundário
+    </Button>
     {/* 🟢 Botão Dropar Item */}
     <Button
       variant="contained"
@@ -3204,12 +3643,18 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 45 }}>Qtd</Typography>
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Nome</Typography>
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1 }}>Durabilidade</Typography>
-                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Tipo Dano</Typography>
+                                        <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Tipo Dano</Typography>
           {isMestre && (
-            <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Consumível</Typography>
+            <>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Consumível</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Insumível</Typography>
+            </>
           )}
           {!isMestre && (
-            <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 60 }}>Usar</Typography>
+            <>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 55 }}>Usar</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 55 }}>Aplicar</Typography>
+            </>
           )}
           <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 50, textAlign: 'right' }}>Dado</Typography>
         </Box>
@@ -3455,6 +3900,60 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
                 </Select>
               </FormControl>
             </Box>
+                        {/* 🟢 INSUMÍVEL (SÓ MESTRE) */}
+            {isMestre && (
+              <Box sx={{ flex: 1.2 }}>
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={item.insumivel || "Nenhum"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      atualizarItem(abaAtiva, index, "insumivel", val);
+                      if (val === "Nenhum") {
+                        atualizarItem(abaAtiva, index, "insumivelValor", 0);
+                      }
+                    }}
+                    sx={{ 
+                      color: TIPOS_INSUMIVEL.find(t => t.valor === (item.insumivel || "Nenhum"))?.cor || '#888',
+                      bgcolor: '#0f172a',
+                      fontSize: '0.7rem',
+                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+                    }}
+                    MenuProps={{
+                      PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 250 } }
+                    }}
+                  >
+                    {TIPOS_INSUMIVEL.map(ti => (
+                      <MenuItem key={ti.valor} value={ti.valor}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: ti.cor }} />
+                          <Typography sx={{ color: ti.cor, fontWeight: 'bold', fontSize: '0.75rem' }}>
+                            {ti.label}
+                          </Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                {(item.insumivel && item.insumivel !== "Nenhum") && (
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={item.insumivelValor || 0}
+                    onChange={(e) => {
+                      atualizarItem(abaAtiva, index, "insumivelValor", Math.min(100, Math.max(0, Number(e.target.value) || 0)));
+                    }}
+                    InputProps={{ 
+                      inputProps: { min: 0, max: 100 },
+                      sx: { color: '#fff', fontSize: '0.6rem' },
+                      endAdornment: <InputAdornment position="end" sx={{ '& p': { color: '#888', fontSize: '0.5rem' } }}>%</InputAdornment>
+                    }}
+                    sx={{ mt: 0.3, bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
+                    placeholder="% Reg."
+                  />
+                )}
+              </Box>
+            )}
                         {/* 🟢 CONSUMÍVEL (SÓ MESTRE) */}
             {isMestre && (
               <Box sx={{ flex: 1.2 }}>
@@ -3540,7 +4039,61 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
                 )}
               </Box>
             )}
-          
+                      
+            {/* 🟢 INFO DE CONSUMÍVEL PARA JOGADOR (apenas visual) */}
+            {!isMestre && item.consumivel && item.consumivel !== "Nenhum" && (
+              <Box sx={{ width: 55, textAlign: 'center' }}>
+                <Chip 
+                  label={`${item.consumivel} +${item.consumivelValor || 0}`}
+                  size="small"
+                  sx={{ 
+                    bgcolor: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || '#888',
+                    color: '#fff',
+                    fontWeight: 'bold',
+                    fontSize: '0.6rem',
+                    height: 20,
+                  }}
+                />
+              </Box>
+            )}
+            {!isMestre && (!item.consumivel || item.consumivel === "Nenhum") && (
+              <Box sx={{ width: 55 }} />
+            )}
+
+            {/* 🟢 BOTÃO APLICAR INSUMÍVEL (JOGADOR) */}
+            {!isMestre && item.insumivel && item.insumivel !== "Nenhum" && (
+              <Box sx={{ width: 55 }}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => {
+                    setInsumivelSelecionado({
+                      item,
+                      tipo: abaAtiva,
+                      index,
+                    });
+                    setItemAlvoInsumivel(null);
+                    setModalInsumivelOpen(true);
+                  }}
+                  sx={{
+                    bgcolor: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || '#888',
+                    fontSize: '0.6rem',
+                    minWidth: 'auto',
+                    px: 1,
+                    py: 0.3,
+                    '&:hover': { opacity: 0.8 }
+                  }}
+                >
+                  Aplicar
+                </Button>
+              </Box>
+            )}
+            {!isMestre && (!item.insumivel || item.insumivel === "Nenhum") && (
+              <Box sx={{ width: 55 }} />
+            )}
+
+            {/* Dado e Deletar */}
+            <Box sx={{ width: 90, display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}></Box>
             {/* Dado e Deletar - MAIOR AGORA (width: 90) */}
             <Box sx={{ width: 90, display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}>
               <TextField
@@ -4071,6 +4624,167 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           </Button>
         </DialogActions>
       </Dialog>
+            {/* 🟢 MODAL APLICAR INSUMÍVEL */}
+      <Dialog
+        open={modalInsumivelOpen}
+        onClose={() => setModalInsumivelOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ color: '#fff' }}>
+          🔧 Aplicar Insumível
+        </DialogTitle>
+        <DialogContent>
+          {insumivelSelecionado && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+              <Typography variant="h6" sx={{ color: '#fff' }}>
+                {insumivelSelecionado.item.nome}
+              </Typography>
+              <Chip 
+                label={`${insumivelSelecionado.item.insumivel} +${insumivelSelecionado.item.insumivelValor || 0}%`}
+                sx={{ 
+                  bgcolor: TIPOS_INSUMIVEL.find(t => t.valor === insumivelSelecionado.item.insumivel)?.cor || '#888',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  width: 'fit-content'
+                }} 
+              />
+              <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                Durabilidade atual: {insumivelSelecionado.item.durabilidade || 100}%
+              </Typography>
+              
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: '#94a3b8' }}>Item Alvo</InputLabel>
+                                <Select
+                  value={itemAlvoInsumivel ? `${itemAlvoInsumivel.categoria}-${itemAlvoInsumivel.index}` : ''}
+                  onChange={(e) => {
+                    const valor = e.target.value;
+                    if (!valor) {
+                      setItemAlvoInsumivel(null);
+                      return;
+                    }
+                    const [categoria, idxStr] = valor.split('-');
+                    const idx = parseInt(idxStr);
+                    setItemAlvoInsumivel({
+                      index: idx,
+                      item: ficha[categoria]?.[idx],
+                      categoria
+                    });
+                  }}
+                  sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+                >
+                  <MenuItem value="">-- Selecione o item --</MenuItem>
+                  {(() => {
+                    let listaItens = [];
+                    const tipoInsumo = insumivelSelecionado.item.insumivel;
+                    
+                    if (tipoInsumo === "Vestimenta") {
+                      listaItens = (ficha.vestes || []).map((it, i) => ({ ...it, _idx: i, _cat: 'vestes' }));
+                    } else if (tipoInsumo === "Todos") {
+                      const atuais = (ficha[abaAtiva] || []).map((it, i) => ({ ...it, _idx: i, _cat: abaAtiva }));
+                      const vestes = (ficha.vestes || []).map((it, i) => ({ ...it, _idx: i, _cat: 'vestes' }));
+                      const diversos = (ficha.diversos || []).map((it, i) => ({ ...it, _idx: i, _cat: 'diversos' }));
+                      listaItens = [...atuais, ...vestes, ...diversos];
+                    } else {
+                      const tipoReparado = TIPOS_INSUMIVEL.find(t => t.valor === tipoInsumo)?.tipoDanoReparado;
+                      const atuais = (ficha[abaAtiva] || []).map((it, i) => ({ ...it, _idx: i, _cat: abaAtiva }));
+                      const vestes = (ficha.vestes || []).map((it, i) => ({ ...it, _idx: i, _cat: 'vestes' }));
+                      const diversos = (ficha.diversos || []).map((it, i) => ({ ...it, _idx: i, _cat: 'diversos' }));
+                      const todos = [...atuais, ...vestes, ...diversos];
+                      listaItens = todos.filter(it => it.tipoDano === tipoReparado);
+                    }
+                    
+                    return listaItens
+                      .filter(it => it.nome && it.nome !== insumivelSelecionado.item.nome)
+                      .map((item) => (
+                        <MenuItem key={`${item._cat}-${item._idx}`} value={`${item._cat}-${item._idx}`}>
+                          {item.nome || 'Sem nome'} [{item._cat}] (Dur: {item.durabilidade || 100}%)
+                        </MenuItem>
+                      ));
+                  })()}
+                </Select>
+              </FormControl>
+                                          {/* 🟢 Info de compatibilidade */}
+              {insumivelSelecionado && insumivelSelecionado.item.insumivel === "Cortante/Perfurante" && (
+                <Typography variant="caption" sx={{ color: '#ff9800' }}>
+                  ⚠️ Repara itens com dano: <strong>Cortante ou Perfurante</strong>
+                </Typography>
+              )}
+              {insumivelSelecionado && insumivelSelecionado.item.insumivel === "Elétrico" && (
+                <Typography variant="caption" sx={{ color: '#ff9800' }}>
+                  ⚠️ Repara itens com dano: <strong>Elétrico</strong>
+                </Typography>
+              )}
+              {insumivelSelecionado && insumivelSelecionado.item.insumivel === "Térmico" && (
+                <Typography variant="caption" sx={{ color: '#ff9800' }}>
+                  ⚠️ Repara itens com dano: <strong>Térmico</strong>
+                </Typography>
+              )}
+              {insumivelSelecionado && insumivelSelecionado.item.insumivel === "Vestimenta_Leve" && (
+                <Typography variant="caption" sx={{ color: '#ff9800' }}>
+                  ⚠️ Repara apenas <strong>Vestimentas</strong> com dado até <strong>15</strong>
+                </Typography>
+              )}
+              {insumivelSelecionado && insumivelSelecionado.item.insumivel === "Vestimenta_Pesada" && (
+                <Typography variant="caption" sx={{ color: '#ff9800' }}>
+                  ⚠️ Repara apenas <strong>Vestimentas</strong> com dado de <strong>16 a 50</strong>
+                </Typography>
+              )}
+              {insumivelSelecionado && insumivelSelecionado.item.insumivel === "Todos" && (
+                <Typography variant="caption" sx={{ color: '#4caf50' }}>
+                  ✅ Este insumível funciona em <strong>qualquer item</strong>
+                </Typography>
+              )}
+              {insumivelSelecionado && insumivelSelecionado.item.insumivel === "Todos" && (
+                <Typography variant="caption" sx={{ color: '#4caf50' }}>
+                  ✅ Este insumível funciona em <strong>qualquer item</strong>
+                </Typography>
+              )}
+              {itemAlvoInsumivel && (
+                <Box>
+                  <Typography variant="body2" sx={{ color: '#4caf50' }}>
+                                                            {(() => {
+                      const durAlvo = itemAlvoInsumivel.item.durabilidade || 100;
+                      const falta = 100 - durAlvo;
+                      const custo = Math.ceil(falta / 2);
+                      const durInsumo = insumivelSelecionado.item.durabilidade || 100;
+                      return (
+                        <>
+                          🔧 Alvo ({itemAlvoInsumivel.item.nome || 'Item'}): <strong>{durAlvo}% → 100% (+{falta}%)</strong>
+                          <br />
+                          🛢️ Insumível: <strong>{durInsumo}% → {Math.max(0, durInsumo - custo)}% (-{custo}%)</strong>
+                        </>
+                      );
+                    })()}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#facc15', display: 'block', mt: 1 }}>
+                                                         {(() => {
+                      const durAlvo = itemAlvoInsumivel.item.durabilidade || 100;
+                      const falta = 100 - durAlvo;
+                      const custo = Math.ceil(falta / 2);
+                      return (
+                        <span>⚠️ Proporção 2:1 - Para regenerar <strong>{falta}%</strong> (até 100%), o insumível gastará <strong>{custo}%</strong> de si mesmo</span>
+                      );
+                    })()}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setModalInsumivelOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button 
+            variant="contained"
+            onClick={aplicarInsumivel}
+            disabled={!itemAlvoInsumivel}
+            sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
+          >
+            🔧 Aplicar
+          </Button>
+        </DialogActions>
+      </Dialog>
             {/* 🟢 MODAL DE BACKGROUND */}
       <Dialog 
         open={modalBackgroundOpen} 
@@ -4469,105 +5183,158 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
 
               {/* NOME + DESCRIÇÃO */}
               <Box sx={{ flex: 1 }}>
-                <TextField
-                  fullWidth
-                  label="Nome da Habilidade"
-                  value={h.nome || ""}
-                  onChange={(e) => atualizarHabilidade(i, "nome", e.target.value)}
-                  sx={{ mb: 1 }}
-                  InputProps={{ style: { color: '#fff', fontWeight: 'bold', fontSize: '1.1rem' } }}
-                  InputLabelProps={{ style: { color: '#94a3b8' } }}
-                />
+                            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+              <TextField
+                fullWidth
+                label="Nome da Habilidade"
+                value={h.nome || ""}
+                onChange={(e) => atualizarHabilidade(i, "nome", e.target.value)}
+                InputProps={{ style: { color: '#fff', fontWeight: 'bold', fontSize: '1.1rem' } }}
+                InputLabelProps={{ style: { color: '#94a3b8' } }}
+              />
+              <IconButton 
+                onClick={() => gerarCampoComIA(i, "nome_descricao")}
+                disabled={gerandoHabilidade}
+                title="Gerar Nome e Descrição"
+                sx={{ color: '#ff9800', alignSelf: 'center' }}
+              >
+                <span style={{ fontSize: '1.2rem' }}>🎲</span>
+              </IconButton>
+            </Box>
 
-                <TextField
-                  fullWidth
-                  multiline
-                  minRows={3}
-                  label="Descrição"
-                  value={h.descricao || ""}
-                  onChange={(e) => atualizarHabilidade(i, "descricao", e.target.value)}
-                  InputProps={{ style: { color: '#fff' } }}
-                  InputLabelProps={{ style: { color: '#94a3b8' } }}
-                />
+                            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+              <TextField
+                fullWidth
+                multiline
+                minRows={3}
+                label="Descrição"
+                value={h.descricao || ""}
+                onChange={(e) => atualizarHabilidade(i, "descricao", e.target.value)}
+                InputProps={{ style: { color: '#fff' } }}
+                InputLabelProps={{ style: { color: '#94a3b8' } }}
+              />
+            </Box>
               </Box>
             </Box>
 
-            {/* Grid: Dado, Custo PE, Tipo Dano */}
+                        {/* Grid: Dado, Custo PE, Tipo Dano */}
             <Grid container spacing={2} sx={{ mb: 2 }}>
               <Grid item xs={4}>
-                <TextField
-                  fullWidth
-                  label="Dado (1-10)"
-                  type="number"
-                  value={h.dado || 1}
-                  onChange={(e) => {
-                    const val = Math.min(10, Math.max(1, Number(e.target.value) || 1));
-                    atualizarHabilidade(i, "dado", val);
-                  }}
-                  InputProps={{ 
-                    inputProps: { min: 1, max: 10 },
-                    style: { color: '#fff' }
-                  }}
-                  InputLabelProps={{ style: { color: '#94a3b8' } }}
-                />
-              </Grid>
-              <Grid item xs={4}>
-                <TextField
-                  fullWidth
-                  label="Custo de PE"
-                  type="number"
-                  value={h.custoPE || 0}
-                  onChange={(e) => {
-                    atualizarHabilidade(i, "custoPE", Number(e.target.value));
-                  }}
-                  InputProps={{ 
-                    inputProps: { min: 0 },
-                    style: { color: '#facc15' }
-                  }}
-                  InputLabelProps={{ style: { color: '#94a3b8' } }}
-                />
-              </Grid>
-              <Grid item xs={4}>
-                <FormControl fullWidth>
-                  <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
-                  <Select
-                    value={h.tipoDano || "Aurano"}
-                    onChange={(e) => atualizarHabilidade(i, "tipoDano", e.target.value)}
-                    sx={{ 
-                      color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff',
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  <TextField
+                    fullWidth
+                    label="Dado (1-10)"
+                    type="number"
+                    value={h.dado || 1}
+                    onChange={(e) => {
+                      const val = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+                      atualizarHabilidade(i, "dado", val);
                     }}
-                    MenuProps={{
-                      PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff" } }
+                    InputProps={{ 
+                      inputProps: { min: 1, max: 10 },
+                      style: { color: '#fff' }
                     }}
+                    InputLabelProps={{ style: { color: '#94a3b8' } }}
+                  />
+                  <IconButton 
+                    onClick={() => gerarCampoComIA(i, "dado")}
+                    disabled={gerandoHabilidade}
+                    title="Gerar Dado"
+                    sx={{ color: '#ff9800', alignSelf: 'center', minWidth: 'auto' }}
                   >
-                    {TIPOS_DANO.map(td => (
-                      <MenuItem key={td.valor} value={td.valor}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: td.cor }} />
-                          <Typography sx={{ color: td.cor }}>{td.label}</Typography>
-                        </Box>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                    <span style={{ fontSize: '1rem' }}>🎲</span>
+                  </IconButton>
+                </Box>
+              </Grid>
+                            <Grid item xs={4}>
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  <TextField
+                    fullWidth
+                    label="Custo de PE"
+                    type="number"
+                    value={h.custoPE || 0}
+                    onChange={(e) => {
+                      atualizarHabilidade(i, "custoPE", Number(e.target.value));
+                    }}
+                    InputProps={{ 
+                      inputProps: { min: 0 },
+                      style: { color: '#facc15' }
+                    }}
+                    InputLabelProps={{ style: { color: '#94a3b8' } }}
+                  />
+                  <IconButton 
+                    onClick={() => gerarCampoComIA(i, "custoPE")}
+                    disabled={gerandoHabilidade}
+                    title="Gerar Custo de PE"
+                    sx={{ color: '#ff9800', alignSelf: 'center', minWidth: 'auto' }}
+                  >
+                    <span style={{ fontSize: '1rem' }}>🎲</span>
+                  </IconButton>
+                </Box>
+              </Grid>
+                            <Grid item xs={4}>
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  <FormControl fullWidth>
+                    <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
+                    <Select
+                      value={h.tipoDano || "Aurano"}
+                      onChange={(e) => atualizarHabilidade(i, "tipoDano", e.target.value)}
+                      sx={{ 
+                        color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff',
+                      }}
+                      MenuProps={{
+                        PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff" } }
+                      }}
+                    >
+                      {TIPOS_DANO.map(td => (
+                        <MenuItem key={td.valor} value={td.valor}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: td.cor }} />
+                            <Typography sx={{ color: td.cor }}>{td.label}</Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <IconButton 
+                    onClick={() => gerarCampoComIA(i, "tipoDano")}
+                    disabled={gerandoHabilidade}
+                    title="Gerar Tipo de Dano"
+                    sx={{ color: '#ff9800', alignSelf: 'center', minWidth: 'auto' }}
+                  >
+                    <span style={{ fontSize: '1rem' }}>🎲</span>
+                  </IconButton>
+                </Box>
               </Grid>
             </Grid>
 
-            {/* Condições */}
+                        {/* Condições */}
             <Box sx={{ mb: 2 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                 <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 'bold' }}>
                   📜 Condições
                 </Typography>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<AddIcon />}
-                  onClick={() => adicionarCondicao(i)}
-                  sx={{ color: '#00e0ff', borderColor: '#00e0ff' }}
-                >
-                  Adicionar Condição
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={() => adicionarCondicao(i)}
+                    sx={{ color: '#00e0ff', borderColor: '#00e0ff' }}
+                  >
+                    Adicionar Condição
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<span>🎲</span>}
+                    onClick={() => gerarCampoComIA(i, "condicoes")}
+                    disabled={gerandoHabilidade}
+                    sx={{ color: '#ff9800', borderColor: '#ff9800' }}
+                  >
+                    Gerar Condições
+                  </Button>
+                </Box>
               </Box>
 
               {(h.condicoes || []).length === 0 && (
@@ -4805,7 +5572,22 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     >
       Fechar
     </Button>
-
+    {/* 🟢 BOTÃO GERAR HABILIDADE COM IA */}
+    <Button
+      variant="contained"
+      startIcon={<span>🎲</span>}
+      onClick={gerarHabilidadeCompleta}
+      disabled={gerandoHabilidade || (!podeIgnorarLimiteHab && ficha.habilidades.length >= limiteHabilidades)}
+      sx={{ 
+        bgcolor: '#ff9800',
+        color: '#000',
+        fontWeight: 'bold',
+        mr: 1,
+        '&:hover': { bgcolor: '#f57c00' }
+      }}
+    >
+      {gerandoHabilidade ? "⏳ Gerando..." : "🎲 Gerar Habilidade"}
+    </Button>
     <Button
       variant="contained"
       startIcon={<AddIcon />}
@@ -4830,6 +5612,346 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
       }}
     >
       Nova Habilidade
+    </Button>
+  </DialogActions>
+</Dialog>
+{/* 🟢 MODAL COMPRAR INVENTÁRIO SECUNDÁRIO */}
+<Dialog
+  open={modalComprarInventarioOpen}
+  onClose={() => setModalComprarInventarioOpen(false)}
+  maxWidth="sm"
+  fullWidth
+  PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
+>
+  <DialogTitle sx={{ color: '#4caf50', textAlign: 'center' }}>
+    🛒 Comprar Inventário Secundário
+  </DialogTitle>
+  <DialogContent>
+    <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2, textAlign: 'center' }}>
+      Inventários secundários servem apenas para guardar itens (sem categorias).
+    </Typography>
+    
+    <Grid container spacing={2}>
+      {[
+        { tamanho: 'Pequeno', slots: 10, custo: 1000, cor: '#4caf50', desc: 'Ideal para itens pequenos' },
+        { tamanho: 'Médio', slots: 30, custo: 10000, cor: '#ff9800', desc: 'Bom para equipamentos extras' },
+        { tamanho: 'Grande', slots: 100, custo: 50000, cor: '#9c27b0', desc: 'Para colecionadores' },
+      ].map((opcao) => (
+        <Grid item xs={12} key={opcao.tamanho}>
+          <Paper 
+            sx={{ 
+              p: 2, 
+              bgcolor: '#1a1a2e',
+              border: `1px solid ${opcao.cor}44`,
+              cursor: 'pointer',
+              '&:hover': { border: `2px solid ${opcao.cor}` }
+            }}
+            onClick={() => comprarInventarioSecundario(opcao.tamanho, opcao.custo, opcao.slots)}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
+                <Typography variant="subtitle1" sx={{ color: opcao.cor, fontWeight: 'bold' }}>
+                  {opcao.tamanho} (+{opcao.slots} slots)
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                  {opcao.desc}
+                </Typography>
+              </Box>
+              <Typography variant="h6" sx={{ color: '#facc15', fontWeight: 'bold' }}>
+                {opcao.custo.toLocaleString()} 💰
+              </Typography>
+            </Box>
+          </Paper>
+        </Grid>
+      ))}
+    </Grid>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setModalComprarInventarioOpen(false)} sx={{ color: '#94a3b8' }}>
+      Cancelar
+    </Button>
+  </DialogActions>
+</Dialog>
+
+{/* 🟢 MODAL INVENTÁRIO SECUNDÁRIO */}
+<Dialog
+  open={modalInventarioSecundarioOpen}
+  onClose={() => {
+    setModalInventarioSecundarioOpen(false);
+    setInventarioSecundarioAtivo(null);
+  }}
+  maxWidth="md"
+  fullWidth
+  PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2, minHeight: "60vh" } }}
+>
+  <DialogTitle sx={{ color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <span style={{ fontSize: '1.5rem' }}>📦</span>
+      <Typography variant="h6">
+        {inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.nome || 'Inventário Secundário'}
+      </Typography>
+      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+        ({inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.itens?.length || 0}/
+        {inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.slots || 0} slots)
+      </Typography>
+    </Box>
+    <Box sx={{ display: 'flex', gap: 1 }}>
+      <Button
+        size="small"
+        variant="contained"
+        onClick={() => setModalTransferirDoSecundarioOpen(true)}
+        sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+      >
+        📦→🎒 Principal
+      </Button>
+      <IconButton onClick={() => setModalInventarioSecundarioOpen(false)} sx={{ color: '#94a3b8' }}>
+        <CloseIcon />
+      </IconButton>
+    </Box>
+  </DialogTitle>
+  
+  <DialogContent>
+    {inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.itens?.map((item, idx) => (
+      <Paper key={idx} sx={{ p: 1.5, mb: 1, bgcolor: '#1a1a2e', border: '1px solid #334155' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ width: 40, height: 40, bgcolor: '#0f172a', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {item.imagem ? (
+              <img src={item.imagem} alt={item.nome} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4 }} />
+            ) : (
+              <Typography sx={{ opacity: 0.5 }}>📦</Typography>
+            )}
+          </Box>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="body2" sx={{ color: '#fff', fontWeight: 'bold' }}>
+              {item.nome || 'Sem nome'}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+              Qtd: {item.quantidade || 1} | Dado: {item.dado || 1} | Dur: {item.durabilidade || 100}%
+            </Typography>
+          </Box>
+          {isMestre && (
+            <IconButton 
+              size="small" 
+              color="error"
+              onClick={async () => {
+                const invAtual = inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo);
+                const novosItens = invAtual.itens.filter((_, i) => i !== idx);
+                const novosInventarios = inventariosSecundarios.map(inv => 
+                  inv.id === inventarioSecundarioAtivo ? { ...inv, itens: novosItens } : inv
+                );
+                setInventariosSecundarios(novosInventarios);
+                const ref = doc(db, "fichas", fichaId);
+                await setDoc(ref, { inventariosSecundarios: novosInventarios }, { merge: true });
+              }}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          )}
+        </Box>
+      </Paper>
+    ))}
+    
+    {(inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.itens?.length || 0) === 0 && (
+      <Typography variant="body2" sx={{ color: '#64748b', textAlign: 'center', py: 4 }}>
+        Inventário vazio. Transfira itens do inventário principal!
+      </Typography>
+    )}
+  </DialogContent>
+  
+  <DialogActions>
+    <Button onClick={() => setModalInventarioSecundarioOpen(false)} sx={{ color: '#94a3b8' }}>
+      Fechar
+    </Button>
+  </DialogActions>
+</Dialog>
+
+{/* 🟢 MODAL TRANSFERIR PARA SECUNDÁRIO */}
+<Dialog
+  open={modalTransferirParaSecundarioOpen}
+  onClose={() => setModalTransferirParaSecundarioOpen(false)}
+  maxWidth="sm"
+  fullWidth
+  PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
+>
+  <DialogTitle sx={{ color: '#fff' }}>📦→📦 Transferir para Inventário Secundário</DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+      <FormControl fullWidth>
+        <InputLabel sx={{ color: '#fff' }}>Item</InputLabel>
+        <Select
+          value={itemParaTransferir?.index || ''}
+          onChange={(e) => {
+            const idx = e.target.value;
+            setItemParaTransferir({
+              index: idx,
+              item: ficha[abaAtiva][idx],
+              quantidade: ficha[abaAtiva][idx].quantidade
+            });
+            setQuantidadeTransferir(1);
+          }}
+          sx={{ color: '#fff' }}
+        >
+          {ficha[abaAtiva]?.map((item, idx) => (
+            <MenuItem key={idx} value={idx}>{item.quantidade}x {item.nome || 'Sem nome'}</MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      
+      {itemParaTransferir && (
+        <TextField
+          label="Quantidade"
+          type="number"
+          fullWidth
+          value={quantidadeTransferir}
+          onChange={(e) => {
+            const val = Math.min(itemParaTransferir.quantidade, Math.max(1, Number(e.target.value) || 1));
+            setQuantidadeTransferir(val);
+          }}
+          InputProps={{ inputProps: { min: 1 }, sx: { color: '#fff' } }}
+        />
+      )}
+      
+      <FormControl fullWidth>
+        <InputLabel sx={{ color: '#fff' }}>Inventário Destino</InputLabel>
+        <Select
+          value={inventarioSecundarioAtivo || ''}
+          onChange={(e) => setInventarioSecundarioAtivo(e.target.value)}
+          sx={{ color: '#fff' }}
+        >
+          {inventariosSecundarios.map(inv => (
+            <MenuItem key={inv.id} value={inv.id}>
+              {inv.nome} ({inv.itens?.length || 0}/{inv.slots})
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+    </Box>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setModalTransferirParaSecundarioOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+    <Button variant="contained" onClick={transferirParaSecundario} sx={{ bgcolor: '#9c27b0' }}>Transferir</Button>
+  </DialogActions>
+</Dialog>
+
+{/* 🟢 MODAL TRANSFERIR DO SECUNDÁRIO PARA PRINCIPAL */}
+<Dialog
+  open={modalTransferirDoSecundarioOpen}
+  onClose={() => setModalTransferirDoSecundarioOpen(false)}
+  maxWidth="sm"
+  fullWidth
+  PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
+>
+  <DialogTitle sx={{ color: '#fff' }}>📦→🎒 Transferir para Inventário Principal</DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+      <FormControl fullWidth>
+        <InputLabel sx={{ color: '#fff' }}>Item do Secundário</InputLabel>
+        <Select
+          value={itemParaTransferir?.index || ''}
+          onChange={(e) => {
+            const idx = e.target.value;
+            const invAtual = inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo);
+            if (invAtual?.itens[idx]) {
+              setItemParaTransferir({
+                index: idx,
+                item: invAtual.itens[idx],
+                quantidade: invAtual.itens[idx].quantidade
+              });
+              setQuantidadeTransferir(1);
+            }
+          }}
+          sx={{ color: '#fff' }}
+        >
+          {inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.itens?.map((item, idx) => (
+            <MenuItem key={idx} value={idx}>{item.quantidade}x {item.nome || 'Sem nome'}</MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      
+      {itemParaTransferir && (
+        <>
+          <TextField
+            label="Quantidade"
+            type="number"
+            fullWidth
+            value={quantidadeTransferir}
+            onChange={(e) => {
+              const val = Math.min(itemParaTransferir.quantidade, Math.max(1, Number(e.target.value) || 1));
+              setQuantidadeTransferir(val);
+            }}
+            InputProps={{ inputProps: { min: 1 }, sx: { color: '#fff' } }}
+          />
+          
+          <FormControl fullWidth>
+            <InputLabel sx={{ color: '#fff' }}>Categoria Destino</InputLabel>
+            <Select
+              value={categoriaDestino}
+              onChange={(e) => setCategoriaDestino(e.target.value)}
+              sx={{ color: '#fff' }}
+            >
+              <MenuItem value="equipamentos">⚔️ Equipamentos</MenuItem>
+              <MenuItem value="vestes">👕 Vestimentas</MenuItem>
+              <MenuItem value="diversos">📦 Diversos</MenuItem>
+            </Select>
+          </FormControl>
+        </>
+      )}
+    </Box>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setModalTransferirDoSecundarioOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+    <Button 
+      variant="contained" 
+      onClick={async () => {
+        if (!itemParaTransferir) return;
+        
+        try {
+          const ref = doc(db, "fichas", fichaId);
+          const snap = await getDoc(ref);
+          if (!snap.exists()) return;
+          
+          const dados = snap.data();
+          
+          // Remove do secundário
+          const novosInventarios = (dados.inventariosSecundarios || []).map(inv => {
+            if (inv.id === inventarioSecundarioAtivo) {
+              const novosItens = inv.itens.map((item, idx) => {
+                if (idx === itemParaTransferir.index) {
+                  const novaQuantidade = item.quantidade - quantidadeTransferir;
+                  return novaQuantidade > 0 ? { ...item, quantidade: novaQuantidade } : null;
+                }
+                return item;
+              }).filter(item => item !== null);
+              return { ...inv, itens: novosItens };
+            }
+            return inv;
+          });
+          
+          // Adiciona no principal
+          const itemMovido = { ...itemParaTransferir.item, quantidade: quantidadeTransferir };
+          delete itemMovido.index;
+          const itensPrincipal = [...(dados[categoriaDestino] || []), itemMovido];
+          
+          await setDoc(ref, {
+            inventariosSecundarios: novosInventarios,
+            [categoriaDestino]: itensPrincipal
+          }, { merge: true });
+          
+          setInventariosSecundarios(novosInventarios);
+          setFicha(prev => ({ ...prev, [categoriaDestino]: itensPrincipal }));
+          
+          alert(`${quantidadeTransferir}x transferido para inventário principal!`);
+          setModalTransferirDoSecundarioOpen(false);
+          setItemParaTransferir(null);
+          
+        } catch (error) {
+          console.error("Erro:", error);
+          alert("Erro ao transferir.");
+        }
+      }}
+      sx={{ bgcolor: '#9c27b0' }}
+    >
+      Transferir
     </Button>
   </DialogActions>
 </Dialog>

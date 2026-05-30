@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Box, Paper, Typography, IconButton, Button, TextField, Divider,
   FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle,
-  DialogContent, DialogActions, Grid, Chip, Tooltip,
+  DialogContent, DialogActions, Grid, Chip, Tooltip, Slider,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -38,7 +38,16 @@ const TIPOS_CONSUMIVEL = [
   { valor: "PE", label: "PE (Energia)", cor: "#facc15" },
   { valor: "RE", label: "R.E (Remover Efeito)", cor: "#00e0ff" },
 ];
-
+// 🟢 TIPOS DE INSUMÍVEL (reparam outros itens)
+const TIPOS_INSUMIVEL = [
+  { valor: "Nenhum", label: "Nenhum", cor: "#888888" },
+  { valor: "Cortante/Perfurante", label: "🪨 Pedra de Amolar (Cortante/Perfurante)", cor: "#c0c0c0", tiposDanoReparados: ["Cortante", "Perfurante"] },
+  { valor: "Elétrico", label: "🔋 Bateria (Elétrico)", cor: "#ffff00", tiposDanoReparados: ["Elétrico"] },
+  { valor: "Térmico", label: "⛽ Combustível (Térmico)", cor: "#ff4500", tiposDanoReparados: ["Térmico"] },
+  { valor: "Vestimenta_Leve", label: "🧵 Remendo (Vestimenta até dado 15)", cor: "#8B4513", categoriaAlvo: "vestes", dadoMaximo: 15 },
+  { valor: "Vestimenta_Pesada", label: "🔨 Kit de Forja (Vestimenta dado 16-50)", cor: "#A0522D", categoriaAlvo: "vestes", dadoMinimo: 16, dadoMaximo: 50 },
+  { valor: "Todos", label: "🔄 Regenerar Tudo", cor: "#00ff88", regenerarTudo: true },
+];
 // ==================== LIGHTBOX ====================
 function LightboxImage({ src, zoom, setZoom }) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -165,7 +174,9 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                               tipoDano: d.data().tipoDano || "Nenhum",
           consumivel: d.data().consumivel || "Nenhum",
           consumivelValor: d.data().consumivelValor || 0,
-          consumivelPercentual: d.data().consumivelPercentual || 100,
+                    consumivelPercentual: d.data().consumivelPercentual || 100,
+          insumivel: d.data().insumivel || "Nenhum",
+          insumivelValor: d.data().insumivelValor || 0,
         }));
         dados.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
         setItens(dados);
@@ -309,7 +320,9 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                   tipoDano: editandoItem?.tipoDano || "Nenhum",
       consumivel: editandoItem?.consumivel || "Nenhum",
       consumivelValor: editandoItem?.consumivelValor || 0,
-      consumivelPercentual: editandoItem?.consumivelPercentual || 100,
+            consumivelPercentual: editandoItem?.consumivelPercentual || 100,
+      insumivel: editandoItem?.insumivel || "Nenhum",
+      insumivelValor: editandoItem?.insumivelValor || 0,
     };
 
         await setDoc(
@@ -342,8 +355,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     input.click();
   };
 
-  // ==================== COMPRA ====================
-  const comprarItem = async () => {
+    const comprarItem = async () => {
     if (!comprandoItem || !currentUserEmail) return;
     if (!carteiraSelecionada) { alert("Selecione uma carteira!"); return; }
 
@@ -352,42 +364,62 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
 
     const carteiras = ficha.carteiras || [];
     const carteira = carteiras.find(c => c.nome === carteiraSelecionada);
-    if (!carteira || carteira.valor < comprandoItem.precoFinal) {
+    
+    const quantidadeComprada = comprandoItem.quantidadeCompra || 1;
+    const precoTotal = comprandoItem.precoUnitario * quantidadeComprada;
+    
+    if (!carteira || carteira.valor < precoTotal) {
       alert("Saldo insuficiente!");
       return;
     }
 
     // Desconta dinheiro
     const novasCarteiras = carteiras.map(c =>
-      c.nome === carteiraSelecionada ? { ...c, valor: c.valor - comprandoItem.precoFinal } : c
+      c.nome === carteiraSelecionada ? { ...c, valor: c.valor - precoTotal } : c
     );
 
-        // Adiciona item ao inventário
-    const novoItem = {
-      nome: comprandoItem.nome,
-      quantidade: 1,
-      durabilidade: comprandoItem.durabilidade || 100,
-      dado: comprandoItem.dado || 1,
-      imagem: comprandoItem.imagem || "",
-                  tipoDano: comprandoItem.tipoDano || "Nenhum",
-      consumivel: comprandoItem.consumivel || "Nenhum",
-      consumivelValor: comprandoItem.consumivelValor || 0,
-      consumivelPercentual: comprandoItem.consumivelPercentual || 100,
-    };
-
-    const categoriaItens = [...(ficha[categoriaDestinoCompra] || []), novoItem];
+    // 🟢 AGLOMERA itens com mesmo nome
+    const categoriaAtual = ficha[categoriaDestinoCompra] || [];
+    const itemExistenteIndex = categoriaAtual.findIndex(it => it.nome === comprandoItem.nome);
+    
+    let categoriaItens;
+    if (itemExistenteIndex >= 0) {
+      // Aumenta a quantidade do item existente
+      categoriaItens = categoriaAtual.map((it, idx) => {
+        if (idx === itemExistenteIndex) {
+          return { ...it, quantidade: (it.quantidade || 1) + quantidadeComprada };
+        }
+        return it;
+      });
+    } else {
+      // Adiciona novo item
+      const novoItem = {
+        nome: comprandoItem.nome,
+        quantidade: quantidadeComprada,
+        durabilidade: comprandoItem.durabilidade || 100,
+        dado: comprandoItem.dado || 1,
+        imagem: comprandoItem.imagem || "",
+        tipoDano: comprandoItem.tipoDano || "Nenhum",
+        consumivel: comprandoItem.consumivel || "Nenhum",
+        consumivelValor: comprandoItem.consumivelValor || 0,
+        consumivelPercentual: comprandoItem.consumivelPercentual || 100,
+        insumivel: comprandoItem.insumivel || "Nenhum",
+        insumivelValor: comprandoItem.insumivelValor || 0,
+      };
+      categoriaItens = [...categoriaAtual, novoItem];
+    }
 
     // Atualiza Firestore
-    await updateDoc(doc(db, "fichas", currentUserEmail), {
+    await setDoc(doc(db, "fichas", currentUserEmail), {
       carteiras: novasCarteiras,
       [categoriaDestinoCompra]: categoriaItens,
     });
 
-    // Diminui estoque em 1
-    const novoEstoque = (comprandoItem.estoque || 1) - 1;
+    // Diminui estoque
+    const novoEstoque = (comprandoItem.estoque || 1) - quantidadeComprada;
     const comprasRecentes = (comprandoItem.comprasRecentes || 0) + 1;
 
-        if (novoEstoque <= 0) {
+    if (novoEstoque <= 0) {
       await deleteDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", comprandoItem.id));
     } else {
       await updateDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", comprandoItem.id), {
@@ -396,11 +428,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       });
     }
 
-    alert(`✅ "${comprandoItem.nome}" comprado por ${comprandoItem.precoFinal} 💰!`);
+    alert(`✅ "${quantidadeComprada}x ${comprandoItem.nome}" comprado por ${precoTotal} 💰!`);
     setComprandoItem(null);
     setCarteiraSelecionada("");
   };
-
   // ==================== RENDER ====================
   const hud = (
     <Paper
@@ -689,7 +720,18 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                               }} 
                             />
                           )}
-                          <Chip label={`📦 Estoque: ${item.estoque || 0}`} size="small" sx={{ bgcolor: item.estoque > 0 ? "#1b5e20" : "#5e1b1b" }} />
+                                                    <Chip label={`📦 Estoque: ${item.estoque || 0}`} size="small" sx={{ bgcolor: item.estoque > 0 ? "#1b5e20" : "#5e1b1b" }} />
+                          {item.insumivel && item.insumivel !== "Nenhum" && (
+                            <Chip 
+                              label={`🔧 ${item.insumivel}`}
+                              size="small" 
+                              sx={{ 
+                                bgcolor: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor + "33" || "#1e3a5f",
+                                color: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#fff",
+                                border: `1px solid ${TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#334155"}`,
+                              }} 
+                            />
+                          )}
                         </Box>
                       </Box>
                       <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
@@ -708,13 +750,13 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                             </Typography>
                           )}
                         </Box>
-                        <Button
+                                                <Button
                           variant="contained"
                           size="small"
                           startIcon={<ShoppingCartIcon />}
                           disabled={(item.estoque || 0) <= 0}
-                                                    onClick={() => {
-                            setComprandoItem({ ...item, precoFinal: precoExibicao });
+                          onClick={() => {
+                            setComprandoItem({ ...item, precoUnitario: precoExibicao, quantidadeCompra: 1, precoFinal: precoExibicao });
                             setCarteiraSelecionada("");
                             setCategoriaDestinoCompra("equipamentos");
                           }}
@@ -739,12 +781,40 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
           {itens.length === 0 && <Typography sx={{ color: "#94a3b8", textAlign: "center", mt: 2 }}>Nenhum item disponível.</Typography>}
 
           {/* Modal comprar item */}
-          {comprandoItem && (
+                    {comprandoItem && (
             <Dialog open={!!comprandoItem} onClose={() => setComprandoItem(null)} maxWidth="xs" fullWidth
   PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
               <DialogTitle>🛒 Comprar: {comprandoItem.nome}</DialogTitle>
               <DialogContent>
-                <Typography variant="h5" sx={{ color: "#fbbf24", mb: 2 }}>💰 {comprandoItem.precoFinal}</Typography>
+                <Typography variant="h5" sx={{ color: "#fbbf24", mb: 2 }}>
+                  💰 {(comprandoItem.precoUnitario || comprandoItem.valor || 0) * (comprandoItem.quantidadeCompra || 1)}
+                </Typography>
+                
+                {/* 🟢 SELETOR DE QUANTIDADE */}
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                    Quantidade (máx: {comprandoItem.estoque || 1})
+                  </Typography>
+                  <Slider
+                    value={comprandoItem.quantidadeCompra || 1}
+                    onChange={(e, val) => {
+                      setComprandoItem(prev => ({ 
+                        ...prev, 
+                        quantidadeCompra: val, 
+                        precoFinal: (prev.precoUnitario || prev.valor || 0) * val 
+                      }));
+                    }}
+                    min={1}
+                    max={comprandoItem.estoque || 1}
+                    step={1}
+                    valueLabelDisplay="auto"
+                    sx={{ color: '#fbbf24' }}
+                  />
+                  <Typography variant="body2" sx={{ color: '#fbbf24', textAlign: 'right' }}>
+                    Total: 💰 {(comprandoItem.precoUnitario || comprandoItem.valor || 0) * (comprandoItem.quantidadeCompra || 1)}
+                  </Typography>
+                </Box>
+                
                 <FormControl fullWidth size="small" sx={{ mb: 2 }}>
   <InputLabel sx={{ color: '#94a3b8' }}>Carteira</InputLabel>
   <Select value={carteiraSelecionada} onChange={e => setCarteiraSelecionada(e.target.value)}
@@ -901,6 +971,51 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                         InputLabelProps={{ style: { color: '#94a3b8' } }}
                       />
                     </Box>
+                  )}
+                                    {/* 🟢 INSUMÍVEL */}
+                  <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                    <InputLabel sx={{ color: '#94a3b8' }}>Insumível (Repara itens)</InputLabel>
+                    <Select
+                      value={editandoItem?.insumivel || "Nenhum"}
+                      label="Insumível"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditandoItem(prev => ({ 
+                          ...prev, 
+                          insumivel: val,
+                          insumivelValor: val === "Nenhum" ? 0 : (prev?.insumivelValor || 0)
+                        }));
+                      }}
+                      sx={{ 
+                        color: TIPOS_INSUMIVEL.find(t => t.valor === (editandoItem?.insumivel || "Nenhum"))?.cor || '#888',
+                        '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+                      }}
+                      MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 250 } } }}
+                    >
+                      {TIPOS_INSUMIVEL.map(ti => (
+                        <MenuItem key={ti.valor} value={ti.valor}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: ti.cor }} />
+                            <Typography sx={{ color: ti.cor, fontWeight: 'bold' }}>{ti.label}</Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  
+                  {(editandoItem?.insumivel && editandoItem.insumivel !== "Nenhum") && (
+                    <TextField
+                      label="% de Regeneração"
+                      fullWidth
+                      type="number"
+                      value={editandoItem?.insumivelValor || 0}
+                      onChange={(e) => setEditandoItem(prev => ({ ...prev, insumivelValor: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))}
+                      sx={{ mt: 2 }}
+                      InputProps={{ inputProps: { min: 0, max: 100 }, style: { color: '#fff' } }}
+                      InputLabelProps={{ style: { color: '#94a3b8' } }}
+                      helperText="Proporção 2:1 (gasta metade para regenerar)"
+                      FormHelperTextProps={{ sx: { color: '#64748b' } }}
+                    />
                   )}
                   <Box sx={{ mt: 2 }}>
                     <Button variant="outlined" onClick={uploadImagemItem}>📷 Upload Imagem</Button>
