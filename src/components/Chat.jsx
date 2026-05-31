@@ -250,7 +250,17 @@ const [toxinasAtivas, setToxinasAtivas] = useState({});
   const endRef = useRef(null);
   const chatCol = collection(db, "chat");
 
-  const isMaster = userEmail === "mestre@reqviemrpg.com";
+    const isMaster = userEmail === "mestre@reqviemrpg.com";
+  
+  // 🟢 EXPOR FICHAS MAP PARA O SOCIALBAR
+  useEffect(() => {
+    if (Object.keys(fichasMap).length > 0) {
+      window.__fichasMapSocial = fichasMap;
+      // Dispara evento para o Home saber que atualizou
+      window.dispatchEvent(new CustomEvent('fichasMapUpdated', { detail: fichasMap }));
+    }
+  }, [fichasMap]);
+  
   const MASTER_AVATAR = "https://cdn-icons-png.flaticon.com/512/3171/3171927.png";
 
   const getDisplayNick = (email, nick) => {
@@ -1813,14 +1823,20 @@ useEffect(() => {
       <FormControl size="small" sx={{ minWidth: 180, ml: 2 }}>
                 <Select
           value={jogadorSelecionadoEmail === "mestre@reqviemrpg.com" ? "mestre" : jogadorSelecionadoEmail}
-          onChange={(e) => {
+                    onChange={(e) => {
   const selectedEmail = e.target.value;
-  if (selectedEmail === "mestre") {
+      if (selectedEmail === "mestre") {
     setFichaJogador(null);
     setEnergiaAtual(0);
-    setJogadorSelecionadoEmail(userEmail); // volta para o mestre
-    setAcoesPendentes([]); // 🟢 LIMPA PENDÊNCIAS
-  setAcaoModo("acao"); // 🟢 VOLTA AO MODO NORMAL
+    setJogadorSelecionadoEmail(null);
+    // Pequeno delay para garantir que o estado atualize
+    setTimeout(() => {
+      setJogadorSelecionadoEmail(userEmail);
+    }, 50);
+    setAcoesPendentes([]);
+    setAcaoModo("acao");
+    // 🟢 ATUALIZA O FICHASMAP PARA DISPARAR EVENTO
+    window.dispatchEvent(new CustomEvent('fichasMapUpdated', { detail: window.__fichasMapSocial || {} }));
   } else {
     const fichaData = fichasMap[selectedEmail];
     if (fichaData) {
@@ -1894,43 +1910,6 @@ useEffect(() => {
     >
       🖼️ Galeria
     </Button>
-    
-    {/* 🟢 BOTÃO AVATAR - SÓ MESTRE */}
-    {isMaster && (
-      <Button
-        variant="outlined"
-        size="small"
-        component="label"
-        startIcon={<ImageIcon />}
-      >
-        Trocar avatar
-        <input
-          hidden
-          type="file"
-          accept="image/*"
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            try {
-              const formData = new FormData();
-              formData.append("file", file);
-              const res = await fetch("https://reqviem.onrender.com/upload", {
-                method: "POST",
-                body: formData,
-              });
-              const data = await res.json();
-              if (data.url) {
-                await setDoc(doc(db, "fichas", "mestre@reqviemrpg.com"), { imagemPersonagem: data.url }, { merge: true });
-                setAvatars(prev => ({ ...prev, "mestre@reqviemrpg.com": data.url }));
-              }
-            } catch (err) {
-              console.error("Erro ao enviar imagem:", err);
-              alert("Erro ao enviar imagem.");
-            }
-          }}
-        />
-      </Button>
-    )}
   </Box>
 </Box>
 

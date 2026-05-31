@@ -4,11 +4,12 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import { Link } from "react-router-dom";
 import HomePage from "../pages/HomePage";
 import SoundBoard from "./SoundBoard";
+import SocialBar from "./SocialBar";
 import FichaPersonagem from "./FichaPersonagem";
 import MemoizedChat from "./Chat";
 import LoginForm from "./LoginForm";
 import { db } from "../firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, collection } from "firebase/firestore";
 
 const Home = memo(function Home({ 
   user, 
@@ -31,18 +32,44 @@ const Home = memo(function Home({
   const [lightboxSrc, setLightboxSrc] = useState(null);
   
   // 🟢 Nome da ficha selecionada
-  const [fichaNome, setFichaNome] = useState("");
+    const [fichaNome, setFichaNome] = useState("");
+    
+      const [socialBarKey, setSocialBarKey] = useState(0);
   
-  // 🟢 Buscar nome da ficha quando selecionada
-  useEffect(() => {
+  // 🟢 FICHAS MAP PARA SOCIAL BAR
+  const [fichasMapSocial, setFichasMapSocial] = useState({});
+  
+    useEffect(() => {
+    // 🟢 Ouvir fichas em tempo real diretamente do Firestore
+    const col = collection(db, "fichas");
+    const unsub = onSnapshot(col, (snap) => {
+      const map = {};
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        map[docSnap.id] = { nome: data.nome || docSnap.id, ...data };
+      });
+      setFichasMapSocial(map);
+    });
+    return () => unsub();
+  }, []);
+  
+    useEffect(() => {
     if (selectedFichaEmail && db) {
+      // 🟢 Usa onSnapshot para atualizar em tempo real
       const fichaRef = doc(db, "fichas", selectedFichaEmail);
-      getDoc(fichaRef).then(snap => {
+      const unsub = onSnapshot(fichaRef, (snap) => {
         if (snap.exists()) {
           setFichaNome(snap.data().nome || selectedFichaEmail);
         }
       });
+      return () => unsub();
+    } else {
+      setFichaNome("");
     }
+  }, [selectedFichaEmail]);
+
+    useEffect(() => {
+    setSocialBarKey(prev => prev + 1);
   }, [selectedFichaEmail]);
   
   useEffect(() => {
@@ -89,7 +116,7 @@ const Home = memo(function Home({
 </Typography>
                         <Typography variant="caption" display="block">{user?.email}</Typography>
                         <Typography variant="caption" sx={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", display: "block" }}>
-  APP Réquiem RPG — <span style={{ color: '#FFD700', fontWeight: 'bold', textShadow: '0 0 8px rgba(255,215,0,0.5)' }}>Versão 4.3</span> — By: Zambiazi
+  APP Réquiem RPG — <span style={{ color: '#FFD700', fontWeight: 'bold', textShadow: '0 0 8px rgba(255,215,0,0.5)' }}>Versão 4.5</span> — By: Zambiazi
 </Typography>
                       </Box>
                     </Box>
@@ -98,9 +125,18 @@ const Home = memo(function Home({
                     </IconButton>
                   </Box>
                   <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, flexWrap: "wrap" }}>
-                    <Button variant="contained" component={Link} to="/map">Grid</Button>
+                                        <Button variant="contained" component={Link} to="/map">Grid</Button>
                     <Button variant="contained" component={Link} to="/cronica">Crônica</Button>
                     <Button variant="contained" component={Link} to="/sistema">Sistema</Button>
+                    <Button 
+                      variant="contained" 
+                      onClick={() => {
+                        if (window.__toggleHUDMobile) window.__toggleHUDMobile();
+                      }}
+                      sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' }, minWidth: 'auto', px: 1.5 }}
+                    >
+                      📊 HUD
+                    </Button>
                     <Button 
                       variant="contained" 
                       onClick={() => window.__startJitsiMeeting?.({ 
@@ -144,8 +180,8 @@ const Home = memo(function Home({
               </Grid>
               <Grid item sx={{ flex: "1 1 42%", minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <Paper sx={{ flex: 1, overflowY: "auto", p: 2 }}>
-  {user ? (
-    selectedFichaEmail && selectedFichaEmail !== user?.email ? (
+    {user ? (
+    selectedFichaEmail ? (
       <FichaPersonagem 
         key={selectedFichaEmail || 'empty'} 
         user={user} 
@@ -154,7 +190,7 @@ const Home = memo(function Home({
       />
     ) : (
       <Typography sx={{ color: '#94a3b8', textAlign: 'center', mt: 4 }}>
-        👑 Selecione uma ficha de jogador para visualizar
+        👑 Selecione uma ficha para visualizar
       </Typography>
     )
   ) : (
@@ -185,7 +221,7 @@ const Home = memo(function Home({
         </Grid>
       </Box>
       
-      {/* 🟢 LIGHTBOX */}
+            {/* 🟢 LIGHTBOX */}
       {lightboxOpen && (
         <Box
           onClick={() => setLightboxOpen(false)}
@@ -206,9 +242,21 @@ const Home = memo(function Home({
           />
         </Box>
       )}
+
+            {/* 🟢 SOCIAL BAR */}
+                  {user && (
+                        <SocialBar 
+          key={selectedFichaEmail || 'mestre-vazio'}
+          userEmail={user?.email}
+          userNick={displayName}
+          fichasMap={fichasMapSocial}
+          isMaster={isMaster}
+          jogadorSelecionadoEmail={selectedFichaEmail}
+        />
+      )}
     </ThemeProvider>
-  );
-});
+  );                    // ← Isso já existia
+});                     // ← Isso já existia
 
 // 🟢 COMPONENTE LIGHTBOX
 function LightboxImage({ src, zoom, setZoom }) {

@@ -21,6 +21,7 @@ import BattleMap from "./components/BattleMap";
 import MapaMundi from "./pages/MapaMundi";
 import Sistema from "./pages/Sistema";
 import FloatingHUD from "./components/FloatingHUD";
+import HUDMobile from "./components/HUDMobile";
 import RouteLoadingWatcher from "./components/RouteLoadingWatcher"; // extraia também
 import { openCommerceHUD, closeCommerceHUD } from "./CommerceHUDRoot";
 
@@ -74,9 +75,8 @@ export default function App() {
   try {
     const col = collection(db, "fichas");
     const snapshot = await getDocs(col);
-    const list = snapshot.docs
-      .map((d) => d.id)
-      .filter(id => id !== MASTER_EMAIL); // 👈 IMPEDE MESTRE NA LISTA
+        const list = snapshot.docs
+      .map((d) => d.id);
     setFichasList(list);
     if (list.length > 0 && !selectedFichaEmail) setSelectedFichaEmail(list[0]);
   } catch (err) {
@@ -101,9 +101,46 @@ export default function App() {
             if (ficha.imagemPersonagem) localStorage.setItem('userAvatar', ficha.imagemPersonagem);
           } else {
   // Ficha NÃO existe
-  if (u.email === MASTER_EMAIL) {
-    // 🚫 NÃO CRIA FICHA DO MESTRE AUTOMATICAMENTE
+      if (u.email === MASTER_EMAIL) {
     setUserNick("MESTRE");
+    // 🟢 CRIA FICHA DO MESTRE
+    const mestreRef = doc(db, "fichas", MASTER_EMAIL);
+    const mestreSnap = await getDoc(mestreRef);
+    if (!mestreSnap.exists()) {
+      await setDoc(mestreRef, {
+        nome: "👑 MESTRE",
+        tipoFicha: "PM",
+        dono: MASTER_EMAIL,
+        imagemPersonagem: "https://cdn-icons-png.flaticon.com/512/3171/3171927.png",
+        imagens: ["https://cdn-icons-png.flaticon.com/512/3171/3171927.png"],
+        imagemPrincipalIndex: 0,
+        genero: "Masculino",
+        idade: "",
+        altura: "",
+        peso: "",
+        pontosVida: 100,
+        pontosEnergia: 50,
+        armadura: 0,
+        atributos: { forca: 5, destreza: 5, agilidade: 5, constituicao: 5, inteligencia: 5, vontade: 5 },
+        pericias: { aura: 5 },
+        habilidades: [],
+        equipamentos: [],
+        vestes: [],
+        diversos: [],
+        moedas: 0,
+        anotacoes: "",
+        background: "",
+        defeitos: "",
+        tracos: "",
+        caracteristicas: "",
+        movimentacao: "",
+        ignorarLimitePeso: true,
+        ignorarLimiteHabilidades: true,
+        permitirRedistribuirPontos: false,
+        inventariosSecundarios: []
+      });
+      console.log("✅ Ficha do Mestre criada!");
+    }
     localStorage.setItem('userName', "MESTRE");
     localStorage.setItem('userEmail', u.email);
   } else {
@@ -211,6 +248,12 @@ const handleRegister = useCallback(async (email) => {
                     closeCommerce={closeCommerceHUD} 
                   />
                 )}
+                                {/* 🟢 HUD Mobile (funciona no celular via botão 📊 HUD) */}
+                <HUDMobile 
+                  userEmail={currentUserEmail} 
+                  openCommerce={openCommerceHUD} 
+                  closeCommerce={closeCommerceHUD} 
+                />
                 <Routes>
                   <Route 
                     path="/" 

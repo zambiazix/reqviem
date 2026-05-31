@@ -39,6 +39,7 @@ import TurnModal from "./TurnModal";
 import "./FloatingHUDBackgrounds.css";
 import { createPortal } from "react-dom";
 import CommerceHUD from "./CommerceHUD";
+import PerfilDetalhado from "./PerfilDetalhado";
 
 function playSFX(path) {
   try {
@@ -92,11 +93,13 @@ const [sorteAzarValue, setSorteAzarValue] = useState(5.5);
   // ================= PERFIS =================
 const [profilesOpen, setProfilesOpen] = useState(false);
 const [comercioOpen, setComercioOpen] = useState(false);
+const [perfilVisivel, setPerfilVisivel] = useState(false);
 const [perfis, setPerfis] = useState([]);
 const [openProfileDialog, setOpenProfileDialog] = useState(false);
 const [lightboxOpen, setLightboxOpen] = useState(false);
 const [lightboxSrc, setLightboxSrc] = useState(null);
 const [zoom, setZoom] = useState(1);
+
 
 
 const [novoPerfil, setNovoPerfil] = useState({
@@ -613,7 +616,16 @@ console.log("HUD DEBUG:", {
           <Paper elevation={0} sx={{ width: "100%", p: 0, bgcolor: "transparent" }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", mb: 0.5 }}>
               <DragIndicatorIcon sx={{ color: "inherit" }} />
-              <Typography variant="h6" sx={{ fontWeight: 800, textShadow }}>
+                            <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontWeight: 800, 
+                  textShadow,
+                  cursor: 'pointer',
+                  '&:hover': { color: '#a855f7' }
+                }}
+                onClick={() => setPerfilVisivel(true)}
+              >
                 {hud.turn?.nick ? `Turno atual: ${hud.turn.nick}` : "Turno: —"}
               </Typography>
               <Box sx={{ ml: "auto", display: "flex", gap: 0.5, alignItems: "center" }}>
@@ -665,27 +677,35 @@ console.log("HUD DEBUG:", {
         Selecionar turno
       </Typography>
 
-      {mergedEmails.length === 0 ? (
+            {mergedEmails.length === 0 ? (
         <Typography variant="caption">Nenhuma ficha registrada</Typography>
       ) : (
-        (mergedEmails || []).map((email) => (
-          <Button
-            key={email}
-            fullWidth
-            sx={{
-              justifyContent: "flex-start",
-              textTransform: "none",
-              color: "inherit",
-              mb: 0.5,
-            }}
-            onClick={() => {
-              handleSelectTurn(email);
-              setShowTurnMenu(false);
-            }}
-          >
-            {displayNameFor(email)}
-          </Button>
-        ))
+        <Box sx={{ maxHeight: 300, overflowY: 'auto', pr: 1,
+          '&::-webkit-scrollbar': { width: '4px' },
+          '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.2)', borderRadius: '10px' }
+        }}>
+          {(() => {
+            const pj = mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ");
+            const pm = mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM");
+            const grupos = [];
+            if (pj.length > 0) grupos.push({ titulo: '── PERSONAGENS DO JOGADOR ──', fichas: pj, cor: '#4caf50' });
+            if (pm.length > 0) grupos.push({ titulo: '── PERSONAGENS DO MESTRE ──', fichas: pm, cor: '#ff9800' });
+            return grupos.map((g, gi) => (
+              <Box key={gi} sx={{ mb: 1 }}>
+                <Typography variant="caption" sx={{ color: g.cor, fontWeight: 'bold', display: 'block', mb: 0.5, borderBottom: `1px solid ${g.cor}44`, pb: 0.3 }}>
+                  {g.titulo}
+                </Typography>
+                {g.fichas.map(email => (
+                  <Button key={email} fullWidth
+                    sx={{ justifyContent: "flex-start", textTransform: "none", color: "inherit", mb: 0.3, pl: 1.5, fontSize: '0.8rem' }}
+                    onClick={() => { handleSelectTurn(email); setShowTurnMenu(false); }}>
+                    {displayNameFor(email)}
+                  </Button>
+                ))}
+              </Box>
+            ));
+          })()}
+        </Box>
       )}
 
       <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 1 }}>
@@ -751,13 +771,17 @@ console.log("HUD DEBUG:", {
   value={hud.world?.phase || "manhã"}
   label="Fase"
   onChange={(e) => setWorldPhase(e.target.value)}
-  MenuProps={{
+    MenuProps={{
     disablePortal: false,
     container: typeof document !== "undefined" ? document.body : undefined,
     PaperProps: {
       sx: {
         zIndex: 140000,
         backdropFilter: "blur(4px)",
+        maxHeight: 300,
+        overflowY: 'auto',
+        '&::-webkit-scrollbar': { width: '4px' },
+        '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.3)', borderRadius: '10px' }
       },
     },
     anchorOrigin: { vertical: "bottom", horizontal: "left" },
@@ -1004,25 +1028,45 @@ console.log("HUD DEBUG:", {
   value={selectedPlayerForXP || ""}
   label="Jogador"
   onChange={(e) => setSelectedPlayerForXP(e.target.value)}
-  MenuProps={{
+    MenuProps={{
     disablePortal: false,
     container: typeof document !== "undefined" ? document.body : undefined,
     PaperProps: {
       sx: {
         zIndex: 140000,
         backdropFilter: "blur(4px)",
+        maxHeight: 300,
+        overflowY: 'auto',
+        '&::-webkit-scrollbar': { width: '4px' },
+        '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.3)', borderRadius: '10px' }
       },
     },
     anchorOrigin: { vertical: "bottom", horizontal: "left" },
     transformOrigin: { vertical: "top", horizontal: "left" },
   }}
 >
-  <MenuItem value="">
+    <MenuItem value="">
     <em>-- selecione --</em>
   </MenuItem>
-
-  {(mergedEmails || []).map((email) => (
-    <MenuItem key={email} value={email}>
+  <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', fontSize: '0.65rem' }}>
+      ── PERSONAGENS DO JOGADOR ──
+    </Typography>
+  </MenuItem>
+  {mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ").map((email) => (
+    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
+      {displayNameFor(email)}
+    </MenuItem>
+  ))}
+  {mergedEmails.some(e => fichasMap[e]?.tipoFicha === "PM") && (
+    <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 0.5 }}>
+      <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '0.65rem' }}>
+        ── PERSONAGENS DO MESTRE ──
+      </Typography>
+    </MenuItem>
+  )}
+  {mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM").map((email) => (
+    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
       {displayNameFor(email)}
     </MenuItem>
   ))}
@@ -1098,6 +1142,7 @@ console.log("HUD DEBUG:", {
                     sx={{ color: '#ff9800', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}
                   >
                     <span style={{ fontSize: '1.1rem' }}>📋</span>
+                       
                   </IconButton>
                 </Box>
                 
@@ -1129,9 +1174,9 @@ console.log("HUD DEBUG:", {
   size="small"
   aria-label="Abrir perfis"
   onClick={(e) => {
-    e.stopPropagation();
-    setProfilesOpen((prev) => !prev);
-  }}
+  e.stopPropagation();
+  setPerfilVisivel(prev => !prev);
+}}
   sx={{
     position: "absolute",
     left: 10,
@@ -1210,376 +1255,6 @@ console.log("HUD DEBUG:", {
           </Paper>
         )}
       </Box>
-      {profilesOpen &&
-  createPortal(
-    <Paper
-      elevation={16}
-      sx={{
-  position: "fixed",
-  bottom: 100,
-  left: 30,
-  width: 500,            // 🔥 um pouco maior
-  maxHeight: "80vh",     // 🔥 maior
-  overflowY: "auto",     // 🔥 scroll ativo
-  p: 2,
-  borderRadius: 2,
-  zIndex: 999999999,
-  background: "rgba(20,20,20,0.95)",
-  backdropFilter: "blur(6px)",
-  color: "white",
-}}
-    >
-      <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
-        <Typography variant="h6">Perfis</Typography>
-
-        {isMaster && (
-          <Button
-  size="small"
-  variant="contained"
-  onClick={() => {
-    setNovoPerfil({
-      nome: "",
-      tipo: "npc",
-      foto: "",
-      descricao: "",
-      resumo: "",
-    });
-    setOpenProfileDialog(true);
-  }}
->
-  + Novo
-</Button>
-        )}
-      </Box>
-
-      {perfis.map((p) => (
-        <Paper
-          key={`perfil-${p.id}`}
-          sx={{
-            p: 1.5,
-            mb: 1.5,
-            background: "rgba(255,255,255,0.05)",
-          }}
-        >
-          <Box sx={{ display: "flex", gap: 1 }}>
-            {p.foto && (
-  <img
-  src={p.foto}
-  alt={p.nome}
-  style={{ width: 60, height: 60, borderRadius: 8, cursor: "pointer" }}
-  onClick={() => {
-    setLightboxSrc(p.foto);
-    setZoom(1);
-    setLightboxOpen(true);
-  }}
-/>
-)}
-            <Box sx={{ flex: 1 }}>
-              <Typography
-  variant="subtitle1"
-  sx={{
-    color: "#fff",
-    textShadow: "1px 1px 2px #000",
-    fontWeight: 600
-  }}
->
-  {p.nome}
-</Typography>
-
-              <Typography
-  variant="body2"
-  sx={{
-    color: "#fff",
-    textShadow: "1px 1px 2px #000",
-    whiteSpace: "pre-line"
-  }}
->
-  {p.descricao}
-</Typography>
-
-<Typography
-  variant="body2"
-  sx={{
-    color: "#fff",
-    textShadow: "1px 1px 2px #000",
-    whiteSpace: "pre-line"
-  }}
->
-  {p.resumo}
-</Typography>
-            </Box>
-          </Box>
-
-          {isMaster && (
-  <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
-    <Button
-  size="small"
-  variant="outlined"
-  onClick={() => {
-    setNovoPerfil({
-      id: p.id,
-      nome: p.nome || "",
-      tipo: p.tipo || "npc",
-      foto: p.foto || "",
-      descricao: p.descricao || "",
-      resumo: p.resumo || "",
-    });
-    setOpenProfileDialog(true);
-  }}
->
-  Editar
-</Button>
-
-    <Button
-  size="small"
-  color="error"
-  onClick={async () => {
-    if (!p.id) return;
-
-    await deleteDoc(doc(db, "perfis", p.id));
-  }}
->
-  Remover
-</Button>
-  </Box>
-)}
-        </Paper>
-      ))}
-
-      <Box sx={{ textAlign: "right", mt: 2 }}>
-        <Button onClick={() => setProfilesOpen(false)}>
-          Fechar
-        </Button>
-      </Box>
-    </Paper>,
-    document.body
-  )
-}
-<Dialog
-  open={openProfileDialog}
-  onClose={() => setOpenProfileDialog(false)}
-  maxWidth="sm"
-  fullWidth
->
-  <DialogTitle>Novo Perfil</DialogTitle>
-
-  <DialogContent
-    sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}
-  >
-    <TextField
-      label="Nome"
-      value={novoPerfil.nome}
-      onChange={(e) =>
-        setNovoPerfil({ ...novoPerfil, nome: e.target.value })
-      }
-    />
-<FormControl fullWidth>
-  <InputLabel>Tipo</InputLabel>
-  <Select
-    value={novoPerfil.tipo}
-    label="Tipo"
-    onChange={(e) =>
-      setNovoPerfil({ ...novoPerfil, tipo: e.target.value })
-    }
-  >
-    <MenuItem value="npc">NPC (PM)</MenuItem>
-    <MenuItem value="player">Player (PJ)</MenuItem>
-  </Select>
-</FormControl>
-    <Button
-  variant="outlined"
-  component="label"
-  sx={{ mt: 2 }}
->
-  Selecionar imagem
-  <input
-    type="file"
-    hidden
-    accept="image/*"
-    onChange={async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      // 🔹 preview imediata
-      const previewUrl = URL.createObjectURL(file);
-
-      setNovoPerfil((p) => ({
-        ...p,
-        foto: previewUrl,
-      }));
-
-      // 🔹 upload para seu backend
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(
-        "https://reqviem.onrender.com/upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      const data = await response.json();
-
-      if (data.url) {
-        setNovoPerfil((p) => ({
-          ...p,
-          foto: data.url,
-        }));
-      }
-    }}
-  />
-</Button>
-
-{novoPerfil.foto ? (
-  <Box
-    component="img"
-    src={novoPerfil.foto}
-    sx={{
-      mt: 2,
-      width: 120,
-      height: 120,
-      borderRadius: 2,
-      objectFit: "cover",
-    }}
-  />
-) : null}
-
-    <TextField
-      label="Descrição"
-      value={novoPerfil.descricao}
-      onChange={(e) =>
-        setNovoPerfil({ ...novoPerfil, descricao: e.target.value })
-      }
-    />
-
-    <TextField
-      label="Resumo"
-      multiline
-      rows={3}
-      value={novoPerfil.resumo}
-      onChange={(e) =>
-        setNovoPerfil({ ...novoPerfil, resumo: e.target.value })
-      }
-    />
-  </DialogContent>
-
-  <DialogActions>
-    <Button onClick={() => setOpenProfileDialog(false)}>
-      Cancelar
-    </Button>
-
-    <Button
-  variant="contained"
-  onClick={async () => {
-    try {
-      const payload = {
-        nome: novoPerfil.nome,
-        tipo: novoPerfil.tipo,
-        foto: novoPerfil.foto,
-        descricao: novoPerfil.descricao,
-        resumo: novoPerfil.resumo,
-      };
-
-      if (novoPerfil.id) {
-        // 🔥 Atualiza se existir
-        await updateDoc(
-          doc(db, "perfis", novoPerfil.id),
-          payload
-        );
-      } else {
-        // 🔥 Cria novo
-        await addDoc(
-          collection(db, "perfis"),
-          payload
-        );
-      }
-
-      setOpenProfileDialog(false);
-
-      setNovoPerfil({
-        nome: "",
-        tipo: "npc",
-        foto: "",
-        descricao: "",
-        resumo: "",
-      });
-
-    } catch (err) {
-      console.error("ERRO AO SALVAR PERFIL:", err);
-    }
-  }}
->
-  Salvar
-</Button>
-  </DialogActions>
-</Dialog>
-      <Dialog
-        open={openMasterDialogFallback}
-        onClose={() => setOpenMasterDialogFallback(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Painel do Mestre (Fallback)</DialogTitle>
-
-        <DialogContent>
-          <Typography>
-            Use o HUDMasterModal para ter painel completo — este é apenas um fallback rápido.
-          </Typography>
-
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Mudar fase / estação
-            </Typography>
-
-            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              {PHASES.map((p) => (
-                <Button key={p} onClick={() => setWorldPhase(p)}>
-                  {p}
-                </Button>
-              ))}
-            </Box>
-          </Box>
-
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2">Ajuste rápido de tempo</Typography>
-
-            <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
-              <Typography variant="caption">
-                Use a caixa para definir Minutos/Segundos
-              </Typography>
-            </Box>
-          </Box>
-        </DialogContent>
-
-        <DialogActions>
-          <Button onClick={() => setOpenMasterDialogFallback(false)}>Fechar</Button>
-        </DialogActions>
-      </Dialog>
-      {lightboxOpen &&
-  createPortal(
-    <Box
-      onClick={() => setLightboxOpen(false)}
-      sx={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.92)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 9999999999,
-      }}
-    >
-      <LightboxImage
-        src={lightboxSrc}
-        zoom={zoom}
-        setZoom={setZoom}
-      />
-    </Box>,
-    document.body
-  )
-}
       {/* 🟢 MODAL SORTE/AZAR */}
       <Dialog 
         open={sorteAzarOpen} 
@@ -1609,14 +1284,41 @@ console.log("HUD DEBUG:", {
                   setSorteAzarValue(sorteAzarJogadores[e.target.value] ?? 5.5);
                 }}
                 sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-                MenuProps={{
+                                MenuProps={{
                   container: document.body,
-                  PaperProps: { sx: { zIndex: 999999, bgcolor: '#1a1a2e', color: '#fff' } }
+                  PaperProps: { 
+                    sx: { 
+                      zIndex: 999999, 
+                      bgcolor: '#1a1a2e', 
+                      color: '#fff',
+                      maxHeight: 300,
+                      overflowY: 'auto',
+                      '&::-webkit-scrollbar': { width: '4px' },
+                      '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.3)', borderRadius: '10px' }
+                    } 
+                  }
                 }}
               >
-                <MenuItem value="">-- selecione --</MenuItem>
-                {mergedEmails.map((email) => (
-                  <MenuItem key={email} value={email}>
+                                <MenuItem value="">-- selecione --</MenuItem>
+                <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+                  <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', fontSize: '0.65rem' }}>
+                    ── PERSONAGENS DO JOGADOR ──
+                  </Typography>
+                </MenuItem>
+                {mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ").map((email) => (
+                  <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
+                    {displayNameFor(email)}
+                  </MenuItem>
+                ))}
+                {mergedEmails.some(e => fichasMap[e]?.tipoFicha === "PM") && (
+                  <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '0.65rem' }}>
+                      ── PERSONAGENS DO MESTRE ──
+                    </Typography>
+                  </MenuItem>
+                )}
+                {mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM").map((email) => (
+                  <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
                     {displayNameFor(email)}
                   </MenuItem>
                 ))}
@@ -1699,6 +1401,15 @@ console.log("HUD DEBUG:", {
   onClose={() => setComercioOpen(false)}
   currentUserEmail={currentUserEmail}
 />
+      {/* 🟢 PERFIL DETALHADO DO PERSONAGEM */}
+      <PerfilDetalhado
+        isMaster={isMaster}
+        visible={perfilVisivel}
+        onClose={() => setPerfilVisivel(false)}
+        currentUserEmail={currentUserEmail}
+        fichaData={fichasMap[currentUserEmail] || {}}
+        fichasMap={fichasMap}
+      />
     </>
   );
 }

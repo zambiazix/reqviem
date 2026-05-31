@@ -471,25 +471,33 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
               <Button variant="contained" onClick={salvarPais}><AddIcon /></Button>
             </Box>
           )}
-          <Grid container spacing={1}>
+                                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {paises.map(p => (
-              <Grid item xs={6} key={p.id}>
-                <Paper sx={{ p: 1.5, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" } }} onClick={() => selecionarPais(p)}>
+              <Box key={p.id}>
+                                <Paper sx={{ 
+                  p: 1.5, cursor: "pointer", bgcolor: "#0f172a", 
+                  "&:hover": { bgcolor: "#1e3a5f" },
+                  border: p.cor ? `2px solid ${p.cor}` : '1px solid #334155',
+                  minHeight: 60, display: 'flex', flexDirection: 'column', justifyContent: 'center'
+                }} onClick={() => selecionarPais(p)}>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    {p.bandeira ? <img src={p.bandeira} alt="" style={{ width: 32, height: 24, borderRadius: 2 }} /> : <span>🏳️</span>}
+                    {p.bandeira ? (
+                      <img src={p.bandeira} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', border: '2px solid #334155' }}
+                        onClick={(e) => { e.stopPropagation(); setLightboxImage(p.bandeira); setZoom(1); }} />
+                    ) : (
+                      <Box sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>🏳️</Box>
+                    )}
                     <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{p.nome}</Typography>
                     {isMaster && (
-                      <Box>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoPais(p); setNovoPaisNome(p.nome); }}><EditIcon fontSize="small" /></IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarPais(p.id); }}><DeleteIcon fontSize="small" color="error" /></IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); uploadBandeira(p.id); }}>🏳️</IconButton>
-                      </Box>
+                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoPais(p); setNovoPaisNome(p.nome); }}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
                     )}
                   </Box>
                 </Paper>
-              </Grid>
+                            </Box>
             ))}
-          </Grid>
+          </Box>
         </>
       )}
 
@@ -515,23 +523,32 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
               <Button variant="contained" onClick={salvarCidade}><AddIcon /></Button>
             </Box>
           )}
-          <Grid container spacing={1}>
+                                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {cidades.map(c => (
-              <Grid item xs={6} key={c.id}>
-                <Paper sx={{ p: 1.5, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" } }} onClick={() => selecionarCidade(c)}>
-                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <Typography variant="body2" sx={{ color: '#fff' }}>🏙️ {c.nome}</Typography>
+              <Box key={c.id}>
+                                <Paper sx={{ 
+                  p: 1.5, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" },
+                  border: c.cor ? `2px solid ${c.cor}` : '1px solid #334155',
+                  minHeight: 60, display: 'flex', flexDirection: 'column', justifyContent: 'center'
+                }} onClick={() => selecionarCidade(c)}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    {c.imagem ? (
+                      <img src={c.imagem} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', border: '2px solid #334155' }}
+                        onClick={(e) => { e.stopPropagation(); setLightboxImage(c.imagem); setZoom(1); }} />
+                    ) : (
+                      <Box sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>🏙️</Box>
+                    )}
+                    <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{c.nome}</Typography>
                     {isMaster && (
-                      <Box>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoCidade(c); setNovaCidadeNome(c.nome); }}><EditIcon fontSize="small" /></IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarCidade(c.id); }}><DeleteIcon fontSize="small" color="error" /></IconButton>
-                      </Box>
+                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoCidade(c); setNovaCidadeNome(c.nome); }}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
                     )}
                   </Box>
                 </Paper>
-              </Grid>
+                             </Box>
             ))}
-          </Grid>
+          </Box>
         </>
       )}
 
@@ -542,25 +559,15 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
         <>
           <Button onClick={() => { setSelectedCidade(null); setLojas([]); }}>← Voltar</Button>
           <Typography variant="h6" sx={{ mt: 1, mb: 2, color: '#fff' }}>🏪 Lojas de {selectedCidade.nome}</Typography>
-          {isMaster && (
-            <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-              <TextField 
-  size="small" 
-  label="Nova loja" 
-  value={novaLojaNome} 
-  onChange={e => setNovaLojaNome(e.target.value)} 
-  fullWidth 
-  InputProps={{ style: { color: '#fff' } }}
-  InputLabelProps={{ style: { color: '#94a3b8' } }}
-  sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#334155' }, '&:hover fieldset': { borderColor: '#475569' } } }}
-/>
-              <Button variant="contained" onClick={() => { setEditandoLoja({}); setNovaLojaNome(""); }}><AddIcon /></Button>
-            </Box>
+                    {isMaster && (
+            <Button variant="contained" startIcon={<AddIcon />} sx={{ mb: 2 }} onClick={() => { setEditandoLoja({}); setNovaLojaNome(""); }}>
+              Nova Loja
+            </Button>
           )}
           <Grid container spacing={1}>
             {lojas.map(l => (
               <Grid item xs={12} key={l.id}>
-                <Paper sx={{ p: 2, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" } }} onClick={() => selecionarLoja(l)}>
+                                <Paper sx={{ p: 2, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" }, height: '100%' }} onClick={() => selecionarLoja(l)}>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                     {l.donoImagem ? (
                       <img src={l.donoImagem} alt="" style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", cursor: "pointer" }}
@@ -571,6 +578,15 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: '#fff' }}>{l.nome}</Typography>
                       {l.donoNome && <Typography variant="caption" sx={{ color: "#94a3b8" }}>👤 {l.donoNome}</Typography>}
+                      
+                                            {l.donoDescricao && (
+                        <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", maxHeight: 40, overflowY: "auto", mt: 0.5,
+                          '&::-webkit-scrollbar': { width: '3px' },
+                          '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.2)', borderRadius: '10px' }
+                        }}>
+                          {l.donoDescricao}
+                        </Typography>
+                      )}
                     </Box>
                     {isMaster && (
                       <Box>
@@ -641,7 +657,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
               )}
               <Box>
                 <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: '#fff' }}>{selectedLoja.donoNome}</Typography>
-                <Typography variant="caption" sx={{ color: "#94a3b8" }}>{selectedLoja.donoDescricao || "Bem-vindo à minha loja!"}</Typography>
+                                <Typography variant="caption" sx={{ color: "#94a3b8", maxHeight: 50, overflowY: "auto", display: "block", "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: "10px" } }}>{selectedLoja.donoDescricao || "Bem-vindo à minha loja!"}</Typography>
               </Box>
             </Paper>
           )}
@@ -692,7 +708,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                       )}
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: '#fff' }}>{item.nome}</Typography>
-                        <Typography variant="caption" sx={{ color: "#94a3b8", display: "block" }}>{item.descricao}</Typography>
+                                                <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", maxHeight: 36, overflowY: "auto", "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: "10px" } }}>{item.descricao}</Typography>
                         <Box sx={{ display: "flex", gap: 1, mt: 1, flexWrap: "wrap" }}>
                                                     <Chip label={`⚔️ Dado: ${item.dado || 1}`} size="small" sx={{ bgcolor: "#1e3a5f" }} />
                           <Chip label={`🔧 Dur: ${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: "#1e3a5f" }} />
@@ -1031,7 +1047,80 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
           )}
         </>
       )}
-
+      {/* 🟢 MODAL EDITAR PAÍS */}
+      {editandoPais && (
+        <Dialog open={!!editandoPais} onClose={() => setEditandoPais(null)} maxWidth="xs" fullWidth
+          PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
+          <DialogTitle>Editar País</DialogTitle>
+          <DialogContent>
+            <TextField label="Nome do país" fullWidth value={novoPaisNome} onChange={e => setNovoPaisNome(e.target.value)} sx={{ mt: 1 }}
+              InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" sx={{ color: '#94a3b8', mb: 0.5, display: 'block' }}>Cor da borda:</Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {['#ff3b3b','#00e0ff','#ffd700','#00ff88','#a855f7','#ff9800','#4caf50','#2196f3','#e5e5e5','#fbbf24'].map(cor => (
+                  <Box key={cor} onClick={() => setEditandoPais(prev => ({ ...prev, cor }))}
+                    sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: cor, cursor: 'pointer', border: editandoPais.cor === cor ? '3px solid #fff' : '2px solid transparent' }} />
+                ))}
+              </Box>
+            </Box>
+            <Box sx={{ mt: 2 }}>
+              <Button variant="outlined" onClick={() => { uploadBandeira(editandoPais.id); }}>📷 Trocar Bandeira</Button>
+              {editandoPais.bandeira && <img src={editandoPais.bandeira} alt="" style={{ width: 64, height: 64, borderRadius: 8, marginTop: 8, cursor: 'pointer' }} onClick={() => { setLightboxImage(editandoPais.bandeira); setZoom(1); }} />}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditandoPais(null)}>Cancelar</Button>
+            <Button variant="contained" onClick={async () => {
+              await setDoc(doc(db, "comercio_paises", editandoPais.id), { nome: novoPaisNome, cor: editandoPais.cor || null }, { merge: true });
+              setEditandoPais(null);
+              carregarPaises();
+            }}>Salvar</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+      {/* 🟢 MODAL EDITAR CIDADE */}
+      {editandoCidade && (
+        <Dialog open={!!editandoCidade} onClose={() => setEditandoCidade(null)} maxWidth="xs" fullWidth
+          PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
+          <DialogTitle>Editar Cidade</DialogTitle>
+          <DialogContent>
+            <TextField label="Nome da cidade" fullWidth value={novaCidadeNome} onChange={e => setNovaCidadeNome(e.target.value)} sx={{ mt: 1 }}
+              InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" sx={{ color: '#94a3b8', mb: 0.5, display: 'block' }}>Cor da borda:</Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {['#ff3b3b','#00e0ff','#ffd700','#00ff88','#a855f7','#ff9800','#4caf50','#2196f3','#e5e5e5','#fbbf24'].map(cor => (
+                  <Box key={cor} onClick={() => setEditandoCidade(prev => ({ ...prev, cor }))}
+                    sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: cor, cursor: 'pointer', border: editandoCidade.cor === cor ? '3px solid #fff' : '2px solid transparent' }} />
+                ))}
+              </Box>
+            </Box>
+            <Box sx={{ mt: 2 }}>
+              <Button variant="outlined" onClick={async () => {
+                const input = document.createElement("input"); input.type = "file"; input.accept = "image/*";
+                input.onchange = async () => {
+                  const file = input.files[0]; if (!file) return;
+                  const fd = new FormData(); fd.append("image", file);
+                  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
+                  const data = await res.json();
+                  if (data?.success) setEditandoCidade(prev => ({ ...prev, imagem: data.data.url }));
+                };
+                input.click();
+              }}>📷 Imagem da Cidade</Button>
+              {editandoCidade.imagem && <img src={editandoCidade.imagem} alt="" style={{ width: 80, height: 80, borderRadius: 8, marginTop: 8, cursor: 'pointer' }} onClick={() => { setLightboxImage(editandoCidade.imagem); setZoom(1); }} />}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditandoCidade(null)}>Cancelar</Button>
+            <Button variant="contained" onClick={async () => {
+              await setDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", editandoCidade.id), { nome: novaCidadeNome, cor: editandoCidade.cor || null, imagem: editandoCidade.imagem || "" }, { merge: true });
+              setEditandoCidade(null);
+              carregarCidades(selectedPais.id);
+            }}>Salvar</Button>
+          </DialogActions>
+        </Dialog>
+      )}
       {/* Lightbox */}
       {lightboxImage && (
         <Box onClick={() => setLightboxImage(null)} sx={{ position: "fixed", inset: 0, bgcolor: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>

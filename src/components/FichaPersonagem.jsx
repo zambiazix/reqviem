@@ -339,6 +339,9 @@ const [modalAnotacoesOpen, setModalAnotacoesOpen] = useState(false);
 const [modalBackgroundOpen, setModalBackgroundOpen] = useState(false);
 const [anotacoesTexto, setAnotacoesTexto] = useState("");
 const [backgroundTexto, setBackgroundTexto] = useState("");
+const [backgroundCapitulos, setBackgroundCapitulos] = useState([]);
+const [backgroundEditandoIndex, setBackgroundEditandoIndex] = useState(null);
+const [backgroundTitulo, setBackgroundTitulo] = useState("");
 const [anotacoesSalvos, setAnotacoesSalvos] = useState([]);
 const [anotacaoEditandoIndex, setAnotacaoEditandoIndex] = useState(null);
 const [anotacaoTitulo, setAnotacaoTitulo] = useState("");
@@ -606,7 +609,7 @@ const avaliarHabilidadeComIA = async (habilidade) => {
     // Por enquanto, vou simular uma avaliação
     const apiBase = window.location.hostname === "localhost" 
       ? "http://localhost:5000" 
-      : "https://app-rpg.onrender.com";
+      : "reqviem.onrender.com";
 
     const response = await fetch(`${apiBase}/api/avaliar-habilidade`, {
       method: "POST",
@@ -1223,8 +1226,17 @@ useEffect(() => {
       setAnotacoesSalvos([{ titulo: "Anotação", texto: ficha.anotacoes || "" }]);
     }
   }
-  if (ficha?.background) {
-    setBackgroundTexto(ficha.background);
+    if (ficha?.background) {
+    try {
+      const parsed = JSON.parse(ficha.background);
+      if (Array.isArray(parsed)) {
+        setBackgroundCapitulos(parsed);
+      } else {
+        setBackgroundCapitulos([{ titulo: "Capítulo 1", texto: ficha.background || "" }]);
+      }
+    } catch {
+      setBackgroundCapitulos([{ titulo: "Capítulo 1", texto: ficha.background || "" }]);
+    }
   }
 }, [ficha]);
 
@@ -2081,7 +2093,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
         '&:hover': { bgcolor: '#115293' }
       }}
     >
-      Selecionar
+      Defeitos
     </Button>
   </Box>
 </Box>
@@ -2419,8 +2431,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     ⚡ HABILIDADES AURANAS ({ficha.habilidades?.length || 0}/{limiteHabilidades})
   </Button>
 </Box>
-{/* 🟢 BOTÃO COMPRAR INVENTÁRIO (só mestre vê) */}
-{isMestre && (
+{/* 🟢 BOTÃO COMPRAR INVENTÁRIO (todos veem) */}
   <Box mt={2}>
     <Button
       variant="outlined"
@@ -2436,7 +2447,6 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
       + Comprar Inventário Secundário
     </Button>
   </Box>
-)}
 
 {/* 🟢 INVENTÁRIO PRINCIPAL + DINHEIRO */}
 <Box mt={2} sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
@@ -2555,7 +2565,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
   <Button 
     variant="outlined" 
     startIcon={<span>📖</span>}
-    onClick={() => { setBackgroundTexto(ficha?.background || ""); setModalBackgroundOpen(true); }}
+        onClick={() => { setBackgroundEditandoIndex(null); setBackgroundTitulo(""); setBackgroundTexto(""); setModalBackgroundOpen(true); }}
     sx={{ color: '#fff', borderColor: '#9c27b0', flex: 1 }}
   >
     Background
@@ -4491,7 +4501,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
                     const file = e.target.files?.[0];
                     if (!file) return;
                     try {
-                      const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://app-rpg.onrender.com";
+                                            const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
                       const fd = new FormData();
                       fd.append("file", file);
                       const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
@@ -4785,7 +4795,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           </Button>
         </DialogActions>
       </Dialog>
-            {/* 🟢 MODAL DE BACKGROUND */}
+                        {/* 🟢 MODAL DE BACKGROUND COM CAPÍTULOS */}
       <Dialog 
         open={modalBackgroundOpen} 
         onClose={() => setModalBackgroundOpen(false)}
@@ -4798,123 +4808,213 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
             <span style={{ fontSize: '1.5rem' }}>📖</span>
             Background - {ficha?.nome || "Personagem"}
           </Box>
-          <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        
-        <DialogContent sx={{ p: 2, display: 'flex', flexDirection: 'column', height: "70vh" }}>
-          <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
             <Button 
               size="small" 
-              variant="outlined" 
-              component="label"
-              startIcon={<span>📷</span>}
-              sx={{ color: '#94a3b8', borderColor: '#555' }}
+              variant="contained" 
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setBackgroundEditandoIndex(null);
+                setBackgroundTitulo("");
+                setBackgroundTexto("");
+              }}
+              sx={{ bgcolor: '#9c27b0' }}
             >
-              Inserir Imagem
-              <input
-                hidden
-                type="file"
-                accept="image/*"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://app-rpg.onrender.com";
-                    const fd = new FormData();
-                    fd.append("file", file);
-                    const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
-                    const data = await res.json();
-                    if (data.url) {
-                      const textarea = document.querySelector('#background-textarea textarea');
-                      if (textarea) {
-                        const start = textarea.selectionStart;
-                        const end = textarea.selectionEnd;
-                        const antes = backgroundTexto.substring(0, start);
-                        const depois = backgroundTexto.substring(end);
-                        const imagemMarkdown = `\n![Imagem](${data.url})\n`;
-                        setBackgroundTexto(antes + imagemMarkdown + depois);
-                        setTimeout(() => {
-                          textarea.focus();
-                          textarea.selectionStart = start + imagemMarkdown.length;
-                          textarea.selectionEnd = start + imagemMarkdown.length;
-                        }, 100);
-                      } else {
-                        setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
-                      }
-                    }
-                  } catch (err) {
-                    alert("Erro ao enviar imagem");
-                  }
-                }}
-              />
+              Novo Capítulo
             </Button>
+            <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        
+        <DialogContent sx={{ display: 'flex', gap: 2, p: 2, height: "70vh" }}>
+          {/* Lista de capítulos salvos */}
+          <Box sx={{ width: 250, borderRight: '1px solid #334155', pr: 2, overflowY: 'auto' }}>
+            <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
+              {backgroundCapitulos.length} capítulos
+            </Typography>
+            {backgroundCapitulos.map((cap, idx) => (
+              <Paper 
+                key={idx}
+                sx={{ 
+                  p: 1.5, mb: 1, 
+                  bgcolor: backgroundEditandoIndex === idx ? '#1e3a5f' : '#1a1a2e',
+                  cursor: 'pointer',
+                  border: backgroundEditandoIndex === idx ? '1px solid #9c27b0' : '1px solid #334155',
+                  '&:hover': { borderColor: '#9c27b0' }
+                }}
+                onClick={() => {
+                  setBackgroundEditandoIndex(idx);
+                  setBackgroundTitulo(cap.titulo);
+                  setBackgroundTexto(cap.texto);
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                    {cap.titulo || `Capítulo ${idx + 1}`}
+                  </Typography>
+                  <IconButton 
+                    size="small" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const novas = backgroundCapitulos.filter((_, i) => i !== idx);
+                      setBackgroundCapitulos(novas);
+                      if (backgroundEditandoIndex === idx) {
+                        setBackgroundEditandoIndex(null);
+                        setBackgroundTitulo("");
+                        setBackgroundTexto("");
+                      }
+                    }}
+                    sx={{ color: '#ef4444' }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5, maxHeight: 30, overflow: 'hidden' }}>
+                  {cap.texto?.substring(0, 50)}...
+                </Typography>
+              </Paper>
+            ))}
+            {backgroundCapitulos.length === 0 && (
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                Nenhum capítulo escrito
+              </Typography>
+            )}
           </Box>
           
-          <TextField
-            id="background-textarea"
-            label="História do Personagem (Markdown)"
-            fullWidth
-            multiline
-            minRows={20}
-            maxRows={35}
-            value={backgroundTexto}
-            onChange={(e) => setBackgroundTexto(e.target.value)}
-            InputProps={{ 
-              style: { color: '#fff', fontFamily: 'monospace', fontSize: '0.85rem' },
-            }}
-            InputLabelProps={{ style: { color: '#94a3b8' } }}
-            sx={{ 
-              flex: 1, 
-              '& .MuiInputBase-root': { 
-                height: '100%', 
-                overflowY: 'auto',
-                alignItems: 'flex-start'
-              } 
-            }}
-          />
-          
-          {/* Preview */}
-          {backgroundTexto && (
-            <Box 
-              sx={{ 
-                mt: 2, p: 2, 
-                bgcolor: '#1a1a2e', 
-                borderRadius: 1, 
-                maxHeight: 200, 
-                overflowY: 'auto',
-                border: '1px solid #334155'
-              }}
-              className="markdown-content"
-              onClick={(e) => {
-                if (e.target.tagName === "IMG") {
-                  setLightboxSrc(e.target.src);
-                  setZoom(1);
-                  setLightboxOpen(true);
-                }
-              }}
-            >
-              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1 }}>
-                📄 Preview:
-              </Typography>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{backgroundTexto}</ReactMarkdown>
+          {/* Editor de capítulo */}
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <TextField
+              label="Título do capítulo"
+              fullWidth
+              size="small"
+              value={backgroundTitulo}
+              onChange={(e) => setBackgroundTitulo(e.target.value)}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#94a3b8' } }}
+              sx={{ mb: 1 }}
+            />
+            
+            <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
+              <Button 
+                size="small" 
+                variant="outlined" 
+                component="label"
+                startIcon={<span>📷</span>}
+                sx={{ color: '#94a3b8', borderColor: '#555' }}
+              >
+                Inserir Imagem
+                <input
+                  hidden
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
+                      const fd = new FormData();
+                      fd.append("file", file);
+                      const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+                      const data = await res.json();
+                      if (data.url) {
+                        const textarea = document.querySelector('#background-textarea textarea');
+                        if (textarea) {
+                          const start = textarea.selectionStart;
+                          const end = textarea.selectionEnd;
+                          const antes = backgroundTexto.substring(0, start);
+                          const depois = backgroundTexto.substring(end);
+                          const imagemMarkdown = `\n![Imagem](${data.url})\n`;
+                          setBackgroundTexto(antes + imagemMarkdown + depois);
+                          setTimeout(() => {
+                            textarea.focus();
+                            textarea.selectionStart = start + imagemMarkdown.length;
+                            textarea.selectionEnd = start + imagemMarkdown.length;
+                          }, 100);
+                        } else {
+                          setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
+                        }
+                      }
+                    } catch (err) {
+                      alert("Erro ao enviar imagem");
+                    }
+                  }}
+                />
+              </Button>
+              
+              {backgroundEditandoIndex !== null && (
+                <Button 
+                  size="small" 
+                  variant="contained" 
+                  onClick={async () => {
+                    const novas = [...backgroundCapitulos];
+                    novas[backgroundEditandoIndex] = { titulo: backgroundTitulo, texto: backgroundTexto };
+                    setBackgroundCapitulos(novas);
+                    await setDoc(doc(db, "fichas", fichaId), { background: JSON.stringify(novas) }, { merge: true });
+                    alert("Capítulo atualizado!");
+                  }}
+                  sx={{ bgcolor: '#9c27b0' }}
+                >
+                  💾 Atualizar
+                </Button>
+              )}
+              
+              {backgroundEditandoIndex === null && backgroundTexto.trim() && (
+                <Button 
+                  size="small" 
+                  variant="contained" 
+                  onClick={async () => {
+                    const novas = [...backgroundCapitulos, { titulo: backgroundTitulo || `Capítulo ${backgroundCapitulos.length + 1}`, texto: backgroundTexto }];
+                    setBackgroundCapitulos(novas);
+                    setBackgroundTitulo("");
+                    setBackgroundTexto("");
+                    await setDoc(doc(db, "fichas", fichaId), { background: JSON.stringify(novas) }, { merge: true });
+                    alert("Capítulo salvo!");
+                  }}
+                  sx={{ bgcolor: '#4caf50' }}
+                >
+                  ➕ Salvar
+                </Button>
+              )}
             </Box>
-          )}
+            
+            <TextField
+              id="background-textarea"
+              label="Conteúdo (Markdown)"
+              fullWidth
+              multiline
+              minRows={15}
+              maxRows={30}
+              value={backgroundTexto}
+              onChange={(e) => setBackgroundTexto(e.target.value)}
+              InputProps={{ 
+                style: { color: '#fff', fontFamily: 'monospace', fontSize: '0.85rem' },
+              }}
+              InputLabelProps={{ style: { color: '#94a3b8' } }}
+              sx={{ 
+                flex: 1, 
+                '& .MuiInputBase-root': { 
+                  height: '100%', 
+                  overflowY: 'auto',
+                  alignItems: 'flex-start'
+                } 
+              }}
+            />
+          </Box>
         </DialogContent>
         
         <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
-          <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
           <Button 
             variant="contained"
             onClick={async () => {
-              setCampo("background", backgroundTexto);
-              await setDoc(doc(db, "fichas", fichaId), { background: backgroundTexto }, { merge: true });
+              await setDoc(doc(db, "fichas", fichaId), { background: JSON.stringify(backgroundCapitulos) }, { merge: true });
               setModalBackgroundOpen(false);
             }}
             sx={{ bgcolor: '#9c27b0' }}
           >
-            Salvar Background
+            Salvar e Fechar
           </Button>
         </DialogActions>
       </Dialog>
