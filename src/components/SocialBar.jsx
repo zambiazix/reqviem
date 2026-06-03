@@ -823,9 +823,19 @@ useEffect(() => {
               <Typography variant="caption" sx={{ color: "#fff", fontSize: "0.7rem" }}>💬 {n.nome}: {n.texto?.substring(0, 40)}</Typography>
             </Paper>
           ))}
-          {notifications.filter(n => n.tipo === "match").map(n => (
-            <Paper key={n.id} sx={{ p: 1, mb: 0.5, bgcolor: "rgba(255,64,129,0.1)", border: "1px solid rgba(255,64,129,0.3)", borderRadius: 2, animation: `${matchGlow} 2s ease-in-out infinite` }}>
+                    {notifications.filter(n => n.tipo === "match").map(n => (
+            <Paper 
+              key={n.id} 
+              sx={{ p: 1, mb: 0.5, bgcolor: "rgba(255,64,129,0.1)", border: "1px solid rgba(255,64,129,0.3)", borderRadius: 2, animation: `${matchGlow} 2s ease-in-out infinite`, cursor: "pointer" }} 
+              onClick={async () => {
+                // Marca como lida e abre o chat
+                await updateDoc(doc(db, "socialNotificacoes", n.id), { lida: true });
+                if (n.de) abrirChat(n.de);
+                setNotifAnchor(null);
+              }}
+            >
               <Typography variant="caption" sx={{ color: "#ff4081", fontSize: "0.7rem", fontWeight: "bold" }}>❤️ Match com {n.nome}!</Typography>
+              <Typography variant="caption" sx={{ color: "#f48fb1", fontSize: "0.55rem", display: "block" }}>Clique para conversar</Typography>
             </Paper>
           ))}
         </Box>

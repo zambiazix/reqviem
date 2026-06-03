@@ -415,18 +415,14 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       [categoriaDestinoCompra]: categoriaItens,
     });
 
-    // Diminui estoque
-    const novoEstoque = (comprandoItem.estoque || 1) - quantidadeComprada;
+        // Diminui estoque (NUNCA DELETA, só zera)
+    const novoEstoque = Math.max(0, (comprandoItem.estoque || 1) - quantidadeComprada);
     const comprasRecentes = (comprandoItem.comprasRecentes || 0) + 1;
 
-    if (novoEstoque <= 0) {
-      await deleteDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", comprandoItem.id));
-    } else {
-      await updateDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", comprandoItem.id), {
-        estoque: novoEstoque,
-        comprasRecentes,
-      });
-    }
+    await updateDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", comprandoItem.id), {
+      estoque: novoEstoque,
+      comprasRecentes,
+    });
 
     alert(`✅ "${quantidadeComprada}x ${comprandoItem.nome}" comprado por ${precoTotal} 💰!`);
     setComprandoItem(null);
@@ -696,62 +692,52 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
               // Garante que o preço nunca seja menor que 1 (se o valor base > 0)
               const precoExibicao = (item.valor || 0) > 0 ? Math.max(1, precoFinal) : 0;
 
-              return (
+                            return (
                 <Grid item xs={12} key={item.id}>
                   <Paper sx={{ p: 2, bgcolor: "#0f172a", border: "1px solid #334155" }}>
-                    <Box sx={{ display: "flex", gap: 2 }}>
-                      {item.imagem ? (
-                        <img src={item.imagem} alt="" style={{ width: 80, height: 80, borderRadius: 8, objectFit: "cover", cursor: "pointer" }}
-                          onClick={() => { setLightboxImage(item.imagem); setZoom(1); }} />
-                      ) : (
-                        <Box sx={{ width: 80, height: 80, borderRadius: 2, bgcolor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>📦</Box>
-                      )}
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: '#fff' }}>{item.nome}</Typography>
-                                                <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", maxHeight: 36, overflowY: "auto", "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: "10px" } }}>{item.descricao}</Typography>
-                        <Box sx={{ display: "flex", gap: 1, mt: 1, flexWrap: "wrap" }}>
-                                                    <Chip label={`⚔️ Dado: ${item.dado || 1}`} size="small" sx={{ bgcolor: "#1e3a5f" }} />
-                          <Chip label={`🔧 Dur: ${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: "#1e3a5f" }} />
+                    <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
+                      {/* COLUNA DA ESQUERDA: FOTO + CHIPS */}
+                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.8, minWidth: 85 }}>
+                        {item.imagem ? (
+                          <img src={item.imagem} alt="" style={{ width: 80, height: 80, borderRadius: 8, objectFit: "cover", cursor: "pointer" }}
+                            onClick={() => { setLightboxImage(item.imagem); setZoom(1); }} />
+                        ) : (
+                          <Box sx={{ width: 80, height: 80, borderRadius: 2, bgcolor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>📦</Box>
+                        )}
+                                                {/* CHIPS EMBAIXO DA FOTO - PADRONIZADOS */}
+                        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.4, width: "100%", alignItems: "stretch" }}>
+                          <Chip label={`⚔️ Dado: ${item.dado || 1}`} size="small" 
+                            sx={{ bgcolor: "#1e3a5f", fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
+                          <Chip label={`🔧 Dur: ${item.durabilidade || 100}%`} size="small" 
+                            sx={{ bgcolor: "#1e3a5f", fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
                           {item.tipoDano && item.tipoDano !== "Nenhum" && (
-                            <Chip 
-                              label={`🗡️ ${item.tipoDano}`} 
-                              size="small" 
-                              sx={{ 
-                                bgcolor: TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor + "33" || "#1e3a5f",
-                                color: TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#fff",
-                                border: `1px solid ${TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#334155"}`,
-                              }} 
-                              
-                            />
-                            
+                            <Chip label={`🗡️ ${item.tipoDano}`} size="small" 
+                              sx={{ bgcolor: TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor + "33" || "#1e3a5f", color: TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#fff", border: `1px solid ${TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#334155"}`, fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
                           )}
-                                                    {item.consumivel && item.consumivel !== "Nenhum" && (
-                            <Chip 
-                              label={`🧪 ${item.consumivel}${item.consumivel !== "RE" ? ` +${item.consumivelValor || 0}` : ''}`}
-                              size="small" 
-                              sx={{ 
-                                bgcolor: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor + "33" || "#1e3a5f",
-                                color: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#fff",
-                                border: `1px solid ${TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#334155"}`,
-                              }} 
-                            />
+                          {item.consumivel && item.consumivel !== "Nenhum" && (
+                            <Chip label={`🧪 ${item.consumivel}${item.consumivel !== "RE" ? ` +${item.consumivelValor || 0}` : ''}`} size="small" 
+                              sx={{ bgcolor: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor + "33" || "#1e3a5f", color: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#fff", border: `1px solid ${TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#334155"}`, fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
                           )}
-                                                    <Chip label={`📦 Estoque: ${item.estoque || 0}`} size="small" sx={{ bgcolor: item.estoque > 0 ? "#1b5e20" : "#5e1b1b" }} />
+                          <Chip label={`📦 ${item.estoque > 0 ? `Estoque: ${item.estoque}` : 'Esgotado'}`} size="small" 
+                            sx={{ bgcolor: item.estoque > 0 ? "#1b5e20" : "#5e1b1b", color: item.estoque > 0 ? "#fff" : "#ff8a80", fontWeight: item.estoque > 0 ? "normal" : "bold", fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
                           {item.insumivel && item.insumivel !== "Nenhum" && (
-                            <Chip 
-                              label={`🔧 ${item.insumivel}`}
-                              size="small" 
-                              sx={{ 
-                                bgcolor: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor + "33" || "#1e3a5f",
-                                color: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#fff",
-                                border: `1px solid ${TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#334155"}`,
-                              }} 
-                            />
+                            <Chip label={`🔧 ${item.insumivel}`} size="small" 
+                              sx={{ bgcolor: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor + "33" || "#1e3a5f", color: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#fff", border: `1px solid ${TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#334155"}`, fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
                           )}
                         </Box>
                       </Box>
-                      <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                                                <Box>
+                      
+                      {/* DESCRIÇÃO MAIOR COM SCROLL */}
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: '#fff', mb: 0.5 }}>{item.nome}</Typography>
+                        <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", maxHeight: 120, overflowY: "auto", whiteSpace: "pre-line", wordBreak: "break-word", "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: "10px" } }}>
+                          {item.descricao}
+                        </Typography>
+                      </Box>
+                      
+                      {/* PREÇO E BOTÃO COMPRAR */}
+                      <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "space-between", minWidth: 80 }}>
+                        <Box>
                           <Typography variant="h6" sx={{ color: "#fbbf24", fontWeight: "bold" }}>
                             💰 {precoExibicao}
                           </Typography>
@@ -766,20 +752,18 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                             </Typography>
                           )}
                         </Box>
-                                                <Button
-                          variant="contained"
-                          size="small"
-                          startIcon={<ShoppingCartIcon />}
-                          disabled={(item.estoque || 0) <= 0}
-                          onClick={() => {
-                            setComprandoItem({ ...item, precoUnitario: precoExibicao, quantidadeCompra: 1, precoFinal: precoExibicao });
-                            setCarteiraSelecionada("");
-                            setCategoriaDestinoCompra("equipamentos");
-                          }}
-                          sx={{ bgcolor: "#2e7d32", "&:hover": { bgcolor: "#1b5e20" } }}
-                        >
-                          Comprar
-                        </Button>
+                        {(item.estoque || 0) <= 0 ? (
+                          <Button variant="contained" size="small" disabled
+                            sx={{ bgcolor: "#5e1b1b", color: "#ff8a80", "&.Mui-disabled": { color: "#ff8a80", bgcolor: "#5e1b1b" } }}>
+                            Esgotado
+                          </Button>
+                        ) : (
+                          <Button variant="contained" size="small" startIcon={<ShoppingCartIcon />}
+                            onClick={() => { setComprandoItem({ ...item, precoUnitario: precoExibicao, quantidadeCompra: 1, precoFinal: precoExibicao }); setCarteiraSelecionada(""); setCategoriaDestinoCompra("equipamentos"); }}
+                            sx={{ bgcolor: "#2e7d32", "&:hover": { bgcolor: "#1b5e20" } }}>
+                            Comprar
+                          </Button>
+                        )}
                         {isMaster && (
                           <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
                             <IconButton size="small" onClick={() => setEditandoItem(item)}><EditIcon fontSize="small" /></IconButton>

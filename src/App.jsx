@@ -71,18 +71,27 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const carregarListaFichas = useCallback(async () => {
+    const carregarListaFichas = useCallback(async () => {
   try {
     const col = collection(db, "fichas");
     const snapshot = await getDocs(col);
         const list = snapshot.docs
       .map((d) => d.id);
     setFichasList(list);
-    if (list.length > 0 && !selectedFichaEmail) setSelectedFichaEmail(list[0]);
+    
+    // 🟢 Se for mestre, SEMPRE seleciona a ficha do mestre primeiro
+    if (list.length > 0 && !selectedFichaEmail) {
+      const mestreFicha = list.find(email => email === MASTER_EMAIL);
+      if (mestreFicha && role === "master") {
+        setSelectedFichaEmail(MASTER_EMAIL);
+      } else {
+        setSelectedFichaEmail(list[0]);
+      }
+    }
   } catch (err) {
     console.error("Erro ao carregar lista de fichas:", err);
   }
-}, [selectedFichaEmail]);
+}, [selectedFichaEmail, role]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -152,7 +161,9 @@ export default function App() {
   localStorage.removeItem('userAvatar');
 }
           setRole(u.email === MASTER_EMAIL ? "master" : "player");
-          if (u.email === MASTER_EMAIL) {
+                    if (u.email === MASTER_EMAIL) {
+            // 🟢 Mestre SEMPRE começa com a própria ficha
+            setSelectedFichaEmail(MASTER_EMAIL);
             await carregarListaFichas();
           } else {
             setSelectedFichaEmail(u.email);

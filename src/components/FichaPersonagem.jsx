@@ -605,11 +605,9 @@ const avaliarHabilidadeComIA = async (habilidade) => {
       condicoes: habilidade.condicoes || []
     };
 
-    // Aqui você vai integrar com sua API de IA (OpenAI, etc.)
-    // Por enquanto, vou simular uma avaliação
-    const apiBase = window.location.hostname === "localhost" 
-      ? "http://localhost:5000" 
-      : "reqviem.onrender.com";
+const apiBase = window.location.hostname === "localhost" 
+  ? "http://localhost:5000" 
+  : "https://reqviem.onrender.com";
 
     const response = await fetch(`${apiBase}/api/avaliar-habilidade`, {
       method: "POST",
@@ -866,7 +864,7 @@ const salvarAvaliacaoMestre = async (habilidade, avaliacaoFinal) => {
   try {
     const apiBase = window.location.hostname === "localhost" 
       ? "http://localhost:5000" 
-      : "https://app-rpg.onrender.com";
+      : "https://reqviem.onrender.com";
       
     await fetch(`${apiBase}/api/salvar-avaliacao`, {
       method: "POST",
@@ -940,7 +938,7 @@ const gerarHabilidadeCompleta = async () => {
   try {
     const apiBase = window.location.hostname === "localhost" 
       ? "http://localhost:5000" 
-      : "https://app-rpg.onrender.com";
+      : "https://reqviem.onrender.com";
 
     const response = await fetch(`${apiBase}/api/gerar-habilidade`, {
       method: "POST",
@@ -1002,7 +1000,7 @@ const gerarCampoComIA = async (habilidadeIndex, campo) => {
     
     const apiBase = window.location.hostname === "localhost" 
       ? "http://localhost:5000" 
-      : "https://app-rpg.onrender.com";
+      : "https://reqviem.onrender.com";
 
     const response = await fetch(`${apiBase}/api/gerar-campo-habilidade`, {
       method: "POST",
@@ -5250,7 +5248,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
                         try {
                           const apiBase = window.location.hostname === "localhost" 
                             ? "http://localhost:5000" 
-                            : "https://app-rpg.onrender.com";
+                            : "https://reqviem.onrender.com";
                           const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
                           const data = await res.json();
                           if (data.url) {
