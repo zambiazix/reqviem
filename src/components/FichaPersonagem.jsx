@@ -27,7 +27,7 @@ import { Divider } from "@mui/material";
   import CloseIcon from "@mui/icons-material/Close";
   import EditIcon from "@mui/icons-material/Edit";
   import { db } from "../firebaseConfig";
-  import { doc, getDoc, setDoc, onSnapshot, } from "firebase/firestore";
+  import { doc, getDoc, setDoc, onSnapshot, updateDoc } from "firebase/firestore";
   import { Checkbox, FormControlLabel } from "@mui/material";
   import { collection, getDocs } from "firebase/firestore";
   import { CircularProgress } from "@mui/material";
@@ -1749,8 +1749,11 @@ const aplicarInsumivel = async () => {
     fichaCompleta[categoriaInsumo][idxInsumo].durabilidade = durInsumo - custo;
     fichaCompleta[categoriaAlvo][idxAlvo].durabilidade = 100;
     
-    // 🟢 USA setDoc PARA SOBRESCREVER O DOCUMENTO INTEIRO (sem merge)
-    await setDoc(ref, fichaCompleta);
+        // 🟢 CORRIGIDO: usa updateDoc para NUNCA sobrescrever o documento inteiro
+    const atualizacao = {};
+    atualizacao[`${categoriaInsumo}.${idxInsumo}.durabilidade`] = durInsumo - custo;
+    atualizacao[`${categoriaAlvo}.${idxAlvo}.durabilidade`] = 100;
+    await updateDoc(ref, atualizacao);
     
     // 🟢 Atualiza estado local
     setFicha(fichaCompleta);
