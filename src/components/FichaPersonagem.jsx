@@ -503,15 +503,10 @@ useEffect(() => {
             ...dados,
             atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
             pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
-                        habilidades: Array.isArray(dados.habilidades) 
-  ? dados.habilidades.map(h => ({ 
-      dado: 1, 
-      tipoDano: "Aurano",
-      custoPE: 0,
-      condicoes: [],
-      imagem: "",  // 🟢 NOVO
-      ...h,
-      condicoes: Array.isArray(h.condicoes) 
+                                    habilidades: Array.isArray(dados.habilidades) 
+  ? dados.habilidades.map(h => {
+      // Processa as condições primeiro
+      const condicoesProcessadas = Array.isArray(h.condicoes) 
         ? h.condicoes 
         : (typeof h.condicoes === 'string' && h.condicoes.trim() 
             ? [{ 
@@ -523,8 +518,17 @@ useEffect(() => {
                 custo: 0,
                 risco: 0
               }] 
-            : [])
-    })) 
+            : []);
+      
+      return {
+        dado: 1, 
+        tipoDano: "Aurano",
+        custoPE: 0,
+        imagem: "",
+        ...h,
+        condicoes: condicoesProcessadas, // SÓ UMA VEZ, depois do spread
+      };
+    }) 
   : [],
             moedas: { ...modelo.moedas, ...(dados.moedas || {}) },
             equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
@@ -1245,8 +1249,7 @@ useEffect(() => {
     setDefeitosSelecionados(defeitosArray);
   }
 }, [ficha?.defeitos]);
-
-// Carregar lista de jogadores para transferência
+// Carregar lista de jogadores para transferência (COM TIPO FICHA E AURA)
 useEffect(() => {
   const carregarJogadores = async () => {
     if (!fichaId) return;
@@ -1255,35 +1258,46 @@ useEffect(() => {
     const snapshot = await getDocs(col);
     const jogadores = [];
     
-    // Adiciona SI MESMO primeiro (dados atualizados)
+    // Adiciona SI MESMO primeiro
     const fichaAtual = await getDoc(doc(db, "fichas", fichaId));
     if (fichaAtual.exists()) {
+      const dados = fichaAtual.data();
       jogadores.push({
         id: fichaId,
-        nome: fichaAtual.data().nome || "Você mesmo",
-        carteiras: fichaAtual.data().carteiras || []
+        nome: dados.nome || "Você mesmo",
+        carteiras: dados.carteiras || [],
+        tipoFicha: dados.tipoFicha || "PJ",
+        tipoAura: dados.tipoAura || null,
+        equipamentos: dados.equipamentos || [],
+        vestes: dados.vestes || [],
+        diversos: dados.diversos || [],
       });
     }
     
     // Adiciona os outros jogadores
     snapshot.forEach((doc) => {
       if (doc.id !== fichaId) {
+        const dados = doc.data();
         jogadores.push({
           id: doc.id,
-          nome: doc.data().nome || doc.id,
-          carteiras: doc.data().carteiras || []
+          nome: dados.nome || doc.id,
+          carteiras: dados.carteiras || [],
+          tipoFicha: dados.tipoFicha || "PJ",
+          tipoAura: dados.tipoAura || null,
+          equipamentos: dados.equipamentos || [],
+          vestes: dados.vestes || [],
+          diversos: dados.diversos || [],
         });
       }
     });
+    
     setListaJogadores(jogadores);
   };
   
-  // Recarrega a lista sempre que o modal de transferência for aberto
-  if (modalTransferenciaOpen) {
+  if (modalTransferenciaOpen || modalTransferirItemOpen) {
     carregarJogadores();
   }
-}, [fichaId, modalTransferenciaOpen]);
-// Função para realizar transferência
+}, [fichaId, modalTransferenciaOpen, modalTransferirItemOpen]);
 // 🟢 Função para realizar transferência - VERSÃO CORRIGIDA (TEMPO REAL)
 const realizarTransferencia = async () => {
   if (!jogadorSelecionado || !carteiraOrigem || !carteiraDestino || valorTransferencia <= 0) {
@@ -3154,14 +3168,45 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
       <FormControl fullWidth>
         <InputLabel sx={{ color: '#fff' }}>Jogador Destino</InputLabel>
-        <Select
+                <Select
           value={jogadorSelecionado}
           label="Jogador Destino"
           onChange={(e) => setJogadorSelecionado(e.target.value)}
           sx={{ color: '#fff' }}
+          MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 400 } } }}
         >
-          {listaJogadores.map(jogador => (
-            <MenuItem key={jogador.id} value={jogador.id}>{jogador.nome}</MenuItem>
+          <MenuItem value="">-- selecione --</MenuItem>
+          <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+            <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+              ── PERSONAGENS DO JOGADOR ──
+            </Typography>
+          </MenuItem>
+          {listaJogadores.filter(j => (j.tipoFicha || "PJ") === "PJ").map(jogador => (
+            <MenuItem key={jogador.id} value={jogador.id} sx={{ pl: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#4caf50') : '#4caf50' }} />
+                <Typography sx={{ color: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#fff') : '#fff', fontSize: '0.85rem' }}>
+                  {jogador.nome}
+                </Typography>
+              </Box>
+            </MenuItem>
+          ))}
+          {listaJogadores.some(j => j.tipoFicha === "PM") && (
+            <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
+              <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                ── PERSONAGENS DO MESTRE ──
+              </Typography>
+            </MenuItem>
+          )}
+          {listaJogadores.filter(j => j.tipoFicha === "PM").map(jogador => (
+            <MenuItem key={jogador.id} value={jogador.id} sx={{ pl: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#ff9800') : '#ff9800' }} />
+                <Typography sx={{ color: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#fff') : '#fff', fontSize: '0.85rem' }}>
+                  {jogador.nome}
+                </Typography>
+              </Box>
+            </MenuItem>
           ))}
         </Select>
       </FormControl>
@@ -4255,20 +4300,43 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
       {/* Jogador Destino (incluindo SI MESMO) */}
       <FormControl fullWidth>
         <InputLabel sx={{ color: '#fff' }}>Jogador Destino</InputLabel>
-        <Select
+                <Select
           value={jogadorDestinoItem}
           onChange={(e) => setJogadorDestinoItem(e.target.value)}
           sx={{ color: '#fff' }}
+          MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 400 } } }}
         >
-          {/* 🟢 Opção para SI MESMO */}
-          <MenuItem value={fichaId}>
-            🔄 Você mesmo (mover para outra categoria)
+          <MenuItem value={fichaId}>🔄 Você mesmo (mover para outra categoria)</MenuItem>
+          <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+            <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+              ── PERSONAGENS DO JOGADOR ──
+            </Typography>
           </MenuItem>
-          
-          {/* Outros jogadores */}
-          {listaJogadores.filter(j => j.id !== fichaId).map(jogador => (
-            <MenuItem key={jogador.id} value={jogador.id}>
-              {jogador.nome}
+          {listaJogadores.filter(j => j.id !== fichaId && (j.tipoFicha || "PJ") === "PJ").map(jogador => (
+            <MenuItem key={jogador.id} value={jogador.id} sx={{ pl: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#4caf50') : '#4caf50' }} />
+                <Typography sx={{ color: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#fff') : '#fff', fontSize: '0.85rem' }}>
+                  {jogador.nome}
+                </Typography>
+              </Box>
+            </MenuItem>
+          ))}
+          {listaJogadores.some(j => j.id !== fichaId && j.tipoFicha === "PM") && (
+            <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
+              <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                ── PERSONAGENS DO MESTRE ──
+              </Typography>
+            </MenuItem>
+          )}
+          {listaJogadores.filter(j => j.id !== fichaId && j.tipoFicha === "PM").map(jogador => (
+            <MenuItem key={jogador.id} value={jogador.id} sx={{ pl: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#ff9800') : '#ff9800' }} />
+                <Typography sx={{ color: jogador.tipoAura ? (CORES_AURA[jogador.tipoAura] || '#fff') : '#fff', fontSize: '0.85rem' }}>
+                  {jogador.nome}
+                </Typography>
+              </Box>
             </MenuItem>
           ))}
         </Select>

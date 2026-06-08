@@ -243,6 +243,15 @@ const EFEITOS_DANO = {
 
 // 🟢 ESTADO PARA TOXINAS ATIVAS
 const [toxinasAtivas, setToxinasAtivas] = useState({});
+// 🟢 CORES DE AURA
+const CORES_AURA_CHAT = {
+  "Titã": "#ff3b3b",
+  "Alquimista": "#00e0ff",
+  "Artesão": "#ffd700",
+  "Fundador": "#00ff88",
+  "Déspota": "#a855f7",
+  "Ás": "#e5e5e5",
+};
 
   const openDiceMenu = Boolean(diceAnchor);
 
@@ -1852,14 +1861,17 @@ useEffect(() => {
             fontSize: '0.75rem',
             '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
           }}
-          MenuProps={{
+                   MenuProps={{
+            container: document.body,
             PaperProps: { 
               sx: { 
                 bgcolor: "#0f172a", 
                 color: "#fff",
                 maxHeight: 400,
               } 
-            }
+            },
+            anchorOrigin: { vertical: "bottom", horizontal: "left" },
+            transformOrigin: { vertical: "top", horizontal: "left" },
           }}
         >
           <MenuItem value="mestre" sx={{ color: '#FFD700' }}>
@@ -2590,27 +2602,71 @@ useEffect(() => {
                 ))}
               </Select>
             </FormControl>
-            {/* 🟢 SELEÇÃO DE ALVO (apenas modo ação normal) */}
-{acaoModo === "acao" && (
-  <FormControl fullWidth size="small">
-    <InputLabel sx={{ color: '#94a3b8' }}>🎯 Alvo (opcional)</InputLabel>
-    <Select
-      value={acaoAlvo}
-      onChange={(e) => setAcaoAlvo(e.target.value)}
-      sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-    >
-      <MenuItem value="">Nenhum (ação livre)</MenuItem>
-      {Object.entries(fichasMap)
-        .filter(([email]) => email !== userEmail) // exclui a si mesmo
-        .map(([email, data]) => (
-          <MenuItem key={email} value={email}>
-            {data.nome || email}
-          </MenuItem>
-        ))}
-    </Select>
-  </FormControl>
-)}
-
+                                 {/* 🟢 SELEÇÃO DE ALVO (apenas modo ação normal) */}
+            {acaoModo === "acao" && (
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: '#94a3b8' }}>🎯 Alvo (opcional)</InputLabel>
+                <Select
+                  value={acaoAlvo}
+                  onChange={(e) => setAcaoAlvo(e.target.value)}
+                  sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+                  MenuProps={{
+                    container: document.body,
+                    PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 400 } },
+                    anchorOrigin: { vertical: "bottom", horizontal: "left" },
+                    transformOrigin: { vertical: "top", horizontal: "left" },
+                  }}
+                >
+                  <MenuItem value="">Nenhum (ação livre)</MenuItem>
+                  
+                  <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                      ── PERSONAGENS DO JOGADOR ──
+                    </Typography>
+                  </MenuItem>
+                  
+                  {Object.entries(fichasMap)
+                    .filter(([email, data]) => email !== userEmail && (data.tipoFicha || "PJ") === "PJ")
+                    .map(([email, data]) => {
+                      const corAura = CORES_AURA_CHAT[data.tipoAura] || '#4caf50';
+                      return (
+                        <MenuItem key={email} value={email} sx={{ pl: 3 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: corAura }} />
+                            <Typography sx={{ color: corAura, fontSize: '0.85rem' }}>
+                              {data.nome || email}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      );
+                    })}
+                  
+                  {Object.entries(fichasMap).some(([email, data]) => email !== userEmail && data.tipoFicha === "PM") && (
+                    <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
+                      <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                        ── PERSONAGENS DO MESTRE ──
+                      </Typography>
+                    </MenuItem>
+                  )}
+                  
+                  {Object.entries(fichasMap)
+                    .filter(([email, data]) => email !== userEmail && data.tipoFicha === "PM")
+                    .map(([email, data]) => {
+                      const corAura = CORES_AURA_CHAT[data.tipoAura] || '#ff9800';
+                      return (
+                        <MenuItem key={email} value={email} sx={{ pl: 3 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: corAura }} />
+                            <Typography sx={{ color: corAura, fontSize: '0.85rem' }}>
+                              {data.nome || email}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      );
+                    })}
+                </Select>
+              </FormControl>
+            )}
 {/* 🟢 TIPO DE AÇÃO (CHECKBOX) */}
 {acaoModo === "acao" && (
   <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>

@@ -71,7 +71,7 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-    const carregarListaFichas = useCallback(async () => {
+      const carregarListaFichas = useCallback(async () => {
   try {
     const col = collection(db, "fichas");
     const snapshot = await getDocs(col);
@@ -79,7 +79,7 @@ export default function App() {
       .map((d) => d.id);
     setFichasList(list);
     
-    // 🟢 Se for mestre, SEMPRE seleciona a ficha do mestre primeiro
+    // 🟢 SÓ seleciona automaticamente se NENHUMA ficha estiver selecionada ainda
     if (list.length > 0 && !selectedFichaEmail) {
       const mestreFicha = list.find(email => email === MASTER_EMAIL);
       if (mestreFicha && role === "master") {
@@ -161,9 +161,11 @@ export default function App() {
   localStorage.removeItem('userAvatar');
 }
           setRole(u.email === MASTER_EMAIL ? "master" : "player");
-                    if (u.email === MASTER_EMAIL) {
-            // 🟢 Mestre SEMPRE começa com a própria ficha
-            setSelectedFichaEmail(MASTER_EMAIL);
+                              if (u.email === MASTER_EMAIL) {
+            // 🟢 Mestre começa com a própria ficha APENAS na primeira vez
+            if (!selectedFichaEmail) {
+              setSelectedFichaEmail(MASTER_EMAIL);
+            }
             await carregarListaFichas();
           } else {
             setSelectedFichaEmail(u.email);
