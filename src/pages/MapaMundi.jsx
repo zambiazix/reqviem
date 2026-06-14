@@ -84,6 +84,10 @@ const [marcadorX, setMarcadorX] = useState(0);
 const [marcadorY, setMarcadorY] = useState(0);
 const [marcadorIcone, setMarcadorIcone] = useState("📍");
 const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+const [mapaExpandidoOpen, setMapaExpandidoOpen] = useState(false);
+const [mapaExpandidoDados, setMapaExpandidoDados] = useState(null);
+const mapaExpandidoRef = useRef(null);
+const mapaExpandidoPanZoom = useRef(null);
 // 🟢 ESTADOS PARA CAMINHOS/ROTAS
 const [caminhos, setCaminhos] = useState({});
 const [caminhoAtivo, setCaminhoAtivo] = useState(null);
@@ -91,6 +95,7 @@ const [modoCriarCaminho, setModoCriarCaminho] = useState(false);
 const [caminhoDialogOpen, setCaminhoDialogOpen] = useState(false);
 const [caminhoNome, setCaminhoNome] = useState("");
 const [caminhoCor, setCaminhoCor] = useState("#00e0ff");
+const [editandoCaminhoId, setEditandoCaminhoId] = useState(null); // ID da rota sendo editada
 // 🟢 ESTADO DO BALÃO ABERTO
 const [marcadorBalãoAberto, setMarcadorBalãoAberto] = useState(null); // { mapId, marcador, x, y }
 // 🟢 ESTADOS PARA MARCADOR TIPO CIDADE
@@ -284,7 +289,7 @@ const calcularDistanciaTotal = (pontos) => {
   const descEscaped = (m.descricao || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
   const icone = m.icone || "📍";
   const tipo = m.tipo || "local";
-  return `<circle cx="${m.x}" cy="${m.y}" r="${tipo === 'cidade' ? 16 : 12}" fill="transparent" stroke="${tipo === 'cidade' ? '#ff9800' : '#00e0ff'}" stroke-width="2" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${tipo}')"/>
+  return `<circle cx="${m.x}" cy="${m.y}" r="${tipo === 'cidade' ? 16 : 12}" fill="transparent" stroke="transparent" stroke-width="0" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${tipo}')"/>
   <text x="${m.x}" y="${m.y + 4}" fill="${tipo === 'cidade' ? '#ff9800' : '#fff'}" font-size="${tipo === 'cidade' ? 24 : 18}" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${icone}</text>
   <text x="${m.x + (tipo === 'cidade' ? 20 : 14)}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
 }).join('');
@@ -339,9 +344,18 @@ const calcularDistanciaTotal = (pontos) => {
     
     setSvgContent(decompressed);
     
-    // 🟢 Aplica SVG ao DOM
-    const host = mapSvgRefs.current[mapId];
+     const host = mapSvgRefs.current[mapId];
     if (host) {
+      // Salva o estado atual do zoom ANTES de modificar o DOM
+      let currentZoom = 1;
+      let currentPan = { x: 0, y: 0 };
+      if (panZoomRef.current) {
+        try {
+          currentZoom = panZoomRef.current.getZoom();
+          currentPan = panZoomRef.current.getPan();
+        } catch(e) {}
+      }
+      
       host.innerHTML = decompressed;
       const svgEl = host.querySelector("svg");
       if (svgEl) {
@@ -349,11 +363,17 @@ const calcularDistanciaTotal = (pontos) => {
         panZoomRef.current = svgPanZoom(svgEl, {
           zoomEnabled: true,
           controlIconsEnabled: true,
-          fit: true,
-          center: true,
+          fit: false,
+          center: false,
           minZoom: 0.2,
           maxZoom: 40,
         });
+        
+        // Restaura o zoom/pan anterior
+        try {
+          panZoomRef.current.zoom(currentZoom);
+          panZoomRef.current.pan(currentPan);
+        } catch(e) {}
       }
     }
   } catch (err) {
@@ -386,7 +406,24 @@ useEffect(() => {
   }
 }, [marcadorBalãoAberto]);
 
-  // 🟢 ADICIONAR MARCADOR COM BOTÃO DIREITO
+// 🟢 CARREGAR SVG NO MODAL EXPANSÍVEL
+useEffect(() => {
+  if (!mapaExpandidoOpen || !mapaExpandidoDados?.svg || !mapaExpandidoRef.current) return;
+  mapaExpandidoRef.current.innerHTML = mapaExpandidoDados.svg;
+  const svgEl = mapaExpandidoRef.current.querySelector("svg");
+  if (svgEl) {
+    svgEl.style.width = "100%";
+    svgEl.style.height = "100%";
+    if (mapaExpandidoPanZoom.current?.destroy) mapaExpandidoPanZoom.current.destroy();
+    try {
+      mapaExpandidoPanZoom.current = svgPanZoom(svgEl, {
+        zoomEnabled: true, controlIconsEnabled: true, fit: true, center: true,
+        minZoom: 0.2, maxZoom: 40,
+      });
+    } catch (e) { console.warn(e); }
+  }
+}, [mapaExpandidoOpen, mapaExpandidoDados]);
+
 const handleMapaContextMenu = (e, mapId) => {
   e.preventDefault();
   if (!isMestre) return;
@@ -397,24 +434,19 @@ const handleMapaContextMenu = (e, mapId) => {
   const svgEl = host.querySelector("svg");
   if (!svgEl) return;
   
-  // Pega a posição do SVG na tela
   const rect = svgEl.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
   
-  // Pega os dados de zoom/pan do svg-pan-zoom
   let svgX, svgY;
   
   if (panZoomRef.current && panZoomRef.current.getPan && panZoomRef.current.getZoom) {
     const pan = panZoomRef.current.getPan();
     const zoom = panZoomRef.current.getZoom();
     const sizes = panZoomRef.current.getSizes();
-    
-    // Calcula coordenadas SVG reais considerando zoom e pan
     svgX = Math.round((mouseX - pan.x) / zoom + sizes.viewBox.x);
     svgY = Math.round((mouseY - pan.y) / zoom + sizes.viewBox.y);
   } else {
-    // Fallback se não conseguir do svg-pan-zoom
     try {
       const viewBox = svgEl.viewBox.baseVal;
       const scaleX = viewBox.width / rect.width;
@@ -425,6 +457,12 @@ const handleMapaContextMenu = (e, mapId) => {
       svgX = Math.round(mouseX);
       svgY = Math.round(mouseY);
     }
+  }
+  
+  // 🟢 SE ESTIVER EDITANDO UMA ROTA, ADICIONA PONTO
+  if (editandoCaminhoId && expanded === mapId) {
+    adicionarPontoAoCaminho(mapId, editandoCaminhoId, svgX, svgY);
+    return;
   }
   
   // 🟢 SE ESTIVER EM MODO CRIAR CAMINHO, ADICIONA PONTO
@@ -488,91 +526,49 @@ const salvarMarcador = async () => {
   const { mapId, marcadorId } = marcadorEditando || {};
   if (!mapId) return;
   
-  const listaAtual = marcadores[mapId] ? [...marcadores[mapId]] : [];
+  const ref = doc(db, "world", "Marcadores");
+  const snap = await getDoc(ref);
   
-  const marcadorData = {
-    id: marcadorId || Date.now().toString(),
-    nome: marcadorNome || "",
-    descricao: marcadorDescricao || "",
-    x: Number(marcadorX) || 0,
-    y: Number(marcadorY) || 0,
-    icone: marcadorIcone || "📍",
-    tipo: marcadorTipo || "local",
-    cidadeSvg: marcadorTipo === "cidade" ? (marcadorCidadeSvg || "") : "",
-  };
-  
-  let novaLista;
-  if (marcadorId) {
-    novaLista = listaAtual.map(m => m.id === marcadorId ? marcadorData : m);
-  } else {
-    novaLista = [...listaAtual, marcadorData];
+  let mapasExistentes = {};
+  if (snap.exists() && snap.data().mapas) {
+    mapasExistentes = snap.data().mapas;
   }
   
-  // Constrói objeto SIMPLES para Firestore
-  const mapasParaSalvar = {};
+  // Garante que o array do mapa existe
+  if (!Array.isArray(mapasExistentes[mapId])) {
+    mapasExistentes[mapId] = [];
+  }
   
-  // Copia todos os mapas existentes
-  Object.keys(marcadores).forEach(key => {
-    if (key !== mapId) {
-      // Outros mapas - mantém como estão
-      mapasParaSalvar[key] = (marcadores[key] || []).map(m => ({
-        id: String(m.id || ""),
-        nome: String(m.nome || ""),
-        descricao: String(m.descricao || ""),
-        x: Number(m.x) || 0,
-        y: Number(m.y) || 0,
-        icone: String(m.icone || "📍"),
-        tipo: String(m.tipo || "local"),
-        cidadeSvg: String(m.cidadeSvg || ""),
-      }));
-    }
-  });
+  const novoMarcador = {
+    id: String(marcadorId || Date.now()),
+    nome: String(marcadorNome || ""),
+    descricao: String(marcadorDescricao || ""),
+    x: Number(marcadorX) || 0,
+    y: Number(marcadorY) || 0,
+    icone: String(marcadorIcone || "📍"),
+    tipo: String(marcadorTipo || "local"),
+    cidadeSvg: typeof marcadorCidadeSvg === 'string' ? marcadorCidadeSvg : "",
+  };
   
-  // Adiciona o mapa atual com a nova lista
-  mapasParaSalvar[mapId] = novaLista.map(m => ({
-    id: String(m.id || ""),
-    nome: String(m.nome || ""),
-    descricao: String(m.descricao || ""),
-    x: Number(m.x) || 0,
-    y: Number(m.y) || 0,
-    icone: String(m.icone || "📍"),
-    tipo: String(m.tipo || "local"),
-    cidadeSvg: String(m.cidadeSvg || ""),
-  }));
-  
-  // Atualiza estado local com dados limpos
-  const estadoLimpo = {};
-  Object.keys(mapasParaSalvar).forEach(key => {
-    estadoLimpo[key] = mapasParaSalvar[key];
-  });
-  setMarcadores(estadoLimpo);
-  
+  // Procura se já existe (edição) ou adiciona novo
+  const idx = mapasExistentes[mapId].findIndex(m => String(m.id) === String(novoMarcador.id));
+  if (idx >= 0) {
+    mapasExistentes[mapId][idx] = novoMarcador;
+  } else {
+    mapasExistentes[mapId].push(novoMarcador);
+  }
   // Salva no Firestore
   try {
-    const ref = doc(db, "world", "Marcadores");
-    // Usa set() em vez de setDoc com merge para SOBRESCREVER completamente
-    await setDoc(ref, { mapas: mapasParaSalvar }, { merge: false });
-    console.log("✅ Marcador salvo com sucesso!");
+    await setDoc(ref, { mapas: mapasExistentes }, { merge: true });
+    console.log("✅ Marcador salvo!");
   } catch (err) {
-    console.error("Erro ao salvar:", err);
-    // Tenta com merge: true como fallback
-    try {
-      await setDoc(ref, { mapas: mapasParaSalvar }, { merge: true });
-      console.log("✅ Marcador salvo (fallback merge)");
-    } catch (err2) {
-      console.error("Erro fatal:", err2);
-      alert("Erro ao salvar. Tente recarregar a página.");
-      return;
-    }
+    console.error("Erro:", err);
+    return;
   }
   
   setMarcadorDialogOpen(false);
   setMarcadorTipo("local");
   setMarcadorCidadeSvg(null);
-  
-  if (expanded) {
-    setTimeout(() => loadSvgForMap(expanded), 500);
-  }
 };
 
 // 🟢 DELETAR MARCADOR
@@ -580,14 +576,21 @@ const deletarMarcador = async () => {
   const { mapId, marcadorId } = marcadorEditando || {};
   if (!mapId || !marcadorId) return;
   
-  const novosMarcadores = { ...marcadores };
+  const novosMarcadores = JSON.parse(JSON.stringify(marcadores));
   novosMarcadores[mapId] = novosMarcadores[mapId].filter(m => m.id !== marcadorId);
   
   setMarcadores(novosMarcadores);
-  await setDoc(doc(db, "world", "Marcadores"), { mapas: novosMarcadores }, { merge: true });
   setMarcadorDialogOpen(false);
   
-  if (expanded) loadSvgForMap(expanded);
+  await setDoc(doc(db, "world", "Marcadores"), { mapas: novosMarcadores }, { merge: true });
+  
+  if (expanded === mapId) {
+    setTimeout(() => {
+      // Usa loadSvgForMapComDados com os caminhos atuais
+      const caminhosAtuais = JSON.parse(JSON.stringify(caminhos));
+      loadSvgForMapComDadosMarcadores(mapId, novosMarcadores, caminhosAtuais);
+    }, 100);
+  }
 };
 
 // 🟢 INICIAR NOVO CAMINHO
@@ -613,7 +616,7 @@ const criarCaminho = async () => {
     pontos: []
   };
   
-  const novosCaminhos = { ...caminhos };
+  const novosCaminhos = JSON.parse(JSON.stringify(caminhos));
   if (!novosCaminhos[mapId]) novosCaminhos[mapId] = [];
   novosCaminhos[mapId].push(novoCaminho);
   
@@ -627,18 +630,131 @@ const criarCaminho = async () => {
 
 // 🟢 ADICIONAR PONTO AO CAMINHO ATIVO
 const adicionarPontoAoCaminho = async (mapId, caminhoId, x, y) => {
-  const novosCaminhos = { ...caminhos };
+  // Faz uma cópia profunda
+  const novosCaminhos = JSON.parse(JSON.stringify(caminhos));
   const caminho = novosCaminhos[mapId]?.find(c => c.id === caminhoId);
   if (!caminho) return;
   
   caminho.pontos.push({ x, y });
+  
+  // Atualiza estado local
   setCaminhos(novosCaminhos);
   
+  // Salva no Firestore
   await setDoc(doc(db, "world", "Caminhos"), { mapas: novosCaminhos }, { merge: true });
   
-  // 🟢 CORRIGIDO: Recarrega SVG se o mapa estiver expandido
+  // 🟢 Força a injeção do SVG com os NOVOS dados (não depende do estado)
   if (expanded === mapId) {
-    loadSvgForMap(mapId);
+    // Usa um setTimeout mínimo para garantir que o React processou o estado
+    setTimeout(() => {
+      // Passa os novosCaminhos diretamente para o loadSvgForMap
+      loadSvgForMapComDados(mapId, novosCaminhos);
+    }, 100);
+  }
+};
+
+// 🟢 VERSÃO DO loadSvgForMap QUE ACEITA DADOS DIRETOS
+const loadSvgForMapComDados = async (mapId, caminhosDiretos) => {
+  try {
+    const dRef = doc(db, "world", `Map_${mapId}`);
+    const snap = await getDoc(dRef);
+    if (!snap.exists()) return;
+    
+    const data = snap.data();
+    const parts = Object.keys(data)
+      .filter((k) => k.startsWith("part_"))
+      .sort((a, b) => parseInt(a.split("_")[1]) - parseInt(b.split("_")[1]))
+      .map((k) => data[k]);
+    const compressed = parts.join("");
+    let decompressed = LZString.decompressFromUTF16(compressed) || "";
+    
+    // Injeta marcadores (usa o estado atual)
+    const lista = marcadores[mapId] || [];
+    if (lista.length > 0) {
+      const mSvg = lista.map(m => {
+        const nomeEscaped = m.nome.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const descEscaped = (m.descricao || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const icone = m.icone || "📍";
+        return `<circle cx="${m.x}" cy="${m.y}" r="12" fill="transparent" stroke="transparent" stroke-width="0" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${m.tipo || 'local'}')"/>
+        <text x="${m.x}" y="${m.y + 4}" fill="#fff" font-size="18" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${icone}</text>
+        <text x="${m.x + 14}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
+      }).join('');
+      decompressed = decompressed.replace('</svg>', `<g id="marcadores">${mSvg}</g></svg>`);
+    }
+    
+    // Injeta caminhos (usa os dados DIRETOS passados)
+    const listaCaminhos = caminhosDiretos[mapId] || [];
+    if (listaCaminhos.length > 0) {
+      const caminhosSvg = listaCaminhos.map(caminho => {
+        if (caminho.pontos.length < 2) {
+          // Mostra pontos individuais mesmo sem linha
+          return caminho.pontos.map((p, i) => `
+            <circle cx="${p.x}" cy="${p.y}" r="${i === 0 ? 6 : 4}" 
+              fill="${caminho.cor || '#00e0ff'}" 
+              stroke="#fff" stroke-width="2" opacity="0.9">
+              <title>Ponto ${i + 1}: ${caminho.nome}</title>
+            </circle>
+          `).join('');
+        }
+        
+        const pathD = caminho.pontos.map((p, i) => 
+          `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+        ).join(' ');
+        
+        const distanciaTotal = calcularDistanciaTotal(caminho.pontos);
+        const kmTotal = pixelsParaKm(distanciaTotal);
+        
+        return `
+          <path d="${pathD}" fill="none" stroke="${caminho.cor || '#00e0ff'}" 
+            stroke-width="3" stroke-dasharray="8,6" stroke-linecap="round" opacity="0.8">
+            <title>${caminho.nome} - ${kmTotal} km</title>
+          </path>
+          ${caminho.pontos.map((p, i) => `
+            <circle cx="${p.x}" cy="${p.y}" r="${i === 0 ? 6 : 4}" 
+              fill="${caminho.cor || '#00e0ff'}" stroke="#fff" stroke-width="2" opacity="0.9">
+              <title>Ponto ${i + 1}: ${caminho.nome}</title>
+            </circle>
+          `).join('')}
+          <text x="${caminho.pontos[Math.floor(caminho.pontos.length/2)].x}" 
+            y="${caminho.pontos[Math.floor(caminho.pontos.length/2)].y - 10}" 
+            fill="${caminho.cor || '#00e0ff'}" font-size="12" font-weight="bold" 
+            text-anchor="middle" style="text-shadow:0 0 4px rgba(0,0,0,0.9)">
+            ${kmTotal} km
+          </text>
+        `;
+      }).join('');
+      
+      decompressed = decompressed.replace('</svg>', `<g id="caminhos">${caminhosSvg}</g></svg>`);
+    }
+    
+    // Aplica ao DOM preservando zoom
+    const host = mapSvgRefs.current[mapId];
+    if (host) {
+      let currentZoom = 1;
+      let currentPan = { x: 0, y: 0 };
+      if (panZoomRef.current) {
+        try {
+          currentZoom = panZoomRef.current.getZoom();
+          currentPan = panZoomRef.current.getPan();
+        } catch(e) {}
+      }
+      
+      host.innerHTML = decompressed;
+      const svgEl = host.querySelector("svg");
+      if (svgEl) {
+        if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
+        panZoomRef.current = svgPanZoom(svgEl, {
+          zoomEnabled: true, controlIconsEnabled: true,
+          fit: false, center: false, minZoom: 0.2, maxZoom: 40,
+        });
+        try {
+          panZoomRef.current.zoom(currentZoom);
+          panZoomRef.current.pan(currentPan);
+        } catch(e) {}
+      }
+    }
+  } catch (err) {
+    console.error("Erro SVG:", err);
   }
 };
 
@@ -647,15 +763,14 @@ const finalizarCaminho = async () => {
   setModoCriarCaminho(false);
   setCaminhoAtivo(null);
 };
-
-// 🟢 DELETAR CAMINHO
-const deletarCaminho = async (mapId, caminhoId) => {
-  if (!window.confirm('Deletar este caminho?')) return;
+// 🟢 DELETAR PONTO ESPECÍFICO DA ROTA (e todos os posteriores)
+const deletarPontoDaRota = async (mapId, caminhoId, pontoIndex) => {
+  const novosCaminhos = JSON.parse(JSON.stringify(caminhos));
+  const caminho = novosCaminhos[mapId]?.find(c => c.id === caminhoId);
+  if (!caminho) return;
   
-  const novosCaminhos = { ...caminhos };
-  if (novosCaminhos[mapId]) {
-    novosCaminhos[mapId] = novosCaminhos[mapId].filter(c => c.id !== caminhoId);
-  }
+  // Remove do ponto clicado em diante
+  caminho.pontos = caminho.pontos.slice(0, pontoIndex);
   
   // Atualiza estado local
   setCaminhos(novosCaminhos);
@@ -663,15 +778,120 @@ const deletarCaminho = async (mapId, caminhoId) => {
   // Salva no Firestore
   await setDoc(doc(db, "world", "Caminhos"), { mapas: novosCaminhos }, { merge: true });
   
-  // Reseta modo de criação se for o caminho ativo
+  // Atualiza SVG instantaneamente
+  if (expanded === mapId) {
+    setTimeout(() => {
+      loadSvgForMapComDados(mapId, novosCaminhos);
+    }, 100);
+  }
+};
+// 🟢 VERSÃO DO loadSvgForMap PARA MARCADORES
+const loadSvgForMapComDadosMarcadores = async (mapId, marcadoresDiretos, caminhosDiretos) => {
+  try {
+    const dRef = doc(db, "world", `Map_${mapId}`);
+    const snap = await getDoc(dRef);
+    if (!snap.exists()) return;
+    
+    const data = snap.data();
+    const parts = Object.keys(data)
+      .filter((k) => k.startsWith("part_"))
+      .sort((a, b) => parseInt(a.split("_")[1]) - parseInt(b.split("_")[1]))
+      .map((k) => data[k]);
+    const compressed = parts.join("");
+    let decompressed = LZString.decompressFromUTF16(compressed) || "";
+    
+    // Injeta marcadores
+    const lista = marcadoresDiretos[mapId] || [];
+    if (lista.length > 0) {
+      const mSvg = lista.map(m => {
+        const nomeEscaped = m.nome.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const descEscaped = (m.descricao || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const icone = m.icone || "📍";
+        return `<circle cx="${m.x}" cy="${m.y}" r="12" fill="transparent" stroke="transparent" stroke-width="0" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${m.tipo || 'local'}')"/>
+        <text x="${m.x}" y="${m.y + 4}" fill="#fff" font-size="18" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${icone}</text>
+        <text x="${m.x + 14}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
+      }).join('');
+      decompressed = decompressed.replace('</svg>', `<g id="marcadores">${mSvg}</g></svg>`);
+    }
+    
+    // Injeta caminhos
+    const listaCaminhos = caminhosDiretos[mapId] || [];
+    if (listaCaminhos.length > 0) {
+      const caminhosSvg = listaCaminhos.map(caminho => {
+        if (caminho.pontos.length < 2) {
+          return caminho.pontos.map((p, i) => `
+            <circle cx="${p.x}" cy="${p.y}" r="${i === 0 ? 6 : 4}" 
+              fill="${caminho.cor || '#00e0ff'}" stroke="#fff" stroke-width="2" opacity="0.9">
+              <title>Ponto ${i + 1}: ${caminho.nome}</title>
+            </circle>
+          `).join('');
+        }
+        const pathD = caminho.pontos.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        const distanciaTotal = calcularDistanciaTotal(caminho.pontos);
+        const kmTotal = pixelsParaKm(distanciaTotal);
+        return `
+          <path d="${pathD}" fill="none" stroke="${caminho.cor || '#00e0ff'}" 
+            stroke-width="3" stroke-dasharray="8,6" stroke-linecap="round" opacity="0.8">
+            <title>${caminho.nome} - ${kmTotal} km</title>
+          </path>
+          ${caminho.pontos.map((p, i) => `
+            <circle cx="${p.x}" cy="${p.y}" r="${i === 0 ? 6 : 4}" 
+              fill="${caminho.cor || '#00e0ff'}" stroke="#fff" stroke-width="2" opacity="0.9">
+              <title>Ponto ${i + 1}: ${caminho.nome}</title>
+            </circle>
+          `).join('')}
+          <text x="${caminho.pontos[Math.floor(caminho.pontos.length/2)].x}" 
+            y="${caminho.pontos[Math.floor(caminho.pontos.length/2)].y - 10}" 
+            fill="${caminho.cor || '#00e0ff'}" font-size="12" font-weight="bold" 
+            text-anchor="middle" style="text-shadow:0 0 4px rgba(0,0,0,0.9)">${kmTotal} km</text>
+        `;
+      }).join('');
+      decompressed = decompressed.replace('</svg>', `<g id="caminhos">${caminhosSvg}</g></svg>`);
+    }
+    
+    const host = mapSvgRefs.current[mapId];
+    if (host) {
+      let currentZoom = 1;
+      let currentPan = { x: 0, y: 0 };
+      if (panZoomRef.current) {
+        try { currentZoom = panZoomRef.current.getZoom(); currentPan = panZoomRef.current.getPan(); } catch(e) {}
+      }
+      host.innerHTML = decompressed;
+      const svgEl = host.querySelector("svg");
+      if (svgEl) {
+        if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
+        panZoomRef.current = svgPanZoom(svgEl, {
+          zoomEnabled: true, controlIconsEnabled: true,
+          fit: false, center: false, minZoom: 0.2, maxZoom: 40,
+        });
+        try { panZoomRef.current.zoom(currentZoom); panZoomRef.current.pan(currentPan); } catch(e) {}
+      }
+    }
+  } catch (err) { console.error("Erro SVG:", err); }
+};
+// 🟢 DELETAR CAMINHO
+const deletarCaminho = async (mapId, caminhoId) => {
+  if (!window.confirm('Deletar este caminho?')) return;
+  
+  const novosCaminhos = JSON.parse(JSON.stringify(caminhos));
+  if (novosCaminhos[mapId]) {
+    novosCaminhos[mapId] = novosCaminhos[mapId].filter(c => c.id !== caminhoId);
+  }
+  
+  setCaminhos(novosCaminhos);
+  
   if (caminhoAtivo?.id === caminhoId) {
     setCaminhoAtivo(null);
     setModoCriarCaminho(false);
   }
+  if (editandoCaminhoId === caminhoId) {
+    setEditandoCaminhoId(null);
+  }
   
-  // 🟢 CORRIGIDO: Recarrega SVG se o mapa estiver expandido
+  await setDoc(doc(db, "world", "Caminhos"), { mapas: novosCaminhos }, { merge: true });
+  
   if (expanded === mapId) {
-    loadSvgForMap(mapId);
+    setTimeout(() => loadSvgForMapComDados(mapId, novosCaminhos), 100);
   }
 };
 
@@ -912,10 +1132,54 @@ useEffect(() => {
             {/* Mapa */}
 <Box sx={{ flexBasis: { md: "70%" }, bgcolor: "#222", borderRadius: 1, overflow: "hidden", p: 1 }}>
   {expanded === m.id && (
-    <div 
+        <div 
       ref={(el) => { mapSvgRefs.current[m.id] = el; }}
       style={{ width: "100%", height: "100%" }}
       onContextMenu={(e) => handleMapaContextMenu(e, m.id)}
+                  onClick={(e) => {
+        // 🟢 IGNORA cliques com botão direito (são para contexto)
+        if (e.button !== 0) return;
+        
+        // 🟢 SÓ processa se estiver editando uma rota
+        if (!editandoCaminhoId || !isMestre || expanded !== m.id) return;
+        
+        e.stopPropagation();
+        
+        const host = mapSvgRefs.current[m.id];
+        if (!host) return;
+        const svgEl = host.querySelector("svg");
+        if (!svgEl) return;
+        
+        const rect = svgEl.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        let svgX, svgY;
+        if (panZoomRef.current && panZoomRef.current.getPan && panZoomRef.current.getZoom) {
+          const pan = panZoomRef.current.getPan();
+          const zoom = panZoomRef.current.getZoom();
+          const sizes = panZoomRef.current.getSizes();
+          svgX = Math.round((mouseX - pan.x) / zoom + sizes.viewBox.x);
+          svgY = Math.round((mouseY - pan.y) / zoom + sizes.viewBox.y);
+        } else {
+          svgX = Math.round(mouseX);
+          svgY = Math.round(mouseY);
+        }
+        
+        // Verifica se clicou perto de algum ponto da rota sendo editada
+        const rota = caminhos[m.id]?.find(c => c.id === editandoCaminhoId);
+        if (!rota || rota.pontos.length === 0) return;
+        
+        const tolerancia = 15;
+        const pontoClicado = rota.pontos.findIndex(p => {
+          const dist = Math.sqrt((p.x - svgX) ** 2 + (p.y - svgY) ** 2);
+          return dist < tolerancia;
+        });
+        
+        if (pontoClicado >= 0) {
+          deletarPontoDaRota(m.id, editandoCaminhoId, pontoClicado);
+        }
+      }}
     />
   )}
 </Box>
@@ -982,23 +1246,45 @@ useEffect(() => {
                 <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1 }}>
                   📏 Rotas e Caminhos
                 </Typography>
-                {(caminhos[m.id] || []).map(caminho => (
-                  <Box key={caminho.id} sx={{ mb: 1, p: 1, bgcolor: '#1a1a1a', borderRadius: 1 }}>
+                                {(caminhos[m.id] || []).map(caminho => (
+                  <Box key={caminho.id} sx={{ mb: 1, p: 1, bgcolor: editandoCaminhoId === caminho.id ? '#1e3a5f' : '#1a1a1a', borderRadius: 1, border: editandoCaminhoId === caminho.id ? '1px solid #ff9800' : '1px solid transparent' }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Box sx={{ width: 12, height: 12, bgcolor: caminho.cor, borderRadius: '50%' }} />
                         <Typography variant="caption" sx={{ color: '#fff' }}>
                           {caminho.nome}
+                          {editandoCaminhoId === caminho.id && (
+                            <Typography component="span" variant="caption" sx={{ color: '#ff9800', ml: 0.5, fontSize: '0.55rem' }}>
+                              ✏️ Editando
+                            </Typography>
+                          )}
                         </Typography>
                       </Box>
-                      <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1 }}>
                           {pixelsParaKm(calcularDistanciaTotal(caminho.pontos))} km
                         </Typography>
                         {isMestre && (
-                          <IconButton size="small" onClick={() => deletarCaminho(m.id, caminho.id)} sx={{ color: '#ef4444' }}>
-                            <DeleteIcon fontSize="inherit" />
-                          </IconButton>
+                          <>
+                                                        <IconButton size="small" onClick={() => {
+                              if (editandoCaminhoId === caminho.id) {
+                                // Finaliza edição
+                                setEditandoCaminhoId(null);
+                                setModoCriarCaminho(false);
+                                setTimeout(() => loadSvgForMapComDados(expanded, JSON.parse(JSON.stringify(caminhos))), 100);
+                              } else {
+                                // Inicia edição
+                                setEditandoCaminhoId(caminho.id);
+                                setModoCriarCaminho(false);
+                                setCaminhoAtivo(null);
+                              }
+                            }} sx={{ color: editandoCaminhoId === caminho.id ? '#4caf50' : '#ff9800' }}>
+                              <EditIcon fontSize="inherit" />
+                            </IconButton>
+                            <IconButton size="small" onClick={() => deletarCaminho(m.id, caminho.id)} sx={{ color: '#ef4444' }}>
+                              <DeleteIcon fontSize="inherit" />
+                            </IconButton>
+                          </>
                         )}
                       </Box>
                     </Box>
@@ -1307,30 +1593,28 @@ useEffect(() => {
         </Select>
       </FormControl>
 
-      {/* 🟢 SE FOR CIDADE, MOSTRA UPLOAD DE SVG */}
-      {marcadorTipo === "cidade" && (
-        <Box sx={{ mt: 2, p: 2, bgcolor: '#1a1a2e', borderRadius: 1, border: '1px solid #334155' }}>
-          <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mb: 1 }}>
-            🏙️ Mapa da Cidade (SVG)
+            {/* 🟢 UPLOAD DE SVG DO MAPA (sempre visível) */}
+      <Box sx={{ mt: 1, p: 2, bgcolor: '#1a1a2e', borderRadius: 1, border: '1px solid #334155' }}>
+        <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mb: 1 }}>
+          🗺️ Mapa SVG (opcional)
+        </Typography>
+        <Button variant="outlined" component="label" size="small" startIcon={<UploadIcon />} fullWidth
+          sx={{ color: '#94a3b8', borderColor: '#555' }}>
+          {marcadorCidadeSvg ? "Trocar SVG" : "Enviar SVG do Mapa"}
+          <input hidden type="file" accept=".svg" onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => setMarcadorCidadeSvg(evt.target.result);
+            reader.readAsText(file);
+          }} />
+        </Button>
+        {marcadorCidadeSvg && (
+          <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
+            ✅ SVG carregado!
           </Typography>
-          <Button variant="outlined" component="label" size="small" startIcon={<UploadIcon />} fullWidth
-            sx={{ color: '#94a3b8', borderColor: '#555' }}>
-            {marcadorCidadeSvg ? "Trocar SVG da Cidade" : "Enviar SVG da Cidade"}
-            <input hidden type="file" accept=".svg" onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = (evt) => setMarcadorCidadeSvg(evt.target.result);
-              reader.readAsText(file);
-            }} />
-          </Button>
-          {marcadorCidadeSvg && (
-            <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
-              ✅ SVG carregado!
-            </Typography>
-          )}
-        </Box>
-      )}
+        )}
+      </Box>
 
       <Typography variant="caption" sx={{ color: '#64748b' }}>
         Posição SVG: X={marcadorX}, Y={marcadorY}
@@ -1414,6 +1698,64 @@ useEffect(() => {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* 🟢 MODAL EXPANSÍVEL DO MAPA SVG */}
+      <Dialog
+        open={mapaExpandidoOpen}
+        onClose={() => setMapaExpandidoOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", color: "#fff", minHeight: "85vh" } }}
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">🗺️ {mapaExpandidoDados?.nome || 'Mapa'}</Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {isMestre && (
+              <>
+                <Button size="small" variant="contained" sx={{ bgcolor: '#1976d2', fontSize: '0.7rem' }}
+                  onClick={() => {
+                    setCidadeMarcadorX(100); setCidadeMarcadorY(100);
+                    setCidadeMarcadorNome(""); setCidadeMarcadorDescricao("");
+                    setCidadeMarcadorIcone("📍");
+                    setCidadeMarcadorEditando({ cidadeId: mapaExpandidoDados?.marcadorId || 'exp', marcadorId: null });
+                    setCidadeMarcadorDialogOpen(true);
+                  }}>+ Marcador</Button>
+                <Button size="small" variant="contained" sx={{ bgcolor: cidadeModoCriarCaminho ? '#ef4444' : '#ff9800', fontSize: '0.7rem' }}
+                  onClick={() => {
+                    if (cidadeModoCriarCaminho) {
+                      setCidadeModoCriarCaminho(false);
+                      setCidadeCaminhoAtivo(null);
+                    } else {
+                      setCidadeCaminhoDialogOpen(true);
+                    }
+                  }}>{cidadeModoCriarCaminho ? '🛑 Finalizar' : '📏 Rota'}</Button>
+              </>
+            )}
+            <IconButton onClick={() => setMapaExpandidoOpen(false)} sx={{ color: '#94a3b8' }}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, height: "75vh", overflow: 'hidden' }}>
+          <div ref={mapaExpandidoRef} style={{ width: '100%', height: '100%', cursor: cidadeModoCriarCaminho ? 'crosshair' : 'grab' }}
+            onClick={(e) => {
+              if (!isMestre || !cidadeModoCriarCaminho || !cidadeCaminhoAtivo) return;
+              const rect = mapaExpandidoRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const x = Math.round(e.clientX - rect.left);
+              const y = Math.round(e.clientY - rect.top);
+              const cidadeId = mapaExpandidoDados?.marcadorId || 'exp';
+              const novos = { ...cidadeCaminhos };
+              if (!novos[cidadeId]) novos[cidadeId] = [];
+              const caminho = novos[cidadeId].find(c => c.id === cidadeCaminhoAtivo);
+              if (caminho) {
+                caminho.pontos.push({ x, y });
+                setCidadeCaminhos(novos);
+              }
+            }} />
+        </DialogContent>
+      </Dialog>
+
       {/* 🟢 BALÃO DO MARCADOR (COM MAPA DA CIDADE) */}
 {marcadorBalãoAberto && (
   <Box
@@ -1484,8 +1826,8 @@ useEffect(() => {
       )}
     </Box>
 
-    {/* 🟢 MAPA DA CIDADE */}
-    {marcadorBalãoAberto.marcador?.tipo === "cidade" && marcadorBalãoAberto.marcador?.cidadeSvg && (
+        {/* 🟢 MAPA SVG (se existir) */}
+    {marcadorBalãoAberto.marcador?.cidadeSvg && (
       <Box sx={{ flex: 1, minHeight: 250, border: '1px solid #334155', borderRadius: 1, overflow: 'hidden', position: 'relative' }}>
         {isMestre && (
           <Box sx={{ position: 'absolute', top: 4, left: 4, zIndex: 10, display: 'flex', gap: 0.5 }}>
@@ -1510,14 +1852,15 @@ useEffect(() => {
               }}>{cidadeModoCriarCaminho ? "🛑 Finalizar" : "📏 Rota"}</Button>
           </Box>
         )}
-        <div ref={cidadeSvgRef} style={{ width: '100%', height: '100%' }}
+                        <div ref={cidadeSvgRef} style={{ width: '100%', height: '100%', cursor: 'pointer' }}
           onClick={(e) => {
-            if (!isMestre || !cidadeModoCriarCaminho) return;
-            const rect = cidadeSvgRef.current?.getBoundingClientRect();
-            if (!rect) return;
-            const x = Math.round(e.clientX - rect.left);
-            const y = Math.round(e.clientY - rect.top);
-            if (cidadeCaminhoAtivo) {
+            if (e.target.tagName === 'BUTTON') return;
+            // Se estiver em modo de criar caminho, adiciona ponto
+            if (isMestre && cidadeModoCriarCaminho && cidadeCaminhoAtivo) {
+              const rect = cidadeSvgRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              const x = Math.round(e.clientX - rect.left);
+              const y = Math.round(e.clientY - rect.top);
               const cidadeId = marcadorBalãoAberto.marcador.id;
               const novos = { ...cidadeCaminhos };
               const caminho = novos[cidadeId]?.find(c => c.id === cidadeCaminhoAtivo);
@@ -1530,6 +1873,14 @@ useEffect(() => {
                   svg: marcadorBalãoAberto.marcador.cidadeSvg
                 }, { merge: true });
               }
+            } else {
+              // Modo normal: expande o mapa
+              setMapaExpandidoDados({
+                nome: marcadorBalãoAberto.nome,
+                svg: marcadorBalãoAberto.marcador?.cidadeSvg,
+                marcadorId: marcadorBalãoAberto.marcador?.id,
+              });
+              setMapaExpandidoOpen(true);
             }
           }} />
       </Box>
