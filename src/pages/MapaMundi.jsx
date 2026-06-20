@@ -121,6 +121,60 @@ const [cidadeEmojiPickerOpen, setCidadeEmojiPickerOpen] = useState(false);
 const [cidadeMarcadorBalãoAberto, setCidadeMarcadorBalãoAberto] = useState(null);
 const cidadeSvgRef = useRef(null);
 const cidadePanZoomRef = useRef(null);
+const converterCoordenadasClique = (e, containerRef) => {
+  const container = containerRef?.current;
+  if (!container) return null;
+  
+  const svgEl = container.querySelector("svg");
+  if (!svgEl) return null;
+  
+  const rect = svgEl.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  
+  // Método que funciona com zoom E pan
+  if (cidadePanZoomRef.current) {
+    try {
+      const pan = cidadePanZoomRef.current.getPan();
+      const zoom = cidadePanZoomRef.current.getZoom();
+      
+      // Pega o viewBox DIRETO do elemento SVG
+      const viewBox = svgEl.viewBox.baseVal;
+      
+      // Converte coordenadas da tela para SVG
+      const svgX = Math.round((mouseX - pan.x) / zoom + (viewBox.x || 0));
+      const svgY = Math.round((mouseY - pan.y) / zoom + (viewBox.y || 0));
+      
+      console.log('✅ Coordenadas:', { 
+        x: svgX, y: svgY, 
+        zoom,
+        panX: pan.x, 
+        panY: pan.y,
+        viewBoxX: viewBox.x || 0,
+        viewBoxY: viewBox.y || 0,
+        mouseX,
+        mouseY
+      });
+      
+      return { x: svgX, y: svgY };
+    } catch(e) {
+      console.log('Erro panZoom:', e);
+    }
+  }
+  
+  // Fallback
+  const viewBox = svgEl.viewBox.baseVal;
+  if (viewBox && viewBox.width) {
+    const scaleX = viewBox.width / rect.width;
+    const scaleY = viewBox.height / rect.height;
+    return {
+      x: Math.round((viewBox.x || 0) + mouseX * scaleX),
+      y: Math.round((viewBox.y || 0) + mouseY * scaleY)
+    };
+  }
+  
+  return { x: Math.round(mouseX), y: Math.round(mouseY) };
+};
   // 🖼️ Lightbox (igual ao Chat) — zoom with wheel, click outside to close, click on image stops propagation
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -195,10 +249,23 @@ const cidadePanZoomRef = useRef(null);
 
   // 🟢 HANDLER GLOBAL PARA CLIQUES NOS MARCADORES
 useEffect(() => {
-  window.__clickMarcador = (mapId, id, nome, descricao, x, y, tipo) => {
+  window.__clickMarcador = async (mapId, id, nome, descricao, x, y, tipo) => {
     // Encontra o marcador completo nos estados
     const lista = marcadores[mapId] || [];
-    const marcadorCompleto = lista.find(m => m.id === id);
+    let marcadorCompleto = lista.find(m => m.id === id);
+    
+    if (!marcadorCompleto) {
+      marcadorCompleto = { id, nome, descricao, x: parseInt(x), y: parseInt(y), tipo: tipo || "local" };
+    }
+    
+    // 🟢 Se tem referência de SVG (SVG_xxx), carrega do Firestore ANTES de abrir o balão
+    if (marcadorCompleto.cidadeSvg && marcadorCompleto.cidadeSvg.startsWith("SVG_")) {
+      const svgId = marcadorCompleto.cidadeSvg.replace("SVG_", "");
+      const svgContent = await loadSvgFromFirestore(svgId);
+      if (svgContent) {
+        marcadorCompleto = { ...marcadorCompleto, cidadeSvg: svgContent };
+      }
+    }
     
     setMarcadorBalãoAberto({
       mapId,
@@ -207,11 +274,11 @@ useEffect(() => {
       descricao,
       x: parseInt(x),
       y: parseInt(y),
-      marcador: marcadorCompleto || { id, nome, descricao, x: parseInt(x), y: parseInt(y), tipo: tipo || "local" }
+      marcador: marcadorCompleto
     });
   };
-  return () => { delete window.__clickMarcador; };
-}, []);
+   return () => { delete window.__clickMarcador; };
+}, [marcadores ? Object.keys(marcadores).join(',') : '']);
 
 // 🟢 CALCULAR DISTÂNCIA ENTRE DOIS PONTOS (em pixels SVG)
 const calcularDistancia = (p1, p2) => {
@@ -381,48 +448,149 @@ const calcularDistanciaTotal = (pontos) => {
   }
 }, [marcadores, isMestre]);
 
-// 🟢 CARREGAR SVG DA CIDADE NO BALÃO
+// 🟢 CARREGAR SVG DA CIDADE NO BALÃO (IGUAL AO MAPA GRANDE)
+// 🟢 CARREGAR SVG DA CIDADE NO BALÃO (COM INJEÇÃO CORRETA DE MARCADORES E ROTAS)
 useEffect(() => {
-  if (!marcadorBalãoAberto?.marcador?.cidadeSvg || !cidadeSvgRef.current) return;
+  const svgRef = marcadorBalãoAberto?.marcador?.cidadeSvg;
+  if (!svgRef || !cidadeSvgRef.current) return;
+  if (svgRef.startsWith("SVG_")) return;
+
+  const cidadeId = marcadorBalãoAberto?.marcador?.id;
   
-  const svgContent = marcadorBalãoAberto.marcador.cidadeSvg;
-  cidadeSvgRef.current.innerHTML = svgContent;
+  // Monta o SVG com marcadores e caminhos injetados
+  let svgCompleto = svgRef;
   
+  if (cidadeId) {
+    const listaMarcadores = cidadeMarcadores[cidadeId] || [];
+    const listaCaminhos = cidadeCaminhos[cidadeId] || [];
+    
+    let elementosExtras = '';
+    
+    // Adiciona marcadores
+    if (listaMarcadores.length > 0) {
+      elementosExtras += listaMarcadores.map(m => {
+        const nomeEscaped = (m.nome || '').replace(/"/g, '&quot;');
+        return `
+          <g class="cidade-marcador" style="cursor:pointer">
+            <circle cx="${m.x}" cy="${m.y}" r="8" fill="transparent" stroke="#fff" stroke-width="1" opacity="0.7"/>
+            <text x="${m.x}" y="${m.y - 10}" fill="#fff" font-size="12" text-anchor="middle" 
+              style="text-shadow:0 0 2px rgba(0,0,0,0.9);pointer-events:none">${m.icone || '📍'}</text>
+            <text x="${m.x}" y="${m.y + 18}" fill="#fff" font-size="8" font-weight="bold" text-anchor="middle"
+              style="text-shadow:0 0 2px rgba(0,0,0,0.9);pointer-events:none">${nomeEscaped}</text>
+          </g>
+        `;
+      }).join('');
+    }
+    
+    // Adiciona caminhos/rotas
+    if (listaCaminhos.length > 0) {
+      elementosExtras += listaCaminhos.map(caminho => {
+        if (caminho.pontos.length < 2) return '';
+        const pathD = caminho.pontos.map((p, i) => 
+          `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+        ).join(' ');
+        
+        const distanciaTotal = calcularDistanciaTotal(caminho.pontos);
+        const metrosTotal = (distanciaTotal * 10).toFixed(0);
+        
+        return `
+          <g class="cidade-caminho">
+            <path d="${pathD}" fill="none" stroke="${caminho.cor || '#00e0ff'}" 
+              stroke-width="2" stroke-dasharray="6,4" stroke-linecap="round" opacity="0.8"/>
+            ${caminho.pontos.map((p, i) => `
+              <circle cx="${p.x}" cy="${p.y}" r="${i === 0 ? 5 : 3}" 
+                fill="${caminho.cor || '#00e0ff'}" stroke="#fff" stroke-width="1.5" opacity="0.9"/>
+            `).join('')}
+            <text x="${caminho.pontos[Math.floor(caminho.pontos.length/2)].x}" 
+              y="${caminho.pontos[Math.floor(caminho.pontos.length/2)].y - 8}" 
+              fill="${caminho.cor || '#00e0ff'}" font-size="10" font-weight="bold" 
+              text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9)">
+              ${metrosTotal} m
+            </text>
+          </g>
+        `;
+      }).join('');
+    }
+    
+    // Injeta no SVG (preserva o conteúdo original)
+    if (elementosExtras) {
+      svgCompleto = svgCompleto.replace('</svg>', 
+        `<g id="cidade-overlay">${elementosExtras}</g></svg>`
+      );
+    }
+  }
+  
+  // Salva zoom/pan atual
+  let currentZoom = 1;
+  let currentPan = { x: 0, y: 0 };
+  if (cidadePanZoomRef.current) {
+    try {
+      currentZoom = cidadePanZoomRef.current.getZoom();
+      currentPan = cidadePanZoomRef.current.getPan();
+    } catch(e) {}
+  }
+  
+  // Destroi o panZoom anterior
+  if (cidadePanZoomRef.current?.destroy) cidadePanZoomRef.current.destroy();
+  
+  // Injeta o HTML completo
+  cidadeSvgRef.current.innerHTML = svgCompleto;
+  
+  // Recria o panZoom
   const svgEl = cidadeSvgRef.current.querySelector("svg");
   if (svgEl) {
     svgEl.style.width = "100%";
     svgEl.style.height = "100%";
-    if (cidadePanZoomRef.current?.destroy) cidadePanZoomRef.current.destroy();
+    
+    cidadePanZoomRef.current = svgPanZoom(svgEl, {
+      zoomEnabled: true, 
+      controlIconsEnabled: true, 
+      fit: false, 
+      center: false,
+      minZoom: 0.2, 
+      maxZoom: 40,
+    });
+    
+    // Restaura zoom/pan
     try {
-      cidadePanZoomRef.current = svgPanZoom(svgEl, {
-        zoomEnabled: true,
-        controlIconsEnabled: true,
-        fit: true,
-        center: true,
-        minZoom: 0.2,
-        maxZoom: 40,
-      });
-    } catch (e) { console.warn("svg-pan-zoom na cidade:", e); }
+      cidadePanZoomRef.current.zoom(currentZoom);
+      cidadePanZoomRef.current.pan(currentPan);
+    } catch(e) {}
   }
-}, [marcadorBalãoAberto]);
+}, [marcadorBalãoAberto?.marcador?.id, marcadorBalãoAberto?.marcador?.cidadeSvg, cidadeMarcadores, cidadeCaminhos]);
 
-// 🟢 CARREGAR SVG NO MODAL EXPANSÍVEL
-useEffect(() => {
-  if (!mapaExpandidoOpen || !mapaExpandidoDados?.svg || !mapaExpandidoRef.current) return;
-  mapaExpandidoRef.current.innerHTML = mapaExpandidoDados.svg;
-  const svgEl = mapaExpandidoRef.current.querySelector("svg");
-  if (svgEl) {
-    svgEl.style.width = "100%";
-    svgEl.style.height = "100%";
-    if (mapaExpandidoPanZoom.current?.destroy) mapaExpandidoPanZoom.current.destroy();
-    try {
-      mapaExpandidoPanZoom.current = svgPanZoom(svgEl, {
-        zoomEnabled: true, controlIconsEnabled: true, fit: true, center: true,
-        minZoom: 0.2, maxZoom: 40,
-      });
-    } catch (e) { console.warn(e); }
+// 🟢 CARREGAR SVG DO FIRESTORE (com descompressão)
+const loadSvgFromFirestore = async (svgId) => {
+  try {
+    // Carrega parte 1 primeiro para saber o total
+    const firstRef = doc(db, "world", `CidadeSVG_${svgId}_part_1`);
+    const firstSnap = await getDoc(firstRef);
+    if (!firstSnap.exists()) return null;
+    
+    const firstData = firstSnap.data();
+    const totalParts = firstData.totalParts || 1;
+    
+    const parts = [];
+    // Já temos a parte 1
+    parts.push(firstData.data);
+    
+    // Carrega o resto das partes
+    for (let i = 2; i <= totalParts; i++) {
+      const ref = doc(db, "world", `CidadeSVG_${svgId}_part_${i}`);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        parts.push(snap.data().data);
+      }
+    }
+    
+    // Descomprime cada parte e junta
+    const decompressedParts = parts.map(part => LZString.decompressFromUTF16(part) || "");
+    return decompressedParts.join("");
+  } catch (err) {
+    console.error("Erro ao carregar SVG:", err);
+    return null;
   }
-}, [mapaExpandidoOpen, mapaExpandidoDados]);
+};
 
 const handleMapaContextMenu = (e, mapId) => {
   e.preventDefault();
@@ -526,6 +694,30 @@ const salvarMarcador = async () => {
   const { mapId, marcadorId } = marcadorEditando || {};
   if (!mapId) return;
   
+  // Salva o SVG em um documento separado
+  let svgId = null;
+  if (marcadorCidadeSvg && typeof marcadorCidadeSvg === 'string' && marcadorCidadeSvg.trim().length > 0) {
+    svgId = marcadorId || Date.now().toString();
+           try {
+      // Salva cada chunk em um documento separado para respeitar limite de 1MB
+      const chunkSize = 400000;
+      const totalChunks = Math.ceil(marcadorCidadeSvg.length / chunkSize);
+      
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = marcadorCidadeSvg.substring(i * chunkSize, (i + 1) * chunkSize);
+        const compressed = LZString.compressToUTF16(chunk);
+        // Cada chunk em seu próprio documento
+        await setDoc(doc(db, "world", `CidadeSVG_${svgId}_part_${i + 1}`), {
+          data: compressed,
+          totalParts: totalChunks,
+          part: i + 1
+        });
+      }
+    } catch (err) {
+      console.error("Erro ao salvar SVG:", err);
+    }
+  }
+  
   const ref = doc(db, "world", "Marcadores");
   const snap = await getDoc(ref);
   
@@ -534,7 +726,6 @@ const salvarMarcador = async () => {
     mapasExistentes = snap.data().mapas;
   }
   
-  // Garante que o array do mapa existe
   if (!Array.isArray(mapasExistentes[mapId])) {
     mapasExistentes[mapId] = [];
   }
@@ -547,17 +738,16 @@ const salvarMarcador = async () => {
     y: Number(marcadorY) || 0,
     icone: String(marcadorIcone || "📍"),
     tipo: String(marcadorTipo || "local"),
-    cidadeSvg: typeof marcadorCidadeSvg === 'string' ? marcadorCidadeSvg : "",
+    cidadeSvg: svgId ? `SVG_${svgId}` : "", // Guarda só a referência
   };
   
-  // Procura se já existe (edição) ou adiciona novo
   const idx = mapasExistentes[mapId].findIndex(m => String(m.id) === String(novoMarcador.id));
   if (idx >= 0) {
     mapasExistentes[mapId][idx] = novoMarcador;
   } else {
     mapasExistentes[mapId].push(novoMarcador);
   }
-  // Salva no Firestore
+  
   try {
     await setDoc(ref, { mapas: mapasExistentes }, { merge: true });
     console.log("✅ Marcador salvo!");
@@ -931,6 +1121,104 @@ useEffect(() => {
   });
   return () => unsub();
 }, []);
+
+// 🟢 CARREGAR DADOS DA CIDADE QUANDO ABRIR O BALÃO
+useEffect(() => {
+  const cidadeId = marcadorBalãoAberto?.marcador?.id;
+  if (!cidadeId || !marcadorBalãoAberto?.marcador?.cidadeSvg) return;
+  
+  const unsub = onSnapshot(doc(db, "world", `Cidade_${cidadeId}`), (snap) => {
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.marcadores) {
+        setCidadeMarcadores(prev => ({ ...prev, [cidadeId]: data.marcadores }));
+      }
+      if (data.caminhos) {
+        setCidadeCaminhos(prev => ({ ...prev, [cidadeId]: data.caminhos }));
+      }
+    }
+  });
+  
+  return () => unsub();
+}, [marcadorBalãoAberto?.marcador?.id]);
+
+// 🟢 HANDLER PARA CLIQUES EM MARCADORES DA CIDADE
+useEffect(() => {
+  window.__clickCidadeMarcador = (cidadeId, id, nome, descricao, x, y) => {
+    setCidadeMarcadorBalãoAberto({
+      cidadeId,
+      id,
+      nome,
+      descricao,
+      x: parseInt(x),
+      y: parseInt(y)
+    });
+  };
+  return () => { delete window.__clickCidadeMarcador; };
+}, []);
+
+// 🟢 SALVAR MARCADOR DA CIDADE
+const salvarCidadeMarcador = async () => {
+  const { cidadeId, marcadorId } = cidadeMarcadorEditando || {};
+  if (!cidadeId) return;
+  
+  const novoMarcador = {
+    id: String(marcadorId || Date.now()),
+    nome: String(cidadeMarcadorNome || ""),
+    descricao: String(cidadeMarcadorDescricao || ""),
+    x: Number(cidadeMarcadorX) || 0,
+    y: Number(cidadeMarcadorY) || 0,
+    icone: String(cidadeMarcadorIcone || "📍"),
+  };
+  
+  const novos = { ...cidadeMarcadores };
+  if (!novos[cidadeId]) novos[cidadeId] = [];
+  
+  const idx = novos[cidadeId].findIndex(m => String(m.id) === String(novoMarcador.id));
+  if (idx >= 0) {
+    novos[cidadeId][idx] = novoMarcador;
+  } else {
+    novos[cidadeId].push(novoMarcador);
+  }
+  
+    setCidadeMarcadores(novos);
+  setCidadeMarcadorDialogOpen(false);
+  
+  // Salva no Firestore
+   await setDoc(doc(db, "world", `Cidade_${cidadeId}`), {
+    marcadores: novos[cidadeId],
+    caminhos: cidadeCaminhos[cidadeId] || []
+  }, { merge: true });
+};
+
+// 🟢 CRIAR CAMINHO NA CIDADE
+const criarCidadeCaminho = async () => {
+  if (!cidadeCaminhoNome.trim()) return;
+  
+  const cidadeId = marcadorBalãoAberto?.marcador?.id;
+  if (!cidadeId) return;
+  
+  const novoCaminho = {
+    id: Date.now().toString(),
+    nome: cidadeCaminhoNome,
+    cor: cidadeCaminhoCor,
+    pontos: []
+  };
+  
+  const novos = { ...cidadeCaminhos };
+  if (!novos[cidadeId]) novos[cidadeId] = [];
+  novos[cidadeId].push(novoCaminho);
+  
+    setCidadeCaminhos(novos);
+  setCidadeCaminhoAtivo(novoCaminho.id);
+  setCidadeModoCriarCaminho(true);
+  setCidadeCaminhoDialogOpen(false);
+  
+   await setDoc(doc(db, "world", `Cidade_${cidadeId}`), {
+    marcadores: cidadeMarcadores[cidadeId] || [],
+    caminhos: novos[cidadeId]
+  }, { merge: true });
+};
 
   // --- Upload de imagem (Cloudinary)
   const handleImageUpload = async (e, targetSetter) => {
@@ -1738,23 +2026,94 @@ useEffect(() => {
         </DialogTitle>
         <DialogContent sx={{ p: 0, height: "75vh", overflow: 'hidden' }}>
           <div ref={mapaExpandidoRef} style={{ width: '100%', height: '100%', cursor: cidadeModoCriarCaminho ? 'crosshair' : 'grab' }}
-            onClick={(e) => {
-              if (!isMestre || !cidadeModoCriarCaminho || !cidadeCaminhoAtivo) return;
-              const rect = mapaExpandidoRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              const x = Math.round(e.clientX - rect.left);
-              const y = Math.round(e.clientY - rect.top);
-              const cidadeId = mapaExpandidoDados?.marcadorId || 'exp';
-              const novos = { ...cidadeCaminhos };
-              if (!novos[cidadeId]) novos[cidadeId] = [];
-              const caminho = novos[cidadeId].find(c => c.id === cidadeCaminhoAtivo);
-              if (caminho) {
-                caminho.pontos.push({ x, y });
-                setCidadeCaminhos(novos);
-              }
-            }} />
+onClick={(e) => {
+  if (!isMestre || !cidadeModoCriarCaminho || !cidadeCaminhoAtivo) return;
+  
+  // 🟢 Usa a nova função de conversão
+  const coords = converterCoordenadasClique(e, mapaExpandidoRef);
+  if (!coords) return;
+  
+  const cidadeId = mapaExpandidoDados?.marcadorId || 'exp';
+  const novos = JSON.parse(JSON.stringify(cidadeCaminhos));
+  if (!novos[cidadeId]) novos[cidadeId] = [];
+  
+  const caminho = novos[cidadeId].find(c => c.id === cidadeCaminhoAtivo);
+  if (caminho) {
+    caminho.pontos.push({ x: coords.x, y: coords.y });
+    setCidadeCaminhos(novos);
+  }
+}} />
         </DialogContent>
       </Dialog>
+
+{/* 🟢 MODAL MARCADOR DA CIDADE */}
+<Dialog open={cidadeMarcadorDialogOpen} onClose={() => setCidadeMarcadorDialogOpen(false)} maxWidth="sm" fullWidth
+  PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff', zIndex: 99999 } }}>
+  <DialogTitle>{cidadeMarcadorEditando?.marcadorId ? 'Editar Marcador' : 'Novo Marcador (Cidade)'}</DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+      <TextField label="Nome" fullWidth value={cidadeMarcadorNome} onChange={(e) => setCidadeMarcadorNome(e.target.value)}
+        InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#ccc' } }}
+        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }} />
+      <TextField label="Descrição" fullWidth multiline minRows={3} value={cidadeMarcadorDescricao} onChange={(e) => setCidadeMarcadorDescricao(e.target.value)}
+        InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#ccc' } }}
+        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }} />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Ícone:</Typography>
+        <Button size="small" variant="outlined" onClick={() => setCidadeEmojiPickerOpen(true)}
+          sx={{ color: '#fff', borderColor: '#555', fontSize: '1.2rem', minWidth: 50, height: 36 }}>
+          {cidadeMarcadorIcone || "📍"}
+        </Button>
+      </Box>
+      <Typography variant="caption" sx={{ color: '#64748b' }}>Posição: X={cidadeMarcadorX}, Y={cidadeMarcadorY}</Typography>
+    </Box>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setCidadeMarcadorDialogOpen(false)} sx={{ color: '#ccc' }}>Cancelar</Button>
+    <Button variant="contained" onClick={salvarCidadeMarcador} disabled={!cidadeMarcadorNome.trim()}>Salvar</Button>
+  </DialogActions>
+</Dialog>
+
+{/* 🟢 MODAL EMOJI DA CIDADE */}
+<Dialog open={cidadeEmojiPickerOpen} onClose={() => setCidadeEmojiPickerOpen(false)} maxWidth="sm" fullWidth
+ PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff', zIndex: 99999 } }}>
+  <DialogTitle>Escolha um ícone</DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', maxHeight: 300, overflowY: 'auto' }}>
+      {EMOJIS_MARCADORES.map((emoji, idx) => (
+        <Button key={idx} onClick={() => { setCidadeMarcadorIcone(emoji); setCidadeEmojiPickerOpen(false); }}
+          sx={{ fontSize: '1.5rem', minWidth: 40, height: 40, bgcolor: cidadeMarcadorIcone === emoji ? '#333' : 'transparent',
+            border: cidadeMarcadorIcone === emoji ? '1px solid #ff9800' : '1px solid transparent', '&:hover': { bgcolor: '#333' } }}>
+          {emoji}
+        </Button>
+      ))}
+    </Box>
+  </DialogContent>
+  <DialogActions><Button onClick={() => setCidadeEmojiPickerOpen(false)} sx={{ color: '#ccc' }}>Fechar</Button></DialogActions>
+</Dialog>
+
+{/* 🟢 MODAL CRIAR CAMINHO NA CIDADE */}
+<Dialog open={cidadeCaminhoDialogOpen} onClose={() => setCidadeCaminhoDialogOpen(false)} maxWidth="xs" fullWidth
+  PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff', zIndex: 99999 } }}>
+  <DialogTitle>📏 Nova Rota (Cidade)</DialogTitle>
+  <DialogContent>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+      <TextField label="Nome da rota" fullWidth value={cidadeCaminhoNome} onChange={(e) => setCidadeCaminhoNome(e.target.value)}
+        InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#ccc' } }}
+        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }} />
+      <Box>
+        <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.5 }}>Cor do caminho</Typography>
+        <input type="color" value={cidadeCaminhoCor} onChange={(e) => setCidadeCaminhoCor(e.target.value)}
+          style={{ width: '100%', height: 40, cursor: 'pointer', border: '1px solid #555', borderRadius: 4 }} />
+      </Box>
+      <Typography variant="caption" sx={{ color: '#ff9800' }}>Após criar, use botão direito no mapa para adicionar pontos.</Typography>
+    </Box>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setCidadeCaminhoDialogOpen(false)} sx={{ color: '#ccc' }}>Cancelar</Button>
+    <Button variant="contained" onClick={criarCidadeCaminho} disabled={!cidadeCaminhoNome.trim()}>Criar Rota</Button>
+  </DialogActions>
+</Dialog>
 
       {/* 🟢 BALÃO DO MARCADOR (COM MAPA DA CIDADE) */}
 {marcadorBalãoAberto && (
@@ -1763,7 +2122,7 @@ useEffect(() => {
       position: 'fixed',
       top: 80,
       right: 20,
-      width: marcadorBalãoAberto.marcador?.tipo === "cidade" ? 500 : 320,
+      width: marcadorBalãoAberto.marcador?.cidadeSvg ? 500 : 320,
       maxHeight: '80vh',
       bgcolor: 'rgba(15, 23, 42, 0.97)',
       border: '1px solid #334155',
@@ -1829,17 +2188,8 @@ useEffect(() => {
         {/* 🟢 MAPA SVG (se existir) */}
     {marcadorBalãoAberto.marcador?.cidadeSvg && (
       <Box sx={{ flex: 1, minHeight: 250, border: '1px solid #334155', borderRadius: 1, overflow: 'hidden', position: 'relative' }}>
-        {isMestre && (
+                {isMestre && (
           <Box sx={{ position: 'absolute', top: 4, left: 4, zIndex: 10, display: 'flex', gap: 0.5 }}>
-            <Button size="small" variant="contained" sx={{ fontSize: '0.6rem', bgcolor: '#1976d2' }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setCidadeMarcadorX(100); setCidadeMarcadorY(100);
-                setCidadeMarcadorNome(""); setCidadeMarcadorDescricao("");
-                setCidadeMarcadorIcone("📍");
-                setCidadeMarcadorEditando({ cidadeId: marcadorBalãoAberto.marcador.id, marcadorId: null });
-                setCidadeMarcadorDialogOpen(true);
-              }}>+ Marcador</Button>
             <Button size="small" variant="contained" sx={{ fontSize: '0.6rem', bgcolor: cidadeModoCriarCaminho ? '#ef4444' : '#ff9800' }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -1852,37 +2202,72 @@ useEffect(() => {
               }}>{cidadeModoCriarCaminho ? "🛑 Finalizar" : "📏 Rota"}</Button>
           </Box>
         )}
-                        <div ref={cidadeSvgRef} style={{ width: '100%', height: '100%', cursor: 'pointer' }}
-          onClick={(e) => {
-            if (e.target.tagName === 'BUTTON') return;
-            // Se estiver em modo de criar caminho, adiciona ponto
-            if (isMestre && cidadeModoCriarCaminho && cidadeCaminhoAtivo) {
-              const rect = cidadeSvgRef.current?.getBoundingClientRect();
-              if (!rect) return;
-              const x = Math.round(e.clientX - rect.left);
-              const y = Math.round(e.clientY - rect.top);
-              const cidadeId = marcadorBalãoAberto.marcador.id;
-              const novos = { ...cidadeCaminhos };
-              const caminho = novos[cidadeId]?.find(c => c.id === cidadeCaminhoAtivo);
-              if (caminho) {
-                caminho.pontos.push({ x, y });
-                setCidadeCaminhos(novos);
-                setDoc(doc(db, "world", `Cidade_${cidadeId}`), { 
-                  marcadores: cidadeMarcadores[cidadeId] || [],
-                  caminhos: novos[cidadeId],
-                  svg: marcadorBalãoAberto.marcador.cidadeSvg
-                }, { merge: true });
-              }
-            } else {
-              // Modo normal: expande o mapa
-              setMapaExpandidoDados({
-                nome: marcadorBalãoAberto.nome,
-                svg: marcadorBalãoAberto.marcador?.cidadeSvg,
-                marcadorId: marcadorBalãoAberto.marcador?.id,
-              });
-              setMapaExpandidoOpen(true);
-            }
-          }} />
+                        <div 
+          ref={cidadeSvgRef} 
+          style={{ width: '100%', height: '100%', cursor: cidadeModoCriarCaminho ? 'crosshair' : 'grab' }}
+onContextMenu={(e) => {
+  e.preventDefault();
+  if (!isMestre) return;
+  
+  // 🟢 Usa a nova função de conversão
+  const coords = converterCoordenadasClique(e, cidadeSvgRef);
+  if (!coords) return;
+  
+  console.log('🎯 Coordenadas detectadas no mapa da cidade:', coords);
+  
+  if (cidadeModoCriarCaminho && cidadeCaminhoAtivo) {
+    // Modo rota: adiciona ponto com coordenadas corretas
+    const cidadeId = marcadorBalãoAberto.marcador.id;
+    const novos = JSON.parse(JSON.stringify(cidadeCaminhos));
+    const caminho = novos[cidadeId]?.find(c => c.id === cidadeCaminhoAtivo);
+    if (caminho) {
+      caminho.pontos.push({ x: coords.x, y: coords.y });
+      setCidadeCaminhos(novos);
+      
+      // Salva no Firestore
+      setDoc(doc(db, "world", `Cidade_${cidadeId}`), { 
+        marcadores: cidadeMarcadores[cidadeId] || [],
+        caminhos: novos[cidadeId]
+      }, { merge: true });
+      
+      console.log(`✅ Ponto adicionado à rota da cidade: ${coords.x}, ${coords.y}`);
+    }
+  } else {
+    // Modo normal: adiciona marcador com coordenadas corretas
+    setCidadeMarcadorX(coords.x);
+    setCidadeMarcadorY(coords.y);
+    setCidadeMarcadorNome("");
+    setCidadeMarcadorDescricao("");
+    setCidadeMarcadorIcone("📍");
+    setCidadeMarcadorEditando({ 
+      cidadeId: marcadorBalãoAberto.marcador.id, 
+      marcadorId: null 
+    });
+    setCidadeMarcadorDialogOpen(true);
+    setMarcadorBalãoAberto(null); // Fecha o balão para mostrar o modal
+  }
+}}
+        />
+            </Box>
+    )}
+    
+    {/* 🟢 ROTAS DA CIDADE (abaixo do mapa) */}
+    {marcadorBalãoAberto.marcador?.cidadeSvg && marcadorBalãoAberto.marcador?.id && (cidadeCaminhos[marcadorBalãoAberto.marcador.id] || []).length > 0 && (
+      <Box sx={{ mt: 1, borderTop: '1px solid #334155', pt: 1, maxHeight: 100, overflowY: 'auto' }}>
+        <Typography variant="caption" sx={{ color: '#00e0ff', display: 'block', mb: 0.5 }}>
+          📏 Rotas da Cidade
+        </Typography>
+        {(cidadeCaminhos[marcadorBalãoAberto.marcador.id] || []).map(caminho => (
+          <Box key={caminho.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 8, height: 8, bgcolor: caminho.cor, borderRadius: '50%' }} />
+              <Typography variant="caption" sx={{ color: '#fff', fontSize: '0.65rem' }}>{caminho.nome}</Typography>
+            </Box>
+            <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.6rem' }}>
+              {(calcularDistanciaTotal(caminho.pontos) * 10).toFixed(0)} m
+            </Typography>
+          </Box>
+        ))}
       </Box>
     )}
   </Box>
