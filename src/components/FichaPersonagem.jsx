@@ -9,6 +9,7 @@
   TextField,
   Typography,
   Slider,
+  LinearProgress,
   IconButton,
   Dialog,
   DialogTitle,
@@ -35,6 +36,26 @@ import { Divider } from "@mui/material";
 import remarkGfm from "remark-gfm";
 
   export default function FichaPersonagem({ user, fichaId, isMestre }) {
+    // 🟢 ESTILOS CSS PARA ANIMAÇÕES
+useEffect(() => {
+  const styleSheet = document.createElement("style");
+  styleSheet.textContent = `
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--glow-color); }
+      50% { box-shadow: 0 0 20px var(--glow-color), 0 0 40px var(--glow-color); }
+    }
+  `;
+  document.head.appendChild(styleSheet);
+  
+  return () => {
+    document.head.removeChild(styleSheet);
+  };
+}, []);
   const { hud } = useGame();
   const [ficha, setFicha] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,6 +64,13 @@ import remarkGfm from "remark-gfm";
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [modalAtributoNivel6Open, setModalAtributoNivel6Open] = useState(false);
+const [atributoParaNivel6, setAtributoParaNivel6] = useState(null);
+// 🟢 XP DE ATRIBUTOS E PERÍCIAS
+const [atributosXP, setAtributosXP] = useState({});
+const [periciasXP, setPericiasXP] = useState({});
+// 🟢 XP DE HABILIDADES AURANAS
+const [habilidadesXP, setHabilidadesXP] = useState({});
   // Pega o email do dono da ficha (se já carregada) ou do usuário logado
   const donoEmail = ficha?.dono || user?.email;
   // Usa o fichaId como email do jogador (que é como o FloatingHUD faz)
@@ -396,6 +424,38 @@ useEffect(() => {
     setTalentosSelecionados(talentosValidos);
   }
 }, [ficha]); // Dependência apenas de ficha, não de ficha.caracteristicas
+// 🟢 OUVIR EVENTO DE XP ATUALIZADO EM TEMPO REAL
+useEffect(() => {
+  const handleXpAtualizado = (event) => {
+    const { email, atributosXP } = event.detail;
+    if (email !== fichaId) return;
+    
+    console.log('📥 EVENTO RECEBIDO - dados:', atributosXP);
+    
+    // Atualiza os estados locais SOMANDO ao valor atual
+    Object.entries(atributosXP).forEach(([key, valor]) => {
+      if (key.startsWith('atributosXP.')) {
+        const atributo = key.replace('atributosXP.', '');
+        setAtributosXP(prev => {
+          const novo = { ...prev, [atributo]: valor };
+          console.log(`📥 Atributo ${atributo}: ${prev[atributo] || 0} → ${valor}`);
+          return novo;
+        });
+      }
+      if (key.startsWith('periciasXP.')) {
+        const pericia = key.replace('periciasXP.', '');
+        setPericiasXP(prev => {
+          const novo = { ...prev, [pericia]: valor };
+          console.log(`📥 Perícia ${pericia}: ${prev[pericia] || 0} → ${valor}`);
+          return novo;
+        });
+      }
+    });
+  };
+  
+  window.addEventListener('xpAtualizado', handleXpAtualizado);
+  return () => window.removeEventListener('xpAtualizado', handleXpAtualizado);
+}, [fichaId]);
 
 const calcularIdade = () => {
   if (!ficha?.idade) return "—";
@@ -541,7 +601,17 @@ useEffect(() => {
                 }))
               : [],
           };
-                    setFicha(combinado);
+setFicha(combinado);
+// 🟢 Carrega XP de atributos e perícias (SEMPRE, não só se existir)
+setAtributosXP(dados.atributosXP || {});
+setPericiasXP(dados.periciasXP || {});
+console.log('📥 FICHA ATUALIZADA - atributosXP:', dados.atributosXP, 'periciasXP:', dados.periciasXP);
+
+// 🟢 Carrega XP das habilidades (CORRIGIDO)
+const habilidadesXPCarregado = dados.habilidadesXP || {};
+console.log('📥 FICHA ATUALIZADA - habilidadesXP bruto:', JSON.stringify(dados.habilidadesXP));
+console.log('📥 TODAS as chaves do documento:', Object.keys(dados).filter(k => k.includes('habilidades')));
+setHabilidadesXP(habilidadesXPCarregado);
         } else {
           setDoc(ref, modelo);
           setFicha({ ...modelo });
@@ -559,27 +629,121 @@ useEffect(() => {
     function setCampo(chave, valor) {
       setFicha((p) => ({ ...p, [chave]: valor }));
     }
-    function setSubCampo(obj, chave, valor) {
-      setFicha((p) => ({ ...p, [obj]: { ...p[obj], [chave]: valor } }));
+ function setSubCampo(obj, chave, valor) {
+  setFicha((p) => {
+    const novoObj = { ...p[obj], [chave]: valor };
+    
+    // 🟢 ZERA XP se o jogador usou pontos manualmente
+    if (obj === 'atributos') {
+      setAtributosXP(prev => ({ ...prev, [chave]: 0 }));
+      // Salva no Firestore
+      const ref = doc(db, "fichas", fichaId);
+      setDoc(ref, { 
+        [`atributos.${chave}`]: valor,
+        [`atributosXP.${chave}`]: 0 
+      }, { merge: true });
     }
-
-        function adicionarHabilidade() {
-  setFicha((p) => ({
-    ...p,
-    habilidades: [
-      ...(p.habilidades || []),
-      { 
-        nome: "", 
-        descricao: "", 
-        condicoes: [],      // 🟢 Agora é array de objetos, não string
-        dado: 1, 
-        tipoDano: "Aurano",
-        custoPE: 0,           // 🟢 Novo campo
-        imagem: ""
-      },
-    ],
-  }));
+    if (obj === 'pericias') {
+      setPericiasXP(prev => ({ ...prev, [chave]: 0 }));
+      const ref = doc(db, "fichas", fichaId);
+      setDoc(ref, { 
+        [`pericias.${chave}`]: valor,
+        [`periciasXP.${chave}`]: 0 
+      }, { merge: true });
+    }
+    
+    return { ...p, [obj]: novoObj };
+  });
 }
+// 🟢 FUNÇÃO PARA GANHAR XP AO USAR HABILIDADE
+const ganharXPHabilidade = async (indice) => {
+  const hab = ficha.habilidades[indice];
+  if (!hab) return;
+  
+  const dadoAtual = Number(hab.dado) || 1;
+  
+  // Se já está no máximo (10), não faz nada
+  if (dadoAtual >= 10) {
+    console.log('⚠️ Habilidade já está no nível máximo (10)');
+    return;
+  }
+  
+  const xpKey = `hab_${indice}`;
+  const xpAtual = habilidadesXP[xpKey] || 0;
+  const xpGanho = 3;
+  const novoXP = xpAtual + xpGanho;
+  
+  // Custo progressivo: nível 1→2 = 100, 2→3 = 200, 3→4 = 300...
+  const xpNecessario = dadoAtual * 100;
+  
+  console.log(`🎯 Habilidade "${hab.nome}": ${xpAtual}/${xpNecessario} XP (+${xpGanho})`);
+  
+  if (novoXP >= xpNecessario) {
+    // 🟢 SUBIU DE NÍVEL!
+    const xpRestante = novoXP - xpNecessario;
+    const novoDado = dadoAtual + 1;
+    
+    console.log(`⬆️ SUBIU PARA NÍVEL ${novoDado}! XP restante: ${xpRestante}`);
+    
+    // Atualiza XP local
+    setHabilidadesXP(prev => ({ ...prev, [xpKey]: xpRestante }));
+    
+    // Atualiza o dado da habilidade
+    atualizarHabilidade(indice, 'dado', novoDado);
+    
+    // Salva no Firestore
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, {
+      habilidades: ficha.habilidades.map((h, i) => 
+        i === indice ? { ...h, dado: novoDado } : h
+      ),
+      [`habilidadesXP.hab_${indice}`]: xpRestante
+    }, { merge: true });
+    
+    alert(`⬆️ "${hab.nome || 'Habilidade'}" subiu para o nível ${novoDado}! 🎉`);
+  } else {
+    // Apenas acumula XP
+    setHabilidadesXP(prev => ({ ...prev, [xpKey]: novoXP }));
+    
+    // Salva no Firestore
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, {
+      [`habilidadesXP.hab_${indice}`]: novoXP
+    }, { merge: true });
+  }
+};
+// 🟢 VERIFICAR SE ATRIBUTO/PERÍCIA DEVE SUBIR DE NÍVEL POR XP
+const verificarSubirNivel = (tipo, chave, valorAtual) => {
+  const xpMap = tipo === 'atributo' ? atributosXP : periciasXP;
+  const xpAtual = xpMap[chave] || 0;
+  
+  // Perícias: 0-100 para cada nível
+  // Atributos: 100, 200, 300, 400, 500...
+  const xpNecessario = tipo === 'pericia' 
+    ? 100 
+    : valorAtual * 100;
+  
+  if (xpAtual >= xpNecessario && valorAtual < 5) {
+    // Sobe de nível
+    const novoValor = valorAtual + 1;
+    const novoXP = tipo === 'pericia' ? xpAtual - 100 : xpAtual - xpNecessario;
+    
+    if (tipo === 'atributo') {
+      setSubCampo('atributos', chave, novoValor);
+      setAtributosXP(prev => ({ ...prev, [chave]: novoXP }));
+    } else {
+      setSubCampo('pericias', chave, novoValor);
+      setPericiasXP(prev => ({ ...prev, [chave]: novoXP }));
+    }
+    
+    // Salva no Firestore
+    const ref = doc(db, "fichas", fichaId);
+    const atualizacao = {};
+    atualizacao[`${tipo}s.${chave}`] = novoValor;
+    atualizacao[`${tipo}sXP.${chave}`] = novoXP;
+    setDoc(ref, atualizacao, { merge: true });
+  }
+};
     function atualizarHabilidade(i, campo, valor) {
       setFicha((p) => {
         const arr = [...(p.habilidades || [])];
@@ -1119,6 +1283,9 @@ const abrirModalDado = (item, tipo) => {
         Object.entries(ficha.pericias || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
       ),
       moedas: Number(ficha.moedas || 0),
+        atributosXP: atributosXP,
+  periciasXP: periciasXP,
+  habilidadesXP: habilidadesXP,
     };
     await setDoc(ref, toSave, { merge: true });
     alert("Ficha salva com sucesso!");
@@ -1653,6 +1820,50 @@ const comprarInventarioSecundario = async (tamanho, custo, slots) => {
   } catch (error) {
     console.error("Erro ao comprar inventário:", error);
     alert("Erro ao processar compra.");
+  }
+};
+// 🟢 COMPRAR INVENTÁRIO COM PONTOS DE PERÍCIA
+const comprarComPP = async (tamanho, custoPP, slots) => {
+  if (pontosPericiaRestantes < custoPP) {
+    alert(`P.P insuficientes! Necessário: ${custoPP} | Disponível: ${pontosPericiaRestantes}`);
+    return;
+  }
+  
+  try {
+    const numeroInventario = inventariosSecundarios.length + 2;
+    const nomeAutomatico = `Inventário ${numeroInventario}`;
+    const nomeExiste = inventariosSecundarios.some(inv => inv.nome === nomeAutomatico);
+    const nomeFinal = nomeExiste ? `Inventário ${numeroInventario + 1}` : nomeAutomatico;
+    
+    const novoInventario = {
+      id: Date.now(),
+      nome: nomeFinal,
+      slots: slots,
+      itens: []
+    };
+    
+    const novosInventarios = [...inventariosSecundarios, novoInventario];
+    setInventariosSecundarios(novosInventarios);
+    
+    // Desconta P.P da primeira perícia com pontos
+    let restante = custoPP;
+    const novasPericias = { ...ficha.pericias };
+    for (const [k, v] of Object.entries(novasPericias)) {
+      if (restante <= 0) break;
+      if (v >= restante) { novasPericias[k] = v - restante; restante = 0; }
+      else { restante -= v; novasPericias[k] = 0; }
+    }
+    
+    setFicha(prev => ({ ...prev, pericias: novasPericias }));
+    
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, { inventariosSecundarios: novosInventarios, pericias: novasPericias }, { merge: true });
+    
+    alert(`✅ ${nomeFinal} comprado! ${slots} slots por ${custoPP} P.P`);
+    setModalComprarInventarioOpen(false);
+  } catch (error) {
+    console.error("Erro:", error);
+    alert("Erro ao comprar.");
   }
 };
 // 🟢 FUNÇÃO PARA TRANSFERIR ITEM DO INVENTÁRIO PRINCIPAL PARA SECUNDÁRIO
@@ -2262,86 +2473,215 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     justifyContent="space-between"
     alignItems="center"
     sx={{
-      borderBottom: "2px solid #00e0ff",
+      borderBottom: "2px solid #a855f7",
       pb: 1,
       mb: 1,
     }}
   >
-    <Typography component="div" sx={{ fontWeight: "bold" }}>
-      {LABELS.atributosTitulo}
-    </Typography>
+<Typography component="div" sx={{ fontWeight: "bold", color: '#a855f7', fontSize: '1.1rem',  }}>
+  💠 {LABELS.atributosTitulo}
+</Typography>
 
-    <Typography sx={{ fontWeight: "bold", color: "#00e0ff" }}>
+<Typography sx={{ fontWeight: "bold", color: "#a855f7" }}>
   Pontos de Atributo: {pontosAtributoRestantes}
 </Typography>
   </Box>
-              {Object.entries(ficha.atributos).map(([k, v]) => (
-                <Box key={k} sx={{ mb: 1 }}>
-                  <Typography component="div" sx={{ fontSize: 14 }}>{LABEL_MAP[k] || k}</Typography>
-                  <Slider
-  value={Number(v || 1)}
-  min={0}
-  max={5}
-  step={1}
-  onChange={(e, val) => {
-  // Não deixa ir abaixo de 1
-  if (val < 1) return;
+ {Object.entries(ficha.atributos).map(([k, v]) => {
+  const valorAtual = Number(v || 1);
+  const temNivel6 = valorAtual === 6;
+  const temNivel5 = valorAtual === 5;
+  const xpAtual = atributosXP?.[k] || 0;
+  const xpMaximo = valorAtual * 100;
+  const xpPercent = Math.min(100, (xpAtual / xpMaximo) * 100);
   
-  const atual = Number(v || 1);
-  const diferenca = val - atual;
+  // Cores por atributo
+  const coresAtributos = {
+    forca: '#ef4444',
+    destreza: '#22c55e',
+    agilidade: '#3b82f6',
+    constituicao: '#f97316',
+    inteligencia: '#e5e5e5',
+    vontade: '#facc15',
+  };
   
-  // Se está tentando DIMINUIR (val < atual)
-  if (diferenca < 0) {
-    // Só permite diminuir se:
-    // 1. É o mestre
-    // 2. OU a checkbox "permitirRedistribuirPontos" está marcada
-    if (!isMestre && !ficha?.permitirRedistribuirPontos) {
-      return; // Bloqueia a diminuição
-    }
-  }
+  // Emojis por atributo
+  const emojisAtributos = {
+    forca: '💪',
+    destreza: '🎯',
+    agilidade: '🏃',
+    constituicao: '🛡️',
+    inteligencia: '🧠',
+    vontade: '🔥',
+  };
   
-  // Se está tentando AUMENTAR
-  if (diferenca > 0) {
-    let custo = 0;
-    for (let i = atual + 1; i <= val; i++) {
-      custo += (i - 1);
-    }
-    
-    if (pontosAtributoRestantes < custo) return;
-  }
+  const corAtributo = coresAtributos[k] || '#00e0ff';
+  const emojiAtributo = emojisAtributos[k] || '⭐';
   
-  setSubCampo("atributos", k, val);
-}}
-  valueLabelDisplay="auto"
-/>
-                </Box>
-              ))}
+  return (
+    <Box key={k} sx={{ mb: 1.5 }}>
+      <Typography component="div" sx={{ fontSize: 14, display: 'flex', alignItems: 'center' }}>
+        <span style={{ marginRight: 6 }}>{emojiAtributo}</span>
+        {LABEL_MAP[k] || k}
+        {temNivel5 && !temNivel6 && (
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setAtributoParaNivel6(k);
+              setModalAtributoNivel6Open(true);
+            }}
+            sx={{ color: '#ffd700', ml: 0.5, p: 0, fontSize: '1rem' }}
+            title="Despertar potencial divino (2 P.A + 3 P.P)"
+          >
+            ⭐
+          </IconButton>
+        )}
+        {temNivel6 && (
+          <span style={{ color: '#ffd700', fontWeight: 'bold', marginLeft: 8, fontSize: '0.8rem' }}>
+            ✨ DIVINO ✨
+          </span>
+        )}
+      </Typography>
+      
+      {/* Barra de nível */}
+      <Box sx={{ position: 'relative', height: 24, display: 'flex', alignItems: 'center' }}>
+        <Slider
+          value={Math.min(valorAtual, 5)}
+          min={0}
+          max={5}
+          step={1}
+          onChange={(e, val) => {
+            if (val < 1) return;
+            const atual = Number(v || 1);
+            const diferenca = val - Math.min(atual, 5);
+            if (diferenca < 0) {
+              if (!isMestre && !ficha?.permitirRedistribuirPontos) return;
+              if (temNivel6) { setSubCampo("atributos", k, 5); return; }
+            }
+            if (diferenca > 0) {
+              let custo = 0;
+              for (let i = Math.min(atual, 5) + 1; i <= val; i++) { custo += (i - 1); }
+              if (pontosAtributoRestantes < custo) return;
+              setSubCampo("atributos", k, val);
+              return;
+            }
+            setSubCampo("atributos", k, val);
+          }}
+          valueLabelDisplay="auto"
+          sx={{
+            '& .MuiSlider-thumb': { 
+              display: temNivel6 ? 'none' : 'block',
+              bgcolor: corAtributo,
+              border: `2px solid ${corAtributo}`,
+              boxShadow: `0 0 8px ${corAtributo}`,
+            },
+            '& .MuiSlider-track': {
+              background: temNivel6 ? 'linear-gradient(90deg, #ffd700, #ffaa00)' : corAtributo,
+              boxShadow: temNivel6 ? '0 0 10px #ffd700' : `0 0 6px ${corAtributo}44`,
+            },
+            '& .MuiSlider-rail': { background: `${corAtributo}44` },
+          }}
+        />
+        {temNivel6 && (
+          <Typography sx={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', color: '#ffd700', fontWeight: 'bold', fontSize: '1.2rem', textShadow: '0 0 10px #ffd700' }}>
+            ★
+          </Typography>
+        )}
+      </Box>
+      
+      {/* Barra de XP */}
+      <Box sx={{ position: 'relative', mt: 0.3 }}>
+        <LinearProgress 
+          variant="determinate" 
+          value={xpPercent}
+          sx={{ 
+            height: 8, 
+            borderRadius: 4, 
+            backgroundColor: `${corAtributo}22`,
+            '& .MuiLinearProgress-bar': { 
+              backgroundColor: corAtributo,
+              boxShadow: `0 0 6px ${corAtributo}66`
+            }
+          }} 
+        />
+        <Typography 
+          sx={{ 
+            position: 'absolute', 
+            inset: 0, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            fontSize: 8, 
+            fontWeight: 700, 
+            pointerEvents: 'none',
+            color: '#fff',
+            textShadow: '0 0 3px rgba(0,0,0,0.9)'
+          }}
+        >
+          {xpAtual}/{xpMaximo} XP
+        </Typography>
+      </Box>
+    </Box>
+  );
+})}
             </Box>
 
-            <Box mt={2}>
+             <Box mt={2}>
   <Box
     display="flex"
     justifyContent="space-between"
     alignItems="center"
     sx={{
-      borderBottom: "2px solid #00e0ff",
+      borderBottom: "2px solid #c0c0c0",
       pb: 1,
       mb: 1,
     }}
   >
-    <Typography component="div" sx={{ fontWeight: "bold" }}>
-      {LABELS.periciasTitulo}
+    <Typography component="div" sx={{ fontWeight: "bold", color: '#c0c0c0', fontSize: '1.1rem' }}>
+      📖 {LABELS.periciasTitulo}
     </Typography>
 
-    <Typography sx={{ fontWeight: "bold", color: "#00e0ff" }}>
-      Pontos de Perícia: {pontosPericiaRestantes}
-    </Typography>
+<Typography sx={{ fontWeight: "bold", color: "#c0c0c0" }}>
+  Pontos de Perícia: {pontosPericiaRestantes}
+</Typography>
   </Box>
-              {Object.entries(ficha.pericias).map(([k, v]) => (
-                <Box key={k} sx={{ mb: 1 }}>
-                  <Typography component="div" sx={{ fontSize: 14 }}>{LABEL_MAP[k] || k}</Typography>
-                 <Slider
-  value={Number(v || 0)}
+              {Object.entries(ficha.pericias).map(([k, v]) => {
+  const valorAtual = Number(v || 0);
+  const xpAtual = periciasXP?.[k] || 0;
+  const xpMaximo = 100;
+  const xpPercent = Math.min(100, (xpAtual / xpMaximo) * 100);
+  
+  const coresPericias = {
+    atletismo: '#ef4444', luta: '#ef4444', armaBranca: '#ef4444',
+    armaDistancia: '#22c55e',
+    furtividade: '#3b82f6',
+    sobrevivencia: '#f97316',
+    conhecimento: '#e5e5e5', medicina: '#e5e5e5', natureza: '#e5e5e5',
+    percepcao: '#e5e5e5', investigacao: '#e5e5e5', labia: '#e5e5e5', performance: '#e5e5e5',
+    intimidacao: '#facc15', aura: '#facc15',
+  };
+  
+  const emojisPericias = {
+    atletismo: '🏋️', luta: '🥊', armaBranca: '⚔️',
+    armaDistancia: '🏹',
+    furtividade: '🥷',
+    sobrevivencia: '🏕️',
+    conhecimento: '📚', medicina: '💊', natureza: '🌿',
+    percepcao: '👁️', investigacao: '🔍', labia: '🗣️', performance: '🎭',
+    intimidacao: '😠', aura: '✨',
+  };
+  
+  const corPericia = coresPericias[k] || '#00e0ff';
+  const emojiPericia = emojisPericias[k] || '📖';
+  
+  return (
+    <Box key={k} sx={{ mb: 1.5 }}>
+      <Typography component="div" sx={{ fontSize: 14, display: 'flex', alignItems: 'center' }}>
+        <span style={{ marginRight: 6 }}>{emojiPericia}</span>
+        {LABEL_MAP[k] || k}
+      </Typography>
+      <Slider
+  value={valorAtual}
   min={0}
   max={5}
   step={1}
@@ -2354,23 +2694,63 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
   onChange={(e, val) => {
   const atual = Number(v || 0);
   const diferenca = val - atual;
-  
-  // Se está tentando DIMINUIR
   if (diferenca < 0) {
-    if (!isMestre && !ficha?.permitirRedistribuirPontos) {
-      return; // Bloqueia a diminuição
-    }
+    if (!isMestre && !ficha?.permitirRedistribuirPontos) return;
   }
-  
-  // Se está tentando AUMENTAR
   if (diferenca > 0 && pontosPericiaRestantes < diferenca) return;
-  
   setSubCampo("pericias", k, val);
 }}
   valueLabelDisplay="auto"
+sx={{
+  '& .MuiSlider-track': {
+    background: corPericia,
+    boxShadow: `0 0 6px ${corPericia}44`,
+  },
+  '& .MuiSlider-rail': { background: `${corPericia}44` },
+  '& .MuiSlider-thumb': { 
+    bgcolor: corPericia,
+    border: `2px solid ${corPericia}`,
+    boxShadow: `0 0 8px ${corPericia}`,
+    '&:hover': { boxShadow: `0 0 0 8px ${corPericia}33` },
+    '&.Mui-active': { boxShadow: `0 0 0 14px ${corPericia}33` },
+    '&.Mui-disabled': { bgcolor: `${corPericia}88`, border: `2px solid ${corPericia}44` }
+  },
+}}
 />
-                </Box>
-              ))}
+      <Box sx={{ position: 'relative', mt: 0.3 }}>
+        <LinearProgress 
+          variant="determinate" 
+          value={xpPercent}
+          sx={{ 
+            height: 8, 
+            borderRadius: 4, 
+            backgroundColor: `${corPericia}22`,
+            '& .MuiLinearProgress-bar': { 
+              backgroundColor: corPericia,
+              boxShadow: `0 0 6px ${corPericia}66`
+            }
+          }} 
+        />
+        <Typography 
+          sx={{ 
+            position: 'absolute', 
+            inset: 0, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            fontSize: 8, 
+            fontWeight: 700, 
+            pointerEvents: 'none',
+            color: '#fff',
+            textShadow: '0 0 3px rgba(0,0,0,0.9)'
+          }}
+        >
+          {xpAtual}/{xpMaximo} XP
+        </Typography>
+      </Box>
+    </Box>
+  );
+})}
             </Box>
             {/* 🟢 NOVA SEÇÃO DE HABILIDADES - BOTÃO QUE ABRE MODAL */}
 <Box mt={2}>
@@ -3339,7 +3719,65 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           <Button variant="contained" onClick={realizarPagamento} sx={{ bgcolor: '#ff9800' }}>Pagar</Button>
         </DialogActions>
       </Dialog>
-
+{/* 🟢 MODAL NÍVEL 6 DE ATRIBUTO */}
+<Dialog 
+  open={modalAtributoNivel6Open} 
+  onClose={() => setModalAtributoNivel6Open(false)}
+  maxWidth="xs"
+  fullWidth
+  PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff', border: '2px solid #ffd700' } }}
+>
+  <DialogTitle sx={{ textAlign: 'center', color: '#ffd700' }}>
+    ⭐ Despertar Potencial Divino ⭐
+  </DialogTitle>
+  <DialogContent>
+    <Box sx={{ textAlign: 'center', py: 2 }}>
+      <Typography variant="h2" sx={{ mb: 2 }}>✨</Typography>
+      <Typography sx={{ mb: 2 }}>
+        Alcançar o <strong style={{ color: '#ffd700' }}>Nível 6</strong> em <strong>{LABEL_MAP[atributoParaNivel6] || atributoParaNivel6}</strong>?
+      </Typography>
+<Typography sx={{ color: '#ffd700', fontWeight: 'bold', mb: 1 }}>
+  Custo: 2 Pontos de Atributo + 3 Pontos de Perícia
+</Typography>
+<Typography variant="caption" sx={{ color: '#94a3b8' }}>
+  P.A: {pontosAtributoRestantes} | P.P: {pontosPericiaRestantes}
+</Typography>
+{(pontosAtributoRestantes < 2 || pontosPericiaRestantes < 3) && (
+        <Typography sx={{ color: '#f44336', mt: 1 }}>
+          ⚠️ Pontos insuficientes!
+        </Typography>
+      )}
+    </Box>
+  </DialogContent>
+  <DialogActions sx={{ justifyContent: 'center', pb: 2 }}>
+    <Button onClick={() => setModalAtributoNivel6Open(false)} sx={{ color: '#94a3b8' }}>
+      Cancelar
+    </Button>
+<Button 
+  variant="contained"
+  disabled={pontosAtributoRestantes < 2 || pontosPericiaRestantes < 3}
+  onClick={() => {
+    if (pontosAtributoRestantes >= 2 && pontosPericiaRestantes >= 3 && atributoParaNivel6) {
+      setSubCampo("atributos", atributoParaNivel6, 6);
+      // Desconta 3 P.P das perícias
+      let restante = 3;
+      const novasPericias = { ...ficha.pericias };
+      for (const [k, v] of Object.entries(novasPericias)) {
+        if (restante <= 0) break;
+        if (v >= restante) { novasPericias[k] = v - restante; restante = 0; }
+        else { restante -= v; novasPericias[k] = 0; }
+      }
+      setFicha(prev => ({ ...prev, pericias: novasPericias }));
+    }
+        setModalAtributoNivel6Open(false);
+        setAtributoParaNivel6(null);
+      }}
+      sx={{ bgcolor: '#ffd700', color: '#000', fontWeight: 'bold' }}
+    >
+      SIM!
+    </Button>
+  </DialogActions>
+</Dialog>
 {/* Modal de Talentos */}
 <Dialog 
   open={modalTalentosOpen} 
@@ -5159,96 +5597,145 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
           overflow: 'hidden'
         }}
       >
-        {/* ========== CABEÇALHO RECOLHIDO ========== */}
-        <Box
-          onClick={() => setHabilidadeExpandida(habilidadeExpandida === i ? null : i)}
-          sx={{
-            p: 2,
-            cursor: 'pointer',
-            display: 'flex',
-            gap: 2,
-            alignItems: 'center',
-            bgcolor: habilidadeExpandida === i ? `${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22` : 'transparent',
-            transition: 'all 0.2s',
-            '&:hover': {
-              bgcolor: `${CORES_AURA[ficha.tipoAura] || "#00e0ff"}11`
-            }
-          }}
-        >
-          {/* 🟢 IMAGEM QUADRADA (RECOLHIDA) */}
-          <Box
-            sx={{
-              width: 60,
-              height: 60,
-              minWidth: 60,
-              borderRadius: 1,
-              overflow: 'hidden',
-              border: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}44`,
-              bgcolor: '#0f172a',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: h.imagem ? 'pointer' : 'default'
-            }}
-            onClick={(e) => {
-              if (h.imagem) {
-                e.stopPropagation();
-                setLightboxSrc(h.imagem);
-                setZoom(1);
-                setLightboxOpen(true);
-              }
-            }}
-          >
-            {h.imagem ? (
-              <img 
-                src={h.imagem} 
-                alt={h.nome || "Habilidade"}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            ) : (
-              <Typography sx={{ fontSize: '1.5rem', opacity: 0.4 }}>⚡</Typography>
-            )}
-          </Box>
+ {/* ========== CABEÇALHO RECOLHIDO ========== */}
+<Box
+  onClick={() => setHabilidadeExpandida(habilidadeExpandida === i ? null : i)}
+  sx={{
+    p: 2,
+    cursor: 'pointer',
+    bgcolor: habilidadeExpandida === i ? `${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22` : 'transparent',
+    transition: 'all 0.2s',
+    '&:hover': {
+      bgcolor: `${CORES_AURA[ficha.tipoAura] || "#00e0ff"}11`
+    }
+  }}
+>
+  {/* LINHA SUPERIOR: Imagem + Info + Seta */}
+  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+    {/* 🟢 IMAGEM QUADRADA (RECOLHIDA) */}
+    <Box
+      sx={{
+        width: 60,
+        height: 60,
+        minWidth: 60,
+        borderRadius: 1,
+        overflow: 'hidden',
+        border: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}44`,
+        bgcolor: '#0f172a',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: h.imagem ? 'pointer' : 'default'
+      }}
+      onClick={(e) => {
+        if (h.imagem) {
+          e.stopPropagation();
+          setLightboxSrc(h.imagem);
+          setZoom(1);
+          setLightboxOpen(true);
+        }
+      }}
+    >
+      {h.imagem ? (
+        <img 
+          src={h.imagem} 
+          alt={h.nome || "Habilidade"}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        <Typography sx={{ fontSize: '1.5rem', opacity: 0.4 }}>⚡</Typography>
+      )}
+    </Box>
 
-          {/* INFO DA HABILIDADE */}
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h6" sx={{ color: '#fff', fontWeight: 'bold' }}>
-              {h.nome || `Habilidade ${i + 1}`}
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap' }}>
-              <Chip 
-                label={`🎲 ${h.dado || 1}d10`}
-                size="small"
-                sx={{ bgcolor: '#0f172a', color: '#fff' }}
-              />
-              <Chip 
-                label={`⚡ PE: ${h.custoPE || 0}`}
-                size="small"
-                sx={{ bgcolor: '#0f172a', color: '#facc15' }}
-              />
-              <Chip 
-                label={h.tipoDano || "Aurano"}
-                size="small"
-                sx={{ 
-                  bgcolor: '#0f172a', 
-                  color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff'
-                }}
-              />
-              {h.condicoes && h.condicoes.length > 0 && (
-                <Chip 
-                  label={`📜 ${h.condicoes.length} condição(ões)`}
-                  size="small"
-                  sx={{ bgcolor: '#0f172a', color: '#94a3b8' }}
-                />
-              )}
-            </Box>
-          </Box>
+    {/* INFO DA HABILIDADE */}
+    <Box sx={{ flex: 1 }}>
+      <Typography variant="h6" sx={{ color: '#fff', fontWeight: 'bold' }}>
+        {h.nome || `Habilidade ${i + 1}`}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap' }}>
+        <Chip 
+          label={`🎲 ${h.dado || 1}d10`}
+          size="small"
+          sx={{ bgcolor: '#0f172a', color: '#fff' }}
+        />
+        <Chip 
+          label={`⚡ PE: ${h.custoPE || 0}`}
+          size="small"
+          sx={{ bgcolor: '#0f172a', color: '#facc15' }}
+        />
+        <Chip 
+          label={h.tipoDano || "Aurano"}
+          size="small"
+          sx={{ 
+            bgcolor: '#0f172a', 
+            color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff'
+          }}
+        />
+        {h.condicoes && h.condicoes.length > 0 && (
+          <Chip 
+            label={`📜 ${h.condicoes.length} condição(ões)`}
+            size="small"
+            sx={{ bgcolor: '#0f172a', color: '#94a3b8' }}
+          />
+        )}
+      </Box>
+    </Box>
+    
+    <Typography sx={{ color: '#94a3b8', fontSize: '1.5rem' }}>
+      {habilidadeExpandida === i ? '▼' : '▶'}
+    </Typography>
+  </Box>
+
+  {/* 🟢 BARRA DE XP (VERSÃO RECOLHIDA) - FORA do flex, ocupa 100% */}
+  {(() => {
+    const dadoAtual = Number(h.dado) || 1;
+    const xpKey = `hab_${i}`;
+    const xpAtual = habilidadesXP[xpKey] || 0;
+    const xpMaximo = dadoAtual * 100;
+    const xpPercent = dadoAtual >= 10 ? 100 : Math.min(100, (xpAtual / xpMaximo) * 100);
+    const corAura = CORES_AURA[ficha.tipoAura] || "#00e0ff";
+    
+    return (
+      <Box sx={{ mt: 1.5, width: '100%' }}>
+        <Box sx={{ 
+          position: 'relative', 
+          height: 14, 
+          bgcolor: `${corAura}22`, 
+          borderRadius: 7, 
+          overflow: 'hidden',
+          border: `1px solid ${corAura}44`,
+          ...(dadoAtual >= 10 ? { boxShadow: `0 0 12px ${corAura}, 0 0 24px ${corAura}88` } : {})
+        }}>
+          <Box sx={{ 
+            width: `${xpPercent}%`,
+            height: '100%',
+            bgcolor: corAura,
+            borderRadius: 7,
+            transition: 'width 0.5s ease',
+            ...(dadoAtual >= 10 ? { 
+              animation: 'pulse 1.5s infinite'
+            } : { boxShadow: `0 0 6px ${corAura}66` })
+          }} />
           
-          <Typography sx={{ color: '#94a3b8', fontSize: '1.5rem' }}>
-            {habilidadeExpandida === i ? '▼' : '▶'}
+          <Typography sx={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            color: '#fff',
+            textShadow: '0 0 3px rgba(0,0,0,0.9)',
+            pointerEvents: 'none'
+          }}>
+            {dadoAtual >= 10 ? '✨ NÍVEL MÁXIMO ✨' : `${xpAtual}/${xpMaximo} XP`}
           </Typography>
         </Box>
-
+      </Box>
+    );
+  })()}
+</Box>
         {/* ========== CONTEÚDO EXPANDIDO ========== */}
         {habilidadeExpandida === i && (
           <Box sx={{ p: 3, borderTop: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22` }}>
@@ -5385,98 +5872,121 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
             </Box>
               </Box>
             </Box>
-
-                        {/* Grid: Dado, Custo PE, Tipo Dano */}
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={4}>
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                  <TextField
-                    fullWidth
-                    label="Dado (1-10)"
-                    type="number"
-                    value={h.dado || 1}
-                    onChange={(e) => {
-                      const val = Math.min(10, Math.max(1, Number(e.target.value) || 1));
-                      atualizarHabilidade(i, "dado", val);
-                    }}
-                    InputProps={{ 
-                      inputProps: { min: 1, max: 10 },
-                      style: { color: '#fff' }
-                    }}
-                    InputLabelProps={{ style: { color: '#94a3b8' } }}
-                  />
-                  <IconButton 
-                    onClick={() => gerarCampoComIA(i, "dado")}
-                    disabled={gerandoHabilidade}
-                    title="Gerar Dado"
-                    sx={{ color: '#ff9800', alignSelf: 'center', minWidth: 'auto' }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>🎲</span>
-                  </IconButton>
-                </Box>
-              </Grid>
-                            <Grid item xs={4}>
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                  <TextField
-                    fullWidth
-                    label="Custo de PE"
-                    type="number"
-                    value={h.custoPE || 0}
-                    onChange={(e) => {
-                      atualizarHabilidade(i, "custoPE", Number(e.target.value));
-                    }}
-                    InputProps={{ 
-                      inputProps: { min: 0 },
-                      style: { color: '#facc15' }
-                    }}
-                    InputLabelProps={{ style: { color: '#94a3b8' } }}
-                  />
-                  <IconButton 
-                    onClick={() => gerarCampoComIA(i, "custoPE")}
-                    disabled={gerandoHabilidade}
-                    title="Gerar Custo de PE"
-                    sx={{ color: '#ff9800', alignSelf: 'center', minWidth: 'auto' }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>🎲</span>
-                  </IconButton>
-                </Box>
-              </Grid>
-                            <Grid item xs={4}>
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                  <FormControl fullWidth>
-                    <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
-                    <Select
-                      value={h.tipoDano || "Aurano"}
-                      onChange={(e) => atualizarHabilidade(i, "tipoDano", e.target.value)}
-                      sx={{ 
-                        color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff',
-                      }}
-                      MenuProps={{
-                        PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff" } }
-                      }}
-                    >
-                      {TIPOS_DANO.map(td => (
-                        <MenuItem key={td.valor} value={td.valor}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: td.cor }} />
-                            <Typography sx={{ color: td.cor }}>{td.label}</Typography>
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <IconButton 
-                    onClick={() => gerarCampoComIA(i, "tipoDano")}
-                    disabled={gerandoHabilidade}
-                    title="Gerar Tipo de Dano"
-                    sx={{ color: '#ff9800', alignSelf: 'center', minWidth: 'auto' }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>🎲</span>
-                  </IconButton>
-                </Box>
-              </Grid>
-            </Grid>
-
+{/* Grid: Dado, Custo PE, Tipo Dano */}
+<Grid container spacing={2} sx={{ mb: 2 }}>
+  {/* CAMPO DADO */}
+  <Grid item xs={4}>
+    <TextField
+      fullWidth
+      size="small"
+      label={`Dado (Nível ${h.dado || 1}/10)`}
+      type="number"
+      value={h.dado || 1}
+      disabled={!isMestre}
+      onChange={(e) => {
+        if (!isMestre) return;
+        const val = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+        atualizarHabilidade(i, "dado", val);
+      }}
+      InputProps={{ 
+        inputProps: { min: 1, max: 10 },
+        style: { 
+          color: CORES_AURA[ficha.tipoAura] || "#00e0ff",
+          fontWeight: 'bold',
+          fontSize: '1.1rem',
+          textAlign: 'center'
+        },
+        readOnly: !isMestre,
+      }}
+      InputLabelProps={{ 
+        style: { color: '#94a3b8' },
+        shrink: true,
+      }}
+      sx={{
+        '& .MuiInputBase-root': {
+          height: '40px',
+        },
+        '& .MuiInputBase-input.Mui-disabled': {
+          WebkitTextFillColor: `${CORES_AURA[ficha.tipoAura] || "#00e0ff"} !important`,
+          opacity: 1,
+        }
+      }}
+    />
+  </Grid>
+  
+  {/* CAMPO CUSTO PE */}
+  <Grid item xs={4}>
+    <TextField
+      fullWidth
+      size="small"
+      label="Custo de PE"
+      type="number"
+      value={h.custoPE || 0}
+      onChange={(e) => {
+        atualizarHabilidade(i, "custoPE", Number(e.target.value));
+      }}
+      InputProps={{ 
+        inputProps: { min: 0 },
+        style: { color: '#facc15' }
+      }}
+      InputLabelProps={{ 
+        style: { color: '#94a3b8' },
+        shrink: true,
+      }}
+      sx={{
+        '& .MuiInputBase-root': {
+          height: '40px',
+        }
+      }}
+    />
+  </Grid>
+  
+  {/* CAMPO TIPO DANO */}
+  <Grid item xs={4}>
+    <FormControl fullWidth size="small">
+      <InputLabel 
+        sx={{ 
+          color: '#94a3b8',
+          '&.MuiInputLabel-shrink': {
+            color: '#94a3b8',
+          }
+        }}
+      >
+        Tipo de Dano
+      </InputLabel>
+      <Select
+        value={h.tipoDano || "Aurano"}
+        onChange={(e) => atualizarHabilidade(i, "tipoDano", e.target.value)}
+        sx={{ 
+          color: TIPOS_DANO.find(t => t.valor === (h.tipoDano || "Aurano"))?.cor || '#00e0ff',
+          '& .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#334155',
+          },
+          '& .MuiSelect-select': {
+            paddingTop: '8px',
+            paddingBottom: '8px',
+            height: '40px',
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'center',
+          }
+        }}
+        MenuProps={{
+          PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff" } }
+        }}
+      >
+        {TIPOS_DANO.map(td => (
+          <MenuItem key={td.valor} value={td.valor}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: td.cor }} />
+              <Typography sx={{ color: td.cor }}>{td.label}</Typography>
+            </Box>
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
+  </Grid>
+</Grid>
                         {/* Condições */}
             <Box sx={{ mb: 2 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -5802,38 +6312,40 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     
     <Grid container spacing={2}>
       {[
-        { tamanho: 'Pequeno', slots: 10, custo: 1000, cor: '#4caf50', desc: 'Ideal para itens pequenos' },
-        { tamanho: 'Médio', slots: 30, custo: 10000, cor: '#ff9800', desc: 'Bom para equipamentos extras' },
-        { tamanho: 'Grande', slots: 100, custo: 50000, cor: '#9c27b0', desc: 'Para colecionadores' },
+        { tamanho: 'Pequeno', slots: 10, custoMoedas: 1000, custoPP: 1, cor: '#4caf50', desc: 'Ideal para itens pequenos' },
+        { tamanho: 'Médio', slots: 30, custoMoedas: 10000, custoPP: 5, cor: '#ff9800', desc: 'Bom para equipamentos extras' },
+        { tamanho: 'Grande', slots: 100, custoMoedas: 50000, custoPP: 10, cor: '#9c27b0', desc: 'Para colecionadores' },
       ].map((opcao) => (
         <Grid item xs={12} key={opcao.tamanho}>
-          <Paper 
-            sx={{ 
-              p: 2, 
-              bgcolor: '#1a1a2e',
-              border: `1px solid ${opcao.cor}44`,
-              cursor: 'pointer',
-              '&:hover': { border: `2px solid ${opcao.cor}` }
-            }}
-            onClick={() => comprarInventarioSecundario(opcao.tamanho, opcao.custo, opcao.slots)}
-          >
+          <Paper sx={{ p: 2, bgcolor: '#1a1a2e', border: `1px solid ${opcao.cor}44` }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box>
                 <Typography variant="subtitle1" sx={{ color: opcao.cor, fontWeight: 'bold' }}>
                   {opcao.tamanho} (+{opcao.slots} slots)
                 </Typography>
-                <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                  {opcao.desc}
-                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8' }}>{opcao.desc}</Typography>
               </Box>
-              <Typography variant="h6" sx={{ color: '#facc15', fontWeight: 'bold' }}>
-                {opcao.custo.toLocaleString()} 💰
-              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button variant="contained" size="small"
+                  onClick={() => comprarInventarioSecundario(opcao.tamanho, opcao.custoMoedas, opcao.slots)}
+                  sx={{ bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}>
+                  💰 {opcao.custoMoedas.toLocaleString()}
+                </Button>
+                <Button variant="contained" size="small"
+                  disabled={pontosPericiaRestantes < opcao.custoPP}
+                  onClick={() => comprarComPP(opcao.tamanho, opcao.custoPP, opcao.slots)}
+                  sx={{ bgcolor: '#00e0ff', color: '#000', '&:hover': { bgcolor: '#00bcd4' } }}>
+                  P.P {opcao.custoPP}
+                </Button>
+              </Box>
             </Box>
           </Paper>
         </Grid>
       ))}
     </Grid>
+    <Typography variant="caption" sx={{ color: '#94a3b8', mt: 2, display: 'block', textAlign: 'center' }}>
+      💰 = Moedas | P.P = Pontos de Perícia (você tem {pontosPericiaRestantes})
+    </Typography>
   </DialogContent>
   <DialogActions>
     <Button onClick={() => setModalComprarInventarioOpen(false)} sx={{ color: '#94a3b8' }}>

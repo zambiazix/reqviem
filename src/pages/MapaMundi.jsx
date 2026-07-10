@@ -119,6 +119,12 @@ const [cidadeMarcadorIcone, setCidadeMarcadorIcone] = useState("📍");
 const [cidadeMarcadorEditando, setCidadeMarcadorEditando] = useState(null);
 const [cidadeEmojiPickerOpen, setCidadeEmojiPickerOpen] = useState(false);
 const [cidadeMarcadorBalãoAberto, setCidadeMarcadorBalãoAberto] = useState(null);
+const [balãoPosicao, setBalãoPosicao] = useState({ x: 0, y: 0 });
+const [arrastandoBalão, setArrastandoBalão] = useState(false);
+const [cidadeMarcadorDescricaoOpen, setCidadeMarcadorDescricaoOpen] = useState(false);
+const [cidadeDescricaoEditando, setCidadeDescricaoEditando] = useState(null);
+const [cidadeDescricaoTexto, setCidadeDescricaoTexto] = useState("");
+const balãoRef = useRef(null);
 const cidadeSvgRef = useRef(null);
 const cidadePanZoomRef = useRef(null);
 const converterCoordenadasClique = (e, containerRef) => {
@@ -356,9 +362,10 @@ const calcularDistanciaTotal = (pontos) => {
   const descEscaped = (m.descricao || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
   const icone = m.icone || "📍";
   const tipo = m.tipo || "local";
-  return `<circle cx="${m.x}" cy="${m.y}" r="${tipo === 'cidade' ? 16 : 12}" fill="transparent" stroke="transparent" stroke-width="0" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${tipo}')"/>
-  <text x="${m.x}" y="${m.y + 4}" fill="${tipo === 'cidade' ? '#ff9800' : '#fff'}" font-size="${tipo === 'cidade' ? 24 : 18}" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${icone}</text>
-  <text x="${m.x + (tipo === 'cidade' ? 20 : 14)}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
+return `<g transform="translate(${m.x},${m.y})" data-tx="${m.x}" data-ty="${m.y}" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${tipo}')">
+<text x="0" y="0" fill="${tipo === 'cidade' ? '#ff9800' : '#fff'}" font-size="48" text-anchor="middle" dominant-baseline="central" style="text-shadow:0 0 4px rgba(0,0,0,0.9);pointer-events:none">${icone}</text><circle cx="0" cy="0" r="24" fill="transparent" stroke="transparent"/>
+<text x="0" y="28" fill="#fff" font-size="22" font-weight="bold" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>
+</g>`;
 }).join('');
       decompressed = decompressed.replace('</svg>', `<g id="marcadores">${mSvg}</g></svg>`);
         // 🟢 INJETA CAMINHOS
@@ -378,7 +385,7 @@ const calcularDistanciaTotal = (pontos) => {
         <path d="${pathD}" 
           fill="none" 
           stroke="${caminho.cor || '#00e0ff'}" 
-          stroke-width="3" 
+          stroke-width="6" 
           stroke-dasharray="8,6" 
           stroke-linecap="round"
           opacity="0.8">
@@ -427,15 +434,71 @@ const calcularDistanciaTotal = (pontos) => {
       const svgEl = host.querySelector("svg");
       if (svgEl) {
         if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
-        panZoomRef.current = svgPanZoom(svgEl, {
-          zoomEnabled: true,
-          controlIconsEnabled: true,
-          fit: false,
-          center: false,
-          minZoom: 0.2,
-          maxZoom: 40,
-        });
-        
+panZoomRef.current = svgPanZoom(svgEl, {
+  zoomEnabled: true,
+  controlIconsEnabled: true,
+  fit: false,
+  center: false,
+  minZoom: 0.2,
+  maxZoom: 40,
+  onZoom: function() {
+    var zoom = this.getZoom();
+   var scale = Math.min(1 / zoom, 0.5);
+    var marcadores = document.querySelectorAll('#marcadores g');
+marcadores.forEach(function(g) {
+      var tx = g.getAttribute('data-tx') || '0';
+      var ty = g.getAttribute('data-ty') || '0';
+      g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+    });
+    var paths = document.querySelectorAll('#caminhos path');
+    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
+    var circles = document.querySelectorAll('#caminhos circle');
+    circles.forEach(function(c) {
+      var r = parseFloat(c.getAttribute('r') || 4);
+      c.setAttribute('r', r * scale);
+    });
+    var texts = document.querySelectorAll('#caminhos text');
+    texts.forEach(function(t) {
+      var fs = parseFloat(t.getAttribute('font-size') || 12);
+      t.setAttribute('font-size', fs * scale);
+    });
+  },
+  onPan: function() {
+    var zoom = this.getZoom();
+    var scale = Math.min(1 / zoom, 0.3);
+    var marcadores = document.querySelectorAll('#marcadores g');
+marcadores.forEach(function(g) {
+      var tx = g.getAttribute('data-tx') || '0';
+      var ty = g.getAttribute('data-ty') || '0';
+      g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+    });
+    var paths = document.querySelectorAll('#caminhos path');
+    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
+    var circles = document.querySelectorAll('#caminhos circle');
+    circles.forEach(function(c) {
+      var r = parseFloat(c.getAttribute('r') || 4);
+      c.setAttribute('r', r * scale);
+    });
+    var texts = document.querySelectorAll('#caminhos text');
+    texts.forEach(function(t) {
+      var fs = parseFloat(t.getAttribute('font-size') || 12);
+      t.setAttribute('font-size', fs * scale);
+    });
+  },
+});
+
+setTimeout(function() {
+  if (panZoomRef.current) {
+    var zoom = panZoomRef.current.getZoom();
+    var scale = Math.min(1 / zoom, 1);
+    var marcadores = document.querySelectorAll('#marcadores g');
+marcadores.forEach(function(g) {
+      var tx = g.getAttribute('data-tx') || '0';
+      var ty = g.getAttribute('data-ty') || '0';
+      g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+    });
+  }
+}, 100);
         // Restaura o zoom/pan anterior
         try {
           panZoomRef.current.zoom(currentZoom);
@@ -465,22 +528,20 @@ useEffect(() => {
     const listaCaminhos = cidadeCaminhos[cidadeId] || [];
     
     let elementosExtras = '';
-    
-    // Adiciona marcadores
-    if (listaMarcadores.length > 0) {
-      elementosExtras += listaMarcadores.map(m => {
-        const nomeEscaped = (m.nome || '').replace(/"/g, '&quot;');
-        return `
-          <g class="cidade-marcador" style="cursor:pointer">
-            <circle cx="${m.x}" cy="${m.y}" r="8" fill="transparent" stroke="#fff" stroke-width="1" opacity="0.7"/>
-            <text x="${m.x}" y="${m.y - 10}" fill="#fff" font-size="12" text-anchor="middle" 
-              style="text-shadow:0 0 2px rgba(0,0,0,0.9);pointer-events:none">${m.icone || '📍'}</text>
-            <text x="${m.x}" y="${m.y + 18}" fill="#fff" font-size="8" font-weight="bold" text-anchor="middle"
-              style="text-shadow:0 0 2px rgba(0,0,0,0.9);pointer-events:none">${nomeEscaped}</text>
+// Adiciona marcadores (APENAS ÍCONE + TÍTULO, SEM CÍRCULO)
+if (listaMarcadores.length > 0) {
+  elementosExtras += listaMarcadores.map(m => {
+    const nomeEscaped = (m.nome || '').replace(/"/g, '&quot;');
+    return `
+          <g class="cidade-marcador" data-tx="${m.x}" data-ty="${m.y}" style="cursor:pointer" onclick="window.__clickCidadeMarcador('${cidadeId}','${m.id}','${(m.nome || '').replace(/'/g, "\\'")}','${(m.descricao || '').replace(/'/g, "\\'")}','${m.x}','${m.y}')">
+<text x="0" y="0" fill="#ff9800" font-size="14" text-anchor="middle" dominant-baseline="central"
+  style="text-shadow:0 0 2px rgba(0,0,0,0.9);pointer-events:auto">${m.icone || '📍'}</text>
+<text x="0" y="16" fill="#fff" font-size="9" font-weight="bold" text-anchor="middle"
+  style="text-shadow:0 0 2px rgba(0,0,0,0.9);pointer-events:auto">${nomeEscaped}</text>
           </g>
         `;
-      }).join('');
-    }
+  }).join('');
+}
     
     // Adiciona caminhos/rotas
     if (listaCaminhos.length > 0) {
@@ -542,15 +603,62 @@ useEffect(() => {
     svgEl.style.width = "100%";
     svgEl.style.height = "100%";
     
-    cidadePanZoomRef.current = svgPanZoom(svgEl, {
-      zoomEnabled: true, 
-      controlIconsEnabled: true, 
-      fit: false, 
-      center: false,
-      minZoom: 0.2, 
-      maxZoom: 40,
-    });
-    
+cidadePanZoomRef.current = svgPanZoom(svgEl, {
+  zoomEnabled: true, 
+  controlIconsEnabled: true, 
+  fit: false, 
+  center: false,
+  minZoom: 0.2, 
+  maxZoom: 40,
+  onZoom: function() {
+    var zoom = this.getZoom();
+    var scale = Math.min(1 / zoom, 1);
+    var overlay = document.querySelector('#cidade-overlay');
+    if (overlay) {
+      // Marcadores - usa data-tx/data-ty como o mapa grande
+      overlay.querySelectorAll('.cidade-marcador').forEach(function(g) {
+        var tx = g.getAttribute('data-tx') || '0';
+        var ty = g.getAttribute('data-ty') || '0';
+        g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+      });
+      // Caminhos
+      overlay.querySelectorAll('.cidade-caminho path').forEach(function(p) { 
+        p.setAttribute('stroke-width', 2 * scale); 
+      });
+      overlay.querySelectorAll('.cidade-caminho circle').forEach(function(c) {
+        var r = parseFloat(c.getAttribute('r') || 3);
+        c.setAttribute('r', r * scale);
+      });
+      overlay.querySelectorAll('.cidade-caminho text').forEach(function(t) {
+        var fs = parseFloat(t.getAttribute('font-size') || 10);
+        t.setAttribute('font-size', fs * scale);
+      });
+    }
+  },
+  onPan: function() {
+    var zoom = this.getZoom();
+    var scale = Math.min(1 / zoom, 1);
+    var overlay = document.querySelector('#cidade-overlay');
+    if (overlay) {
+      overlay.querySelectorAll('.cidade-marcador').forEach(function(g) {
+        var tx = g.getAttribute('data-tx') || '0';
+        var ty = g.getAttribute('data-ty') || '0';
+        g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+      });
+      overlay.querySelectorAll('.cidade-caminho path').forEach(function(p) { 
+        p.setAttribute('stroke-width', 2 * scale); 
+      });
+      overlay.querySelectorAll('.cidade-caminho circle').forEach(function(c) {
+        var r = parseFloat(c.getAttribute('r') || 3);
+        c.setAttribute('r', r * scale);
+      });
+      overlay.querySelectorAll('.cidade-caminho text').forEach(function(t) {
+        var fs = parseFloat(t.getAttribute('font-size') || 10);
+        t.setAttribute('font-size', fs * scale);
+      });
+    }
+  },
+});
     // Restaura zoom/pan
     try {
       cidadePanZoomRef.current.zoom(currentZoom);
@@ -865,9 +973,10 @@ const loadSvgForMapComDados = async (mapId, caminhosDiretos) => {
         const nomeEscaped = m.nome.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const descEscaped = (m.descricao || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const icone = m.icone || "📍";
-        return `<circle cx="${m.x}" cy="${m.y}" r="12" fill="transparent" stroke="transparent" stroke-width="0" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${m.tipo || 'local'}')"/>
-        <text x="${m.x}" y="${m.y + 4}" fill="#fff" font-size="18" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${icone}</text>
-        <text x="${m.x + 14}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
+return `<g transform="translate(${m.x},${m.y})" data-tx="${m.x}" data-ty="${m.y}" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${m.tipo || 'local'}')">
+<text x="0" y="0" fill="#fff" font-size="48" text-anchor="middle" dominant-baseline="central" style="text-shadow:0 0 4px rgba(0,0,0,0.9);pointer-events:none">${icone}</text><circle cx="0" cy="0" r="24" fill="transparent" stroke="transparent"/>
+<text x="0" y="28" fill="#fff" font-size="22" font-weight="bold" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>
+</g>`;
       }).join('');
       decompressed = decompressed.replace('</svg>', `<g id="marcadores">${mSvg}</g></svg>`);
     }
@@ -896,7 +1005,7 @@ const loadSvgForMapComDados = async (mapId, caminhosDiretos) => {
         
         return `
           <path d="${pathD}" fill="none" stroke="${caminho.cor || '#00e0ff'}" 
-            stroke-width="3" stroke-dasharray="8,6" stroke-linecap="round" opacity="0.8">
+            stroke-width="6" stroke-dasharray="8,6" stroke-linecap="round" opacity="0.8">
             <title>${caminho.nome} - ${kmTotal} km</title>
           </path>
           ${caminho.pontos.map((p, i) => `
@@ -933,10 +1042,42 @@ const loadSvgForMapComDados = async (mapId, caminhosDiretos) => {
       const svgEl = host.querySelector("svg");
       if (svgEl) {
         if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
-        panZoomRef.current = svgPanZoom(svgEl, {
-          zoomEnabled: true, controlIconsEnabled: true,
-          fit: false, center: false, minZoom: 0.2, maxZoom: 40,
-        });
+panZoomRef.current = svgPanZoom(svgEl, {
+  zoomEnabled: true, controlIconsEnabled: true,
+  fit: false, center: false, minZoom: 0.2, maxZoom: 40,
+  onZoom: function() {
+    var zoom = this.getZoom();
+    var scale = Math.min(1 / zoom, 1);
+    var marcadores = document.querySelectorAll('#marcadores g');
+    marcadores.forEach(function(g) {
+  var tx = g.getAttribute('data-tx') || '0';
+  var ty = g.getAttribute('data-ty') || '0';
+  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+});
+    var paths = document.querySelectorAll('#caminhos path');
+    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
+    var circles = document.querySelectorAll('#caminhos circle');
+    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
+    var texts = document.querySelectorAll('#caminhos text');
+    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  },
+  onPan: function() {
+    var zoom = this.getZoom();
+    var scale = Math.min(1 / zoom, 1);
+    var marcadores = document.querySelectorAll('#marcadores g');
+    marcadores.forEach(function(g) {
+  var tx = g.getAttribute('data-tx') || '0';
+  var ty = g.getAttribute('data-ty') || '0';
+  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+});
+    var paths = document.querySelectorAll('#caminhos path');
+    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
+    var circles = document.querySelectorAll('#caminhos circle');
+    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
+    var texts = document.querySelectorAll('#caminhos text');
+    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  },
+});
         try {
           panZoomRef.current.zoom(currentZoom);
           panZoomRef.current.pan(currentPan);
@@ -997,9 +1138,10 @@ const loadSvgForMapComDadosMarcadores = async (mapId, marcadoresDiretos, caminho
         const nomeEscaped = m.nome.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const descEscaped = (m.descricao || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const icone = m.icone || "📍";
-        return `<circle cx="${m.x}" cy="${m.y}" r="12" fill="transparent" stroke="transparent" stroke-width="0" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${m.tipo || 'local'}')"/>
-        <text x="${m.x}" y="${m.y + 4}" fill="#fff" font-size="18" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${icone}</text>
-        <text x="${m.x + 14}" y="${m.y + 8}" fill="#fff" font-size="11" font-weight="bold" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>`;
+return `<g transform="translate(${m.x},${m.y})" data-tx="${m.x}" data-ty="${m.y}" style="cursor:pointer" onclick="window.__clickMarcador('${mapId}','${m.id}','${nomeEscaped}','${descEscaped}','${m.x}','${m.y}','${m.tipo || 'local'}')">
+<text x="0" y="0" fill="#fff" font-size="48" text-anchor="middle" dominant-baseline="central" style="text-shadow:0 0 4px rgba(0,0,0,0.9);pointer-events:none">${icone}</text><circle cx="0" cy="0" r="24" fill="transparent" stroke="transparent"/>
+<text x="0" y="28" fill="#fff" font-size="22" font-weight="bold" text-anchor="middle" style="text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none">${m.nome}</text>
+</g>`;
       }).join('');
       decompressed = decompressed.replace('</svg>', `<g id="marcadores">${mSvg}</g></svg>`);
     }
@@ -1021,7 +1163,7 @@ const loadSvgForMapComDadosMarcadores = async (mapId, marcadoresDiretos, caminho
         const kmTotal = pixelsParaKm(distanciaTotal);
         return `
           <path d="${pathD}" fill="none" stroke="${caminho.cor || '#00e0ff'}" 
-            stroke-width="3" stroke-dasharray="8,6" stroke-linecap="round" opacity="0.8">
+            stroke-width="6" stroke-dasharray="8,6" stroke-linecap="round" opacity="0.8">
             <title>${caminho.nome} - ${kmTotal} km</title>
           </path>
           ${caminho.pontos.map((p, i) => `
@@ -1050,10 +1192,42 @@ const loadSvgForMapComDadosMarcadores = async (mapId, marcadoresDiretos, caminho
       const svgEl = host.querySelector("svg");
       if (svgEl) {
         if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
-        panZoomRef.current = svgPanZoom(svgEl, {
-          zoomEnabled: true, controlIconsEnabled: true,
-          fit: false, center: false, minZoom: 0.2, maxZoom: 40,
-        });
+panZoomRef.current = svgPanZoom(svgEl, {
+  zoomEnabled: true, controlIconsEnabled: true,
+  fit: false, center: false, minZoom: 0.2, maxZoom: 40,
+  onZoom: function() {
+    var zoom = this.getZoom();
+    var scale = Math.min(1 / zoom, 1);
+    var marcadores = document.querySelectorAll('#marcadores g');
+    marcadores.forEach(function(g) {
+  var tx = g.getAttribute('data-tx') || '0';
+  var ty = g.getAttribute('data-ty') || '0';
+  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+});
+    var paths = document.querySelectorAll('#caminhos path');
+    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
+    var circles = document.querySelectorAll('#caminhos circle');
+    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
+    var texts = document.querySelectorAll('#caminhos text');
+    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  },
+  onPan: function() {
+    var zoom = this.getZoom();
+    var scale = Math.min(1 / zoom, 1);
+    var marcadores = document.querySelectorAll('#marcadores g');
+    marcadores.forEach(function(g) {
+  var tx = g.getAttribute('data-tx') || '0';
+  var ty = g.getAttribute('data-ty') || '0';
+  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+});
+    var paths = document.querySelectorAll('#caminhos path');
+    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
+    var circles = document.querySelectorAll('#caminhos circle');
+    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
+    var texts = document.querySelectorAll('#caminhos text');
+    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  },
+});
         try { panZoomRef.current.zoom(currentZoom); panZoomRef.current.pan(currentPan); } catch(e) {}
       }
     }
@@ -1142,21 +1316,22 @@ useEffect(() => {
   return () => unsub();
 }, [marcadorBalãoAberto?.marcador?.id]);
 
-// 🟢 HANDLER PARA CLIQUES EM MARCADORES DA CIDADE
 useEffect(() => {
   window.__clickCidadeMarcador = (cidadeId, id, nome, descricao, x, y) => {
-    setCidadeMarcadorBalãoAberto({
+    const cidadeMarcador = {
       cidadeId,
       id,
       nome,
-      descricao,
+      descricao: descricao || "",
       x: parseInt(x),
       y: parseInt(y)
-    });
+    };
+    setCidadeMarcadorBalãoAberto(cidadeMarcador);
+    setCidadeDescricaoTexto(descricao || "");
+    setCidadeMarcadorDescricaoOpen(true);
   };
   return () => { delete window.__clickCidadeMarcador; };
 }, []);
-
 // 🟢 SALVAR MARCADOR DA CIDADE
 const salvarCidadeMarcador = async () => {
   const { cidadeId, marcadorId } = cidadeMarcadorEditando || {};
@@ -2047,7 +2222,13 @@ onClick={(e) => {
       </Dialog>
 
 {/* 🟢 MODAL MARCADOR DA CIDADE */}
-<Dialog open={cidadeMarcadorDialogOpen} onClose={() => setCidadeMarcadorDialogOpen(false)} maxWidth="sm" fullWidth
+<Dialog open={cidadeMarcadorDialogOpen} onClose={() => {
+  setCidadeMarcadorDialogOpen(false);
+  // Reabre o balão da cidade se estava editando
+  if (marcadorBalãoAberto?.marcador?.cidadeSvg) {
+    setMarcadorBalãoAberto(prev => ({...prev}));
+  }
+}} maxWidth="sm" fullWidth
   PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff', zIndex: 99999 } }}>
   <DialogTitle>{cidadeMarcadorEditando?.marcadorId ? 'Editar Marcador' : 'Novo Marcador (Cidade)'}</DialogTitle>
   <DialogContent>
@@ -2114,29 +2295,189 @@ onClick={(e) => {
     <Button variant="contained" onClick={criarCidadeCaminho} disabled={!cidadeCaminhoNome.trim()}>Criar Rota</Button>
   </DialogActions>
 </Dialog>
-
-      {/* 🟢 BALÃO DO MARCADOR (COM MAPA DA CIDADE) */}
-{marcadorBalãoAberto && (
+{/* 🟢 DESCRIÇÃO DO MARCADOR DA CIDADE (ARRÁSTÁVEL PELO CABEÇALHO) */}
+{cidadeMarcadorBalãoAberto && cidadeMarcadorDescricaoOpen && (
   <Box
     sx={{
       position: 'fixed',
       top: 80,
       right: 20,
+      width: 300,
+      maxHeight: '70vh',
+      bgcolor: 'rgba(15, 23, 42, 0.97)',
+      border: '1px solid #334155',
+      borderRadius: 2,
+      p: 2,
+      zIndex: 99999,
+      display: 'flex',
+      flexDirection: 'column',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+    }}
+  >
+    {/* CABEÇALHO ARRASTÁVEL */}
+    <Box 
+      sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        mb: 1,
+        cursor: 'grab',
+        userSelect: 'none'
+      }}
+      onMouseDown={(e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+        e.preventDefault();
+        const box = e.currentTarget.parentElement;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startLeft = box.offsetLeft;
+        const startTop = box.offsetTop;
+        
+        const handleMouseMove = (ev) => {
+          box.style.left = (startLeft + (ev.clientX - startX)) + 'px';
+          box.style.top = (startTop + (ev.clientY - startY)) + 'px';
+          box.style.right = 'auto';
+        };
+        
+        const handleMouseUp = () => {
+          window.removeEventListener('mousemove', handleMouseMove);
+          window.removeEventListener('mouseup', handleMouseUp);
+        };
+        
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+      }}
+    >
+      <Typography variant="subtitle2" sx={{ color: '#fff' }}>
+        {cidadeMarcadorBalãoAberto.icone || '📍'} {cidadeMarcadorBalãoAberto.nome}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 0.5 }}>
+        {isMestre && (
+          <>
+            <IconButton size="small" onClick={() => {
+              setCidadeMarcadorNome(cidadeMarcadorBalãoAberto.nome);
+              setCidadeMarcadorDescricao(cidadeMarcadorBalãoAberto.descricao || "");
+              setCidadeMarcadorX(cidadeMarcadorBalãoAberto.x);
+              setCidadeMarcadorY(cidadeMarcadorBalãoAberto.y);
+              setCidadeMarcadorIcone(cidadeMarcadorBalãoAberto.icone || "📍");
+              setCidadeMarcadorEditando({
+                cidadeId: cidadeMarcadorBalãoAberto.cidadeId,
+                marcadorId: cidadeMarcadorBalãoAberto.id
+              });
+              setCidadeMarcadorDescricaoOpen(false);
+              setCidadeMarcadorDialogOpen(true);
+            }} sx={{ color: '#94a3b8' }}>
+              <EditIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={() => {
+              if (window.confirm('Deletar marcador da cidade?')) {
+                const cidadeId = cidadeMarcadorBalãoAberto.cidadeId;
+                const mId = cidadeMarcadorBalãoAberto.id;
+                const novos = { ...cidadeMarcadores };
+                if (novos[cidadeId]) {
+                  novos[cidadeId] = novos[cidadeId].filter(m => m.id !== mId);
+                }
+                setCidadeMarcadores(novos);
+                setDoc(doc(db, "world", `Cidade_${cidadeId}`), {
+                  marcadores: novos[cidadeId] || [],
+                  caminhos: cidadeCaminhos[cidadeId] || []
+                }, { merge: true });
+                setCidadeMarcadorBalãoAberto(null);
+                setCidadeMarcadorDescricaoOpen(false);
+              }
+            }} sx={{ color: '#ef4444' }}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </>
+        )}
+        <IconButton size="small" onClick={() => {
+          setCidadeMarcadorBalãoAberto(null);
+          setCidadeMarcadorDescricaoOpen(false);
+        }} sx={{ color: '#94a3b8' }}>
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Box>
+    </Box>
+    
+    {/* CONTEÚDO DA DESCRIÇÃO */}
+    <Box sx={{ flex: 1, overflowY: 'auto' }}>
+      {cidadeMarcadorBalãoAberto.descricao ? (
+        <Box className="markdown-content" onClick={(e) => {
+          if (e.target.tagName === "IMG") {
+            setLightboxImage(e.target.src);
+            setZoom(1);
+          }
+        }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {cidadeMarcadorBalãoAberto.descricao}
+          </ReactMarkdown>
+        </Box>
+      ) : (
+        <Typography variant="body2" sx={{ color: '#64748b', fontStyle: 'italic' }}>
+          Sem descrição
+        </Typography>
+      )}
+    </Box>
+  </Box>
+)}
+{/* 🟢 BALÃO DO MARCADOR (ARRÁSTAVEL E COM MAPA DA CIDADE) */}
+{marcadorBalãoAberto && (
+  <Box
+    ref={balãoRef}
+    sx={{
+      position: 'fixed',
+      top: balãoPosicao.y || 80,
+      right: balãoPosicao.x ? 'auto' : 20,
+      left: balãoPosicao.x || 'auto',
       width: marcadorBalãoAberto.marcador?.cidadeSvg ? 500 : 320,
       maxHeight: '80vh',
       bgcolor: 'rgba(15, 23, 42, 0.97)',
       border: '1px solid #334155',
       borderRadius: 2,
-      p: 2,
+      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
       zIndex: 9999,
       display: 'flex',
       flexDirection: 'column',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
       overflow: 'hidden',
+      cursor: arrastandoBalão ? 'grabbing' : 'grab',
     }}
   >
-    {/* CABEÇALHO */}
-    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, flexShrink: 0 }}>
+<Box 
+  sx={{ 
+    display: 'flex', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    mb: 1, 
+    flexShrink: 0,
+    cursor: 'grab',
+    userSelect: 'none'
+  }}
+  onMouseDown={(e) => {
+    // Não arrasta se clicar nos botões
+    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startLeft = balãoRef.current?.offsetLeft || 0;
+    const startTop = balãoRef.current?.offsetTop || 0;
+    
+    const handleMouseMove = (ev) => {
+      const newX = startLeft + (ev.clientX - startX);
+      const newY = startTop + (ev.clientY - startY);
+      setBalãoPosicao({ x: newX, y: newY });
+    };
+    
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }}
+>
       <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#fff' }}>
         {marcadorBalãoAberto.marcador?.icone || "📍"} {marcadorBalãoAberto.nome}
       </Typography>
@@ -2152,7 +2493,6 @@ onClick={(e) => {
               setMarcadorCidadeSvg(m.cidadeSvg || null);
               setMarcadorEditando({ mapId: marcadorBalãoAberto.mapId, marcadorId: m.id });
               setMarcadorDialogOpen(true);
-              setMarcadorBalãoAberto(null);
             }} sx={{ color: '#94a3b8' }}><EditIcon fontSize="small" /></IconButton>
             <IconButton size="small" onClick={() => {
               if (window.confirm('Deletar marcador?')) {
@@ -2162,7 +2502,6 @@ onClick={(e) => {
                 if (novos[mapId]) novos[mapId] = novos[mapId].filter(mr => mr.id !== mId);
                 setMarcadores(novos);
                 setDoc(doc(db, "world", "Marcadores"), { mapas: novos }, { merge: true });
-                setMarcadorBalãoAberto(null);
                 if (expanded) loadSvgForMap(expanded);
               }
             }} sx={{ color: '#ef4444' }}><DeleteIcon fontSize="small" /></IconButton>
@@ -2244,7 +2583,6 @@ onContextMenu={(e) => {
       marcadorId: null 
     });
     setCidadeMarcadorDialogOpen(true);
-    setMarcadorBalãoAberto(null); // Fecha o balão para mostrar o modal
   }
 }}
         />
@@ -2257,17 +2595,73 @@ onContextMenu={(e) => {
         <Typography variant="caption" sx={{ color: '#00e0ff', display: 'block', mb: 0.5 }}>
           📏 Rotas da Cidade
         </Typography>
-        {(cidadeCaminhos[marcadorBalãoAberto.marcador.id] || []).map(caminho => (
-          <Box key={caminho.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box sx={{ width: 8, height: 8, bgcolor: caminho.cor, borderRadius: '50%' }} />
-              <Typography variant="caption" sx={{ color: '#fff', fontSize: '0.65rem' }}>{caminho.nome}</Typography>
-            </Box>
-            <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.6rem' }}>
-              {(calcularDistanciaTotal(caminho.pontos) * 10).toFixed(0)} m
-            </Typography>
-          </Box>
-        ))}
+ {(cidadeCaminhos[marcadorBalãoAberto.marcador.id] || []).map(caminho => (
+  <Box key={caminho.id} sx={{ 
+    display: 'flex', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    py: 0.3,
+    bgcolor: cidadeCaminhoAtivo === caminho.id ? '#1e3a5f' : 'transparent',
+    px: 0.5,
+    borderRadius: 0.5
+  }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      <Box sx={{ width: 8, height: 8, bgcolor: caminho.cor, borderRadius: '50%' }} />
+      <Typography variant="caption" sx={{ color: '#fff', fontSize: '0.65rem' }}>{caminho.nome}</Typography>
+      {cidadeCaminhoAtivo === caminho.id && (
+        <Typography variant="caption" sx={{ color: '#ff9800', fontSize: '0.5rem' }}>
+          ✏️ Editando
+        </Typography>
+      )}
+    </Box>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.6rem' }}>
+        {(calcularDistanciaTotal(caminho.pontos) * 10).toFixed(0)} m
+      </Typography>
+      {isMestre && (
+        <>
+          <IconButton 
+            size="small" 
+            onClick={() => {
+              if (cidadeCaminhoAtivo === caminho.id) {
+                // Finaliza edição
+                setCidadeCaminhoAtivo(null);
+                setCidadeModoCriarCaminho(false);
+              } else {
+                // Inicia edição
+                setCidadeCaminhoAtivo(caminho.id);
+                setCidadeModoCriarCaminho(true);
+              }
+            }}
+            sx={{ color: cidadeCaminhoAtivo === caminho.id ? '#4caf50' : '#ff9800', p: 0.2 }}
+          >
+            <EditIcon sx={{ fontSize: '0.8rem' }} />
+          </IconButton>
+          <IconButton 
+            size="small" 
+            onClick={() => {
+              if (window.confirm('Deletar esta rota?')) {
+                const cidadeId = marcadorBalãoAberto.marcador.id;
+                const novos = { ...cidadeCaminhos };
+                if (novos[cidadeId]) {
+                  novos[cidadeId] = novos[cidadeId].filter(c => c.id !== caminho.id);
+                }
+                setCidadeCaminhos(novos);
+                setDoc(doc(db, "world", `Cidade_${cidadeId}`), {
+                  marcadores: cidadeMarcadores[cidadeId] || [],
+                  caminhos: novos[cidadeId] || []
+                }, { merge: true });
+              }
+            }}
+            sx={{ color: '#ef4444', p: 0.2 }}
+          >
+            <DeleteIcon sx={{ fontSize: '0.8rem' }} />
+          </IconButton>
+        </>
+      )}
+    </Box>
+  </Box>
+))}
       </Box>
     )}
   </Box>

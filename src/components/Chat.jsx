@@ -977,15 +977,21 @@ async function rolarAcao() {
       custoTotalEnergia += acaoEmbuicao * 5;
     }
     
-                // 🟢 HABILIDADE SELECIONADA
-    if (acaoHabilidadeSelecionada) {
-      totalD10 += acaoHabilidadeDado;
-      descricao.push(`Habilidade: ${acaoHabilidadeSelecionada} (${acaoHabilidadeDado})`);
-      custoTotalEnergia += acaoHabilidadeCustoPE; // 🟢 CUSTO DE PE DA HABILIDADE
-      if (acaoHabilidadeCustoPE > 0) {
-        descricao.push(`Custo Habilidade: ${acaoHabilidadeCustoPE} PE`);
-      }
-    }
+// 🟢 HABILIDADE SELECIONADA
+if (acaoHabilidadeSelecionada) {
+  totalD10 += acaoHabilidadeDado;
+  descricao.push(`Habilidade: ${acaoHabilidadeSelecionada} (${acaoHabilidadeDado})`);
+  custoTotalEnergia += acaoHabilidadeCustoPE;
+  if (acaoHabilidadeCustoPE > 0) {
+    descricao.push(`Custo Habilidade: ${acaoHabilidadeCustoPE} PE`);
+  }
+  
+  // 🟢 DAR XP PARA A HABILIDADE USADA
+  const habIndex = fichaJogador?.habilidades?.findIndex(h => h.nome === acaoHabilidadeSelecionada);
+  if (habIndex !== undefined && habIndex >= 0) {
+    await adicionarXpHabilidade(jogadorSelecionadoEmail, habIndex);
+  }
+}
     
     if (custoTotalEnergia > energiaAtual) {
       alert(`Energia insuficiente! Necessário: ${custoTotalEnergia} PE | Disponível: ${energiaAtual} PE`);
@@ -1292,9 +1298,19 @@ async function rolarAcao() {
     let xpGanho = 1;
     if (isCritico) xpGanho = 2;
     if (isErroCritico) xpGanho = 0;
-    await adicionarXpAcao(jogadorSelecionadoEmail, xpGanho);
-    
-        setAcaoOpen(false);
+await adicionarXpAcao(jogadorSelecionadoEmail, xpGanho);
+
+// 🟢 Adiciona XP aos atributos/perícias usados
+if (acaoAtributo || acaoPericia) {
+  console.log('🔍 CHAMANDO adicionarXpAtributoPericia:', {
+    email: jogadorSelecionadoEmail,
+    atributo: acaoAtributo,
+    pericia: acaoPericia
+  });
+  await adicionarXpAtributoPericia(jogadorSelecionadoEmail, acaoAtributo, acaoPericia);
+}
+
+setAcaoOpen(false);
     } finally {
     setRolagemEmAndamento(false);
     setAcaoAtributo("");
@@ -1762,6 +1778,138 @@ async function adicionarXpAcao(emailJogador, quantidade = 1) {
     
     await setDoc(xpRef, { xpMap }, { merge: true });
     console.log(`⭐ +${quantidade} XP para ${emailJogador}: LV ${jogadorXP.level} - ${jogadorXP.xp}/100`);
+  } catch (err) {
+    console.error("Erro ao adicionar XP:", err);
+  }
+}
+
+// 🟢 FUNÇÃO PARA ADICIONAR XP À HABILIDADE AURANA
+async function adicionarXpHabilidade(emailJogador, habIndex) {
+  if (!emailJogador || emailJogador === "mestre@reqviemrpg.com") return;
+  
+  try {
+    const fichaRef = doc(db, "fichas", emailJogador);
+    const snap = await getDoc(fichaRef);
+    if (!snap.exists()) return;
+    
+    const dados = snap.data();
+    const habilidades = dados.habilidades || [];
+    
+    if (!habilidades[habIndex]) return;
+    
+    const hab = habilidades[habIndex];
+    const dadoAtual = Number(hab.dado) || 1;
+    
+    // Se já está no máximo (10), não faz nada
+    if (dadoAtual >= 10) return;
+    
+    const xpKey = `hab_${habIndex}`;
+    const habilidadesXPAtuais = dados.habilidadesXP || {}; // 🟢 OBJETO, não string
+    const xpAtual = Number(habilidadesXPAtuais[xpKey] || 0);
+    const xpGanho = 3;
+    const novoXP = xpAtual + xpGanho;
+    
+    const xpNecessario = dadoAtual * 100;
+    
+    console.log(`🎯 Habilidade "${hab.nome}": ${xpAtual}/${xpNecessario} XP (+${xpGanho})`);
+    
+    if (novoXP >= xpNecessario) {
+      // 🟢 SUBIU DE NÍVEL!
+      const xpRestante = novoXP - xpNecessario;
+      const novoDado = dadoAtual + 1;
+      
+      console.log(`⬆️ SUBIU PARA NÍVEL ${novoDado}! XP restante: ${xpRestante}`);
+      
+      // Atualiza o dado da habilidade
+      habilidades[habIndex] = { ...hab, dado: novoDado };
+      
+      // 🟢 CORRIGIDO: Cria o objeto habilidadesXP corretamente
+      const novoHabilidadesXP = { ...habilidadesXPAtuais, [xpKey]: xpRestante };
+      
+      await setDoc(fichaRef, {
+        habilidades: habilidades,
+        habilidadesXP: novoHabilidadesXP  // 🟢 Objeto aninhado, não string
+      }, { merge: true });
+      
+      // Mensagem no chat
+      const nomePersonagem = dados.nome || emailJogador;
+      await addDoc(chatCol, {
+        userNick: "SISTEMA",
+        userEmail: "sistema@reqviemrpg.com",
+        type: "acao",
+        text: `⬆️ **${nomePersonagem}** - A habilidade **"${hab.nome}"** subiu para o nível **${novoDado}**! 🎉`,
+        timestamp: serverTimestamp(),
+      });
+      
+      // 🟢 Dispara evento para atualizar a ficha em tempo real
+      window.dispatchEvent(new CustomEvent('xpAtualizado', { 
+        detail: { 
+          email: emailJogador, 
+          data: { [`habilidadesXP.${xpKey}`]: xpRestante }
+        } 
+      }));
+      
+    } else {
+      // Apenas acumula XP
+      const novoHabilidadesXP = { ...habilidadesXPAtuais, [xpKey]: novoXP };
+      
+      await setDoc(fichaRef, {
+        habilidadesXP: novoHabilidadesXP  // 🟢 Objeto aninhado
+      }, { merge: true });
+      
+      // 🟢 Dispara evento para atualizar a ficha em tempo real
+      window.dispatchEvent(new CustomEvent('xpAtualizado', { 
+        detail: { 
+          email: emailJogador, 
+          data: { [`habilidadesXP.${xpKey}`]: novoXP }
+        } 
+      }));
+    }
+    
+    console.log(`✅ +${xpGanho} XP para habilidade "${hab.nome}": ${xpAtual} → ${novoXP}`);
+  } catch (err) {
+    console.error("Erro ao adicionar XP na habilidade:", err);
+  }
+}
+
+async function adicionarXpAtributoPericia(emailJogador, atributo, pericia) {
+  if (!emailJogador || emailJogador === "mestre@reqviemrpg.com") return;
+  
+  try {
+    const fichaRef = doc(db, "fichas", emailJogador);
+    const snap = await getDoc(fichaRef);
+    if (!snap.exists()) return;
+    
+    const dados = snap.data();
+    const atualizacoes = {};
+    
+    // 🟢 Lê o valor ATUAL e SOMA +3
+    if (atributo && dados.atributos?.[atributo] !== undefined) {
+      const xpAtual = Number(dados.atributosXP?.[atributo] || 0);
+      const novoValor = xpAtual + 3;
+      atualizacoes[`atributosXP.${atributo}`] = novoValor;
+      console.log(`💪 +3 XP para ${atributo}: ${xpAtual} → ${novoValor}`);
+    }
+    
+    if (pericia && dados.pericias?.[pericia] !== undefined) {
+      const xpAtual = Number(dados.periciasXP?.[pericia] || 0);
+      const novoValor = xpAtual + 3;
+      atualizacoes[`periciasXP.${pericia}`] = novoValor;
+      console.log(`📚 +3 XP para ${pericia}: ${xpAtual} → ${novoValor}`);
+    }
+    
+    if (Object.keys(atualizacoes).length > 0) {
+      console.log('💾 SALVANDO no Firestore:', atualizacoes);
+      // 🟢 USA updateDoc em vez de setDoc
+      const { updateDoc } = await import("firebase/firestore");
+      await updateDoc(fichaRef, atualizacoes);
+      console.log('✅ SALVO com sucesso!');
+      
+      // Dispara evento para atualizar a ficha
+      window.dispatchEvent(new CustomEvent('xpAtualizado', { 
+        detail: { email: emailJogador, data: atualizacoes } 
+      }));
+    }
   } catch (err) {
     console.error("Erro ao adicionar XP:", err);
   }
