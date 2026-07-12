@@ -1578,6 +1578,7 @@ const criarCidadeCaminho = async () => {
   };
    function AnotacaoExpansivel({ titulo, conteudo, isMestre, onEdit, onDelete, renderMarkdown }) {
     const [aberta, setAberta] = useState(false);
+    const conteudoRef = useRef(null);
     
     return (
       <Box sx={{ 
@@ -1595,7 +1596,7 @@ const criarCidadeCaminho = async () => {
           boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
         }
       }}>
-        {/* CABEÇALHO - FIXO NO TOPO DO SCROLL */}
+        {/* CABEÇALHO - SEMPRE VISÍVEL E CLICÁVEL */}
         <Box
           sx={{ 
             display: 'flex', 
@@ -1611,8 +1612,8 @@ const criarCidadeCaminho = async () => {
             '&:hover': {
               backgroundColor: aberta ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255,255,255,0.03)',
             },
-            // ⚠️ IMPORTANTE: posição relativa para ficar dentro do scroll
-            position: 'relative',
+            position: 'sticky',
+            top: 0,
             zIndex: 10,
           }}
           onClick={() => setAberta(!aberta)}
@@ -1706,16 +1707,14 @@ const criarCidadeCaminho = async () => {
           </Box>
         </Box>
 
-        {/* CONTEÚDO COM SCROLL - ALTURA FIXA PARA O STICKY FUNCIONAR */}
+        {/* CONTEÚDO - SCROLL APENAS DENTRO DO TEXTO EXPANDIDO */}
         <Box sx={{
           maxHeight: aberta ? '400px' : '0',
           opacity: aberta ? 1 : 0,
           overflow: aberta ? 'auto' : 'hidden',
           transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           display: aberta ? 'block' : 'none',
-          // ⚠️ O STICKY SÓ FUNCIONA SE O CONTAINER TIVER ALTURA FIXA E overflow: auto
-          position: 'relative',
-          // 🟢 SCROLLBAR PERSONALIZADA
+          // 🔥 SCROLLBAR PERSONALIZADA - SÓ APARECE QUANDO EXPANDIDO
           '&::-webkit-scrollbar': {
             width: '6px',
           },
@@ -1737,6 +1736,8 @@ const criarCidadeCaminho = async () => {
             backgroundColor: 'rgba(0,0,0,0.2)',
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
+            // 🔥 IMPORTANTE: altura mínima para o scroll funcionar
+            minHeight: '50px',
             '& .markdown-content': {
               color: '#e2e8f0 !important',
               fontSize: '0.9rem',
