@@ -1576,7 +1576,7 @@ const criarCidadeCaminho = async () => {
     e.preventDefault();
     setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
   };
-  function AnotacaoExpansivel({ titulo, conteudo, isMestre, onEdit, onDelete, renderMarkdown }) {
+   function AnotacaoExpansivel({ titulo, conteudo, isMestre, onEdit, onDelete, renderMarkdown }) {
     const [aberta, setAberta] = useState(false);
     
     return (
@@ -1595,7 +1595,7 @@ const criarCidadeCaminho = async () => {
           boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
         }
       }}>
-        {/* CABEÇALHO - ESTILIZADO */}
+        {/* CABEÇALHO - FIXO NO TOPO DO SCROLL */}
         <Box
           sx={{ 
             display: 'flex', 
@@ -1603,18 +1603,21 @@ const criarCidadeCaminho = async () => {
             alignItems: 'center', 
             px: '16px',
             py: '10px',
-            backgroundColor: aberta ? 'rgba(255, 152, 0, 0.08)' : 'transparent',
+            backgroundColor: aberta ? 'rgba(15, 23, 42, 0.95)' : 'transparent',
+            backdropFilter: aberta ? 'blur(8px)' : 'none',
             cursor: 'pointer',
             borderBottom: aberta ? '1px solid rgba(255, 152, 0, 0.15)' : 'none',
             transition: 'all 0.3s ease',
             '&:hover': {
-              backgroundColor: aberta ? 'rgba(255, 152, 0, 0.12)' : 'rgba(255,255,255,0.03)',
-            }
+              backgroundColor: aberta ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255,255,255,0.03)',
+            },
+            // ⚠️ IMPORTANTE: posição relativa para ficar dentro do scroll
+            position: 'relative',
+            zIndex: 10,
           }}
           onClick={() => setAberta(!aberta)}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            {/* ÍCONE DE EXPANSÃO */}
             <Box sx={{
               width: 24,
               height: 24,
@@ -1647,7 +1650,6 @@ const criarCidadeCaminho = async () => {
           </Box>
           
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {/* CONTADOR DE PALAVRAS (opcional) */}
             {aberta && (
               <Typography sx={{ 
                 fontSize: '0.55rem', 
@@ -1704,19 +1706,35 @@ const criarCidadeCaminho = async () => {
           </Box>
         </Box>
 
-        {/* CONTEÚDO - ESTILIZADO */}
+        {/* CONTEÚDO COM SCROLL - ALTURA FIXA PARA O STICKY FUNCIONAR */}
         <Box sx={{
-          maxHeight: aberta ? '600px' : '0',
+          maxHeight: aberta ? '400px' : '0',
           opacity: aberta ? 1 : 0,
-          overflow: 'hidden',
+          overflow: aberta ? 'auto' : 'hidden',
           transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           display: aberta ? 'block' : 'none',
+          // ⚠️ O STICKY SÓ FUNCIONA SE O CONTAINER TIVER ALTURA FIXA E overflow: auto
+          position: 'relative',
+          // 🟢 SCROLLBAR PERSONALIZADA
+          '&::-webkit-scrollbar': {
+            width: '6px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'rgba(255,255,255,0.05)',
+            borderRadius: '3px',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: 'rgba(255, 152, 0, 0.3)',
+            borderRadius: '3px',
+            '&:hover': {
+              background: 'rgba(255, 152, 0, 0.5)',
+            }
+          }
         }}>
           <Box sx={{ 
             px: '16px',
             py: '14px',
             backgroundColor: 'rgba(0,0,0,0.2)',
-            // 🟢 PRESERVA AS QUEBRAS DE LINHA
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
             '& .markdown-content': {
