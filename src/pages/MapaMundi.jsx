@@ -59,6 +59,61 @@ const EMOJIS_MARCADORES = [
 ];
 
 export default function MapaMundi() {
+    // 🎨 ESTILOS PARA ANOTAÇÕES EXPANSÍVEIS
+  const styles = {
+    anotacaoContainer: {
+      marginBottom: '12px',
+      borderRadius: '8px',
+      overflow: 'hidden',
+      backgroundColor: '#1a1a1a',
+      border: '1px solid #2a2a2a',
+      transition: 'all 0.3s ease'
+    },
+    anotacaoCabecalho: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '10px 12px',
+      backgroundColor: '#1f1f1f',
+      cursor: 'pointer',
+      userSelect: 'none',
+      borderBottom: '1px solid transparent',
+      transition: 'all 0.2s ease'
+    },
+    anotacaoCabecalhoExpandido: {
+      borderBottom: '1px solid #333',
+      backgroundColor: '#252525'
+    },
+    anotacaoTitulo: {
+      fontWeight: 'bold',
+      color: '#fff',
+      fontSize: '0.95rem',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    anotacaoIconeExpandir: {
+      fontSize: '0.8rem',
+      color: '#64748b',
+      transition: 'transform 0.3s ease'
+    },
+    anotacaoIconeExpandido: {
+      transform: 'rotate(180deg)'
+    },
+    anotacaoConteudo: {
+      padding: '12px',
+      backgroundColor: '#1a1a1a',
+      maxHeight: '0',
+      overflow: 'hidden',
+      transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+      opacity: 0,
+      transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease'
+    },
+    anotacaoConteudoExpandido: {
+      maxHeight: '2000px',
+      opacity: 1
+    }
+  };
   const [isMestre, setIsMestre] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [svgContent, setSvgContent] = useState("");
@@ -1500,6 +1555,11 @@ const criarCidadeCaminho = async () => {
   const renderMarkdown = (text) => (
     <div
       className="markdown-content"
+      style={{ 
+        whiteSpace: 'pre-wrap',
+        wordWrap: 'break-word',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+      }}
       onClick={(e) => {
         if (e.target.tagName === "IMG") {
           setLightboxImage(e.target.src);
@@ -1516,7 +1576,186 @@ const criarCidadeCaminho = async () => {
     e.preventDefault();
     setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
   };
+  function AnotacaoExpansivel({ titulo, conteudo, isMestre, onEdit, onDelete, renderMarkdown }) {
+    const [aberta, setAberta] = useState(false);
+    
+    return (
+      <Box sx={{ 
+        mb: 2,
+        borderRadius: '12px',
+        overflow: 'hidden',
+        backgroundColor: '#1a1a2e',
+        border: `1px solid ${aberta ? 'rgba(255, 152, 0, 0.3)' : 'rgba(255,255,255,0.06)'}`,
+        boxShadow: aberta 
+          ? '0 4px 20px rgba(255, 152, 0, 0.08)' 
+          : '0 2px 8px rgba(0,0,0,0.2)',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        '&:hover': {
+          borderColor: 'rgba(255,255,255,0.12)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+        }
+      }}>
+        {/* CABEÇALHO - ESTILIZADO */}
+        <Box
+          sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            px: '16px',
+            py: '10px',
+            backgroundColor: aberta ? 'rgba(255, 152, 0, 0.08)' : 'transparent',
+            cursor: 'pointer',
+            borderBottom: aberta ? '1px solid rgba(255, 152, 0, 0.15)' : 'none',
+            transition: 'all 0.3s ease',
+            '&:hover': {
+              backgroundColor: aberta ? 'rgba(255, 152, 0, 0.12)' : 'rgba(255,255,255,0.03)',
+            }
+          }}
+          onClick={() => setAberta(!aberta)}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            {/* ÍCONE DE EXPANSÃO */}
+            <Box sx={{
+              width: 24,
+              height: 24,
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: aberta ? 'rgba(255, 152, 0, 0.15)' : 'rgba(255,255,255,0.05)',
+              transition: 'all 0.3s ease',
+            }}>
+              <Typography sx={{ 
+                fontSize: '0.7rem',
+                color: aberta ? '#ff9800' : '#94a3b8',
+                transition: 'transform 0.3s ease',
+                transform: aberta ? 'rotate(90deg)' : 'rotate(0deg)'
+              }}>
+                ▶
+              </Typography>
+            </Box>
+            
+            <Typography sx={{ 
+              color: aberta ? '#fff' : '#e2e8f0',
+              fontSize: '0.85rem', 
+              fontWeight: 600,
+              letterSpacing: '0.3px',
+              transition: 'color 0.3s ease'
+            }}>
+              {titulo || 'Sem título'}
+            </Typography>
+          </Box>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {/* CONTADOR DE PALAVRAS (opcional) */}
+            {aberta && (
+              <Typography sx={{ 
+                fontSize: '0.55rem', 
+                color: '#64748b',
+                mr: 1,
+                fontFamily: 'monospace'
+              }}>
+                {conteudo?.length || 0} caracteres
+              </Typography>
+            )}
+            
+            {isMestre && (
+              <>
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => { e.stopPropagation(); onEdit(e); }} 
+                  sx={{ 
+                    p: 0.5,
+                    color: '#64748b',
+                    '&:hover': { 
+                      color: '#ff9800',
+                      backgroundColor: 'rgba(255, 152, 0, 0.1)'
+                    }
+                  }}
+                >
+                  <EditIcon sx={{ fontSize: '0.75rem' }} />
+                </IconButton>
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => { e.stopPropagation(); onDelete(e); }} 
+                  sx={{ 
+                    p: 0.5,
+                    color: '#64748b',
+                    '&:hover': { 
+                      color: '#ef4444',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)'
+                    }
+                  }}
+                >
+                  <DeleteIcon sx={{ fontSize: '0.75rem' }} />
+                </IconButton>
+              </>
+            )}
+            
+            <Typography sx={{ 
+              color: '#475569',
+              fontSize: '0.6rem',
+              transition: 'all 0.3s ease',
+              transform: aberta ? 'rotate(180deg)' : 'rotate(0deg)',
+              ml: 0.5
+            }}>
+              ▼
+            </Typography>
+          </Box>
+        </Box>
 
+        {/* CONTEÚDO - ESTILIZADO */}
+        <Box sx={{
+          maxHeight: aberta ? '600px' : '0',
+          opacity: aberta ? 1 : 0,
+          overflow: 'hidden',
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          display: aberta ? 'block' : 'none',
+        }}>
+          <Box sx={{ 
+            px: '16px',
+            py: '14px',
+            backgroundColor: 'rgba(0,0,0,0.2)',
+            // 🟢 PRESERVA AS QUEBRAS DE LINHA
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            '& .markdown-content': {
+              color: '#e2e8f0 !important',
+              fontSize: '0.9rem',
+              lineHeight: '1.8',
+            },
+            '& .markdown-content p': {
+              marginBottom: '0.75rem',
+            },
+            '& .markdown-content h1, & .markdown-content h2, & .markdown-content h3': {
+              color: '#ff9800 !important',
+              marginTop: '0.75rem',
+              marginBottom: '0.5rem',
+            },
+            '& .markdown-content ul, & .markdown-content ol': {
+              paddingLeft: '1.5rem',
+              marginBottom: '0.75rem',
+            },
+            '& .markdown-content blockquote': {
+              borderLeft: '3px solid #ff9800',
+              paddingLeft: '1rem',
+              marginLeft: '0',
+              color: '#94a3b8',
+              fontStyle: 'italic',
+            },
+            '& .markdown-content img': {
+              borderRadius: '8px',
+              maxWidth: '100%',
+              height: 'auto',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+            }
+          }}>
+            {renderMarkdown(conteudo)}
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
   // --- RENDERIZAÇÃO PRINCIPAL ---
   return (
     <Box sx={{ bgcolor: "#1e1e1e", minHeight: "100vh", color: "#fff", p: 2 }}>
@@ -1646,165 +1885,166 @@ const criarCidadeCaminho = async () => {
     />
   )}
 </Box>
+{/* Anotações */}
+{/* Anotações - VERSÃO FINAL SEM HOOKS DENTRO DE MAP */}
+<Box
+  sx={{
+    flexBasis: { md: "30%" },
+    bgcolor: "#232323",
+    p: 2,
+    borderRadius: 1,
+    overflow: "hidden",
+    height: { md: "100%" },
+    display: "flex",
+    flexDirection: "column",
+  }}
+>
+  <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1, alignItems: "center", flexShrink: 0 }}>
+    <Typography variant="h6" sx={{ color: "#fff", fontSize: '1rem' }}>
+      📝 Anotações — {m.title}
+      <Typography component="span" sx={{ color: '#64748b', fontSize: '0.7rem', ml: 1 }}>
+        ({(chaptersMap[m.id] || []).length})
+      </Typography>
+    </Typography>
+    {isMestre && (
+      <Button
+        startIcon={<AddIcon />}
+        size="small"
+        variant="contained"
+        sx={{ fontSize: '0.7rem' }}
+        onClick={(e) => openChapterDialog(m.id, null, e)}
+      >
+        Nova
+      </Button>
+    )}
+  </Box>
+  <Divider sx={{ mb: 1, flexShrink: 0 }} />
+  <Box sx={{ 
+    flex: 1, 
+    overflowY: 'auto', 
+    pr: 1,
+    '&::-webkit-scrollbar': { width: '4px' },
+    '&::-webkit-scrollbar-track': { background: '#1a1a1a' },
+    '&::-webkit-scrollbar-thumb': { background: '#444', borderRadius: '4px' }
+  }}>
+    {(chaptersMap[m.id] || []).length === 0 ? (
+      <Typography sx={{ color: "#999", fontSize: '0.85rem', textAlign: 'center', py: 3 }}>
+        Nenhuma anotação.
+      </Typography>
+    ) : (
+      (chaptersMap[m.id] || []).map((ch, idx) => (
+        <AnotacaoExpansivel
+          key={idx}
+          titulo={ch.title}
+          conteudo={ch.text}
+          isMestre={isMestre}
+          onEdit={() => openChapterDialog(m.id, idx)}
+          onDelete={() => deleteChapterForMap(m.id, idx)}
+          renderMarkdown={renderMarkdown}
+        />
+      ))
+    )}
+  </Box>
 
-            {/* Anotações */}
-            <Box
-              sx={{
-                flexBasis: { md: "30%" },
-                bgcolor: "#232323",
-                p: 2,
-                borderRadius: 1,
-                overflow: "hidden",
-                height: { md: "100%" },
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1, alignItems: "center" }}>
-                <Typography variant="h6" sx={{ color: "#fff" }}>
-                  Anotações — {m.title}
+  {/* Rotas/Caminhos - mantido igual */}
+  <Box sx={{ mt: 2, borderTop: '1px solid #333', pt: 2, flexShrink: 0 }}>
+    <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1 }}>
+      📏 Rotas e Caminhos
+    </Typography>
+    {(caminhos[m.id] || []).map(caminho => (
+      <Box key={caminho.id} sx={{ 
+        mb: 1, 
+        p: 1, 
+        bgcolor: editandoCaminhoId === caminho.id ? '#1e3a5f' : '#1a1a1a', 
+        borderRadius: 1, 
+        border: editandoCaminhoId === caminho.id ? '1px solid #ff9800' : '1px solid transparent' 
+      }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 12, height: 12, bgcolor: caminho.cor, borderRadius: '50%' }} />
+            <Typography variant="caption" sx={{ color: '#fff' }}>
+              {caminho.nome}
+              {editandoCaminhoId === caminho.id && (
+                <Typography component="span" variant="caption" sx={{ color: '#ff9800', ml: 0.5, fontSize: '0.55rem' }}>
+                  ✏️ Editando
                 </Typography>
-                {isMestre && (
-                  <Button
-                    startIcon={<AddIcon />}
-                    size="small"
-                    variant="contained"
-                    onClick={(e) => openChapterDialog(m.id, null, e)}
-                  >
-                    Novo
-                  </Button>
-                )}
-              </Box>
-              <Divider sx={{ mb: 1 }} />
-
-              <Box sx={{ overflowY: "auto", flex: 1 }}>
-                {(chaptersMap[m.id] || []).length === 0 ? (
-                  <Typography sx={{ color: "#999" }}>Nenhuma anotação.</Typography>
-                ) : (
-                  (chaptersMap[m.id] || []).map((ch, idx) => (
-                    <Box key={idx} sx={{ mb: 1, p: 1, bgcolor: "#1a1a1a", borderRadius: 1 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <Typography sx={{ fontWeight: "bold", color: "#fff" }}>{ch.title}</Typography>
-                        {isMestre && (
-                          <Box>
-                            <IconButton size="small" color="info" onClick={(e) => openChapterDialog(m.id, idx, e)}>
-                              <EditIcon />
-                            </IconButton>
-                            <IconButton size="small" color="error" onClick={(e) => deleteChapterForMap(m.id, idx, e)}>
-                              <DeleteIcon />
-                            </IconButton>
-                                      
-                          </Box>
-                        )}
-                      </Box>
-                      <Box sx={{ mt: 1, maxHeight: "calc(100vh - 350px)", overflowY: "auto" }}>
-                        {renderMarkdown(ch.text)}
-                      </Box>
-                    </Box>
-                  ))
-                )}
-              </Box>
-                  {/* 🟢 CAMINHOS/ROTAS */}
-              <Box sx={{ mt: 2, borderTop: '1px solid #333', pt: 2 }}>
-                <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1 }}>
-                  📏 Rotas e Caminhos
-                </Typography>
-                                {(caminhos[m.id] || []).map(caminho => (
-                  <Box key={caminho.id} sx={{ mb: 1, p: 1, bgcolor: editandoCaminhoId === caminho.id ? '#1e3a5f' : '#1a1a1a', borderRadius: 1, border: editandoCaminhoId === caminho.id ? '1px solid #ff9800' : '1px solid transparent' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{ width: 12, height: 12, bgcolor: caminho.cor, borderRadius: '50%' }} />
-                        <Typography variant="caption" sx={{ color: '#fff' }}>
-                          {caminho.nome}
-                          {editandoCaminhoId === caminho.id && (
-                            <Typography component="span" variant="caption" sx={{ color: '#ff9800', ml: 0.5, fontSize: '0.55rem' }}>
-                              ✏️ Editando
-                            </Typography>
-                          )}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1 }}>
-                          {pixelsParaKm(calcularDistanciaTotal(caminho.pontos))} km
-                        </Typography>
-                        {isMestre && (
-                          <>
-                                                        <IconButton size="small" onClick={() => {
-                              if (editandoCaminhoId === caminho.id) {
-                                // Finaliza edição
-                                setEditandoCaminhoId(null);
-                                setModoCriarCaminho(false);
-                                setTimeout(() => loadSvgForMapComDados(expanded, JSON.parse(JSON.stringify(caminhos))), 100);
-                              } else {
-                                // Inicia edição
-                                setEditandoCaminhoId(caminho.id);
-                                setModoCriarCaminho(false);
-                                setCaminhoAtivo(null);
-                              }
-                            }} sx={{ color: editandoCaminhoId === caminho.id ? '#4caf50' : '#ff9800' }}>
-                              <EditIcon fontSize="inherit" />
-                            </IconButton>
-                            <IconButton size="small" onClick={() => deletarCaminho(m.id, caminho.id)} sx={{ color: '#ef4444' }}>
-                              <DeleteIcon fontSize="inherit" />
-                            </IconButton>
-                          </>
-                        )}
-                      </Box>
-                    </Box>
-                    <Typography variant="caption" sx={{ color: '#64748b' }}>
-                      {caminho.pontos.length} pontos
-                    </Typography>
-                  </Box>
-                ))}
-                {(caminhos[m.id] || []).length === 0 && (
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>
-                    Nenhum caminho criado ainda
-                  </Typography>
-                )}
-              </Box>
-            </Box>
+              )}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1 }}>
+              {pixelsParaKm(calcularDistanciaTotal(caminho.pontos))} km
+            </Typography>
+            {isMestre && (
+              <>
+                <IconButton size="small" onClick={() => {
+                  if (editandoCaminhoId === caminho.id) {
+                    setEditandoCaminhoId(null);
+                    setModoCriarCaminho(false);
+                    setTimeout(() => loadSvgForMapComDados(expanded, JSON.parse(JSON.stringify(caminhos))), 100);
+                  } else {
+                    setEditandoCaminhoId(caminho.id);
+                    setModoCriarCaminho(false);
+                    setCaminhoAtivo(null);
+                  }
+                }} sx={{ color: editandoCaminhoId === caminho.id ? '#4caf50' : '#ff9800', p: 0.3 }}>
+                  <EditIcon fontSize="inherit" sx={{ fontSize: '0.8rem' }} />
+                </IconButton>
+                <IconButton size="small" onClick={() => deletarCaminho(m.id, caminho.id)} sx={{ color: '#ef4444', p: 0.3 }}>
+                  <DeleteIcon fontSize="inherit" sx={{ fontSize: '0.8rem' }} />
+                </IconButton>
+              </>
+            )}
+          </Box>
+        </Box>
+        <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.6rem' }}>
+          {caminho.pontos.length} pontos
+        </Typography>
+      </Box>
+    ))}
+    {(caminhos[m.id] || []).length === 0 && (
+      <Typography variant="caption" sx={{ color: '#64748b' }}>
+        Nenhum caminho criado ainda
+      </Typography>
+    )}
+  </Box>
+</Box>
           </AccordionDetails>
         </Accordion>
       ))}
+{/* === CRÔNICA GLOBAL === */}
+{/* === CRÔNICA GLOBAL - VERSÃO CORRIGIDA === */}
+<Box sx={{ bgcolor: "#2a2a2a", p: 2, mt: 3, borderRadius: 1, mb: 3 }}>
+  <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2, alignItems: "center" }}>
+    <Typography variant="h6" sx={{ color: "#fff" }}>
+      📜 Crônica Geral
+      <Typography component="span" sx={{ color: '#64748b', fontSize: '0.7rem', ml: 1 }}>
+        ({globalChapters.length})
+      </Typography>
+    </Typography>
+    {isMestre && (
+      <Button startIcon={<AddIcon />} variant="contained" size="small" onClick={(e) => openGlobalChapterDialog(null, e)}>
+        Nova
+      </Button>
+    )}
+  </Box>
 
-      {/* === CRÔNICA GLOBAL === */}
-      <Box sx={{ bgcolor: "#2a2a2a", p: 2, mt: 3, borderRadius: 1, mb: 3 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
-          <Typography variant="h6" sx={{ color: "#fff" }}>
-            Crônica Geral
-          </Typography>
-          {isMestre && (
-            <Button startIcon={<AddIcon />} variant="contained" size="small" onClick={(e) => openGlobalChapterDialog(null, e)}>
-              Novo
-            </Button>
-          )}
-        </Box>
-
-        {globalChapters.length === 0 ? (
-          <Typography sx={{ color: "#aaa" }}>Nenhuma crônica global cadastrada.</Typography>
-        ) : (
-          globalChapters.map((ch, i) => (
-            <Accordion key={i} sx={{ bgcolor: "#333", color: "#fff", mb: 1 }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: "#fff" }} />}>
-                <Typography sx={{ flex: 1, color: "#fff" }}>{ch.title}</Typography>
-                {isMestre && (
-                  <>
-                    <IconButton size="small" color="info" onClick={(e) => openGlobalChapterDialog(i, e)}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton size="small" color="error" onClick={(e) => deleteGlobalChapter(i, e)}>
-                      <DeleteIcon />
-                    </IconButton>
-                  </>
-                )}
-              </AccordionSummary>
-              <AccordionDetails>{renderMarkdown(ch.text)}</AccordionDetails>
-            </Accordion>
-          ))
-        )}
-      </Box>
-
-      {/* === DIALOGOS === */}
+{globalChapters.length === 0 ? (
+  <Typography sx={{ color: "#aaa" }}>Nenhuma crônica global cadastrada.</Typography>
+) : (
+  globalChapters.map((ch, i) => (
+    <AnotacaoExpansivel
+      key={i}
+      titulo={ch.title}
+      conteudo={ch.text}
+      isMestre={isMestre}
+      onEdit={() => openGlobalChapterDialog(i)}
+      onDelete={() => deleteGlobalChapter(i)}
+      renderMarkdown={renderMarkdown}
+    />
+  ))
+)}
+</Box>
       {/* Capítulos do Mapa */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth maxWidth="md">
         <DialogTitle sx={{ bgcolor: "#1e1e1e", color: "#fff" }}>
