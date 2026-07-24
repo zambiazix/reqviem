@@ -413,7 +413,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     await setDoc(doc(db, "fichas", currentUserEmail), {
       carteiras: novasCarteiras,
       [categoriaDestinoCompra]: categoriaItens,
-    });
+}, { merge: true });
 
         // Diminui estoque (NUNCA DELETA, só zera)
     const novoEstoque = Math.max(0, (comprandoItem.estoque || 1) - quantidadeComprada);

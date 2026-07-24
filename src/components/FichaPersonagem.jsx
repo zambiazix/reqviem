@@ -378,6 +378,8 @@ const [anotacaoTitulo, setAnotacaoTitulo] = useState("");
 const anotacaoTextareaRef = useRef(null);
 const backgroundTextareaRef = useRef(null);
 const lightboxImageAnotacaoRef = useRef(null);
+const dirtyFieldsRef = useRef({}); // rastreia campos alterados localmente (nome, etc.)
+const fichaRef = useRef(null);      // sempre reflete o estado mais recente da ficha
 const [itemParaTransferir, setItemParaTransferir] = useState(null);
 const [itemParaDropar, setItemParaDropar] = useState(null);
 const [jogadorDestinoItem, setJogadorDestinoItem] = useState("");
@@ -392,6 +394,7 @@ const [inventarioSecundarioAtivo, setInventarioSecundarioAtivo] = useState(null)
 const [editandoNomeInventario, setEditandoNomeInventario] = useState(false);
 const [modalTransferirParaSecundarioOpen, setModalTransferirParaSecundarioOpen] = useState(false);
 const [modalTransferirDoSecundarioOpen, setModalTransferirDoSecundarioOpen] = useState(false);
+
 // Lista de Traços (desbloqueados ao atingir nível 5 na perícia)
 const TRACOS_POR_PERICIA = {
   atletismo: "Atleta",
@@ -410,6 +413,10 @@ const TRACOS_POR_PERICIA = {
   intimidacao: "Intimidador",
   aura: "Auris",
 };
+
+useEffect(() => {
+  fichaRef.current = ficha;
+}, [ficha]);
 
 // ✅ NOVO - Carrega talentos APENAS uma vez quando a ficha é carregada
 useEffect(() => {
@@ -529,129 +536,115 @@ useEffect(() => {
       
       setLoading(true);
       const ref = doc(db, "fichas", fichaId);
-      
-            const unsub = onSnapshot(ref, (snap) => {
-        // 🟢 BLOQUEIO PARA INSUMÍVEL
-        if (window.__bloqueandoInsumivel) {
-          console.log("⏭️ onSnapshot BLOQUEADO");
-          return;
-        }
-        
-        if (snap.exists()) {
-          const dados = snap.data();
-          if (!dados.imagens && dados.imagemPersonagem) {
-            dados.imagens = [dados.imagemPersonagem];
-            dados.imagemPrincipalIndex = 0;
-          }
-          
-                              const garantirDadoNosItens = (itens) => {
-            if (!Array.isArray(itens)) return [];
-            return itens.map(item => ({
-              ...item,
-              dado: item.dado || 1,
-              tipoDano: item.tipoDano || "Nenhum",
-                                          consumivel: item.consumivel || "Nenhum",
-              consumivelValor: item.consumivelValor || 0,
-              consumivelPercentual: item.consumivelPercentual || 100,
-              insumivel: item.insumivel || "Nenhum",
-              insumivelValor: item.insumivelValor || 0,
-            }));
-          };
+const unsub = onSnapshot(ref, (snap) => {
+  if (window.__bloqueandoInsumivel) {
+    console.log("⏭️ onSnapshot BLOQUEADO");
+    return;
+  }
 
-          const combinado = {
-            ...modelo,
-            ...dados,
-            atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
-            pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
-                                    habilidades: Array.isArray(dados.habilidades) 
-  ? dados.habilidades.map(h => {
-      // Processa as condições primeiro
-      const condicoesProcessadas = Array.isArray(h.condicoes) 
-        ? h.condicoes 
-        : (typeof h.condicoes === 'string' && h.condicoes.trim() 
-            ? [{ 
-                id: Date.now(), 
-                titulo: "Condição 1", 
-                descricao: h.condicoes,
-                dificuldade: 0,
-                janela: 0,
-                custo: 0,
-                risco: 0
-              }] 
-            : []);
-      
-      return {
-        dado: 1, 
-        tipoDano: "Aurano",
-        custoPE: 0,
-        imagem: "",
-        ...h,
-        condicoes: condicoesProcessadas, // SÓ UMA VEZ, depois do spread
-      };
-    }) 
-  : [],
-            moedas: { ...modelo.moedas, ...(dados.moedas || {}) },
-            equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
-            vestes: garantirDadoNosItens(Array.isArray(dados.vestes) ? dados.vestes : []),
-            diversos: garantirDadoNosItens(Array.isArray(dados.diversos) ? dados.diversos : []),
-                        inventariosSecundarios: Array.isArray(dados.inventariosSecundarios) 
-              ? dados.inventariosSecundarios.map(inv => ({
-                  ...inv,
-                  itens: garantirDadoNosItens(Array.isArray(inv.itens) ? inv.itens : [])
-                }))
-              : [],
-          };
-setFicha(combinado);
-// 🟢 Carrega XP de atributos e perícias (SEMPRE, não só se existir)
-setAtributosXP(dados.atributosXP || {});
-setPericiasXP(dados.periciasXP || {});
-console.log('📥 FICHA ATUALIZADA - atributosXP:', dados.atributosXP, 'periciasXP:', dados.periciasXP);
+  if (snap.exists()) {
+    const dados = snap.data();
 
-// 🟢 Carrega XP das habilidades (CORRIGIDO)
-const habilidadesXPCarregado = dados.habilidadesXP || {};
-console.log('📥 FICHA ATUALIZADA - habilidadesXP bruto:', JSON.stringify(dados.habilidadesXP));
-console.log('📥 TODAS as chaves do documento:', Object.keys(dados).filter(k => k.includes('habilidades')));
-setHabilidadesXP(habilidadesXPCarregado);
-        } else {
-          setDoc(ref, modelo);
-          setFicha({ ...modelo });
-        }
-        setLoading(false);
-      }, (err) => {
-        console.error("Erro carregar ficha:", err);
-        setFicha({ ...modelo });
-        setLoading(false);
-      });
+    // ===== 🟢 MESCLA CAMPOS SUJOS LOCAIS =====
+    Object.keys(dirtyFieldsRef.current).forEach((key) => {
+      if (fichaRef.current && fichaRef.current.hasOwnProperty(key)) {
+        dados[key] = fichaRef.current[key];
+      }
+    });
+
+    // ===== IMAGENS =====
+    if (!dados.imagens && dados.imagemPersonagem) {
+      dados.imagens = [dados.imagemPersonagem];
+      dados.imagemPrincipalIndex = 0;
+    }
+
+    // ===== GARANTIR DADOS NOS ITENS =====
+    const garantirDadoNosItens = (itens) => {
+      if (!Array.isArray(itens)) return [];
+      return itens.map(item => ({
+        ...item,
+        dado: item.dado || 1,
+        tipoDano: item.tipoDano || "Nenhum",
+        consumivel: item.consumivel || "Nenhum",
+        consumivelValor: item.consumivelValor || 0,
+        consumivelPercentual: item.consumivelPercentual || 100,
+        insumivel: item.insumivel || "Nenhum",
+        insumivelValor: item.insumivelValor || 0,
+      }));
+    };
+
+    const combinado = {
+      ...modelo,
+      ...dados,
+      atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
+      pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
+      habilidades: Array.isArray(dados.habilidades)
+        ? dados.habilidades.map(h => {
+            const condicoesProcessadas = Array.isArray(h.condicoes)
+              ? h.condicoes
+              : (typeof h.condicoes === 'string' && h.condicoes.trim()
+                  ? [{
+                      id: Date.now(),
+                      titulo: "Condição 1",
+                      descricao: h.condicoes,
+                      dificuldade: 0,
+                      janela: 0,
+                      custo: 0,
+                      risco: 0
+                    }]
+                  : []);
+            return {
+              dado: 1,
+              tipoDano: "Aurano",
+              custoPE: 0,
+              imagem: "",
+              ...h,
+              condicoes: condicoesProcessadas,
+            };
+          })
+        : [],
+      moedas: { ...modelo.moedas, ...(dados.moedas || {}) },
+      equipamentos: garantirDadoNosItens(Array.isArray(dados.equipamentos) ? dados.equipamentos : []),
+      vestes: garantirDadoNosItens(Array.isArray(dados.vestes) ? dados.vestes : []),
+      diversos: garantirDadoNosItens(Array.isArray(dados.diversos) ? dados.diversos : []),
+      inventariosSecundarios: Array.isArray(dados.inventariosSecundarios)
+        ? dados.inventariosSecundarios.map(inv => ({
+            ...inv,
+            itens: garantirDadoNosItens(Array.isArray(inv.itens) ? inv.itens : [])
+          }))
+        : [],
+    };
+
+    setFicha(combinado);
+    setAtributosXP(dados.atributosXP || {});
+    setPericiasXP(dados.periciasXP || {});
+
+    const habilidadesXPCarregado = dados.habilidadesXP || {};
+    setHabilidadesXP(habilidadesXPCarregado);
+  } else {
+    setDoc(ref, modelo);
+    setFicha({ ...modelo });
+  }
+  setLoading(false);
+}, (err) => {
+  console.error("Erro carregar ficha:", err);
+  setFicha({ ...modelo });
+  setLoading(false);
+});
       
       return () => unsub();
     }, [fichaId]);
 
     function setCampo(chave, valor) {
       setFicha((p) => ({ ...p, [chave]: valor }));
+      dirtyFieldsRef.current[chave] = true;
     }
- function setSubCampo(obj, chave, valor) {
+function setSubCampo(obj, chave, valor) {
   setFicha((p) => {
     const novoObj = { ...p[obj], [chave]: valor };
-    
-    // 🟢 ZERA XP se o jogador usou pontos manualmente
-    if (obj === 'atributos') {
-      setAtributosXP(prev => ({ ...prev, [chave]: 0 }));
-      // Salva no Firestore
-      const ref = doc(db, "fichas", fichaId);
-      setDoc(ref, { 
-        [`atributos.${chave}`]: valor,
-        [`atributosXP.${chave}`]: 0 
-      }, { merge: true });
-    }
-    if (obj === 'pericias') {
-      setPericiasXP(prev => ({ ...prev, [chave]: 0 }));
-      const ref = doc(db, "fichas", fichaId);
-      setDoc(ref, { 
-        [`pericias.${chave}`]: valor,
-        [`periciasXP.${chave}`]: 0 
-      }, { merge: true });
-    }
-    
+    // Apenas zera XP (localmente) se o jogador mexer manualmente
+    if (obj === 'atributos') setAtributosXP(prev => ({ ...prev, [chave]: 0 }));
+    if (obj === 'pericias') setPericiasXP(prev => ({ ...prev, [chave]: 0 }));
     return { ...p, [obj]: novoObj };
   });
 }
@@ -1288,6 +1281,7 @@ const abrirModalDado = (item, tipo) => {
   habilidadesXP: habilidadesXP,
     };
     await setDoc(ref, toSave, { merge: true });
+    dirtyFieldsRef.current = {};   // 🟢 limpa o rastro de campos alterados, agora já salvos
     alert("Ficha salva com sucesso!");
   } catch (err) {
     console.error(err);
@@ -1296,6 +1290,71 @@ const abrirModalDado = (item, tipo) => {
     setSaving(false);
   }
 }
+  // 🟢 FUNÇÃO DE BACKUP (DOWNLOAD JSON)
+  const handleBackup = () => {
+    if (!ficha) return;
+
+    // Monta o nome do arquivo: nomepersonagem_ddmmaaaa.json
+    const hoje = new Date();
+    const dia = String(hoje.getDate()).padStart(2, '0');
+    const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+    const ano = hoje.getFullYear();
+    const nomeArquivo = `${(ficha.nome || 'personagem').replace(/\s+/g, '_')}_${dia}${mes}${ano}.json`;
+
+    // Cria o JSON (pode excluir campos internos como dono, mas manteremos tudo)
+    const dadosBackup = { ...ficha };
+    // Remove campos que não precisam ser persistidos no backup (opcional)
+    delete dadosBackup.dono;
+
+    const blob = new Blob([JSON.stringify(dadosBackup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nomeArquivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // 🟢 FUNÇÃO DE RESTAURAÇÃO (UPLOAD JSON)
+  const handleRestore = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        const texto = await file.text();
+        const dados = JSON.parse(texto);
+
+        // Validação básica: precisa ter atributos e pericias
+        if (!dados.atributos || !dados.pericias) {
+          alert('❌ Arquivo inválido! O JSON não contém os campos "atributos" ou "pericias".');
+          return;
+        }
+
+        if (!window.confirm('⚠️ Isso substituirá TODOS os dados atuais da ficha. Continuar?')) {
+          return;
+        }
+
+        // Atualiza o estado local
+        setFicha(prev => ({ ...prev, ...dados }));
+
+        // Salva no Firestore (substitui o documento, sem merge)
+        const ref = doc(db, "fichas", fichaId);
+        await setDoc(ref, dados); // sem merge → substituição completa
+
+        alert('✅ Ficha restaurada com sucesso!');
+      } catch (err) {
+        console.error(err);
+        alert('❌ Erro ao ler o arquivo. Verifique se é um JSON válido.');
+      }
+    };
+    input.click();
+  };
 
     async function handleUploadImagem(e) {
     const file = e.target.files?.[0];
@@ -2967,10 +3026,12 @@ sx={{
   </Button>
 </Box>
             {/* Botões Galeria e Salvar */}
-<Box mt={2} sx={{ display: "flex", justifyContent: "space-between" }}>
-  <Button variant="outlined" startIcon={<span>🖼️</span>} onClick={() => setModalGaleriaOpen(true)} sx={{ color: '#fff', borderColor: '#9c27b0' }}>
-    Galeria
-  </Button>
+<Box mt={2} sx={{ display: "flex", justifyContent: "space-between", gap: 1, flexWrap: 'wrap' }}>
+  <Box sx={{ display: 'flex', gap: 1 }}>
+    <Button variant="outlined" startIcon={<span>🖼️</span>} onClick={() => setModalGaleriaOpen(true)}>Galeria</Button>
+    <Button variant="outlined" startIcon={<span>💾</span>} onClick={handleBackup}>Backup</Button>
+    <Button variant="outlined" startIcon={<span>📂</span>} onClick={handleRestore}>Restaurar</Button>
+  </Box>
   <Button variant="contained" color="primary" onClick={salvarFicha} disabled={saving}>
     {saving ? "Salvando..." : "Salvar Ficha"}
   </Button>
