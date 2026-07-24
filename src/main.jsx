@@ -22,6 +22,22 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker
       .register("/service-worker.js")
       .then((registration) => {
+        // Força atualização imediata ao detectar uma nova versão
+registration.addEventListener('updatefound', () => {
+  const newWorker = registration.installing;
+  newWorker.addEventListener('statechange', () => {
+    // Quando o novo service worker estiver ativado, recarrega a página com cache limpo
+    if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+      window.location.reload(true); // true = hard reload (ignora cache)
+    }
+  });
+});
+
+// Se já houver um service worker esperando (waiting), ativa-o imediatamente
+if (registration.waiting) {
+  registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+  window.location.reload(true);
+}
         console.log("✅ Service Worker registrado com sucesso:", registration);
       })
       .catch((error) => {

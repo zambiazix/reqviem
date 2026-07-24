@@ -4,7 +4,6 @@ const urlsToCache = [
   '/index.html',
   '/manifest.json',
   '/logo.png',
-  '/logo.png'
 ];
 
 // Instala e adiciona arquivos ao cache
@@ -37,4 +36,10 @@ self.addEventListener('fetch', (event) => {
       return response || fetch(event.request);
     })
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
