@@ -2073,6 +2073,70 @@ const droparItem = async () => {
   setItemParaDropar(null);
   setQuantidadeDropar(1);
 };
+
+// 🟢 FUNÇÃO PARA BUSCAR ITEM NO COMÉRCIO PELO NOME
+const buscarItemNoComercio = async (nomeItem) => {
+  try {
+    const paisesSnap = await getDocs(collection(db, "comercio_paises"));
+    
+    for (const paisDoc of paisesSnap.docs) {
+      const cidadesSnap = await getDocs(collection(db, "comercio_paises", paisDoc.id, "cidades"));
+      
+      for (const cidadeDoc of cidadesSnap.docs) {
+        const lojasSnap = await getDocs(collection(db, "comercio_paises", paisDoc.id, "cidades", cidadeDoc.id, "lojas"));
+        
+        for (const lojaDoc of lojasSnap.docs) {
+          const itensSnap = await getDocs(collection(db, "comercio_paises", paisDoc.id, "cidades", cidadeDoc.id, "lojas", lojaDoc.id, "itens"));
+          
+          for (const itemDoc of itensSnap.docs) {
+            const itemData = itemDoc.data();
+            if (itemData.nome === nomeItem) {
+              return {
+                nome: itemData.nome,
+                dado: itemData.dado || 1,
+                durabilidade: itemData.durabilidade || 100,
+                imagem: itemData.imagem || "",
+                tipoDano: itemData.tipoDano || "Nenhum",
+                consumivel: itemData.consumivel || "Nenhum",
+                consumivelValor: itemData.consumivelValor || 0,
+                consumivelPercentual: itemData.consumivelPercentual || 100,
+                insumivel: itemData.insumivel || "Nenhum",
+                insumivelValor: itemData.insumivelValor || 0,
+              };
+            }
+          }
+        }
+      }
+    }
+    
+    return {
+      nome: nomeItem,
+      dado: 1,
+      durabilidade: 100,
+      imagem: "",
+      tipoDano: "Nenhum",
+      consumivel: "Nenhum",
+      consumivelValor: 0,
+      consumivelPercentual: 100,
+      insumivel: "Nenhum",
+      insumivelValor: 0,
+    };
+  } catch (err) {
+    console.error("Erro ao buscar item:", err);
+    return {
+      nome: nomeItem,
+      dado: 1,
+      durabilidade: 100,
+      imagem: "",
+      tipoDano: "Nenhum",
+      consumivel: "Nenhum",
+      consumivelValor: 0,
+      consumivelPercentual: 100,
+      insumivel: "Nenhum",
+      insumivelValor: 0,
+    };
+  }
+};
 // 🟢 FUNÇÃO PARA COMPRAR INVENTÁRIO SECUNDÁRIO (CORRIGIDA)
 const comprarInventarioSecundario = async (tamanho, custo, slots) => {
   // Encontra a primeira carteira com saldo suficiente
@@ -3250,8 +3314,7 @@ sx={{
     )}
   </Box>
 ))}
-
-{/* Anotações e Background - Botões (empurrados para baixo) */}
+{/* Anotações e Background - Botões */}
 <Box mt={2} sx={{ display: 'flex', gap: 2 }}>
   <Button 
     variant="outlined" 
@@ -3264,7 +3327,7 @@ sx={{
   <Button 
     variant="outlined" 
     startIcon={<span>📖</span>}
-        onClick={() => { setBackgroundEditandoIndex(null); setBackgroundTitulo(""); setBackgroundTexto(""); setModalBackgroundOpen(true); }}
+    onClick={() => setModalBackgroundOpen(true)}
     sx={{ color: '#fff', borderColor: '#9c27b0', flex: 1 }}
   >
     Background
@@ -4215,14 +4278,15 @@ sx={{
               Upload de Imagem
               <input type="file" accept="image/*" hidden multiple onChange={async (e) => {
                 const files = Array.from(e.target.files);
+                const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
                 for (const file of files) {
                   const fd = new FormData();
-                  fd.append("file", file);
+                  fd.append("image", file);
                   try {
-                    const res = await fetch("https://reqviem.onrender.com/upload", { method: "POST", body: fd });
+                    const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
                     const data = await res.json();
-                    if (data.url) {
-                      const novasImagens = [...(ficha.imagens || []), data.url];
+                    if (data?.success) {
+                      const novasImagens = [...(ficha.imagens || []), data.data.url];
                       setFicha(p => ({ ...p, imagens: novasImagens }));
                       const ref = doc(db, "fichas", fichaId);
                       await setDoc(ref, { imagens: novasImagens }, { merge: true });
@@ -5320,18 +5384,19 @@ sx={{
         const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
         const data = await res.json();
         if (data.url) {
-          const textarea = backgroundTextareaRef.current;
-          if (textarea) {
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
+          const el = backgroundTextareaRef.current;
+          if (el) {
+            const start = el.selectionStart || 0;
+            const end = el.selectionEnd || 0;
             const antes = backgroundTexto.substring(0, start);
             const depois = backgroundTexto.substring(end);
             const imagemMarkdown = `\n![Imagem](${data.url})\n`;
-            setBackgroundTexto(antes + imagemMarkdown + depois);
+            const novoTexto = antes + imagemMarkdown + depois;
+            setBackgroundTexto(novoTexto);
             setTimeout(() => {
-              textarea.focus();
-              textarea.selectionStart = start + imagemMarkdown.length;
-              textarea.selectionEnd = start + imagemMarkdown.length;
+              el.focus();
+              const novaPos = start + imagemMarkdown.length;
+              el.setSelectionRange(novaPos, novaPos);
             }, 100);
           } else {
             setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
@@ -5625,25 +5690,25 @@ sx={{
         size="small" 
         variant={abaBackground === "origem" ? "contained" : "outlined"}
         onClick={() => setAbaBackground("origem")}
-        sx={{ color: abaBackground === "origem" ? '#000' : '#94a3b8', bgcolor: abaBackground === "origem" ? '#4caf50' : 'transparent', borderColor: '#4caf50' }}
+        sx={{ color: abaBackground === "origem" ? '#000' : '#94a3b8', bgcolor: abaBackground === "origem" ? '#4caf50' : 'transparent', borderColor: '#4caf50', textTransform: 'none' }}
       >
-        🏙️ Origem
+        🏙️ {ficha?.origem ? `Origem: ${ficha.origem}` : "Origem"}
       </Button>
       <Button 
         size="small" 
         variant={abaBackground === "background" ? "contained" : "outlined"}
         onClick={() => setAbaBackground("background")}
-        sx={{ color: abaBackground === "background" ? '#000' : '#94a3b8', bgcolor: abaBackground === "background" ? '#ff9800' : 'transparent', borderColor: '#ff9800' }}
+        sx={{ color: abaBackground === "background" ? '#000' : '#94a3b8', bgcolor: abaBackground === "background" ? '#ff9800' : 'transparent', borderColor: '#ff9800', textTransform: 'none' }}
       >
-        ⚜️ Background
+        ⚜️ {ficha?.backgroundTipo ? `Background: ${ficha.backgroundTipo}` : "Background"}
       </Button>
       <Button 
         size="small" 
         variant={abaBackground === "capitulos" ? "contained" : "outlined"}
         onClick={() => setAbaBackground("capitulos")}
-        sx={{ color: abaBackground === "capitulos" ? '#000' : '#94a3b8', bgcolor: abaBackground === "capitulos" ? '#9c27b0' : 'transparent', borderColor: '#9c27b0' }}
+        sx={{ color: abaBackground === "capitulos" ? '#000' : '#94a3b8', bgcolor: abaBackground === "capitulos" ? '#9c27b0' : 'transparent', borderColor: '#9c27b0', textTransform: 'none' }}
       >
-        📝 Capítulos
+        📝 Capítulos ({backgroundCapitulos.length})
       </Button>
       <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
         <CloseIcon />
@@ -5826,22 +5891,11 @@ sx={{
                         novasCarteiras = [...carteirasAtuais, { nome: "Bolso", valor: bg.dinheiro }];
                       }
                       
-                      // 2. Adicionar item nos diversos
-                      const diversosAtuais = dados.diversos || [];
-                      const novoItem = {
-                        nome: bg.item,
-                        quantidade: 1,
-                        durabilidade: 100,
-                        dado: 1,
-                        imagem: "",
-                        tipoDano: "Nenhum",
-                        consumivel: "Nenhum",
-                        consumivelValor: 0,
-                        consumivelPercentual: 100,
-                        insumivel: "Nenhum",
-                        insumivelValor: 0,
-                      };
-                      const novosDiversos = [...diversosAtuais, novoItem];
+// 2. Buscar item no comércio com todos os dados
+const diversosAtuais = dados.diversos || [];
+const itemCompleto = await buscarItemNoComercio(bg.item);
+const novoItem = { ...itemCompleto, quantidade: 1 };
+const novosDiversos = [...diversosAtuais, novoItem];
                       
                       // 3. Bônus de perícia
                       const periciasAtuais = dados.pericias || {};
@@ -5978,51 +6032,53 @@ sx={{
           />
           
           <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
-            <Button 
-              size="small" 
-              variant="outlined" 
-              component="label"
-              startIcon={<span>📷</span>}
-              sx={{ color: '#94a3b8', borderColor: '#555' }}
-            >
-              Inserir Imagem
-              <input
-                hidden
-                type="file"
-                accept="image/*"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
-                    const fd = new FormData();
-                    fd.append("file", file);
-                    const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
-                    const data = await res.json();
-                    if (data.url) {
-                      const textarea = backgroundTextareaRef.current;
-                      if (textarea) {
-                        const start = textarea.selectionStart;
-                        const end = textarea.selectionEnd;
-                        const antes = backgroundTexto.substring(0, start);
-                        const depois = backgroundTexto.substring(end);
-                        const imagemMarkdown = `\n![Imagem](${data.url})\n`;
-                        setBackgroundTexto(antes + imagemMarkdown + depois);
-                        setTimeout(() => {
-                          textarea.focus();
-                          textarea.selectionStart = start + imagemMarkdown.length;
-                          textarea.selectionEnd = start + imagemMarkdown.length;
-                        }, 100);
-                      } else {
-                        setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
-                      }
-                    }
-                  } catch (err) {
-                    alert("Erro ao enviar imagem");
-                  }
-                }}
-              />
-            </Button>
+<Button 
+  size="small" 
+  variant="outlined" 
+  component="label"
+  startIcon={<span>📷</span>}
+  sx={{ color: '#94a3b8', borderColor: '#555' }}
+>
+  Inserir Imagem
+  <input
+    hidden
+    type="file"
+    accept="image/*"
+    onChange={async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.url) {
+          // Usa o ref do input ao invés de querySelector
+          const textarea = backgroundTextareaRef.current;
+          if (textarea && textarea.querySelector('textarea')) {
+            const nativeTextarea = textarea.querySelector('textarea');
+            const start = nativeTextarea.selectionStart;
+            const end = nativeTextarea.selectionEnd;
+            const antes = backgroundTexto.substring(0, start);
+            const depois = backgroundTexto.substring(end);
+            const imagemMarkdown = `\n![Imagem](${data.url})\n`;
+            setBackgroundTexto(antes + imagemMarkdown + depois);
+            setTimeout(() => {
+              nativeTextarea.focus();
+              nativeTextarea.selectionStart = start + imagemMarkdown.length;
+              nativeTextarea.selectionEnd = start + imagemMarkdown.length;
+            }, 100);
+          } else {
+            setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
+          }
+        }
+      } catch (err) {
+        alert("Erro ao enviar imagem");
+      }
+    }}
+  />
+</Button>
             
             {backgroundEditandoIndex !== null && (
               <Button 
@@ -6060,10 +6116,10 @@ sx={{
             )}
           </Box>
           
-          <TextField
-            id="background-textarea"
-            inputRef={backgroundTextareaRef}
-            label="Conteúdo (Markdown)"
+<TextField
+  id="background-textarea"
+  inputRef={backgroundTextareaRef}
+  label="Conteúdo (Markdown)"
             fullWidth
             multiline
             minRows={15}
