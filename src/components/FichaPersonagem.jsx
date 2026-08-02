@@ -373,6 +373,11 @@ const [backgroundTitulo, setBackgroundTitulo] = useState("");
 const [anotacoesSalvos, setAnotacoesSalvos] = useState([]);
 const [anotacaoEditandoIndex, setAnotacaoEditandoIndex] = useState(null);
 const [anotacaoTitulo, setAnotacaoTitulo] = useState("");
+const [abaBackground, setAbaBackground] = useState("origem"); // "origem" | "background" | "capitulos"
+const [backgroundSelecionado, setBackgroundSelecionado] = useState(null);
+const [cidadeSelecionada, setCidadeSelecionada] = useState("");
+const [backgroundConfirmado, setBackgroundConfirmado] = useState(false);
+const [origemConfirmada, setOrigemConfirmada] = useState(false);
 
 // 🟢 REFERÊNCIA PARA O TEXTAREA (para inserir imagem no cursor)
 const anotacaoTextareaRef = useRef(null);
@@ -413,6 +418,237 @@ const TRACOS_POR_PERICIA = {
   intimidacao: "Intimidador",
   aura: "Auris",
 };
+
+// 🟢 BACKGROUNDS DISPONÍVEIS
+const BACKGROUNDS = [
+  { 
+    id: 1, nome: "Herdeiro", descricao: "Você nasceu em berço de ouro, seja de uma família nobre, corporativa ou dinastia comercial.",
+    dinheiro: 50000, item: "Autômato de Companhia", pericia: "labia", bonus: 1 
+  },
+  { 
+    id: 2, nome: "Operário", descricao: "Você trabalhou nas fábricas, minas ou oficinas. Suas mãos conhecem o peso do trabalho duro.",
+    dinheiro: 500, item: "Machado de Batalha", pericia: "atletismo", bonus: 1 
+  },
+  { 
+    id: 3, nome: "Forasteiro", descricao: "Você veio de fora das cidades, das estepes, desertos ou terras selvagens.",
+    dinheiro: 2000, item: "Dardos Tranquilizantes", pericia: "sobrevivencia", bonus: 1 
+  },
+  { 
+    id: 4, nome: "Acadêmico", descricao: "Você estudou em universidades, bibliotecas ou laboratórios. O conhecimento é sua arma.",
+    dinheiro: 5000, item: "Terminal de Mesa", pericia: "conhecimento", bonus: 1 
+  },
+  { 
+    id: 5, nome: "Mercenário", descricao: "Você lutou por dinheiro, sobrevivendo de contrato em contrato nos campos de batalha.",
+    dinheiro: 8000, item: "Sabre de Oficial", pericia: "luta", bonus: 1 
+  },
+  { 
+    id: 6, nome: "Místico", descricao: "Você teve contato com o sobrenatural: cultos, ordens esotéricas, ou experiências inexplicáveis.",
+    dinheiro: 3000, item: "Injeção da Vida", pericia: "aura", bonus: 1 
+  },
+  { 
+    id: 7, nome: "Submundo", descricao: "Você viveu nas sombras: ladrão, contrabandista, ou simplesmente sobrevivente dos becos.",
+    dinheiro: 4500, item: "Adaga Curta de Aço Damasco", pericia: "furtividade", bonus: 1 
+  },
+  { 
+    id: 8, nome: "Artista", descricao: "Você viveu da arte: música, teatro, pintura, ou performances de rua.",
+    dinheiro: 2500, item: "Alaúde", pericia: "performance", bonus: 1 
+  },
+  { 
+    id: 9, nome: "Médico", descricao: "Você curou pessoas: em hospitais, campos de batalha, ou clínicas clandestinas.",
+    dinheiro: 10000, item: "Kit Médico", pericia: "medicina", bonus: 1 
+  },
+  { 
+    id: 10, nome: "Caçador", descricao: "Você rastreou presas: animais, monstros, ou até mesmo pessoas.",
+    dinheiro: 6000, item: "Arco Intermediário", pericia: "armaDistancia", bonus: 1 
+  },
+  { 
+    id: 11, nome: "Diplomata", descricao: "Você negociou paz e guerra: embaixador, mediador, ou simplesmente alguém que sabe falar.",
+    dinheiro: 12000, item: "ICM", pericia: "labia", bonus: 1 
+  },
+  { 
+    id: 12, nome: "Investigador", descricao: "Você resolveu mistérios: detetive, jornalista, ou simplesmente um curioso incurável.",
+    dinheiro: 7000, item: "Olho de Lente de Aumento", pericia: "investigacao", bonus: 1 
+  },
+  { 
+    id: 13, nome: "Sentinela", descricao: "Você protegeu algo ou alguém: guarda, vigia, ou batedor de caravanas.",
+    dinheiro: 3500, item: "Drone de Vigilancia", pericia: "percepcao", bonus: 1 
+  },
+  { 
+    id: 14, nome: "Intimidador", descricao: "Você impôs respeito pelo medo: capanga, executor, ou simplesmente alguém muito grande.",
+    dinheiro: 100, item: "Obsidiana", pericia: "intimidacao", bonus: 1 
+  },
+  { 
+    id: 15, nome: "Naturalista", descricao: "Você estudou a natureza: botânico, geólogo, ou herbalista das terras selvagens.",
+    dinheiro: 1000, item: "Cavalo", pericia: "natureza", bonus: 1 
+  },
+];
+
+// 🟢 ORIGENS (Cidades e Gentílicos)
+const ORIGENS = [
+  // Império Aurano
+  { cidade: "Auraxia", gentilico: "Auraxiano(a)", nacao: "Império Aurano" },
+  { cidade: "Laxeado", gentilico: "Laxeadense", nacao: "Império Aurano" },
+  { cidade: "Sideris", gentilico: "Sideriano(a)", nacao: "Império Aurano" },
+  { cidade: "Caldeira", gentilico: "Caldereiro(a)", nacao: "Império Aurano" },
+  { cidade: "Nexa", gentilico: "Nexiano(a)", nacao: "Império Aurano" },
+  { cidade: "Vindicta", gentilico: "Vindictano(a)", nacao: "Império Aurano" },
+  { cidade: "Sensus", gentilico: "Sensuano(a)", nacao: "Império Aurano" },
+  { cidade: "Porto Névoa", gentilico: "Porto-Nevoense", nacao: "Império Aurano" },
+  { cidade: "Solaris", gentilico: "Solariano(a)", nacao: "Império Aurano" },
+  { cidade: "Arenna", gentilico: "Arennense", nacao: "Império Aurano" },
+  { cidade: "Vértex", gentilico: "Vertexiano(a)", nacao: "Império Aurano" },
+  { cidade: "Ferrogênese", gentilico: "Ferrogenesiano(a)", nacao: "Império Aurano" },
+  { cidade: "Passaredo", gentilico: "Passaredense", nacao: "Império Aurano" },
+  { cidade: "Cinzas", gentilico: "Cinzense", nacao: "Império Aurano" },
+  { cidade: "Polaris", gentilico: "Polariano(a)", nacao: "Império Aurano" },
+  { cidade: "Miragem", gentilico: "Miragense", nacao: "Império Aurano" },
+  { cidade: "Vapor", gentilico: "Vaporiano(a)", nacao: "Império Aurano" },
+  { cidade: "Obsidyan", gentilico: "Obsidyano(a)", nacao: "Império Aurano" },
+  { cidade: "Eco", gentilico: "Ecoense", nacao: "Império Aurano" },
+  { cidade: "Lacuna", gentilico: "Lacunense", nacao: "Império Aurano" },
+  { cidade: "Têmpera", gentilico: "Temperano(a)", nacao: "Império Aurano" },
+  { cidade: "Gris", gentilico: "Grisiano(a)", nacao: "Império Aurano" },
+  { cidade: "Anelo", gentilico: "Anelense", nacao: "Império Aurano" },
+  { cidade: "Chamusca", gentilico: "Chamusquense", nacao: "Império Aurano" },
+  { cidade: "Ruptura", gentilico: "Rupturense", nacao: "Império Aurano" },
+  // Arcádia
+  { cidade: "Misty", gentilico: "Mistiano(a)", nacao: "Arcádia" },
+  { cidade: "Porto Gris", gentilico: "Porto-Grisense", nacao: "Arcádia" },
+  { cidade: "Lothbrok", gentilico: "Lothbrokiano(a)", nacao: "Arcádia" },
+  { cidade: "Vale Freydis", gentilico: "Vale-Freydiano(a)", nacao: "Arcádia" },
+  { cidade: "Skadivar", gentilico: "Skadivariano(a)", nacao: "Arcádia" },
+  { cidade: "Grisia", gentilico: "Grisiano(a)", nacao: "Arcádia" },
+  { cidade: "Maverick", gentilico: "Maverickiano(a)", nacao: "Arcádia" },
+  { cidade: "Vestar", gentilico: "Vestariano(a)", nacao: "Arcádia" },
+  { cidade: "Solvig", gentilico: "Solvigiano(a)", nacao: "Arcádia" },
+  { cidade: "Halvar", gentilico: "Halvariano(a)", nacao: "Arcádia" },
+  { cidade: "Passo do Lamento", gentilico: "Lamentino(a)", nacao: "Arcádia" },
+  // Parax
+  { cidade: "Abyssus", gentilico: "Abyssiano(a)", nacao: "Parax" },
+  { cidade: "Salaria", gentilico: "Salariano(a)", nacao: "Parax" },
+  { cidade: "Thalassa", gentilico: "Thalassiano(a)", nacao: "Parax" },
+  { cidade: "Kaelum", gentilico: "Kaelita", nacao: "Parax" },
+  { cidade: "Brim", gentilico: "Brimiano(a)", nacao: "Parax" },
+  { cidade: "Vortex", gentilico: "Vortexiano(a)", nacao: "Parax" },
+  { cidade: "Nadir", gentilico: "Nadiriano(a)", nacao: "Parax" },
+  { cidade: "Froste", gentilico: "Frostiano(a)", nacao: "Parax" },
+  { cidade: "Rúnico", gentilico: "Rúnico(a)", nacao: "Parax" },
+  { cidade: "Salgar", gentilico: "Salgariano(a)", nacao: "Parax" },
+  // Varosia
+  { cidade: "Vondaris", gentilico: "Vondariano(a)", nacao: "Varosia" },
+  { cidade: "Hargen", gentilico: "Hargenita", nacao: "Varosia" },
+  { cidade: "Normandia", gentilico: "Normandiano(a)", nacao: "Varosia" },
+  { cidade: "Jasphora", gentilico: "Jasphoriano(a)", nacao: "Varosia" },
+  { cidade: "Onir", gentilico: "Oniriano(a)", nacao: "Varosia" },
+  { cidade: "Palath", gentilico: "Palathiano(a)", nacao: "Varosia" },
+  { cidade: "Dargos", gentilico: "Dargosiano(a)", nacao: "Varosia" },
+  { cidade: "Floresta de Cinzas", gentilico: "Cinzento(a)", nacao: "Varosia" },
+  { cidade: "Verdantia", gentilico: "Verdantiano(a)", nacao: "Varosia" },
+  { cidade: "Lumina", gentilico: "Luminense", nacao: "Varosia" },
+  { cidade: "Raiz Profunda", gentilico: "Raizense", nacao: "Varosia" },
+  { cidade: "Brisa Alta", gentilico: "Brisaltense", nacao: "Varosia" },
+  { cidade: "Terra Serena", gentilico: "Sereniano(a)", nacao: "Varosia" },
+  { cidade: "Folha Eterna", gentilico: "Folhense", nacao: "Varosia" },
+  { cidade: "Semente", gentilico: "Sementino(a)", nacao: "Varosia" },
+  // Burgo
+  { cidade: "Burguia", gentilico: "Burguiano(a)", nacao: "Burgo" },
+  { cidade: "Vossheim", gentilico: "Vossheimense", nacao: "Burgo" },
+  { cidade: "Halgard", gentilico: "Halgardiano(a)", nacao: "Burgo" },
+  { cidade: "Dornburg", gentilico: "Dornburguês(a)", nacao: "Burgo" },
+  { cidade: "Ravenstein", gentilico: "Ravensteiniano(a)", nacao: "Burgo" },
+  { cidade: "Sturmhalt", gentilico: "Sturmhaltiano(a)", nacao: "Burgo" },
+  { cidade: "Falkenhorst", gentilico: "Falkenhorstiano(a)", nacao: "Burgo" },
+  { cidade: "Orloff", gentilico: "Orloffiano(a)", nacao: "Burgo" },
+  { cidade: "Brennarfurt", gentilico: "Brennarfurtiano(a)", nacao: "Burgo" },
+  { cidade: "Karstenbad", gentilico: "Karstenbadense", nacao: "Burgo" },
+  { cidade: "Lotharsberg", gentilico: "Lotharsberguês(a)", nacao: "Burgo" },
+  { cidade: "Vargenwald", gentilico: "Vargenwaldiano(a)", nacao: "Burgo" },
+  { cidade: "Torre do Véu", gentilico: "Velense", nacao: "Burgo" },
+  { cidade: "Solis", gentilico: "Solisiano(a)", nacao: "Burgo" },
+  { cidade: "Pontedouro", gentilico: "Pontedourense", nacao: "Burgo" },
+  { cidade: "Grisvale", gentilico: "Grisvalense", nacao: "Burgo" },
+  { cidade: "Aurhammer", gentilico: "Aurhammeriano(a)", nacao: "Burgo" },
+  { cidade: "Veridis", gentilico: "Veridiano(a)", nacao: "Burgo" },
+  // Kratória
+  { cidade: "Praxys", gentilico: "Praxiano(a)", nacao: "Kratória" },
+  { cidade: "Ferrus", gentilico: "Ferrusiano(a)", nacao: "Kratória" },
+  { cidade: "Gume", gentilico: "Gumense", nacao: "Kratória" },
+  { cidade: "Brasa", gentilico: "Brasense", nacao: "Kratória" },
+  { cidade: "Cidadela Fernsby", gentilico: "Fernsbyano(a)", nacao: "Kratória" },
+  { cidade: "Porto Negro", gentilico: "Porto-Negrense", nacao: "Kratória" },
+  { cidade: "Vex", gentilico: "Vexiano(a)", nacao: "Kratória" },
+  { cidade: "Cinzas", gentilico: "Cinzense", nacao: "Kratória" },
+  { cidade: "Martelo", gentilico: "Martelense", nacao: "Kratória" },
+  { cidade: "Lyannor", gentilico: "Lyannorense", nacao: "Kratória" },
+  { cidade: "Fronteira Sul", gentilico: "Fronteirino(a)", nacao: "Kratória" },
+  { cidade: "Anelo", gentilico: "Anelense", nacao: "Kratória" },
+  { cidade: "Fagulha", gentilico: "Fagulhense", nacao: "Kratória" },
+  // Vaurana
+  { cidade: "Vaura", gentilico: "Vaurano(a)", nacao: "Vaurana" },
+  { cidade: "Cinábrio", gentilico: "Cinabriano(a)", nacao: "Vaurana" },
+  { cidade: "Lívida", gentilico: "Lívidano(a)", nacao: "Vaurana" },
+  { cidade: "Ocaso", gentilico: "Ocasiano(a)", nacao: "Vaurana" },
+  { cidade: "Murmúrio", gentilico: "Murmuriano(a)", nacao: "Vaurana" },
+  { cidade: "Porto Lívido", gentilico: "Porto-Lividense", nacao: "Vaurana" },
+  { cidade: "Agulhas", gentilico: "Agulhense", nacao: "Vaurana" },
+  { cidade: "Restrita Sul", gentilico: "Restritano(a)", nacao: "Vaurana" },
+  { cidade: "Vigília Norte", gentilico: "Vigiliano(a)", nacao: "Vaurana" },
+  { cidade: "Ecos", gentilico: "Ecoense", nacao: "Vaurana" },
+  { cidade: "Lumen", gentilico: "Lumenita", nacao: "Vaurana" },
+  // Amura
+  { cidade: "Harâm", gentilico: "Haramita", nacao: "Amura" },
+  { cidade: "Zafir", gentilico: "Zafirita", nacao: "Amura" },
+  { cidade: "Kaelash", gentilico: "Kaelashita", nacao: "Amura" },
+  { cidade: "Jhor", gentilico: "Jhorita", nacao: "Amura" },
+  { cidade: "Mandra", gentilico: "Mandraíta", nacao: "Amura" },
+  { cidade: "Pahad", gentilico: "Pahadita", nacao: "Amura" },
+  { cidade: "Vrishti", gentilico: "Vrishtiano(a)", nacao: "Amura" },
+  // Narshan
+  { cidade: "Novareia", gentilico: "Novareiano(a)", nacao: "Narshan" },
+  { cidade: "Aurópolis", gentilico: "Auropolitano(a)", nacao: "Narshan" },
+  { cidade: "Gera", gentilico: "Gerano(a)", nacao: "Narshan" },
+  { cidade: "Zephyros", gentilico: "Zephyriano(a)", nacao: "Narshan" },
+  { cidade: "Oásis", gentilico: "Oasiano(a)", nacao: "Narshan" },
+  { cidade: "Porto Aurum", gentilico: "Porto-Aurense", nacao: "Narshan" },
+  { cidade: "Xamane Submersa", gentilico: "Xamanita", nacao: "Narshan" },
+  { cidade: "Solária", gentilico: "Solariano(a)", nacao: "Narshan" },
+  // Dryadalis
+  { cidade: "Dryadalis", gentilico: "Dryadaliano(a)", nacao: "Dryadalis" },
+  { cidade: "Sylvanor", gentilico: "Sylvanorense", nacao: "Dryadalis" },
+  { cidade: "Mirrow", gentilico: "Mirrowense", nacao: "Dryadalis" },
+  { cidade: "Prateada", gentilico: "Prateadense", nacao: "Dryadalis" },
+  { cidade: "Sussurro", gentilico: "Sussurrense", nacao: "Dryadalis" },
+  { cidade: "Portão Verde", gentilico: "Portão-Verdense", nacao: "Dryadalis" },
+  // Quark
+  { cidade: "Quark", gentilico: "Quarkiano(a)", nacao: "Quark" },
+  { cidade: "Ferrus Secundus", gentilico: "Ferrus-Secundense", nacao: "Quark" },
+  { cidade: "Carva", gentilico: "Carvense", nacao: "Quark" },
+  { cidade: "Forja-Sul", gentilico: "Forja-Sulino(a)", nacao: "Quark" },
+  { cidade: "Portão Norte", gentilico: "Portão-Nortense", nacao: "Quark" },
+  // Valkiria
+  { cidade: "Tsar", gentilico: "Tsariano(a)", nacao: "Valkiria" },
+  { cidade: "Rostov", gentilico: "Rostoviano(a)", nacao: "Valkiria" },
+  { cidade: "Kirov", gentilico: "Kiroviano(a)", nacao: "Valkiria" },
+  { cidade: "Forja-Norte", gentilico: "Forja-Nortense", nacao: "Valkiria" },
+  { cidade: "Volkovo", gentilico: "Volkovano(a)", nacao: "Valkiria" },
+  { cidade: "Portão Leste", gentilico: "Portão-Lestense", nacao: "Valkiria" },
+  { cidade: "Zarya", gentilico: "Zaryano(a)", nacao: "Valkiria" },
+  // Ferglacius
+  { cidade: "Yörk", gentilico: "Yörkiano(a)", nacao: "Ferglacius" },
+  { cidade: "Kaelheim", gentilico: "Kaelheimita", nacao: "Ferglacius" },
+  { cidade: "Hrothgard", gentilico: "Hrothgardiano(a)", nacao: "Ferglacius" },
+  { cidade: "Vinterhold", gentilico: "Vinterholdiano(a)", nacao: "Ferglacius" },
+  { cidade: "Brandgard", gentilico: "Brandgardiano(a)", nacao: "Ferglacius" },
+  // Terras Baldias
+  { cidade: "Kael'Drak", gentilico: "Kael'Drakiano(a)", nacao: "Terras Baldias" },
+  { cidade: "Tor'Zhan", gentilico: "Tor'Zhaniano(a)", nacao: "Terras Baldias" },
+  { cidade: "Arash", gentilico: "Arashiano(a)", nacao: "Terras Baldias" },
+  { cidade: "Belamor", gentilico: "Belamoriano(a)", nacao: "Terras Baldias" },
+  { cidade: "Greda", gentilico: "Gredano(a)", nacao: "Terras Baldias" },
+  { cidade: "Noctis", gentilico: "Noctisiano(a)", nacao: "Terras Baldias" },
+  // Corporação Hollow
+  { cidade: "Fawkes", gentilico: "Fawkiano(a)", nacao: "Corporação Hollow" },
+];
 
 useEffect(() => {
   fichaRef.current = ficha;
@@ -1454,18 +1690,27 @@ useEffect(() => {
       setAnotacoesSalvos([{ titulo: "Anotação", texto: ficha.anotacoes || "" }]);
     }
   }
-    if (ficha?.background) {
-    try {
-      const parsed = JSON.parse(ficha.background);
-      if (Array.isArray(parsed)) {
-        setBackgroundCapitulos(parsed);
-      } else {
-        setBackgroundCapitulos([{ titulo: "Capítulo 1", texto: ficha.background || "" }]);
-      }
-    } catch {
+if (ficha?.backgroundCapitulos) {
+  try {
+    const parsed = JSON.parse(ficha.backgroundCapitulos);
+    if (Array.isArray(parsed)) {
+      setBackgroundCapitulos(parsed);
+    }
+  } catch {
+    setBackgroundCapitulos([]);
+  }
+} else if (ficha?.background) {
+  try {
+    const parsed = JSON.parse(ficha.background);
+    if (Array.isArray(parsed)) {
+      setBackgroundCapitulos(parsed);
+    } else {
       setBackgroundCapitulos([{ titulo: "Capítulo 1", texto: ficha.background || "" }]);
     }
+  } catch {
+    setBackgroundCapitulos([{ titulo: "Capítulo 1", texto: ficha.background || "" }]);
   }
+}
 }, [ficha]);
 
 // 🟢 Carregar defeitos ao carregar a ficha
@@ -5054,52 +5299,50 @@ sx={{
             
             <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
               <Button 
-                size="small" 
-                variant="outlined" 
-                component="label"
-                startIcon={<span>📷</span>}
-                sx={{ color: '#94a3b8', borderColor: '#555' }}
-              >
-                Inserir Imagem
-                <input
-                  hidden
-                  type="file"
-                  accept="image/*"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                                            const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
-                      const fd = new FormData();
-                      fd.append("file", file);
-                      const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
-                      const data = await res.json();
-                      if (data.url) {
-                        // Insere no local do cursor
-                        const textarea = document.querySelector('#anotacao-textarea textarea');
-                        if (textarea) {
-                          const start = textarea.selectionStart;
-                          const end = textarea.selectionEnd;
-                          const antes = anotacoesTexto.substring(0, start);
-                          const depois = anotacoesTexto.substring(end);
-                          const imagemMarkdown = `\n![Imagem](${data.url})\n`;
-                          setAnotacoesTexto(antes + imagemMarkdown + depois);
-                          setTimeout(() => {
-                            textarea.focus();
-                            textarea.selectionStart = start + imagemMarkdown.length;
-                            textarea.selectionEnd = start + imagemMarkdown.length;
-                          }, 100);
-                        } else {
-                          setAnotacoesTexto(prev => prev + `\n![Imagem](${data.url})\n`);
-                        }
-                      }
-                    } catch (err) {
-                      alert("Erro ao enviar imagem");
-                    }
-                  }}
-                />
-              </Button>
-              
+  size="small" 
+  variant="outlined" 
+  component="label"
+  startIcon={<span>📷</span>}
+  sx={{ color: '#94a3b8', borderColor: '#555' }}
+>
+  Inserir Imagem
+  <input
+    hidden
+    type="file"
+    accept="image/*"
+    onChange={async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.url) {
+          const textarea = backgroundTextareaRef.current;
+          if (textarea) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const antes = backgroundTexto.substring(0, start);
+            const depois = backgroundTexto.substring(end);
+            const imagemMarkdown = `\n![Imagem](${data.url})\n`;
+            setBackgroundTexto(antes + imagemMarkdown + depois);
+            setTimeout(() => {
+              textarea.focus();
+              textarea.selectionStart = start + imagemMarkdown.length;
+              textarea.selectionEnd = start + imagemMarkdown.length;
+            }, 100);
+          } else {
+            setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
+          }
+        }
+      } catch (err) {
+        alert("Erro ao enviar imagem");
+      }
+    }}
+  />
+</Button>
               {anotacaoEditandoIndex !== null && (
                 <Button 
                   size="small" 
@@ -5363,229 +5606,505 @@ sx={{
           </Button>
         </DialogActions>
       </Dialog>
-                        {/* 🟢 MODAL DE BACKGROUND COM CAPÍTULOS */}
-      <Dialog 
-        open={modalBackgroundOpen} 
-        onClose={() => setModalBackgroundOpen(false)}
-        maxWidth="lg"
-        fullWidth
-        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2, minHeight: "80vh" } }}
+{/* 🟢🟢🟢 MODAL DE BACKGROUND (NOVO - COM BACKGROUNDS E ORIGEM) 🟢🟢🟢 */}
+<Dialog 
+  open={modalBackgroundOpen} 
+  onClose={() => setModalBackgroundOpen(false)}
+  maxWidth="lg"
+  fullWidth
+  PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2, minHeight: "80vh" } }}
+>
+  <DialogTitle sx={{ color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <span style={{ fontSize: '1.5rem' }}>📖</span>
+      Background - {ficha?.nome || "Personagem"}
+    </Box>
+    <Box sx={{ display: 'flex', gap: 1 }}>
+      {/* Tabs */}
+      <Button 
+        size="small" 
+        variant={abaBackground === "origem" ? "contained" : "outlined"}
+        onClick={() => setAbaBackground("origem")}
+        sx={{ color: abaBackground === "origem" ? '#000' : '#94a3b8', bgcolor: abaBackground === "origem" ? '#4caf50' : 'transparent', borderColor: '#4caf50' }}
       >
-        <DialogTitle sx={{ color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <span style={{ fontSize: '1.5rem' }}>📖</span>
-            Background - {ficha?.nome || "Personagem"}
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button 
-              size="small" 
-              variant="contained" 
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setBackgroundEditandoIndex(null);
-                setBackgroundTitulo("");
-                setBackgroundTexto("");
-              }}
-              sx={{ bgcolor: '#9c27b0' }}
-            >
-              Novo Capítulo
-            </Button>
-            <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
-              <CloseIcon />
-            </IconButton>
-          </Box>
-        </DialogTitle>
+        🏙️ Origem
+      </Button>
+      <Button 
+        size="small" 
+        variant={abaBackground === "background" ? "contained" : "outlined"}
+        onClick={() => setAbaBackground("background")}
+        sx={{ color: abaBackground === "background" ? '#000' : '#94a3b8', bgcolor: abaBackground === "background" ? '#ff9800' : 'transparent', borderColor: '#ff9800' }}
+      >
+        ⚜️ Background
+      </Button>
+      <Button 
+        size="small" 
+        variant={abaBackground === "capitulos" ? "contained" : "outlined"}
+        onClick={() => setAbaBackground("capitulos")}
+        sx={{ color: abaBackground === "capitulos" ? '#000' : '#94a3b8', bgcolor: abaBackground === "capitulos" ? '#9c27b0' : 'transparent', borderColor: '#9c27b0' }}
+      >
+        📝 Capítulos
+      </Button>
+      <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
+        <CloseIcon />
+      </IconButton>
+    </Box>
+  </DialogTitle>
+  
+  <DialogContent sx={{ p: 2, overflowY: 'auto' }}>
+    
+    {/* ========== ABA ORIGEM ========== */}
+    {abaBackground === "origem" && (
+      <Box>
+        <Typography variant="h6" sx={{ color: '#4caf50', mb: 2 }}>🏙️ Escolha sua cidade natal</Typography>
         
-        <DialogContent sx={{ display: 'flex', gap: 2, p: 2, height: "70vh" }}>
-          {/* Lista de capítulos salvos */}
-          <Box sx={{ width: 250, borderRight: '1px solid #334155', pr: 2, overflowY: 'auto' }}>
-            <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
-              {backgroundCapitulos.length} capítulos
+        {ficha?.origem ? (
+          <Paper sx={{ p: 3, bgcolor: '#1a2e1a', border: '2px solid #4caf50', borderRadius: 2, textAlign: 'center' }}>
+            <Typography variant="h5" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+              🏙️ {ficha.origem}
             </Typography>
-            {backgroundCapitulos.map((cap, idx) => (
-              <Paper 
-                key={idx}
-                sx={{ 
-                  p: 1.5, mb: 1, 
-                  bgcolor: backgroundEditandoIndex === idx ? '#1e3a5f' : '#1a1a2e',
-                  cursor: 'pointer',
-                  border: backgroundEditandoIndex === idx ? '1px solid #9c27b0' : '1px solid #334155',
-                  '&:hover': { borderColor: '#9c27b0' }
-                }}
-                onClick={() => {
-                  setBackgroundEditandoIndex(idx);
-                  setBackgroundTitulo(cap.titulo);
-                  setBackgroundTexto(cap.texto);
-                }}
+            <Typography variant="subtitle1" sx={{ color: '#fff', mt: 1 }}>
+              Gentílico: <strong>{ORIGENS.find(o => o.cidade === ficha.origem)?.gentilico || "—"}</strong>
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1 }}>
+              ✅ Origem já definida. Não é possível alterar.
+            </Typography>
+          </Paper>
+        ) : (
+          <Box>
+            <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+              Escolha a cidade onde seu personagem nasceu. Esta escolha é <strong>permanente</strong>.
+            </Typography>
+            
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel sx={{ color: '#fff' }}>Cidade Natal</InputLabel>
+              <Select
+                value={cidadeSelecionada}
+                label="Cidade Natal"
+                onChange={(e) => setCidadeSelecionada(e.target.value)}
+                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+                MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 400 } } }}
               >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
-                    {cap.titulo || `Capítulo ${idx + 1}`}
-                  </Typography>
-                  <IconButton 
-                    size="small" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const novas = backgroundCapitulos.filter((_, i) => i !== idx);
-                      setBackgroundCapitulos(novas);
-                      if (backgroundEditandoIndex === idx) {
-                        setBackgroundEditandoIndex(null);
-                        setBackgroundTitulo("");
-                        setBackgroundTexto("");
-                      }
-                    }}
-                    sx={{ color: '#ef4444' }}
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5, maxHeight: 30, overflow: 'hidden' }}>
-                  {cap.texto?.substring(0, 50)}...
+                <MenuItem value="">-- Selecione uma cidade --</MenuItem>
+                {[...new Set(ORIGENS.map(o => o.nacao))].map(nacao => [
+                  <MenuItem key={nacao} disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                      ── {nacao} ──
+                    </Typography>
+                  </MenuItem>,
+                  ...ORIGENS.filter(o => o.nacao === nacao).map(origem => (
+                    <MenuItem key={origem.cidade} value={origem.cidade} sx={{ pl: 3 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                        <Typography sx={{ color: '#fff' }}>{origem.cidade}</Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>{origem.gentilico}</Typography>
+                      </Box>
+                    </MenuItem>
+                  ))
+                ])}
+              </Select>
+            </FormControl>
+            
+            {cidadeSelecionada && (
+              <Paper sx={{ p: 2, bgcolor: '#16213e', borderRadius: 1, mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ color: '#fff' }}>
+                  📍 <strong>{cidadeSelecionada}</strong>
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#4caf50' }}>
+                  Gentílico: <strong>{ORIGENS.find(o => o.cidade === cidadeSelecionada)?.gentilico}</strong>
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                  Nação: {ORIGENS.find(o => o.cidade === cidadeSelecionada)?.nacao}
                 </Typography>
               </Paper>
-            ))}
-            {backgroundCapitulos.length === 0 && (
-              <Typography variant="caption" sx={{ color: '#64748b' }}>
-                Nenhum capítulo escrito
+            )}
+            
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={!cidadeSelecionada}
+              onClick={async () => {
+                if (!window.confirm(`⚠️ Confirmar ${cidadeSelecionada} como cidade natal? Esta escolha é PERMANENTE!`)) return;
+                
+                const origemEscolhida = ORIGENS.find(o => o.cidade === cidadeSelecionada);
+                setCampo("origem", cidadeSelecionada);
+                setCampo("gentilico", origemEscolhida?.gentilico || "");
+                
+                const ref = doc(db, "fichas", fichaId);
+                await setDoc(ref, { 
+                  origem: cidadeSelecionada, 
+                  gentilico: origemEscolhida?.gentilico || "" 
+                }, { merge: true });
+                
+                alert(`✅ Origem definida: ${cidadeSelecionada} (${origemEscolhida?.gentilico})`);
+              }}
+              sx={{ bgcolor: '#4caf50', '&:hover': { bgcolor: '#388e3c' } }}
+            >
+              ✅ Confirmar Origem
+            </Button>
+          </Box>
+        )}
+      </Box>
+    )}
+    
+    {/* ========== ABA BACKGROUND ========== */}
+    {abaBackground === "background" && (
+      <Box>
+        <Typography variant="h6" sx={{ color: '#ff9800', mb: 2 }}>⚜️ Escolha seu Background</Typography>
+        
+        {ficha?.backgroundTipo ? (
+          <Paper sx={{ p: 3, bgcolor: '#2e1a00', border: '2px solid #ff9800', borderRadius: 2, textAlign: 'center' }}>
+            <Typography variant="h5" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+              ⚜️ {ficha.backgroundTipo}
+            </Typography>
+            <Typography variant="body1" sx={{ color: '#fff', mt: 1 }}>
+              {BACKGROUNDS.find(b => b.nome === ficha.backgroundTipo)?.descricao}
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1 }}>
+              ✅ Background já definido. Não é possível alterar.
+            </Typography>
+          </Paper>
+        ) : (
+          <Box>
+            <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+              Escolha um dos 15 backgrounds. Esta escolha é <strong>permanente</strong> e concede bônus de dinheiro, um item inicial e um ponto de perícia.
+            </Typography>
+            
+            <Grid container spacing={2}>
+              {BACKGROUNDS.map(bg => (
+                <Grid item xs={12} sm={6} key={bg.id}>
+                  <Paper 
+                    sx={{ 
+                      p: 2, 
+                      bgcolor: backgroundSelecionado === bg.id ? '#2e1a00' : '#1a1a2e',
+                      border: backgroundSelecionado === bg.id ? '2px solid #ff9800' : '1px solid #334155',
+                      cursor: 'pointer',
+                      '&:hover': { borderColor: '#ff9800' }
+                    }}
+                    onClick={() => setBackgroundSelecionado(bg.id)}
+                  >
+                    <Typography variant="subtitle1" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                      ⚜️ {bg.nome}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
+                      {bg.descricao}
+                    </Typography>
+                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                      <Typography variant="caption" sx={{ color: '#fbbf24' }}>💰 +{bg.dinheiro.toLocaleString()} na carteira "Bolso"</Typography>
+                      <Typography variant="caption" sx={{ color: '#00e0ff' }}>🎒 Item: {bg.item}</Typography>
+                      <Typography variant="caption" sx={{ color: '#4caf50' }}>📈 +{bg.bonus} {LABEL_MAP[bg.pericia] || bg.pericia}</Typography>
+                    </Box>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+            
+            {backgroundSelecionado && (
+              <Box sx={{ mt: 2, textAlign: 'center' }}>
+                <Button
+                  variant="contained"
+                  size="large"
+                  onClick={async () => {
+                    const bg = BACKGROUNDS.find(b => b.id === backgroundSelecionado);
+                    if (!bg) return;
+                    
+                    if (!window.confirm(`⚠️ Confirmar background "${bg.nome}"? Esta escolha é PERMANENTE!`)) return;
+                    
+                    try {
+                      const ref = doc(db, "fichas", fichaId);
+                      const snap = await getDoc(ref);
+                      const dados = snap.exists() ? snap.data() : {};
+                      
+                      // 1. Criar/atualizar carteira "Bolso"
+                      const carteirasAtuais = dados.carteiras || [];
+                      const bolsoIndex = carteirasAtuais.findIndex(c => c.nome === "Bolso");
+                      let novasCarteiras;
+                      if (bolsoIndex >= 0) {
+                        novasCarteiras = carteirasAtuais.map((c, i) => 
+                          i === bolsoIndex ? { ...c, valor: (c.valor || 0) + bg.dinheiro } : c
+                        );
+                      } else {
+                        novasCarteiras = [...carteirasAtuais, { nome: "Bolso", valor: bg.dinheiro }];
+                      }
+                      
+                      // 2. Adicionar item nos diversos
+                      const diversosAtuais = dados.diversos || [];
+                      const novoItem = {
+                        nome: bg.item,
+                        quantidade: 1,
+                        durabilidade: 100,
+                        dado: 1,
+                        imagem: "",
+                        tipoDano: "Nenhum",
+                        consumivel: "Nenhum",
+                        consumivelValor: 0,
+                        consumivelPercentual: 100,
+                        insumivel: "Nenhum",
+                        insumivelValor: 0,
+                      };
+                      const novosDiversos = [...diversosAtuais, novoItem];
+                      
+                      // 3. Bônus de perícia
+                      const periciasAtuais = dados.pericias || {};
+                      const periciaAlvo = bg.pericia;
+                      const valorAtualPericia = periciasAtuais[periciaAlvo] || 0;
+                      let mensagemBonus = "";
+                      
+                      if (valorAtualPericia >= 5) {
+                        mensagemBonus = `⚠️ Perícia ${LABEL_MAP[periciaAlvo]} já está no máximo (5). Nenhum bônus aplicado.`;
+                      } else {
+                        periciasAtuais[periciaAlvo] = Math.min(5, valorAtualPericia + bg.bonus);
+                        mensagemBonus = `📈 +${bg.bonus} ${LABEL_MAP[periciaAlvo]} (${valorAtualPericia} → ${periciasAtuais[periciaAlvo]})`;
+                      }
+                      
+                      // 4. Salvar tudo
+                      await setDoc(ref, {
+                        backgroundTipo: bg.nome,
+                        carteiras: novasCarteiras,
+                        diversos: novosDiversos,
+                        pericias: periciasAtuais,
+                      }, { merge: true });
+                      
+                      // Atualizar estado local
+                      setFicha(prev => ({
+                        ...prev,
+                        backgroundTipo: bg.nome,
+                        carteiras: novasCarteiras,
+                        diversos: novosDiversos,
+                        pericias: periciasAtuais,
+                      }));
+                      setCarteiras(novasCarteiras);
+                      
+                      alert(`✅ Background "${bg.nome}" aplicado!\n💰 +${bg.dinheiro} no Bolso\n🎒 Item "${bg.item}" adicionado\n${mensagemBonus}`);
+                      setBackgroundSelecionado(null);
+                    } catch (err) {
+                      console.error("Erro ao aplicar background:", err);
+                      alert("Erro ao aplicar background.");
+                    }
+                  }}
+                  sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' }, px: 4, py: 1.5, fontSize: '1.1rem' }}
+                >
+                  ✅ Confirmar Background: {BACKGROUNDS.find(b => b.id === backgroundSelecionado)?.nome}
+                </Button>
+              </Box>
+            )}
+          </Box>
+        )}
+      </Box>
+    )}
+    
+    {/* ========== ABA CAPÍTULOS (EXISTENTE) ========== */}
+    {abaBackground === "capitulos" && (
+      <Box sx={{ display: 'flex', gap: 2, height: "65vh" }}>
+        {/* Lista de capítulos salvos */}
+        <Box sx={{ width: 250, borderRight: '1px solid #334155', pr: 2, overflowY: 'auto' }}>
+          <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
+            {backgroundCapitulos.length} capítulos
+          </Typography>
+          {backgroundCapitulos.map((cap, idx) => (
+            <Paper 
+              key={idx}
+              sx={{ 
+                p: 1.5, mb: 1, 
+                bgcolor: backgroundEditandoIndex === idx ? '#1e3a5f' : '#1a1a2e',
+                cursor: 'pointer',
+                border: backgroundEditandoIndex === idx ? '1px solid #9c27b0' : '1px solid #334155',
+                '&:hover': { borderColor: '#9c27b0' }
+              }}
+              onClick={() => {
+                setBackgroundEditandoIndex(idx);
+                setBackgroundTitulo(cap.titulo);
+                setBackgroundTexto(cap.texto);
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                  {cap.titulo || `Capítulo ${idx + 1}`}
+                </Typography>
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const novas = backgroundCapitulos.filter((_, i) => i !== idx);
+                    setBackgroundCapitulos(novas);
+                    if (backgroundEditandoIndex === idx) {
+                      setBackgroundEditandoIndex(null);
+                      setBackgroundTitulo("");
+                      setBackgroundTexto("");
+                    }
+                  }}
+                  sx={{ color: '#ef4444' }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5, maxHeight: 30, overflow: 'hidden' }}>
+                {cap.texto?.substring(0, 50)}...
               </Typography>
+            </Paper>
+          ))}
+          {backgroundCapitulos.length === 0 && (
+            <Typography variant="caption" sx={{ color: '#64748b' }}>
+              Nenhum capítulo escrito
+            </Typography>
+          )}
+          
+          <Button 
+            size="small" 
+            variant="contained" 
+            startIcon={<AddIcon />}
+            fullWidth
+            onClick={() => {
+              setBackgroundEditandoIndex(null);
+              setBackgroundTitulo("");
+              setBackgroundTexto("");
+            }}
+            sx={{ mt: 1, bgcolor: '#9c27b0' }}
+          >
+            Novo Capítulo
+          </Button>
+        </Box>
+        
+        {/* Editor de capítulo */}
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <TextField
+            label="Título do capítulo"
+            fullWidth
+            size="small"
+            value={backgroundTitulo}
+            onChange={(e) => setBackgroundTitulo(e.target.value)}
+            InputProps={{ style: { color: '#fff' } }}
+            InputLabelProps={{ style: { color: '#94a3b8' } }}
+            sx={{ mb: 1 }}
+          />
+          
+          <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
+            <Button 
+              size="small" 
+              variant="outlined" 
+              component="label"
+              startIcon={<span>📷</span>}
+              sx={{ color: '#94a3b8', borderColor: '#555' }}
+            >
+              Inserir Imagem
+              <input
+                hidden
+                type="file"
+                accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
+                    const fd = new FormData();
+                    fd.append("file", file);
+                    const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+                    const data = await res.json();
+                    if (data.url) {
+                      const textarea = backgroundTextareaRef.current;
+                      if (textarea) {
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                        const antes = backgroundTexto.substring(0, start);
+                        const depois = backgroundTexto.substring(end);
+                        const imagemMarkdown = `\n![Imagem](${data.url})\n`;
+                        setBackgroundTexto(antes + imagemMarkdown + depois);
+                        setTimeout(() => {
+                          textarea.focus();
+                          textarea.selectionStart = start + imagemMarkdown.length;
+                          textarea.selectionEnd = start + imagemMarkdown.length;
+                        }, 100);
+                      } else {
+                        setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
+                      }
+                    }
+                  } catch (err) {
+                    alert("Erro ao enviar imagem");
+                  }
+                }}
+              />
+            </Button>
+            
+            {backgroundEditandoIndex !== null && (
+              <Button 
+                size="small" 
+                variant="contained" 
+                onClick={async () => {
+                  const novas = [...backgroundCapitulos];
+                  novas[backgroundEditandoIndex] = { titulo: backgroundTitulo, texto: backgroundTexto };
+                  setBackgroundCapitulos(novas);
+                  await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
+                  alert("Capítulo atualizado!");
+                }}
+                sx={{ bgcolor: '#9c27b0' }}
+              >
+                💾 Atualizar
+              </Button>
+            )}
+            
+            {backgroundEditandoIndex === null && backgroundTexto.trim() && (
+              <Button 
+                size="small" 
+                variant="contained" 
+                onClick={async () => {
+                  const novas = [...backgroundCapitulos, { titulo: backgroundTitulo || `Capítulo ${backgroundCapitulos.length + 1}`, texto: backgroundTexto }];
+                  setBackgroundCapitulos(novas);
+                  setBackgroundTitulo("");
+                  setBackgroundTexto("");
+                  await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
+                  alert("Capítulo salvo!");
+                }}
+                sx={{ bgcolor: '#4caf50' }}
+              >
+                ➕ Salvar
+              </Button>
             )}
           </Box>
           
-          {/* Editor de capítulo */}
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <TextField
-              label="Título do capítulo"
-              fullWidth
-              size="small"
-              value={backgroundTitulo}
-              onChange={(e) => setBackgroundTitulo(e.target.value)}
-              InputProps={{ style: { color: '#fff' } }}
-              InputLabelProps={{ style: { color: '#94a3b8' } }}
-              sx={{ mb: 1 }}
-            />
-            
-            <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
-              <Button 
-                size="small" 
-                variant="outlined" 
-                component="label"
-                startIcon={<span>📷</span>}
-                sx={{ color: '#94a3b8', borderColor: '#555' }}
-              >
-                Inserir Imagem
-                <input
-                  hidden
-                  type="file"
-                  accept="image/*"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
-                      const fd = new FormData();
-                      fd.append("file", file);
-                      const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
-                      const data = await res.json();
-                      if (data.url) {
-                        const textarea = document.querySelector('#background-textarea textarea');
-                        if (textarea) {
-                          const start = textarea.selectionStart;
-                          const end = textarea.selectionEnd;
-                          const antes = backgroundTexto.substring(0, start);
-                          const depois = backgroundTexto.substring(end);
-                          const imagemMarkdown = `\n![Imagem](${data.url})\n`;
-                          setBackgroundTexto(antes + imagemMarkdown + depois);
-                          setTimeout(() => {
-                            textarea.focus();
-                            textarea.selectionStart = start + imagemMarkdown.length;
-                            textarea.selectionEnd = start + imagemMarkdown.length;
-                          }, 100);
-                        } else {
-                          setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
-                        }
-                      }
-                    } catch (err) {
-                      alert("Erro ao enviar imagem");
-                    }
-                  }}
-                />
-              </Button>
-              
-              {backgroundEditandoIndex !== null && (
-                <Button 
-                  size="small" 
-                  variant="contained" 
-                  onClick={async () => {
-                    const novas = [...backgroundCapitulos];
-                    novas[backgroundEditandoIndex] = { titulo: backgroundTitulo, texto: backgroundTexto };
-                    setBackgroundCapitulos(novas);
-                    await setDoc(doc(db, "fichas", fichaId), { background: JSON.stringify(novas) }, { merge: true });
-                    alert("Capítulo atualizado!");
-                  }}
-                  sx={{ bgcolor: '#9c27b0' }}
-                >
-                  💾 Atualizar
-                </Button>
-              )}
-              
-              {backgroundEditandoIndex === null && backgroundTexto.trim() && (
-                <Button 
-                  size="small" 
-                  variant="contained" 
-                  onClick={async () => {
-                    const novas = [...backgroundCapitulos, { titulo: backgroundTitulo || `Capítulo ${backgroundCapitulos.length + 1}`, texto: backgroundTexto }];
-                    setBackgroundCapitulos(novas);
-                    setBackgroundTitulo("");
-                    setBackgroundTexto("");
-                    await setDoc(doc(db, "fichas", fichaId), { background: JSON.stringify(novas) }, { merge: true });
-                    alert("Capítulo salvo!");
-                  }}
-                  sx={{ bgcolor: '#4caf50' }}
-                >
-                  ➕ Salvar
-                </Button>
-              )}
-            </Box>
-            
-            <TextField
-              id="background-textarea"
-              label="Conteúdo (Markdown)"
-              fullWidth
-              multiline
-              minRows={15}
-              maxRows={30}
-              value={backgroundTexto}
-              onChange={(e) => setBackgroundTexto(e.target.value)}
-              InputProps={{ 
-                style: { color: '#fff', fontFamily: 'monospace', fontSize: '0.85rem' },
-              }}
-              InputLabelProps={{ style: { color: '#94a3b8' } }}
-              sx={{ 
-                flex: 1, 
-                '& .MuiInputBase-root': { 
-                  height: '100%', 
-                  overflowY: 'auto',
-                  alignItems: 'flex-start'
-                } 
-              }}
-            />
-          </Box>
-        </DialogContent>
-        
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
-          <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
-          <Button 
-            variant="contained"
-            onClick={async () => {
-              await setDoc(doc(db, "fichas", fichaId), { background: JSON.stringify(backgroundCapitulos) }, { merge: true });
-              setModalBackgroundOpen(false);
+          <TextField
+            id="background-textarea"
+            inputRef={backgroundTextareaRef}
+            label="Conteúdo (Markdown)"
+            fullWidth
+            multiline
+            minRows={15}
+            maxRows={30}
+            value={backgroundTexto}
+            onChange={(e) => setBackgroundTexto(e.target.value)}
+            InputProps={{ 
+              style: { color: '#fff', fontFamily: 'monospace', fontSize: '0.85rem' },
             }}
-            sx={{ bgcolor: '#9c27b0' }}
-          >
-            Salvar e Fechar
-          </Button>
-        </DialogActions>
-      </Dialog>
+            InputLabelProps={{ style: { color: '#94a3b8' } }}
+            sx={{ 
+              flex: 1, 
+              '& .MuiInputBase-root': { 
+                height: '100%', 
+                overflowY: 'auto',
+                alignItems: 'flex-start'
+              } 
+            }}
+          />
+        </Box>
+      </Box>
+    )}
+    
+  </DialogContent>
+  
+  <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+    <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
+    {abaBackground === "capitulos" && (
+      <Button 
+        variant="contained"
+        onClick={async () => {
+          await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(backgroundCapitulos) }, { merge: true });
+          setModalBackgroundOpen(false);
+        }}
+        sx={{ bgcolor: '#9c27b0' }}
+      >
+        Salvar e Fechar
+      </Button>
+    )}
+  </DialogActions>
+</Dialog>
   {/* 🟢🟢🟢 MODAL DE HABILIDADES (VERSÃO FINAL COM IMAGEM + IA FUSIONADA) 🟢🟢🟢 */}
 <Dialog
   open={modalHabilidadesOpen}
