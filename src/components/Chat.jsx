@@ -34,7 +34,7 @@ import SendIcon from "@mui/icons-material/Send";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import CloseIcon from "@mui/icons-material/Close";
 import { db } from "../firebaseConfig";
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, getDoc, doc, setDoc, where } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, getDoc, doc, setDoc, where, limit, startAfter, getDocs } from "firebase/firestore";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { updateDoc, deleteDoc } from "firebase/firestore";
@@ -231,6 +231,47 @@ const [rolagemMorteIndex, setRolagemMorteIndex] = useState(-1);
 
 // 🟢 DADO SECRETO
 const [modoSecreto, setModoSecreto] = useState(false);
+// 🟢 CHAT TRAVADO PELO MESTRE
+const [chatTravado, setChatTravado] = useState(false);
+// 🟢 OTIMIZAÇÃO: SCROLL INFINITO COM PAGINAÇÃO NO FIRESTORE
+const [todasMensagens, setTodasMensagens] = useState([]); // Todas as mensagens carregadas
+const [quantidadeMensagens, setQuantidadeMensagens] = useState(50); // Começa com 50
+const [carregandoAntigas, setCarregandoAntigas] = useState(false);
+const [ultimoDocumento, setUltimoDocumento] = useState(null); // Para paginação
+const [temMaisMensagens, setTemMaisMensagens] = useState(true); // Se há mais no Firestore
+const [carregamentoInicial, setCarregamentoInicial] = useState(true); // Primeira carga
+
+// 🟢 OUVIR ESTADO DO CHAT TRAVADO EM TEMPO REAL
+useEffect(() => {
+  const ref = doc(db, "game", "chatTravado");
+  const unsub = onSnapshot(ref, (snap) => {
+    if (snap.exists()) {
+      setChatTravado(snap.data().travado || false);
+    } else {
+      setChatTravado(false);
+    }
+  });
+  return () => unsub();
+}, []);
+
+// 🟢 TRAVAR/DESTRAVAR CHAT (só Mestre)
+const toggleChatTravado = async () => {
+  if (!isMaster) return;
+  const novoEstado = !chatTravado;
+  setChatTravado(novoEstado);
+  await setDoc(doc(db, "game", "chatTravado"), { travado: novoEstado });
+  
+  // Enviar mensagem no chat avisando
+  await addDoc(chatCol, {
+    userNick: "SISTEMA",
+    userEmail: "sistema@reqviemrpg.com",
+    type: "sistema",
+    text: novoEstado 
+      ? "🔒 O Mestre TRAVOU o chat. Aguarde a sessão começar!"
+      : "🔓 O Mestre DESTRAVOU o chat. Podem conversar!",
+    timestamp: serverTimestamp(),
+  });
+};
 // 🟢 EFEITOS DE TIPO DE DANO
 const EFEITOS_DANO = {
   "Ácido": { ignoraArmadura: 1.0, desc: "🧪 Ácido: Ignora 100% da armadura!" },
@@ -353,12 +394,28 @@ useEffect(() => {
 }, []);
 
   useEffect(() => {
-    const q = query(chatCol, orderBy("timestamp", "asc"));
+    // 🟢 OTIMIZAÇÃO: Carrega apenas as 50 mensagens mais recentes
+    const q = query(chatCol, orderBy("timestamp", "desc"), limit(50));
+    
     const unsub = onSnapshot(q, async (snap) => {
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setMessages(data);
+      // Inverte para ordem cronológica (mais antiga primeiro)
+      const mensagensOrdenadas = data.reverse();
+      
+      setTodasMensagens(mensagensOrdenadas);
+      setMessages(mensagensOrdenadas);
+      
+      // Guarda o documento mais antigo para paginação
+      if (snap.docs.length > 0) {
+        setUltimoDocumento(snap.docs[snap.docs.length - 1]);
+      }
+      
+      // Se veio menos que 50, não tem mais mensagens antigas
+      if (snap.docs.length < 50) {
+        setTemMaisMensagens(false);
+      }
 
-      const uniqueUsers = [...new Set(data.map((m) => m.userEmail).filter(Boolean))];
+      const uniqueUsers = [...new Set(mensagensOrdenadas.map((m) => m.userEmail).filter(Boolean))];
       for (const email of uniqueUsers) {
         if (!avatars[email]) {
           try {
@@ -372,11 +429,19 @@ useEffect(() => {
         }
       }
 
+      // Marca que o carregamento inicial terminou
+      setCarregamentoInicial(false);
+      
+      // Scroll para o final após carregar
+      setTimeout(() => {
+        endRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 100);
+
       const container = chatRef.current;
       if (container) {
         const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
         const atBottom = distance < 80;
-        const lastMsg = data[data.length - 1];
+        const lastMsg = mensagensOrdenadas[mensagensOrdenadas.length - 1];
         if (!atBottom && lastMsg && lastMsg.userEmail !== userEmail) {
           setUnreadCount((c) => c + 1);
           setShowScrollButton(true);
@@ -403,6 +468,12 @@ useEffect(() => {
     const handleScroll = () => {
       const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
       const atBottom = distance < 80;
+      
+      // 🟢 SCROLL INFINITO: Quando chega no TOPO, carrega mais antigas do Firestore
+      if (container.scrollTop < 50 && !carregandoAntigas && temMaisMensagens) {
+        carregarMensagensAntigas();
+      }
+      
       if (atBottom) {
         setAutoScroll(true);
         setShowScrollButton(false);
@@ -414,7 +485,64 @@ useEffect(() => {
     };
     container.addEventListener("scroll", handleScroll);
     return () => container.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [carregandoAntigas, quantidadeMensagens, todasMensagens]);
+
+  // 🟢 FUNÇÃO PARA CARREGAR MENSAGENS ANTIGAS DO FIRESTORE
+  const carregarMensagensAntigas = async () => {
+    if (carregandoAntigas || !temMaisMensagens || !ultimoDocumento) return;
+    
+    setCarregandoAntigas(true);
+    const container = chatRef.current;
+    const alturaAntiga = container?.scrollHeight || 0;
+    
+    try {
+      // Busca as próximas 50 mensagens mais antigas
+      const q = query(
+        chatCol,
+        orderBy("timestamp", "desc"),
+        startAfter(ultimoDocumento),
+        limit(50)
+      );
+      
+      const snap = await getDocs(q);
+      
+      if (snap.docs.length > 0) {
+        const mensagensAntigas = snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse();
+        
+        // Adiciona as mensagens antigas ao início
+        const novasTodasMensagens = [...mensagensAntigas, ...todasMensagens];
+        setTodasMensagens(novasTodasMensagens);
+        
+        // Atualiza quantidade para mostrar mais
+        setQuantidadeMensagens(prev => prev + mensagensAntigas.length);
+        setMessages(novasTodasMensagens.slice(-quantidadeMensagens - mensagensAntigas.length));
+        
+        // Atualiza o último documento para próxima paginação
+        setUltimoDocumento(snap.docs[snap.docs.length - 1]);
+        
+        // Se veio menos que 50, não tem mais mensagens
+        if (snap.docs.length < 50) {
+          setTemMaisMensagens(false);
+        }
+        
+        // Mantém a posição do scroll
+        setTimeout(() => {
+          requestAnimationFrame(() => {
+            if (container) {
+              const alturaNova = container.scrollHeight;
+              container.scrollTop = alturaNova - alturaAntiga;
+            }
+          });
+        }, 100);
+      } else {
+        setTemMaisMensagens(false);
+      }
+    } catch (err) {
+      console.error("Erro ao carregar mensagens antigas:", err);
+    }
+    
+    setCarregandoAntigas(false);
+  };
 
   useEffect(() => {
     const handlePaste = async (e) => {
@@ -640,7 +768,7 @@ async function rolarDadoMorte() {
   }, 3000);
 }
 
-  async function compressImage(file, maxSize = 800, quality = 0.7) {
+  async function compressImage(file, maxSize = 500, quality = 0.5) {
     return new Promise((resolve) => {
       const img = new Image();
       const reader = new FileReader();
@@ -674,6 +802,11 @@ async function rolarDadoMorte() {
   e?.preventDefault();
   if (!text && !filePreview && filePreviews.length === 0) return;
   setLastSender(userEmail);
+    // 🟢 BLOQUEAR ENVIO SE CHAT TRAVADO (jogadores)
+  if (chatTravado && !isMaster) {
+    alert("🔒 O chat está travado pelo Mestre. Aguarde a sessão começar!");
+    return;
+  }
 
     const dice = tryParseDice(text);
   if (dice) {
@@ -735,8 +868,16 @@ async function rolarDadoMorte() {
     timestamp: serverTimestamp() 
   });
   
-  // 🟢 CONQUISTA: Comunicador
-  window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'mensagens' } }));
+  // 🟢 CONTADOR DE MENSAGENS PARA CONQUISTAS
+  const contadorMsgs = Number(localStorage.getItem(`msgs_${userEmail}`) || 0) + 1;
+  localStorage.setItem(`msgs_${userEmail}`, contadorMsgs);
+  
+  if (contadorMsgs >= 100) {
+    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'mensagens' } }));
+  }
+  if (contadorMsgs >= 1000) {
+    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'falador' } }));
+  }
   
   setText("");
 }
@@ -1646,6 +1787,25 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
       mensagem += `\n${resultado.efeitos.join("\n")}\n`;
     }
   }
+    // 🟢 VERIFICAR SE O ALVO MORREU (VITÓRIA)
+  if (danoBrutoAlvo > 0) {
+    const fichaAlvoCheck = await getDoc(doc(db, "fichas", alvo));
+    if (fichaAlvoCheck.exists() && (fichaAlvoCheck.data().pontosVida || 0) <= 0) {
+      // 🟢 CONQUISTA: Primeira Vitória (o atacante venceu)
+      window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'primeira_vitoria', emailVencedor: atacante } }));
+      
+      // 🟢 CONTADOR DE INIMIGOS DERROTADOS (para Caçador e Exterminador)
+      const contadorInimigos = Number(localStorage.getItem(`inimigos_${atacante}`) || 0) + 1;
+      localStorage.setItem(`inimigos_${atacante}`, contadorInimigos);
+      
+      if (contadorInimigos >= 10) {
+        window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'cacador_monstros' } }));
+      }
+      if (contadorInimigos >= 50) {
+        window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'exterminador' } }));
+      }
+    }
+  }
   
   // Aplica dano no ATACANTE (contragolpe bem-sucedido)
   if (danoBrutoAtacante > 0) {
@@ -1707,9 +1867,6 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   if (isErroCriticoDefensor) xpDefensor = 0;
   await adicionarXpAcao(alvo, xpDefensor);
   
-    // 🟢 CONQUISTA: Primeira Vitória
-    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'primeira_vitoria' } }));
-
   return { mensagem, isCriticoDefensor, isErroCriticoDefensor };
 }
 // 🟢 FUNÇÃO PARA APLICAR DANO COM EFEITOS REAIS DE TIPO DE DANO
@@ -1870,6 +2027,22 @@ async function aplicarDano(email, danoBruto, tipoDano = "Nenhum", atacanteEmail 
   const novoPV = Math.max(0, pvAtual - danoFinal);
   
   await setDoc(fichaRef, { pontosVida: novoPV }, { merge: true });
+  
+  // 🟢 CONQUISTA: Sobrevivente (ficou com exatamente 1 PV)
+  if (novoPV === 1) {
+    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'sobrevivente' } }));
+  }
+  
+  // 🟢 Se morreu, marcar para verificar Renascido
+  if (novoPV === 0) {
+    localStorage.setItem(`morreu_${email}`, Date.now());
+  }
+  
+  // 🟢 Se voltou à vida (tinha morrido antes e agora tem PV > 0)
+  if (novoPV > 0 && localStorage.getItem(`morreu_${email}`)) {
+    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'renascido' } }));
+    localStorage.removeItem(`morreu_${email}`);
+  }
   
   return { danoFinal, armadura, pvRestante: novoPV, efeitos };
 }
@@ -2095,6 +2268,9 @@ useEffect(() => {
       .slice(0, 2)
       .toUpperCase();
 
+  // 🟢 OTIMIZAÇÃO: Mostra apenas a quantidade definida pelo scroll infinito
+  const mensagensVisiveis = messages.slice(-quantidadeMensagens);
+
   return (
     <Paper elevation={2} sx={{ height: "100%", display: "flex", flexDirection: "column", p: 1, position: "relative", bgcolor: "#07121a" }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
@@ -2198,19 +2374,103 @@ useEffect(() => {
     </Button>
   </Box>
 </Box>
-
+      {chatTravado && !isMaster && (
+        <Paper sx={{ 
+          p: 2, 
+          mb: 1, 
+          bgcolor: '#1a1a2e', 
+          border: '2px solid #ef4444', 
+          textAlign: 'center', 
+          borderRadius: 2,
+          animation: 'pulse 2s infinite',
+          boxShadow: '0 0 20px rgba(239, 68, 68, 0.3)',
+        }}>
+          <Typography sx={{ color: '#ef4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
+            🔒 O Chat está Travado
+          </Typography>
+          <Typography sx={{ color: '#94a3b8', fontSize: '0.75rem', mt: 0.5 }}>
+            Aguarde o Mestre liberar para conversar
+          </Typography>
+        </Paper>
+      )}
       <Box
         ref={chatRef}
-        sx={{ flex: 1, overflowY: "auto", position: "relative", scrollBehavior: "smooth", pb: 1 }}
+        sx={{ 
+          flex: 1, 
+          overflowY: "auto", 
+          position: "relative", 
+          scrollBehavior: "smooth", 
+          pb: 1,
+          // 🟢 BLOQUEIO VISUAL PARA JOGADORES QUANDO TRAVADO
+          ...(chatTravado && !isMaster && {
+            filter: 'blur(10px)',
+            opacity: 0.15,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            transition: 'filter 0.5s ease, opacity 0.5s ease',
+            overflowY: 'hidden',
+          }),
+        }}
         onDrop={(e) => {
           e.preventDefault();
           handleFiles(e.dataTransfer.files);
         }}
         onDragOver={(e) => e.preventDefault()}
       >
+        {/* 🟢 OVERLAY DE BLOQUEIO PARA JOGADORES */}
+        {chatTravado && !isMaster && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 100,
+              pointerEvents: 'auto',
+              cursor: 'not-allowed',
+            }}
+          >
+            <Typography variant="h1" sx={{ fontSize: '4rem', mb: 2, animation: 'pulse 2s infinite' }}>
+              🔒
+            </Typography>
+            <Typography variant="h6" sx={{ color: '#ef4444', fontWeight: 'bold', textAlign: 'center', px: 3 }}>
+              Chat Travado pelo Mestre
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#94a3b8', textAlign: 'center', mt: 1, px: 3 }}>
+              O chat será liberado quando a sessão começar.
+            </Typography>
+          </Box>
+        )}
+        {/* 🟢 INDICADOR DE CARREGAMENTO DE MENSAGENS ANTIGAS */}
+        {carregandoAntigas && (
+          <Box sx={{ textAlign: 'center', py: 2, opacity: 0.7 }}>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+              ⏳ Carregando mensagens antigas...
+            </Typography>
+          </Box>
+        )}
+        
+        {/* 🟢 INDICADOR DE QUE HÁ MAIS MENSAGENS ANTIGAS */}
+        {!carregandoAntigas && temMaisMensagens && (
+          <Box 
+            sx={{ 
+              textAlign: 'center', 
+              py: 2, 
+              cursor: 'pointer',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' }
+            }}
+            onClick={carregarMensagensAntigas}
+          >
+            <Typography variant="caption" sx={{ color: '#4caf50', fontSize: '0.7rem' }}>
+              ⬆️ Clique para carregar mensagens mais antigas
+            </Typography>
+          </Box>
+        )}
         <List>
-          {messages.map((m, i) => {
-            const prev = messages[i - 1];
+          {mensagensVisiveis.map((m, i) => {
+            const prev = mensagensVisiveis[i - 1];
             const showDivider = !prev || prev.userEmail !== m.userEmail;
             const dataHora = m.timestamp?.toDate ? m.timestamp.toDate() : null;
             const horaFormatada = dataHora
@@ -2252,7 +2512,6 @@ useEffect(() => {
                   >
                     {!avatars[m.userEmail] && getInitials(m.userNick)}
                   </Avatar>
-
                   <Box
                     sx={{
                       maxWidth: "75%",
@@ -2261,6 +2520,8 @@ useEffect(() => {
                       p: 1.5,
                       boxShadow: 2,
                       wordBreak: "break-word",
+                      contentVisibility: 'auto',
+                      containIntrinsicSize: 'auto 100px',
                     }}
                   >
                     <Box
@@ -2294,6 +2555,8 @@ useEffect(() => {
                     {m.type === "image" && (
                       <img
                         src={m.text}
+                        loading="lazy"
+                        decoding="async"
                         style={{ maxWidth: "100%", borderRadius: 8, cursor: "pointer" }}
                         onClick={() => {
                           setLightboxImage(m.text);
@@ -2309,6 +2572,8 @@ useEffect(() => {
                           <img
                             key={idx}
                             src={img}
+                            loading="lazy"
+                            decoding="async"
                             style={{
                               maxWidth: "100%",
                               display: "block",
@@ -2328,6 +2593,8 @@ useEffect(() => {
                     {m.type === "gif" && (
                       <img
                         src={m.text}
+                        loading="lazy"
+                        decoding="async"
                         style={{ maxWidth: "100%", borderRadius: 8, cursor: "pointer" }}
                         onClick={() => {
                           setLightboxImage(m.text);
@@ -2538,11 +2805,12 @@ useEffect(() => {
         </Box>
       )}
 
-      <Box component="form" onSubmit={sendMessage} sx={{ display: "flex", gap: 1, mt: 1 }}>
+      <Box component="form" onSubmit={sendMessage} sx={{ display: "flex", gap: 1, mt: 1, opacity: chatTravado && !isMaster ? 0.5 : 1, pointerEvents: chatTravado && !isMaster ? 'none' : 'auto' }}>
         <TextField
-  placeholder='Mensagem ou "1d20+3" (Shift+Enter para nova linha)'
+  placeholder={chatTravado && !isMaster ? '🔒 Chat travado pelo Mestre' : 'Mensagem ou "1d20+3" (Shift+Enter para nova linha)'}
   value={text}
   onChange={(e) => setText(e.target.value)}
+  disabled={chatTravado && !isMaster}
   onKeyDown={(e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -2582,15 +2850,13 @@ useEffect(() => {
           Enviar
         </Button>
       </Box>
-
-            <Box sx={{ mt: 1, display: "flex", gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-  <Button variant="outlined" size="small" onClick={(e) => setDiceAnchor(e.currentTarget)}>
+            <Box sx={{ mt: 1, display: "flex", gap: 1, flexWrap: 'wrap', alignItems: 'center', opacity: chatTravado && !isMaster ? 0.5 : 1, pointerEvents: chatTravado && !isMaster ? 'none' : 'auto' }}>
+  <Button variant="outlined" size="small" onClick={(e) => setDiceAnchor(e.currentTarget)} disabled={chatTravado && !isMaster}>
     D10
   </Button>
-  <Button variant="outlined" size="small" onClick={() => quickRollDice(1, 100)}>
+  <Button variant="outlined" size="small" onClick={() => quickRollDice(1, 100)} disabled={chatTravado && !isMaster}>
     1D100
   </Button>
-  
   {/* 🟢 CHECKBOX DADO SECRETO - SÓ MESTRE */}
   {isMaster && (
     <FormControlLabel
@@ -2613,6 +2879,26 @@ useEffect(() => {
       sx={{ mr: 1 }}
     />
   )}
+  {/* 🟢 BOTÃO TRAVAR/DESTRAVAR CHAT - SÓ MESTRE */}
+  {isMaster && (
+    <Button
+      variant="contained"
+      size="small"
+      onClick={toggleChatTravado}
+      sx={{
+        bgcolor: chatTravado ? '#ef4444' : '#4caf50',
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: '0.7rem',
+        '&:hover': { 
+          bgcolor: chatTravado ? '#dc2626' : '#388e3c' 
+        }
+      }}
+    >
+      {chatTravado ? '🔒 Chat Travado' : '🔓 Chat Aberto'}
+    </Button>
+  )}
+
   {/* 🟢 BOTÃO AÇÃO */}
   <Badge 
   badgeContent={acoesPendentes.length} 

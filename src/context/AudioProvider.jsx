@@ -83,7 +83,14 @@ export default function AudioProvider({ children }) {
   };
 
   // internal play that expects canonical full URLs
-  async function _playLocal(rawUrl, { initiatedByLocal = true } = {}) {
+    async function _playLocal(rawUrl, nameOrOptions = "", { initiatedByLocal = true } = {}) {
+    // Compatibilidade: se o segundo argumento for string, é o nome
+    let trackName = "";
+    if (typeof nameOrOptions === "string") {
+      trackName = nameOrOptions;
+    } else if (typeof nameOrOptions === "object") {
+      initiatedByLocal = nameOrOptions.initiatedByLocal ?? true;
+    }
     if (!rawUrl) return;
     ensureAudioContext();
     const full = normalizeUrl(getMusicUrl(rawUrl));
@@ -135,7 +142,7 @@ export default function AudioProvider({ children }) {
 
     const vol = (desiredVolumesRef.current[full] ?? 100) / 100;
     audio.volume = vol;
-    audioObjects.current[full] = { audio, gainNode, srcNode, volume: vol };
+        audioObjects.current[full] = { audio, gainNode, srcNode, volume: vol, name: trackName };
 
     try {
       await audio.play();
@@ -227,6 +234,7 @@ export default function AudioProvider({ children }) {
       url: u,
       playing: true,
       volume: Math.round((audioObjects.current[u]?.volume ?? 1) * 100),
+      name: audioObjects.current[u]?.name || u.split("/").pop()?.replace(/\.[^/.]+$/, "") || "Música",
     }));
     
     // 🟢 Adiciona o ID do socket para identificar mudanças locais
@@ -333,11 +341,47 @@ export default function AudioProvider({ children }) {
     return () => unsub && unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interactionAllowed]);
+    // 🟢 OUVIR EVENTOS DE VOLUME DO MIXER
+  useEffect(() => {
+    const handleVolumeGeral = (e) => {
+      const { volume } = e.detail;
+      Object.keys(audioObjects.current).forEach((url) => {
+        const it = audioObjects.current[url];
+        const volumeOriginal = (desiredVolumesRef.current[url] ?? 100);
+        const novoVolume = Math.round(volumeOriginal * (volume / 100));
+        const v = novoVolume / 100;
+        it.volume = v;
+        try { if (it.gainNode) it.gainNode.gain.value = v; } catch {}
+        try { if (it.audio) it.audio.volume = v; } catch {}
+      });
+    };
+    
+    const handleVolumeIndividual = (e) => {
+      const { url, volume } = e.detail;
+      const full = normalizeUrl(getMusicUrl(url));
+      const it = audioObjects.current[full];
+      if (it) {
+        const v = volume / 100;
+        it.volume = v;
+        try { if (it.gainNode) it.gainNode.gain.value = v; } catch {}
+        try { if (it.audio) it.audio.volume = v; } catch {}
+      }
+      desiredVolumesRef.current[full] = volume;
+    };
+    
+    window.addEventListener('ajustarVolumeGeral', handleVolumeGeral);
+    window.addEventListener('ajustarVolumeIndividual', handleVolumeIndividual);
+    
+    return () => {
+      window.removeEventListener('ajustarVolumeGeral', handleVolumeGeral);
+      window.removeEventListener('ajustarVolumeIndividual', handleVolumeIndividual);
+    };
+  }, []);
 
   return (
     <AudioContextGlobal.Provider
       value={{
-        playMusic: (url) => _playLocal(url, { initiatedByLocal: true }),
+                playMusic: (url, name) => _playLocal(url, name, { initiatedByLocal: true }),
         pauseMusic: (url) => pauseMusic(url, { initiatedByLocal: true }),
         stopAllMusic: () => stopAllMusic({ initiatedByLocal: true }),
         setVolume: (url, v) => setVolume(url, v, { initiatedByLocal: true }),

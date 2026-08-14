@@ -52,14 +52,27 @@ export default function ConquistasWatcher({ userEmail }) {
         if (ficha.habilidades?.length >= 5) desbloquear('mestre_habilidades');
         if (ficha.habilidades?.some(h => (h.dado || 1) >= 10)) desbloquear('habilidade_maxima');
         
-        // 🟢 Dinheiro
-        const totalDinheiro = (ficha.carteiras || []).reduce((s, c) => s + (c.valor || 0), 0);
+        // 🟢 Dinheiro (carteiras pode ser array OU objeto)
+        let totalDinheiro = 0;
+        if (Array.isArray(ficha.carteiras)) {
+          totalDinheiro = ficha.carteiras.reduce((s, c) => s + (c.valor || 0), 0);
+        } else if (ficha.carteiras && typeof ficha.carteiras === 'object') {
+          totalDinheiro = Object.values(ficha.carteiras).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+        }
         if (totalDinheiro >= 1000) desbloquear('primeiro_dinheiro');
         if (totalDinheiro >= 100000) desbloquear('rico');
         if (totalDinheiro >= 1000000) desbloquear('milionario');
         
         // 🟢 Imóveis
         if (ficha.imoveis?.length > 0) desbloquear('primeiro_imovel');
+                // 🟢 Origem definida
+        if (ficha.origem && ficha.origem.trim() !== "") desbloquear('raizes');
+        
+        // 🟢 Background definido
+        if (ficha.backgroundTipo && ficha.backgroundTipo.trim() !== "") desbloquear('heranca');
+        
+        // 🟢 Origem + Background
+        if (ficha.origem?.trim() && ficha.backgroundTipo?.trim()) desbloquear('identidade_completa');
         
         // 🟢 Ações
         if (ficha.acoes && Object.keys(ficha.acoes).length > 0) desbloquear('investidor');

@@ -48,10 +48,10 @@ export const CONQUISTAS = [
   { id: "primeiro_imovel", nome: "Lar Doce Lar", desc: "Compre seu primeiro imóvel", icone: "🏠", raridade: "incomum", categoria: "Economia" },
   { id: "investidor", nome: "Investidor", desc: "Compre sua primeira ação na bolsa", icone: "📈", raridade: "incomum", categoria: "Economia" },
   
-  // ===== EXPLORAÇÃO =====
-  { id: "viajante", nome: "Viajante", desc: "Visite 3 países diferentes", icone: "🧭", raridade: "incomum", categoria: "Exploração" },
-  { id: "explorador", nome: "Explorador do Mundo", desc: "Visite 10 países diferentes", icone: "🗺️", raridade: "raro", categoria: "Exploração" },
-  { id: "cartografo", nome: "Cartógrafo", desc: "Visite todos os países", icone: "🌍", raridade: "lendario", categoria: "Exploração" },
+  // ===== ORIGEM E BACKGROUND =====
+  { id: "raizes", nome: "Raízes", desc: "Defina a cidade natal do seu personagem", icone: "🏙️", raridade: "comum", categoria: "Origem" },
+  { id: "heranca", nome: "Herança", desc: "Defina o background do seu personagem", icone: "⚜️", raridade: "incomum", categoria: "Origem" },
+  { id: "identidade_completa", nome: "Identidade Completa", desc: "Defina origem E background", icone: "📜", raridade: "raro", categoria: "Origem" },
   
   // ===== ESPECIAIS =====
   { id: "hacker", nome: "Invasor", desc: "Complete uma invasão de hackeamento", icone: "💻", raridade: "raro", categoria: "Especial" },

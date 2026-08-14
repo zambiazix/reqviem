@@ -11,6 +11,8 @@ import FloatingChat from "./components/FloatingChat";
 import FloatingFicha from "./components/FloatingFicha";
 import Conquistas from "./components/Conquistas";
 import ConquistasWatcher from "./components/ConquistasWatcher";
+import MusicMixerButton from "./components/MusicMixerButton";
+import WhatsAppNotifier from "./components/WhatsAppNotifier";
 
 // Importe o Home do arquivo separado
 import Home from "./components/Home";
@@ -70,6 +72,7 @@ export default function App() {
   const [fichaAtual, setFichaAtual] = useState(null);
   const [bolsaAberta, setBolsaAberta] = useState(false);
   const [conquistasOpen, setConquistasOpen] = useState(false);
+    const [whatsappNotificacoes, setWhatsappNotificacoes] = useState({});
 
 window.__toggleConquistas = () => setConquistasOpen(prev => !prev);
 
@@ -304,15 +307,23 @@ useEffect(() => {
       <JitsiProvider>
         <VoiceProvider>
           <AudioProvider>
+            <MusicMixerButton />
             <LoadingProvider>
               <RouteLoadingWatcher />
                 <GameProvider currentUserEmail={currentUserEmail} isMaster={isMasterFlag}>
                 <ConquistasWatcher userEmail={currentUserEmail} />
+                                <WhatsAppNotifier 
+                  userEmail={currentUserEmail} 
+                  fichasMap={window.__fichasMapSocial || {}} 
+                  setNotificacoes={setWhatsappNotificacoes} 
+                />
 {!isMobile && <SidebarHUD 
   userEmail={currentUserEmail} 
   userNick={userNick} 
   isMaster={isMasterFlag} 
   fichasMap={window.__fichasMapSocial || {}}
+  whatsappNotificacoes={whatsappNotificacoes}
+  setWhatsappNotificacoes={setWhatsappNotificacoes}
 />}
                 {!isMobile && (
                   <FloatingHUD 

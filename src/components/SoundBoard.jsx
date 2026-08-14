@@ -1,22 +1,8 @@
-// src/components/SoundBoard.jsx
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Paper,
-  Typography,
-  Button,
-  List,
-  ListItem,
-  ListItemText,
-  Divider,
-  Box,
-  Slider,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  IconButton,
-  Chip,
+  Paper, Typography, Button, List, ListItem, ListItemText,
+  Divider, Box, Slider, Dialog, DialogTitle, DialogContent,
+  DialogActions, TextField, IconButton, Chip,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import AddIcon from "@mui/icons-material/Add";
@@ -25,7 +11,8 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import { db } from "../firebaseConfig";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { useAudio } from "../context/AudioProvider";
 
 // 🔹 Playlists padrão
 const DEFAULT_MUSIC_LIST = [
@@ -44,16 +31,14 @@ const DEFAULT_AMBIANCE_LIST = [
 ];
 
 export default function SoundBoard({ isMaster }) {
+  const { playMusic, pauseMusic, stopAllMusic, setVolume, playingTracks, unlockAudio } = useAudio();
+  
   const [musicTracks, setMusicTracks] = useState(DEFAULT_MUSIC_LIST);
   const [ambianceTracks, setAmbianceTracks] = useState(DEFAULT_AMBIANCE_LIST);
   const [othersTracks, setOthersTracks] = useState([]);
-
-  // 🎵 Estados de reprodução
-  const [activeTracks, setActiveTracks] = useState(new Set()); // 🟢 Várias faixas ativas
   const [volumes, setVolumes] = useState({});
-  const audioRefs = useRef({});
 
-  // Carregar biblioteca do Firestore
+  // 🟢 Carregar biblioteca do Firestore
   useEffect(() => {
     const docs = [
       { id: "music", setter: setMusicTracks, fallback: DEFAULT_MUSIC_LIST },
@@ -75,57 +60,26 @@ export default function SoundBoard({ isMaster }) {
     return () => unsubs.forEach((u) => u?.());
   }, []);
 
-  // 🟢 PLAY (não para outras músicas)
-const handlePlay = (url, name) => {
-  if (!audioRefs.current[url]) {
-    const audio = new Audio(url);
-    audio.volume = (volumes[url] ?? 80) / 100;
-        audio.loop = true;  // 🟢 ATIVA O LOOP AUTOMÁTICO
-    audioRefs.current[url] = audio;
-  }
+  // 🟢 PLAY usando AudioProvider (com nome da música)
+  const handlePlay = (url, name) => {
+    unlockAudio();
+    playMusic(url, name);
+  };
 
-  const audio = audioRefs.current[url];
-  audio.play().catch(err => {
-    console.error("Erro ao tocar áudio:", err);
-    alert("Erro ao tocar áudio. Verifique o formato do arquivo.");
-  });
+  // 🟢 STOP
+  const handleStop = (url) => {
+    pauseMusic(url);
+  };
 
-  setActiveTracks(prev => new Set(prev).add(url));
-};
+  // 🟢 STOP ALL
+  const handleStopAll = () => {
+    stopAllMusic();
+  };
 
-// 🟢 STOP (apenas a faixa específica)
-const handleStop = (url) => {
-  const audio = audioRefs.current[url];
-  if (audio) {
-    audio.pause();
-    audio.currentTime = 0;
-    audio.loop = false; // 🟢 Desativa o loop ao parar
-  }
-  setActiveTracks(prev => {
-    const next = new Set(prev);
-    next.delete(url);
-    return next;
-  });
-};
-
-// 🟢 STOP ALL (para todas as faixas ativas)
-const handleStopAll = () => {
-  activeTracks.forEach(url => {
-    const audio = audioRefs.current[url];
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
-    }
-  });
-  setActiveTracks(new Set());
-};
-
+  // 🟢 VOLUME
   const handleVolumeChange = (url, newVolume) => {
     setVolumes(prev => ({ ...prev, [url]: newVolume }));
-    const audio = audioRefs.current[url];
-    if (audio) {
-      audio.volume = newVolume / 100;
-    }
+    setVolume(url, newVolume);
   };
 
   // -------------------------
@@ -135,7 +89,7 @@ const handleStopAll = () => {
   const [libMode, setLibMode] = useState("music");
   const [editIndex, setEditIndex] = useState(null);
   const [libName, setLibName] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null); // 🟢 Arquivo selecionado
+  const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef();
 
@@ -158,7 +112,7 @@ const handleStopAll = () => {
                  category === "ambiance" ? ambianceTracks : othersTracks;
     const entry = list[idx];
     setLibName(entry?.name || "");
-    setSelectedFile(null); // na edição, não mexemos no arquivo a menos que seja trocado
+    setSelectedFile(null);
     setOpenLibDialog(true);
   };
 
@@ -212,13 +166,11 @@ const handleStopAll = () => {
 
     let urlToUse = null;
 
-    // Se estamos editando e não foi selecionado novo arquivo, mantém a URL original
     if (editIndex !== null && !selectedFile) {
       const list = libMode === "music" ? musicTracks : libMode === "ambiance" ? ambianceTracks : othersTracks;
       urlToUse = list[editIndex]?.url;
     }
 
-    // Se há arquivo selecionado, faz upload
     if (selectedFile) {
       const uploadedUrl = await uploadToBackend(selectedFile);
       if (!uploadedUrl) return;
@@ -263,7 +215,7 @@ const handleStopAll = () => {
     else setOthersTracks(list);
   };
 
-  // 🎨 RENDERIZAÇÃO COM PLAY ANTES DO NOME
+  // 🎨 RENDERIZAÇÃO
   function renderList(title, tracks, category) {
     return (
       <>
@@ -285,20 +237,22 @@ const handleStopAll = () => {
 
         <List dense>
           {tracks.map((t, i) => {
-            const isPlaying = activeTracks.has(t.url);
+            const normalizedUrl = t.url.trim().replace(/\/+$/, "").toLowerCase();
+            const isPlaying = playingTracks.includes(normalizedUrl);
             const trackVolume = volumes[t.url] ?? 80;
+            
             return (
               <ListItem key={i} divider sx={{ flexDirection: "column", alignItems: "stretch" }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
                   {isPlaying ? (
-  <IconButton color="error" onClick={() => handleStop(t.url)} size="small">
-    <StopIcon />
-  </IconButton>
-) : (
-  <IconButton color="primary" onClick={() => handlePlay(t.url, t.name)} size="small">
-    <PlayArrowIcon />
-  </IconButton>
-)}
+                    <IconButton color="error" onClick={() => handleStop(t.url)} size="small">
+                      <StopIcon />
+                    </IconButton>
+                  ) : (
+                                        <IconButton color="primary" onClick={() => handlePlay(t.url, t.name)} size="small">
+                      <PlayArrowIcon />
+                    </IconButton>
+                  )}
                   <ListItemText 
                     primary={t.name} 
                     sx={{ 
@@ -322,9 +276,7 @@ const handleStopAll = () => {
                 </Box>
                 {isPlaying && (
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1, pl: 4 }}>
-                    <Typography variant="caption" sx={{ minWidth: 45 }}>
-                      Vol:
-                    </Typography>
+                    <Typography variant="caption" sx={{ minWidth: 45 }}>Vol:</Typography>
                     <Slider
                       size="small"
                       value={trackVolume}
@@ -333,9 +285,7 @@ const handleStopAll = () => {
                       max={100}
                       sx={{ flex: 1 }}
                     />
-                    <Typography variant="caption" sx={{ minWidth: 35 }}>
-                      {trackVolume}%
-                    </Typography>
+                    <Typography variant="caption" sx={{ minWidth: 35 }}>{trackVolume}%</Typography>
                   </Box>
                 )}
               </ListItem>
@@ -381,7 +331,6 @@ const handleStopAll = () => {
             sx={{ mb: 2, mt: 1 }}
           />
 
-          {/* 🟢 Área de upload de arquivo (sem URL) */}
           <Box sx={{ mb: 2 }}>
             {!selectedFile ? (
               <Button
