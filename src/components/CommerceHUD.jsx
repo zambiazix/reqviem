@@ -1,22 +1,22 @@
+// src/components/CommerceHUD.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  Box, Paper, Typography, IconButton, Button, TextField, Divider,
+  Box, Paper, Typography, IconButton, Button, TextField,
   FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle,
-  DialogContent, DialogActions, Grid, Chip, Tooltip, Slider,
+  DialogContent, DialogActions, Grid, Chip, InputAdornment,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import AddIcon from "@mui/icons-material/Add";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
-import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
+import SearchIcon from "@mui/icons-material/Search";
 import { db } from "../firebaseConfig";
-import { collection, doc, getDocs, setDoc, deleteDoc, onSnapshot, getDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDocs, setDoc, deleteDoc, onSnapshot, updateDoc } from "firebase/firestore";
 
-// ==================== CONSTANTES ====================
 const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
-// 🟢 TIPOS DE DANO DISPONÍVEIS
+
 const TIPOS_DANO = [
   { valor: "Nenhum", label: "Nenhum (sem efeito)", cor: "#888888" },
   { valor: "Ácido", label: "Ácido", cor: "#7fff00" },
@@ -31,24 +31,24 @@ const TIPOS_DANO = [
   { valor: "Trovejante", label: "Trovejante", cor: "#4169e1" },
   { valor: "Tóxico", label: "Tóxico", cor: "#8b008b" },
 ];
-// 🟢 TIPOS DE CONSUMÍVEL
+
 const TIPOS_CONSUMIVEL = [
   { valor: "Nenhum", label: "Nenhum", cor: "#888888" },
   { valor: "PV", label: "PV (Vida)", cor: "#ff4d4f" },
   { valor: "PE", label: "PE (Energia)", cor: "#facc15" },
   { valor: "RE", label: "R.E (Remover Efeito)", cor: "#00e0ff" },
 ];
-// 🟢 TIPOS DE INSUMÍVEL (reparam outros itens)
+
 const TIPOS_INSUMIVEL = [
   { valor: "Nenhum", label: "Nenhum", cor: "#888888" },
-  { valor: "Cortante/Perfurante", label: "🪨 Pedra de Amolar (Cortante/Perfurante)", cor: "#c0c0c0", tiposDanoReparados: ["Cortante", "Perfurante"] },
-  { valor: "Elétrico", label: "🔋 Bateria (Elétrico)", cor: "#ffff00", tiposDanoReparados: ["Elétrico"] },
-  { valor: "Térmico", label: "⛽ Combustível (Térmico)", cor: "#ff4500", tiposDanoReparados: ["Térmico"] },
-  { valor: "Vestimenta_Leve", label: "🧵 Remendo (Vestimenta até dado 15)", cor: "#8B4513", categoriaAlvo: "vestes", dadoMaximo: 15 },
-  { valor: "Vestimenta_Pesada", label: "🔨 Kit de Forja (Vestimenta dado 16-50)", cor: "#A0522D", categoriaAlvo: "vestes", dadoMinimo: 16, dadoMaximo: 50 },
-  { valor: "Todos", label: "🔄 Regenerar Tudo", cor: "#00ff88", regenerarTudo: true },
+  { valor: "Cortante/Perfurante", label: "🪨 Pedra de Amolar", cor: "#c0c0c0" },
+  { valor: "Elétrico", label: "🔋 Bateria", cor: "#ffff00" },
+  { valor: "Térmico", label: "⛽ Combustível", cor: "#ff4500" },
+  { valor: "Vestimenta_Leve", label: "🧵 Remendo (até 15)", cor: "#8B4513" },
+  { valor: "Vestimenta_Pesada", label: "🔨 Kit de Forja (16-50)", cor: "#A0522D" },
+  { valor: "Todos", label: "🔄 Regenerar Tudo", cor: "#00ff88" },
 ];
-// ==================== LIGHTBOX ====================
+
 function LightboxImage({ src, zoom, setZoom }) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -75,61 +75,64 @@ function LightboxImage({ src, zoom, setZoom }) {
   }, [dragging, start]);
 
   return (
-    <img
-      src={src}
-      alt="ampliada"
-      onClick={(e) => e.stopPropagation()}
-      onMouseDown={handleMouseDown}
-      onWheel={(e) => {
-        e.preventDefault();
-        setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
-      }}
-      style={{
-        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
-        transition: dragging ? "none" : "transform 0.2s ease",
-        maxWidth: "90%", maxHeight: "90%", borderRadius: 10,
-        cursor: dragging ? "grabbing" : "grab", userSelect: "none",
-      }}
+    <img src={src} alt="ampliada" onClick={(e) => e.stopPropagation()} onMouseDown={handleMouseDown}
+      onWheel={(e) => { e.preventDefault(); setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5)); }}
+      style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`, transition: dragging ? "none" : "transform 0.2s ease", maxWidth: "90%", maxHeight: "90%", borderRadius: 10, cursor: dragging ? "grabbing" : "grab", userSelect: "none" }}
     />
   );
 }
 
-// ==================== COMMERCE HUD PRINCIPAL ====================
 function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, currentUserEmail = null }) {
+
   if (!visible) return null;
 
-  // 🟢 ESTADOS DE NAVEGAÇÃO
   const [paises, setPaises] = useState([]);
   const [cidades, setCidades] = useState([]);
   const [lojas, setLojas] = useState([]);
   const [itens, setItens] = useState([]);
   const [fichasMap, setFichasMap] = useState({});
-
   const [selectedPais, setSelectedPais] = useState(null);
   const [selectedCidade, setSelectedCidade] = useState(null);
   const [selectedLoja, setSelectedLoja] = useState(null);
 
-  // 🟢 ESTADOS DE EDIÇÃO (MESTRE)
   const [editandoPais, setEditandoPais] = useState(null);
   const [editandoCidade, setEditandoCidade] = useState(null);
   const [editandoLoja, setEditandoLoja] = useState(null);
   const [editandoItem, setEditandoItem] = useState(null);
-
-  // 🟢 CAMPOS DE FORMULÁRIO
   const [novoPaisNome, setNovoPaisNome] = useState("");
   const [novaCidadeNome, setNovaCidadeNome] = useState("");
   const [novaLojaNome, setNovaLojaNome] = useState("");
 
-  // 🟢 LIGHTBOX
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
 
-  // 🟢 COMPRA
   const [comprandoItem, setComprandoItem] = useState(null);
   const [carteiraSelecionada, setCarteiraSelecionada] = useState("");
   const [categoriaDestinoCompra, setCategoriaDestinoCompra] = useState("equipamentos");
 
-  // ==================== CARREGAR FICHAS ====================
+  const [minimizado, setMinimizado] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('commerceHUD_minimizado') || 'false'); } catch { return false; }
+  });
+  const [posicao, setPosicao] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('commerceHUD_posicao') || 'null') || { x: 280, y: 80 }; } catch { return { x: 280, y: 80 }; }
+  });
+  const [tamanho, setTamanho] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('commerceHUD_tamanho') || 'null') || { width: 520, height: 600 }; } catch { return { width: 520, height: 600 }; }
+  });
+  const [arrastando, setArrastando] = useState(false);
+  const [redimensionando, setRedimensionando] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const [mostrarNav, setMostrarNav] = useState(true);
+
+  const [termoBusca, setTermoBusca] = useState("");
+  const [resultadosBusca, setResultadosBusca] = useState([]);
+  const [demandaMap, setDemandaMap] = useState({});
+
+  useEffect(() => { localStorage.setItem('commerceHUD_posicao', JSON.stringify(posicao)); }, [posicao]);
+  useEffect(() => { localStorage.setItem('commerceHUD_tamanho', JSON.stringify(tamanho)); }, [tamanho]);
+  useEffect(() => { localStorage.setItem('commerceHUD_minimizado', JSON.stringify(minimizado)); }, [minimizado]);
+
   useEffect(() => {
     if (!currentUserEmail) return;
     const unsub = onSnapshot(collection(db, "fichas"), (snap) => {
@@ -140,41 +143,35 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     return () => unsub();
   }, [currentUserEmail]);
 
-  // ==================== CARREGAR PAÍSES ====================
   const carregarPaises = useCallback(async () => {
-  const snap = await getDocs(collection(db, "comercio_paises"));
-  setPaises(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-}, []);
-
+    const snap = await getDocs(collection(db, "comercio_paises"));
+    setPaises(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, []);
   useEffect(() => { carregarPaises(); }, [carregarPaises]);
 
-  // ==================== CARREGAR CIDADES ====================
   const carregarCidades = useCallback(async (paisId) => {
-  if (!paisId) { setCidades([]); return; }
-  const snap = await getDocs(collection(db, "comercio_paises", paisId, "cidades"));
-  setCidades(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-}, []);
+    if (!paisId) { setCidades([]); return; }
+    const snap = await getDocs(collection(db, "comercio_paises", paisId, "cidades"));
+    setCidades(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, []);
 
-  // ==================== CARREGAR LOJAS ====================
   const carregarLojas = useCallback(async (paisId, cidadeId) => {
-  if (!paisId || !cidadeId) { setLojas([]); return; }
-  const snap = await getDocs(collection(db, "comercio_paises", paisId, "cidades", cidadeId, "lojas"));
-  setLojas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-}, []);
+    if (!paisId || !cidadeId) { setLojas([]); return; }
+    const snap = await getDocs(collection(db, "comercio_paises", paisId, "cidades", cidadeId, "lojas"));
+    setLojas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, []);
 
-  // ==================== CARREGAR ITENS ====================
-    const carregarItens = useCallback(async (paisId, cidadeId, lojaId) => {
-  if (!paisId || !cidadeId || !lojaId) { setItens([]); return; }
-  const unsub = onSnapshot(
-    collection(db, "comercio_paises", paisId, "cidades", cidadeId, "lojas", lojaId, "itens"),
+  const carregarItens = useCallback(async (paisId, cidadeId, lojaId) => {
+    if (!paisId || !cidadeId || !lojaId) { setItens([]); return; }
+    const unsub = onSnapshot(
+      collection(db, "comercio_paises", paisId, "cidades", cidadeId, "lojas", lojaId, "itens"),
       (snap) => {
-        const dados = snap.docs.map(d => ({ 
-          id: d.id, 
-          ...d.data(),
-                              tipoDano: d.data().tipoDano || "Nenhum",
+        const dados = snap.docs.map(d => ({
+          id: d.id, ...d.data(),
+          tipoDano: d.data().tipoDano || "Nenhum",
           consumivel: d.data().consumivel || "Nenhum",
           consumivelValor: d.data().consumivelValor || 0,
-                    consumivelPercentual: d.data().consumivelPercentual || 100,
+          consumivelPercentual: d.data().consumivelPercentual || 100,
           insumivel: d.data().insumivel || "Nenhum",
           insumivelValor: d.data().insumivelValor || 0,
         }));
@@ -185,7 +182,6 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     return () => unsub();
   }, []);
 
-  // ==================== NAVEGAÇÃO ====================
   const selecionarPais = (pais) => {
     setSelectedPais(pais);
     setSelectedCidade(null);
@@ -206,66 +202,105 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     carregarItens(selectedPais.id, selectedCidade.id, loja.id);
   };
 
-  // ==================== CRUD PAÍS ====================
-  const salvarPais = async () => {
-  if (!novoPaisNome.trim()) {
-    alert("Digite um nome para o país!");
-    return;
-  }
-  
-  try {
-    const id = novoPaisNome.trim().toLowerCase().replace(/\s+/g, '_');
-    console.log("🌍 Salvando país:", id, novoPaisNome);
-    
-    await setDoc(doc(db, "comercio_paises", id), {
-      nome: novoPaisNome.trim(),
-      bandeira: "",
-    });
-    
-    console.log("✅ País salvo com sucesso!");
-    setNovoPaisNome("");
-    await carregarPaises();
-  } catch (err) {
-    console.error("❌ Erro ao salvar país:", err);
-    alert("Erro ao salvar país: " + err.message);
-  }
-};
-
-  const deletarPais = async (id) => {
-  if (!window.confirm("Deletar este país e TODAS as cidades, lojas e itens?")) return;
-  await deleteDoc(doc(db, "comercio_paises", id));
-  if (selectedPais?.id === id) { setSelectedPais(null); setSelectedCidade(null); setSelectedLoja(null); }
-  carregarPaises();
-};
-
-  const uploadBandeira = async (paisId) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.onchange = async () => {
-      const file = input.files[0];
-      if (!file) return;
-      const fd = new FormData();
-      fd.append("image", file);
-      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-      const data = await res.json();
-      if (data?.success) {
-        await setDoc(doc(db, "comercio_paises", paisId), { bandeira: data.data.url }, { merge: true });
-        carregarPaises();
+  const realizarBusca = async (termo) => {
+    if (!termo || termo.length < 1) {
+      setResultadosBusca([]);
+      setMostrarNav(true);
+      return;
+    }
+    const termoLower = termo.toLowerCase();
+    const resultados = [];
+    let idCounter = 0;
+    for (const p of paises) {
+      if (p.nome?.toLowerCase().startsWith(termoLower)) {
+        resultados.push({ id: `pais_${idCounter++}`, tipo: 'pais', nome: p.nome, data: p, icone: '🌍' });
       }
-    };
-    input.click();
+      const cidadesSnap = await getDocs(collection(db, "comercio_paises", p.id, "cidades"));
+      for (const cd of cidadesSnap.docs) {
+        const cidadeData = cd.data();
+        if (cidadeData.nome?.toLowerCase().startsWith(termoLower)) {
+          resultados.push({ id: `cidade_${idCounter++}`, tipo: 'cidade', nome: cidadeData.nome, data: { ...cidadeData, id: cd.id, paisId: p.id, paisNome: p.nome }, icone: '🏙️' });
+        }
+        const lojasSnap = await getDocs(collection(db, "comercio_paises", p.id, "cidades", cd.id, "lojas"));
+        for (const lj of lojasSnap.docs) {
+          const lojaData = lj.data();
+          if (lojaData.nome?.toLowerCase().startsWith(termoLower) || lojaData.donoNome?.toLowerCase().startsWith(termoLower)) {
+            resultados.push({ id: `loja_${idCounter++}`, tipo: 'loja', nome: lojaData.nome, data: { ...lojaData, id: lj.id, paisId: p.id, cidadeId: cd.id, cidadeNome: cidadeData.nome, paisNome: p.nome }, icone: '🏪' });
+          }
+          const itensSnap = await getDocs(collection(db, "comercio_paises", p.id, "cidades", cd.id, "lojas", lj.id, "itens"));
+          for (const it of itensSnap.docs) {
+            const itemData = it.data();
+            if (itemData.nome?.toLowerCase().startsWith(termoLower)) {
+              resultados.push({ id: `item_${idCounter++}`, tipo: 'item', nome: itemData.nome, data: { ...itemData, id: it.id, paisId: p.id, cidadeId: cd.id, lojaId: lj.id, lojaNome: lojaData.nome, cidadeNome: cidadeData.nome, paisNome: p.nome }, icone: '📦' });
+            }
+          }
+        }
+      }
+    }
+    setResultadosBusca(resultados);
+    setMostrarNav(resultados.length === 0);
   };
 
-  // ==================== CRUD CIDADE ====================
+  const navegarParaResultado = async (resultado) => {
+    setTermoBusca("");
+    setResultadosBusca([]);
+    setMostrarNav(true);
+    if (resultado.tipo === 'pais') {
+      selecionarPais(resultado.data);
+    } else if (resultado.tipo === 'cidade') {
+      const pais = paises.find(p => p.id === resultado.data.paisId);
+      if (pais) {
+        setSelectedPais(pais);
+        await carregarCidades(pais.id);
+        setSelectedCidade({ id: resultado.data.id, ...resultado.data });
+        carregarLojas(pais.id, resultado.data.id);
+      }
+    } else if (resultado.tipo === 'loja') {
+      const pais = paises.find(p => p.id === resultado.data.paisId);
+      if (pais) {
+        setSelectedPais(pais);
+        await carregarCidades(pais.id);
+        setSelectedCidade({ id: resultado.data.cidadeId, nome: resultado.data.cidadeNome });
+        await carregarLojas(pais.id, resultado.data.cidadeId);
+        setSelectedLoja({ id: resultado.data.id, ...resultado.data });
+        carregarItens(pais.id, resultado.data.cidadeId, resultado.data.id);
+      }
+    } else if (resultado.tipo === 'item') {
+      const pais = paises.find(p => p.id === resultado.data.paisId);
+      if (pais) {
+        setSelectedPais(pais);
+        await carregarCidades(pais.id);
+        setSelectedCidade({ id: resultado.data.cidadeId, nome: resultado.data.cidadeNome });
+        await carregarLojas(pais.id, resultado.data.cidadeId);
+        setSelectedLoja({ id: resultado.data.lojaId, nome: resultado.data.lojaNome });
+        carregarItens(pais.id, resultado.data.cidadeId, resultado.data.lojaId);
+      }
+    }
+  };
+
+  const salvarPais = async () => {
+    if (!novoPaisNome.trim()) { alert("Digite um nome para o país!"); return; }
+    try {
+      const id = editandoPais?.id || novoPaisNome.trim().toLowerCase().replace(/\s+/g, '_');
+      await setDoc(doc(db, "comercio_paises", id), { nome: novoPaisNome.trim(), bandeira: editandoPais?.bandeira || "" });
+      setNovoPaisNome("");
+      setEditandoPais(null);
+      await carregarPaises();
+    } catch (err) { alert("Erro ao salvar país: " + err.message); }
+  };
+
+  const deletarPais = async (id) => {
+    if (!window.confirm("Deletar este país e TODAS as cidades, lojas e itens?")) return;
+    await deleteDoc(doc(db, "comercio_paises", id));
+    if (selectedPais?.id === id) { setSelectedPais(null); setSelectedCidade(null); setSelectedLoja(null); }
+    carregarPaises();
+  };
+
   const salvarCidade = async () => {
     if (!novaCidadeNome.trim() || !selectedPais) return;
     const id = editandoCidade?.id || novaCidadeNome.trim().toLowerCase().replace(/\s+/g, '_');
-    await setDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", id), {
-  nome: novaCidadeNome.trim(),
-});
-    setEditandoCidade(null);
-    setNovaCidadeNome("");
+    await setDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", id), { nome: novaCidadeNome.trim() });
+    setEditandoCidade(null); setNovaCidadeNome("");
     carregarCidades(selectedPais.id);
   };
 
@@ -276,7 +311,6 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     carregarCidades(selectedPais.id);
   };
 
-  // ==================== CRUD LOJA ====================
   const salvarLoja = async () => {
     if (!novaLojaNome.trim() || !selectedPais || !selectedCidade) return;
     const id = editandoLoja?.id || novaLojaNome.trim().toLowerCase().replace(/\s+/g, '_');
@@ -286,8 +320,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       donoImagem: editandoLoja?.donoImagem || "",
       donoDescricao: editandoLoja?.donoDescricao || "",
     });
-    setEditandoLoja(null);
-    setNovaLojaNome("");
+    setEditandoLoja(null); setNovaLojaNome("");
     carregarLojas(selectedPais.id, selectedCidade.id);
   };
 
@@ -298,824 +331,608 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     carregarLojas(selectedPais.id, selectedCidade.id);
   };
 
-  // ==================== CRUD ITEM ====================
-  const salvarItem = async (e) => {
-    e?.preventDefault();
-    if (!selectedPais || !selectedCidade || !selectedLoja) return;
-
-    const nome = e?.target?.nome?.value || editandoItem?.nome;
-    if (!nome?.trim()) return alert("Nome do item é obrigatório!");
-
-    const id = editandoItem?.id || Date.now().toString();
-        const payload = {
-      nome: nome.trim(),
-      descricao: e?.target?.descricao?.value || editandoItem?.descricao || "",
-      valor: Number(e?.target?.valor?.value || editandoItem?.valor || 0),
-      dado: Number(e?.target?.dado?.value || editandoItem?.dado || 1),
-      durabilidade: Number(e?.target?.durabilidade?.value || editandoItem?.durabilidade || 100),
-      estoque: Number(e?.target?.estoque?.value || editandoItem?.estoque || 1),
-      imagem: editandoItem?.imagem || "",
-      ordem: editandoItem?.ordem || itens.length,
-      comprasRecentes: editandoItem?.comprasRecentes || 0,
-                  tipoDano: editandoItem?.tipoDano || "Nenhum",
-      consumivel: editandoItem?.consumivel || "Nenhum",
-      consumivelValor: editandoItem?.consumivelValor || 0,
-            consumivelPercentual: editandoItem?.consumivelPercentual || 100,
-      insumivel: editandoItem?.insumivel || "Nenhum",
-      insumivelValor: editandoItem?.insumivelValor || 0,
+  const salvarItem = async () => {
+    if (!selectedPais || !selectedCidade || !selectedLoja || !editandoItem) return;
+    if (!editandoItem.nome?.trim()) { alert("Nome do item é obrigatório!"); return; }
+    const id = editandoItem.id || Date.now().toString();
+    const payload = {
+      nome: editandoItem.nome.trim(),
+      descricao: editandoItem.descricao || "",
+      valor: Number(editandoItem.valor || 0),
+      dado: Number(editandoItem.dado || 1),
+      durabilidade: Number(editandoItem.durabilidade || 100),
+      estoque: Number(editandoItem.estoque || 1),
+      imagem: editandoItem.imagem || "",
+      ordem: editandoItem.ordem || itens.length,
+      comprasRecentes: editandoItem.comprasRecentes || 0,
+      tipoDano: editandoItem.tipoDano || "Nenhum",
+      consumivel: editandoItem.consumivel || "Nenhum",
+      consumivelValor: editandoItem.consumivelValor || 0,
+      consumivelPercentual: editandoItem.consumivelPercentual || 100,
+      insumivel: editandoItem.insumivel || "Nenhum",
+      insumivelValor: editandoItem.insumivelValor || 0,
     };
-
-        await setDoc(
-      doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", id),
-      payload
-    );
+    await setDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", id), payload);
     setEditandoItem(null);
   };
 
-    const deletarItem = async (id) => {
+  const deletarItem = async (id) => {
     if (!window.confirm("Remover este item?")) return;
     await deleteDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", id));
   };
 
   const uploadImagemItem = async () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
+    const input = document.createElement("input"); input.type = "file"; input.accept = "image/*";
     input.onchange = async () => {
-      const file = input.files[0];
-      if (!file) return;
-      const fd = new FormData();
-      fd.append("image", file);
+      const file = input.files[0]; if (!file) return;
+      const fd = new FormData(); fd.append("image", file);
       const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
       const data = await res.json();
-      if (data?.success) {
-        setEditandoItem(prev => ({ ...prev, imagem: data.data.url }));
-      }
+      if (data?.success) setEditandoItem(prev => ({ ...prev, imagem: data.data.url }));
     };
     input.click();
   };
 
-    const comprarItem = async () => {
+  const comprarItem = async () => {
     if (!comprandoItem || !currentUserEmail) return;
     if (!carteiraSelecionada) { alert("Selecione uma carteira!"); return; }
-
     const ficha = fichasMap[currentUserEmail];
     if (!ficha) { alert("Ficha não encontrada!"); return; }
-
     const carteiras = ficha.carteiras || [];
     const carteira = carteiras.find(c => c.nome === carteiraSelecionada);
-    
     const quantidadeComprada = comprandoItem.quantidadeCompra || 1;
     const precoTotal = comprandoItem.precoUnitario * quantidadeComprada;
-    
-    if (!carteira || carteira.valor < precoTotal) {
-      alert("Saldo insuficiente!");
-      return;
-    }
-
-    // Desconta dinheiro
+    if (!carteira || carteira.valor < precoTotal) { alert("Saldo insuficiente!"); return; }
     const novasCarteiras = carteiras.map(c =>
       c.nome === carteiraSelecionada ? { ...c, valor: c.valor - precoTotal } : c
     );
-
-    // 🟢 AGLOMERA itens com mesmo nome
     const categoriaAtual = ficha[categoriaDestinoCompra] || [];
     const itemExistenteIndex = categoriaAtual.findIndex(it => it.nome === comprandoItem.nome);
-    
     let categoriaItens;
     if (itemExistenteIndex >= 0) {
-      // Aumenta a quantidade do item existente
       categoriaItens = categoriaAtual.map((it, idx) => {
-        if (idx === itemExistenteIndex) {
-          return { ...it, quantidade: (it.quantidade || 1) + quantidadeComprada };
-        }
+        if (idx === itemExistenteIndex) return { ...it, quantidade: (it.quantidade || 1) + quantidadeComprada };
         return it;
       });
     } else {
-      // Adiciona novo item
       const novoItem = {
-        nome: comprandoItem.nome,
-        quantidade: quantidadeComprada,
-        durabilidade: comprandoItem.durabilidade || 100,
-        dado: comprandoItem.dado || 1,
-        imagem: comprandoItem.imagem || "",
-        tipoDano: comprandoItem.tipoDano || "Nenhum",
-        consumivel: comprandoItem.consumivel || "Nenhum",
-        consumivelValor: comprandoItem.consumivelValor || 0,
-        consumivelPercentual: comprandoItem.consumivelPercentual || 100,
-        insumivel: comprandoItem.insumivel || "Nenhum",
-        insumivelValor: comprandoItem.insumivelValor || 0,
+        nome: comprandoItem.nome, quantidade: quantidadeComprada, durabilidade: comprandoItem.durabilidade || 100,
+        dado: comprandoItem.dado || 1, imagem: comprandoItem.imagem || "", tipoDano: comprandoItem.tipoDano || "Nenhum",
+        consumivel: comprandoItem.consumivel || "Nenhum", consumivelValor: comprandoItem.consumivelValor || 0,
+        consumivelPercentual: comprandoItem.consumivelPercentual || 100, insumivel: comprandoItem.insumivel || "Nenhum", insumivelValor: comprandoItem.insumivelValor || 0,
       };
       categoriaItens = [...categoriaAtual, novoItem];
     }
-
-    // Atualiza Firestore
-    await setDoc(doc(db, "fichas", currentUserEmail), {
-      carteiras: novasCarteiras,
-      [categoriaDestinoCompra]: categoriaItens,
-}, { merge: true });
-
-        // Diminui estoque (NUNCA DELETA, só zera)
+    await setDoc(doc(db, "fichas", currentUserEmail), { carteiras: novasCarteiras, [categoriaDestinoCompra]: categoriaItens }, { merge: true });
     const novoEstoque = Math.max(0, (comprandoItem.estoque || 1) - quantidadeComprada);
-    const comprasRecentes = (comprandoItem.comprasRecentes || 0) + 1;
-
+    const aumentoDemanda = Math.floor(Math.random() * 30) + 1;
+    const agora = Date.now();
+    const expiraEm = agora + (60 * 60 * 1000);
+    setDemandaMap(prev => ({ ...prev, [comprandoItem.id]: { aumento: aumentoDemanda, expiraEm } }));
     await updateDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", comprandoItem.id), {
-      estoque: novoEstoque,
-      comprasRecentes,
+      estoque: novoEstoque, ultimaCompraTimestamp: agora, aumentoDemanda: aumentoDemanda,
     });
-
-    alert(`✅ "${quantidadeComprada}x ${comprandoItem.nome}" comprado por ${precoTotal} 💰!`);
+    alert(`✅ "${quantidadeComprada}x ${comprandoItem.nome}" comprado por ${precoTotal} 💰!\n🔥 Demanda aumentou +${aumentoDemanda}% por 1 hora!`);
     setComprandoItem(null);
     setCarteiraSelecionada("");
   };
-  // ==================== RENDER ====================
-  const hud = (
-    <Paper
-      elevation={10}
-      sx={{
-        position: "fixed", top: 80, left: 280, width: 480, maxHeight: "85vh",
-        p: 2, overflowY: "auto", zIndex: 200,
-        bgcolor: "#1a1a2e", color: "#fff", borderRadius: 2,
-        border: "1px solid #334155",
-      }}
-    >
-      {/* CABEÇALHO */}
-      <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
-        <Typography variant="h6">🏪 Comércio</Typography>
-        <IconButton onClick={onClose} sx={{ color: "#ef4444" }}><CloseIcon /></IconButton>
-      </Box>
-      <Divider sx={{ mb: 2, borderColor: "#334155" }} />
 
-      {/* ============================================================ */}
-      {/* CAMADA 1 - PAÍSES */}
-      {/* ============================================================ */}
-      {!selectedPais && (
-        <>
-          <Typography variant="subtitle1" sx={{ mb: 1 }}>🌍 Selecione um País:</Typography>
-          {isMaster && (
-            <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-              <TextField 
-  size="small" 
-  label="Novo país" 
-  value={novoPaisNome} 
-  onChange={e => setNovoPaisNome(e.target.value)} 
-  fullWidth 
-  InputProps={{ style: { color: '#fff' } }}
-  InputLabelProps={{ style: { color: '#94a3b8' } }}
-  sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#334155' }, '&:hover fieldset': { borderColor: '#475569' } } }}
-/>
-              <Button variant="contained" onClick={salvarPais}><AddIcon /></Button>
-            </Box>
-          )}
-                                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {paises.map(p => (
-              <Box key={p.id}>
-                                <Paper sx={{ 
-                  p: 1.5, cursor: "pointer", bgcolor: "#0f172a", 
-                  "&:hover": { bgcolor: "#1e3a5f" },
-                  border: p.cor ? `2px solid ${p.cor}` : '1px solid #334155',
-                  minHeight: 60, display: 'flex', flexDirection: 'column', justifyContent: 'center'
-                }} onClick={() => selecionarPais(p)}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    {p.bandeira ? (
-                      <img src={p.bandeira} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', border: '2px solid #334155' }}
-                        onClick={(e) => { e.stopPropagation(); setLightboxImage(p.bandeira); setZoom(1); }} />
-                    ) : (
-                      <Box sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>🏳️</Box>
-                    )}
-                    <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{p.nome}</Typography>
-                    {isMaster && (
-                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoPais(p); setNovoPaisNome(p.nome); }}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </Box>
-                </Paper>
-                            </Box>
-            ))}
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const agora = Date.now();
+      setDemandaMap(prev => {
+        const novo = { ...prev };
+        let mudou = false;
+        for (const key in novo) {
+          if (novo[key].expiraEm < agora) { delete novo[key]; mudou = true; }
+        }
+        return mudou ? { ...novo } : prev;
+      });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (arrastando) {
+        setPosicao({ x: e.clientX - dragStartRef.current.x, y: e.clientY - dragStartRef.current.y });
+      }
+      if (redimensionando) {
+        const newWidth = Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x));
+        const newHeight = Math.max(300, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y));
+        setTamanho({ width: newWidth, height: newHeight });
+      }
+    };
+    const handleMouseUp = () => { setArrastando(false); setRedimensionando(false); };
+    if (arrastando || redimensionando) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [arrastando, redimensionando]);
+
+  return createPortal(
+    <>
+      <Paper
+        elevation={10}
+        sx={{
+          position: "fixed",
+          left: posicao.x,
+          top: posicao.y,
+          width: minimizado ? 300 : tamanho.width,
+          height: minimizado ? 48 : tamanho.height,
+          bgcolor: "#1a1a2e",
+          color: "#fff",
+          borderRadius: 2,
+          border: "1px solid #334155",
+          zIndex: 200,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          transition: "none",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
+        }}
+      >
+        <Box
+          sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 1, bgcolor: "#0f172a", cursor: "move", minHeight: 40, borderBottom: "1px solid #334155" }}
+          onMouseDown={(e) => {
+            if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+            e.preventDefault();
+            setArrastando(true);
+            dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y };
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <span>🏪</span>
+            <Typography variant="subtitle2" sx={{ fontWeight: "bold" }}>
+              {minimizado ? "Comércio" : "Comércio"}
+            </Typography>
           </Box>
-        </>
-      )}
-
-      {/* ============================================================ */}
-      {/* CAMADA 2 - CIDADES */}
-      {/* ============================================================ */}
-      {selectedPais && !selectedCidade && (
-        <>
-          <Button onClick={() => { setSelectedPais(null); setCidades([]); }}>← Voltar</Button>
-          <Typography variant="h6" sx={{ mt: 1, mb: 2, color: '#fff' }}>🏙️ Cidades de {selectedPais.nome}</Typography>
-          {isMaster && (
-            <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-              <TextField 
-  size="small" 
-  label="Nova cidade" 
-  value={novaCidadeNome} 
-  onChange={e => setNovaCidadeNome(e.target.value)} 
-  fullWidth 
-  InputProps={{ style: { color: '#fff' } }}
-  InputLabelProps={{ style: { color: '#94a3b8' } }}
-  sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#334155' }, '&:hover fieldset': { borderColor: '#475569' } } }}
-/>
-              <Button variant="contained" onClick={salvarCidade}><AddIcon /></Button>
-            </Box>
-          )}
-                                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {cidades.map(c => (
-              <Box key={c.id}>
-                                <Paper sx={{ 
-                  p: 1.5, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" },
-                  border: c.cor ? `2px solid ${c.cor}` : '1px solid #334155',
-                  minHeight: 60, display: 'flex', flexDirection: 'column', justifyContent: 'center'
-                }} onClick={() => selecionarCidade(c)}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    {c.imagem ? (
-                      <img src={c.imagem} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', border: '2px solid #334155' }}
-                        onClick={(e) => { e.stopPropagation(); setLightboxImage(c.imagem); setZoom(1); }} />
-                    ) : (
-                      <Box sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>🏙️</Box>
-                    )}
-                    <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{c.nome}</Typography>
-                    {isMaster && (
-                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoCidade(c); setNovaCidadeNome(c.nome); }}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </Box>
-                </Paper>
-                             </Box>
-            ))}
+          <Box sx={{ display: "flex", gap: 0.5 }}>
+            <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#fff", p: 0.5 }}>
+              {minimizado ? "□" : "−"}
+            </IconButton>
+            <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
           </Box>
-        </>
-      )}
+        </Box>
 
-      {/* ============================================================ */}
-      {/* CAMADA 3 - LOJAS */}
-      {/* ============================================================ */}
-      {selectedPais && selectedCidade && !selectedLoja && (
-        <>
-          <Button onClick={() => { setSelectedCidade(null); setLojas([]); }}>← Voltar</Button>
-          <Typography variant="h6" sx={{ mt: 1, mb: 2, color: '#fff' }}>🏪 Lojas de {selectedCidade.nome}</Typography>
-                    {isMaster && (
-            <Button variant="contained" startIcon={<AddIcon />} sx={{ mb: 2 }} onClick={() => { setEditandoLoja({}); setNovaLojaNome(""); }}>
-              Nova Loja
-            </Button>
-          )}
-          <Grid container spacing={1}>
-            {lojas.map(l => (
-              <Grid item xs={12} key={l.id}>
-                                <Paper sx={{ p: 2, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" }, height: '100%' }} onClick={() => selecionarLoja(l)}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    {l.donoImagem ? (
-                      <img src={l.donoImagem} alt="" style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", cursor: "pointer" }}
-                        onClick={(e) => { e.stopPropagation(); setLightboxImage(l.donoImagem); setZoom(1); }} />
-                    ) : (
-                      <Box sx={{ width: 48, height: 48, borderRadius: "50%", bgcolor: "#334155", display: "flex", alignItems: "center", justifyContent: "center" }}>👤</Box>
-                    )}
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: '#fff' }}>{l.nome}</Typography>
-                      {l.donoNome && <Typography variant="caption" sx={{ color: "#94a3b8" }}>👤 {l.donoNome}</Typography>}
-                      
-                                            {l.donoDescricao && (
-                        <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", maxHeight: 40, overflowY: "auto", mt: 0.5,
-                          '&::-webkit-scrollbar': { width: '3px' },
-                          '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.2)', borderRadius: '10px' }
-                        }}>
-                          {l.donoDescricao}
-                        </Typography>
-                      )}
-                    </Box>
-                    {isMaster && (
+        {!minimizado && (
+          <Box sx={{ flex: 1, overflowY: "auto", p: 1.5, display: "flex", flexDirection: "column" }}>
+            <TextField
+              size="small"
+              placeholder="🔍 Pesquisar países, cidades, lojas ou itens..."
+              value={termoBusca}
+              onChange={(e) => { setTermoBusca(e.target.value); realizarBusca(e.target.value); }}
+              fullWidth
+              InputProps={{
+                startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: '#94a3b8' }} /></InputAdornment>,
+                style: { color: '#fff', fontSize: '0.8rem' },
+              }}
+              sx={{ mb: 1, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#334155' }, '&:hover fieldset': { borderColor: '#475569' } } }}
+            />
+
+            {resultadosBusca.length > 0 && (
+              <Box sx={{ mb: 1, maxHeight: 300, overflowY: 'auto' }}>
+                <Typography variant="caption" sx={{ color: '#94a3b8', mb: 0.5, display: 'block' }}>
+                  {resultadosBusca.length} resultado(s) para "{termoBusca}"
+                </Typography>
+                {resultadosBusca.map(r => (
+                  <Paper key={r.id} sx={{ p: 1, mb: 0.5, bgcolor: '#0f172a', cursor: 'pointer', '&:hover': { bgcolor: '#1e3a5f' } }}
+                    onClick={() => navegarParaResultado(r)}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <span>{r.icone}</span>
                       <Box>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoLoja(l); setNovaLojaNome(l.nome); }}><EditIcon fontSize="small" /></IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarLoja(l.id); }}><DeleteIcon fontSize="small" color="error" /></IconButton>
-                      </Box>
-                    )}
-                  </Box>
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
-
-          {/* Modal editar loja */}
-          {editandoLoja && (
-            <Dialog open={!!editandoLoja} onClose={() => setEditandoLoja(null)} maxWidth="sm" fullWidth
-  PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
-              <DialogTitle>{editandoLoja.id ? "Editar Loja" : "Nova Loja"}</DialogTitle>
-              <DialogContent>
-                <TextField label="Nome da loja" fullWidth value={novaLojaNome} onChange={e => setNovaLojaNome(e.target.value)} sx={{ mt: 1 }} 
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-               <TextField label="Nome do dono" fullWidth value={editandoLoja?.donoNome || ""} onChange={e => setEditandoLoja(p => ({ ...p, donoNome: e.target.value }))} sx={{ mt: 2 }}
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-               <TextField label="Descrição do dono" fullWidth multiline rows={2} value={editandoLoja?.donoDescricao || ""} onChange={e => setEditandoLoja(p => ({ ...p, donoDescricao: e.target.value }))} sx={{ mt: 2 }}
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                <Box sx={{ mt: 2 }}>
-                  <Button variant="outlined" onClick={async () => {
-                    const input = document.createElement("input");
-                    input.type = "file";
-                    input.accept = "image/*";
-                    input.onchange = async () => {
-                      const file = input.files[0];
-                      if (!file) return;
-                      const fd = new FormData();
-                      fd.append("image", file);
-                      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-                      const data = await res.json();
-                      if (data?.success) setEditandoLoja(p => ({ ...p, donoImagem: data.data.url }));
-                    };
-                    input.click();
-                  }}>📷 Foto do Dono</Button>
-                  {editandoLoja?.donoImagem && <img src={editandoLoja.donoImagem} alt="" style={{ width: 64, height: 64, borderRadius: "50%", marginTop: 8, cursor: "pointer" }} onClick={() => { setLightboxImage(editandoLoja.donoImagem); setZoom(1); }} />}
-                </Box>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setEditandoLoja(null)}>Cancelar</Button>
-                <Button variant="contained" onClick={salvarLoja}>Salvar</Button>
-              </DialogActions>
-            </Dialog>
-          )}
-        </>
-      )}
-
-      {/* ============================================================ */}
-      {/* CAMADA 4 - ITENS */}
-      {/* ============================================================ */}
-      {selectedPais && selectedCidade && selectedLoja && (
-        <>
-          <Button onClick={() => { setSelectedLoja(null); setItens([]); }}>← Voltar</Button>
-
-          {/* INFO DO DONO */}
-          {selectedLoja.donoNome && (
-            <Paper sx={{ p: 2, mt: 2, mb: 2, bgcolor: "#16213e", display: "flex", gap: 2, alignItems: "center" }}>
-              {selectedLoja.donoImagem ? (
-                <img src={selectedLoja.donoImagem} alt="" style={{ width: 56, height: 56, borderRadius: "50%", cursor: "pointer" }} onClick={() => { setLightboxImage(selectedLoja.donoImagem); setZoom(1); }} />
-              ) : (
-                <Box sx={{ width: 56, height: 56, borderRadius: "50%", bgcolor: "#334155", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>👤</Box>
-              )}
-              <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: '#fff' }}>{selectedLoja.donoNome}</Typography>
-                                <Typography variant="caption" sx={{ color: "#94a3b8", maxHeight: 50, overflowY: "auto", display: "block", "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: "10px" } }}>{selectedLoja.donoDescricao || "Bem-vindo à minha loja!"}</Typography>
-              </Box>
-            </Paper>
-          )}
-
-          <Typography variant="h6" sx={{ mb: 2, color: '#fff' }}>🛒 {selectedLoja.nome} - Itens</Typography>
-
-          {isMaster && (
-            <Button variant="contained" startIcon={<AddIcon />} sx={{ mb: 2 }} onClick={() => setEditandoItem({ id: null, nome: "", descricao: "", valor: 0, dado: 1, durabilidade: 100, estoque: 1, imagem: "" })}>
-              Adicionar Item
-            </Button>
-          )}
-
-          <Grid container spacing={2}>
-                        {itens.map((item) => {
-              // 🟢 OFERTA E DEMANDA (ALEATÓRIO POR ITEM)
-              const comprasRecentes = item.comprasRecentes || 0;
-              const fatorDemanda = 1 + (comprasRecentes * 0.05); // +5% por compra recente
-              
-              // 🟢 CADA ITEM TEM SUA PRÓPRIA VARIAÇÃO ALEATÓRIA
-              // Usa o ID do item + hora atual como seed para gerar um número "pseudo-aleatório" único
-              const seed = (item.id || "0").split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-              const horaAtual = new Date().getHours();
-              
-              // Gera um fator de variação entre -40% e +40% baseado no seed do item
-              // Itens diferentes terão variações diferentes no mesmo momento
-              const variacaoItem = Math.sin(seed * 7.3 + horaAtual * 2.1) * 0.4;
-              
-              // Adiciona uma pequena variação diária (ciclo de 24h)
-              const variacaoDiaria = Math.sin(horaAtual * 0.5 + seed * 0.3) * 0.15;
-              
-              // Combina as variações (máximo ±55%)
-              const fatorVariacao = 1 + variacaoItem + variacaoDiaria;
-              
-              const precoFinal = Math.round((item.valor || 0) * fatorDemanda * fatorVariacao);
-              
-              // Garante que o preço nunca seja menor que 1 (se o valor base > 0)
-              const precoExibicao = (item.valor || 0) > 0 ? Math.max(1, precoFinal) : 0;
-
-                            return (
-                <Grid item xs={12} key={item.id}>
-                  <Paper sx={{ p: 2, bgcolor: "#0f172a", border: "1px solid #334155" }}>
-                    <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
-                      {/* COLUNA DA ESQUERDA: FOTO + CHIPS */}
-                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.8, minWidth: 85 }}>
-                        {item.imagem ? (
-                          <img src={item.imagem} alt="" style={{ width: 80, height: 80, borderRadius: 8, objectFit: "cover", cursor: "pointer" }}
-                            onClick={() => { setLightboxImage(item.imagem); setZoom(1); }} />
-                        ) : (
-                          <Box sx={{ width: 80, height: 80, borderRadius: 2, bgcolor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>📦</Box>
-                        )}
-                                                {/* CHIPS EMBAIXO DA FOTO - PADRONIZADOS */}
-                        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.4, width: "100%", alignItems: "stretch" }}>
-                          <Chip label={`⚔️ Dado: ${item.dado || 1}`} size="small" 
-                            sx={{ bgcolor: "#1e3a5f", fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
-                          <Chip label={`🔧 Dur: ${item.durabilidade || 100}%`} size="small" 
-                            sx={{ bgcolor: "#1e3a5f", fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
-                          {item.tipoDano && item.tipoDano !== "Nenhum" && (
-                            <Chip label={`🗡️ ${item.tipoDano}`} size="small" 
-                              sx={{ bgcolor: TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor + "33" || "#1e3a5f", color: TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#fff", border: `1px solid ${TIPOS_DANO.find(t => t.valor === item.tipoDano)?.cor || "#334155"}`, fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
-                          )}
-                          {item.consumivel && item.consumivel !== "Nenhum" && (
-                            <Chip label={`🧪 ${item.consumivel}${item.consumivel !== "RE" ? ` +${item.consumivelValor || 0}` : ''}`} size="small" 
-                              sx={{ bgcolor: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor + "33" || "#1e3a5f", color: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#fff", border: `1px solid ${TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || "#334155"}`, fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
-                          )}
-                          <Chip label={`📦 ${item.estoque > 0 ? `Estoque: ${item.estoque}` : 'Esgotado'}`} size="small" 
-                            sx={{ bgcolor: item.estoque > 0 ? "#1b5e20" : "#5e1b1b", color: item.estoque > 0 ? "#fff" : "#ff8a80", fontWeight: item.estoque > 0 ? "normal" : "bold", fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
-                          {item.insumivel && item.insumivel !== "Nenhum" && (
-                            <Chip label={`🔧 ${item.insumivel}`} size="small" 
-                              sx={{ bgcolor: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor + "33" || "#1e3a5f", color: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#fff", border: `1px solid ${TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || "#334155"}`, fontSize: "0.6rem", height: 20, width: "100%", justifyContent: "flex-start", "& .MuiChip-label": { width: "100%", textAlign: "left", pl: 1 } }} />
-                          )}
-                        </Box>
-                      </Box>
-                      
-                      {/* DESCRIÇÃO MAIOR COM SCROLL */}
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: '#fff', mb: 0.5 }}>{item.nome}</Typography>
-                        <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", maxHeight: 120, overflowY: "auto", whiteSpace: "pre-line", wordBreak: "break-word", "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.2)", borderRadius: "10px" } }}>
-                          {item.descricao}
+                        <Typography variant="body2" sx={{ color: '#fff', fontWeight: 'bold' }}>{r.nome}</Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                          {r.tipo === 'pais' && 'País'}
+                          {r.tipo === 'cidade' && `Cidade em ${r.data.paisNome}`}
+                          {r.tipo === 'loja' && `Loja em ${r.data.cidadeNome}, ${r.data.paisNome}`}
+                          {r.tipo === 'item' && `Item em ${r.data.lojaNome}, ${r.data.cidadeNome}`}
                         </Typography>
-                      </Box>
-                      
-                      {/* PREÇO E BOTÃO COMPRAR */}
-                      <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "space-between", minWidth: 80 }}>
-                        <Box>
-                          <Typography variant="h6" sx={{ color: "#fbbf24", fontWeight: "bold" }}>
-                            💰 {precoExibicao}
-                          </Typography>
-                          {precoExibicao !== (item.valor || 0) && (
-                            <Typography variant="caption" sx={{ color: precoExibicao > (item.valor || 0) ? "#ef4444" : "#4caf50" }}>
-                              {precoExibicao > (item.valor || 0) ? "📈" : "📉"} Base: {item.valor}
-                            </Typography>
-                          )}
-                          {comprasRecentes > 0 && (
-                            <Typography variant="caption" sx={{ color: "#ff9800", display: "block" }}>
-                              🔥 Demanda: +{comprasRecentes * 5}%
-                            </Typography>
-                          )}
-                        </Box>
-                        {(item.estoque || 0) <= 0 ? (
-                          <Button variant="contained" size="small" disabled
-                            sx={{ bgcolor: "#5e1b1b", color: "#ff8a80", "&.Mui-disabled": { color: "#ff8a80", bgcolor: "#5e1b1b" } }}>
-                            Esgotado
-                          </Button>
-                        ) : (
-                          <Button variant="contained" size="small" startIcon={<ShoppingCartIcon />}
-                            onClick={() => { setComprandoItem({ ...item, precoUnitario: precoExibicao, quantidadeCompra: 1, precoFinal: precoExibicao }); setCarteiraSelecionada(""); setCategoriaDestinoCompra("equipamentos"); }}
-                            sx={{ bgcolor: "#2e7d32", "&:hover": { bgcolor: "#1b5e20" } }}>
-                            Comprar
-                          </Button>
-                        )}
-                        {isMaster && (
-                          <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
-                            <IconButton size="small" onClick={() => setEditandoItem(item)}><EditIcon fontSize="small" /></IconButton>
-                            <IconButton size="small" onClick={() => deletarItem(item.id)}><DeleteIcon fontSize="small" color="error" /></IconButton>
-                          </Box>
-                        )}
                       </Box>
                     </Box>
                   </Paper>
-                </Grid>
-              );
-            })}
-          </Grid>
+                ))}
+              </Box>
+            )}
 
-          {itens.length === 0 && <Typography sx={{ color: "#94a3b8", textAlign: "center", mt: 2 }}>Nenhum item disponível.</Typography>}
-
-          {/* Modal comprar item */}
-                    {comprandoItem && (
-            <Dialog open={!!comprandoItem} onClose={() => setComprandoItem(null)} maxWidth="xs" fullWidth
-  PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
-              <DialogTitle>🛒 Comprar: {comprandoItem.nome}</DialogTitle>
-              <DialogContent>
-                <Typography variant="h5" sx={{ color: "#fbbf24", mb: 2 }}>
-                  💰 {(comprandoItem.precoUnitario || comprandoItem.valor || 0) * (comprandoItem.quantidadeCompra || 1)}
-                </Typography>
-                
-                {/* 🟢 SELETOR DE QUANTIDADE */}
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                    Quantidade (máx: {comprandoItem.estoque || 1})
-                  </Typography>
-                  <Slider
-                    value={comprandoItem.quantidadeCompra || 1}
-                    onChange={(e, val) => {
-                      setComprandoItem(prev => ({ 
-                        ...prev, 
-                        quantidadeCompra: val, 
-                        precoFinal: (prev.precoUnitario || prev.valor || 0) * val 
-                      }));
-                    }}
-                    min={1}
-                    max={comprandoItem.estoque || 1}
-                    step={1}
-                    valueLabelDisplay="auto"
-                    sx={{ color: '#fbbf24' }}
-                  />
-                  <Typography variant="body2" sx={{ color: '#fbbf24', textAlign: 'right' }}>
-                    Total: 💰 {(comprandoItem.precoUnitario || comprandoItem.valor || 0) * (comprandoItem.quantidadeCompra || 1)}
-                  </Typography>
-                </Box>
-                
-                <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-  <InputLabel sx={{ color: '#94a3b8' }}>Carteira</InputLabel>
-  <Select value={carteiraSelecionada} onChange={e => setCarteiraSelecionada(e.target.value)}
-    sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' } }}>
-                    {(fichasMap[currentUserEmail]?.carteiras || []).map(c => (
-                      <MenuItem key={c.nome} value={c.nome}>{c.nome} (💰 {c.valor})</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl fullWidth size="small">
-  <InputLabel sx={{ color: '#94a3b8' }}>Categoria</InputLabel>
-  <Select value={categoriaDestinoCompra} onChange={e => setCategoriaDestinoCompra(e.target.value)}
-    sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' } }}>
-                    <MenuItem value="equipamentos">⚔️ Equipamentos</MenuItem>
-                    <MenuItem value="vestes">👕 Vestimentas</MenuItem>
-                    <MenuItem value="diversos">📦 Diversos</MenuItem>
-                  </Select>
-                </FormControl>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setComprandoItem(null)}>Cancelar</Button>
-                <Button variant="contained" onClick={comprarItem} sx={{ bgcolor: "#2e7d32" }}>Confirmar Compra</Button>
-              </DialogActions>
-            </Dialog>
-          )}
-
-          {/* Modal editar item */}
-          {editandoItem && (
-            <Dialog open={!!editandoItem} onClose={() => setEditandoItem(null)} maxWidth="sm" fullWidth
-  PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
-              <DialogTitle>{editandoItem.id ? "Editar Item" : "Novo Item"}</DialogTitle>
-              <DialogContent>
-                <form id="form-item" onSubmit={salvarItem}>
-                  <TextField 
-  label="Nome" 
-  name="nome" 
-  fullWidth 
-  defaultValue={editandoItem.nome} 
-  sx={{ mt: 1 }} 
-  InputProps={{ style: { color: '#fff' } }}
-  InputLabelProps={{ style: { color: '#94a3b8' } }}
-/>
-                  <TextField label="Descrição" name="descricao" fullWidth multiline rows={2} defaultValue={editandoItem.descricao} sx={{ mt: 2 }}
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                  <TextField label="Valor base (💰)" name="valor" fullWidth type="number" defaultValue={editandoItem.valor} sx={{ mt: 2 }}
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                  <TextField label="Dado" name="dado" fullWidth type="number" defaultValue={editandoItem.dado || 1} sx={{ mt: 2 }}
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                 <TextField label="Durabilidade (%)" name="durabilidade" fullWidth type="number" defaultValue={editandoItem.durabilidade || 100} sx={{ mt: 2 }}
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                  <TextField label="Estoque" name="estoque" fullWidth type="number" defaultValue={editandoItem.estoque || 1} sx={{ mt: 2 }}
-  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                                    {/* 🟢 TIPO DE DANO */}
-                  <FormControl fullWidth size="small" sx={{ mt: 2 }}>
-                    <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
-                    <Select
-                      value={editandoItem?.tipoDano || "Nenhum"}
-                      label="Tipo de Dano"
-                      onChange={(e) => setEditandoItem(prev => ({ ...prev, tipoDano: e.target.value }))}
-                      sx={{ 
-                        color: TIPOS_DANO.find(t => t.valor === (editandoItem?.tipoDano || "Nenhum"))?.cor || '#888',
-                        '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-                      }}
-                      MenuProps={{
-                        PaperProps: { 
-                          sx: { 
-                            bgcolor: "#0f172a", 
-                            color: "#fff",
-                            maxHeight: 300,
-                          } 
-                        }
-                      }}
-                    >
-                      {TIPOS_DANO.map(td => (
-                        <MenuItem key={td.valor} value={td.valor}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: td.cor }} />
-                            <Typography sx={{ color: td.cor, fontWeight: 'bold' }}>
-                              {td.label}
-                            </Typography>
+            {mostrarNav && (
+              <>
+                {!selectedPais && (
+                  <>
+                    <Typography variant="subtitle1" sx={{ mb: 1 }}>🌍 Selecione um País:</Typography>
+                    {isMaster && (
+                      <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
+                        <TextField size="small" label="Novo país" value={novoPaisNome} onChange={e => setNovoPaisNome(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') salvarPais(); }} fullWidth
+                          InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+                        <Button variant="contained" onClick={salvarPais} sx={{ bgcolor: '#2e7d32' }}>Adicionar</Button>
+                      </Box>
+                    )}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                      {paises.map(p => (
+                        <Paper key={p.id} sx={{ p: 1, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" } }}
+                          onClick={() => selecionarPais(p)}>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                            {p.bandeira ? <img src={p.bandeira} alt="" style={{ width: 24, height: 24, borderRadius: 4, objectFit: 'cover', cursor: 'pointer' }}
+                              onClick={(e) => { e.stopPropagation(); setLightboxImage(p.bandeira); setZoom(1); }} /> :
+                              <Box sx={{ width: 24, height: 24, borderRadius: 1, bgcolor: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>🏳️</Box>}
+                            <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{p.nome}</Typography>
+                            {isMaster && (
+                              <Box sx={{ display: 'flex', gap: 0.3 }}>
+                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoPais(p); setNovoPaisNome(p.nome); }}>
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarPais(p.id); }}>
+                                  <DeleteIcon fontSize="small" color="error" />
+                                </IconButton>
+                              </Box>
+                            )}
                           </Box>
-                        </MenuItem>
+                        </Paper>
                       ))}
-                    </Select>
-                  </FormControl>
-                                    {/* 🟢 CONSUMÍVEL */}
-                  <FormControl fullWidth size="small" sx={{ mt: 2 }}>
-                    <InputLabel sx={{ color: '#94a3b8' }}>Consumível</InputLabel>
-                    <Select
-                      value={editandoItem?.consumivel || "Nenhum"}
-                      label="Consumível"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setEditandoItem(prev => ({ 
-                          ...prev, 
-                          consumivel: val,
-                          consumivelValor: val === "Nenhum" ? 0 : (prev?.consumivelValor || 0)
-                        }));
-                      }}
-                      sx={{ 
-                        color: TIPOS_CONSUMIVEL.find(t => t.valor === (editandoItem?.consumivel || "Nenhum"))?.cor || '#888',
-                        '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-                      }}
-                      MenuProps={{
-                        PaperProps: { 
-                          sx: { 
-                            bgcolor: "#0f172a", 
-                            color: "#fff",
-                            maxHeight: 200,
-                          } 
-                        }
-                      }}
-                    >
-                      {TIPOS_CONSUMIVEL.map(tc => (
-                        <MenuItem key={tc.valor} value={tc.valor}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: tc.cor }} />
-                            <Typography sx={{ color: tc.cor, fontWeight: 'bold' }}>
-                              {tc.label}
-                            </Typography>
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  
-                  {/* Valor do consumível */}
-                                    {(editandoItem?.consumivel && editandoItem.consumivel !== "Nenhum") && (
-                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                      <TextField
-                        label="Valor Máximo"
-                        fullWidth
-                        type="number"
-                        value={editandoItem?.consumivelValor || 0}
-                        onChange={(e) => setEditandoItem(prev => ({ 
-                          ...prev, 
-                          consumivelValor: Math.max(0, Number(e.target.value) || 0) 
-                        }))}
-                        sx={{ flex: 1 }}
-                        InputProps={{ inputProps: { min: 0 }, style: { color: '#fff' } }}
-                        InputLabelProps={{ style: { color: '#94a3b8' } }}
-                      />
-                      <TextField
-                        label="% Padrão"
-                        fullWidth
-                        type="number"
-                        value={editandoItem?.consumivelPercentual || 100}
-                        onChange={(e) => setEditandoItem(prev => ({ 
-                          ...prev, 
-                          consumivelPercentual: Math.min(100, Math.max(1, Number(e.target.value) || 1)) 
-                        }))}
-                        sx={{ flex: 1 }}
-                        InputProps={{ inputProps: { min: 1, max: 100 }, style: { color: '#fff' } }}
-                        InputLabelProps={{ style: { color: '#94a3b8' } }}
-                      />
                     </Box>
-                  )}
-                                    {/* 🟢 INSUMÍVEL */}
-                  <FormControl fullWidth size="small" sx={{ mt: 2 }}>
-                    <InputLabel sx={{ color: '#94a3b8' }}>Insumível (Repara itens)</InputLabel>
-                    <Select
-                      value={editandoItem?.insumivel || "Nenhum"}
-                      label="Insumível"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setEditandoItem(prev => ({ 
-                          ...prev, 
-                          insumivel: val,
-                          insumivelValor: val === "Nenhum" ? 0 : (prev?.insumivelValor || 0)
-                        }));
-                      }}
-                      sx={{ 
-                        color: TIPOS_INSUMIVEL.find(t => t.valor === (editandoItem?.insumivel || "Nenhum"))?.cor || '#888',
-                        '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-                      }}
-                      MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 250 } } }}
-                    >
-                      {TIPOS_INSUMIVEL.map(ti => (
-                        <MenuItem key={ti.valor} value={ti.valor}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: ti.cor }} />
-                            <Typography sx={{ color: ti.cor, fontWeight: 'bold' }}>{ti.label}</Typography>
+                  </>
+                )}
+
+                {selectedPais && !selectedCidade && (
+                  <>
+                    <Button onClick={() => { setSelectedPais(null); setCidades([]); }} size="small" sx={{ color: '#94a3b8' }}>← Voltar</Button>
+                    <Typography variant="subtitle1" sx={{ mt: 1, mb: 1, color: '#fff' }}>🏙️ Cidades de {selectedPais.nome}</Typography>
+                    {isMaster && (
+                      <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
+                        <TextField size="small" label="Nova cidade" value={novaCidadeNome} onChange={e => setNovaCidadeNome(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') salvarCidade(); }} fullWidth
+                          InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+                        <Button variant="contained" onClick={salvarCidade} sx={{ bgcolor: '#2e7d32' }}>Adicionar</Button>
+                      </Box>
+                    )}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                      {cidades.map(c => (
+                        <Paper key={c.id} sx={{ p: 1, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" } }}
+                          onClick={() => selecionarCidade(c)}>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                            <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{c.nome}</Typography>
+                            {isMaster && (
+                              <Box sx={{ display: 'flex', gap: 0.3 }}>
+                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoCidade(c); setNovaCidadeNome(c.nome); }}>
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarCidade(c.id); }}>
+                                  <DeleteIcon fontSize="small" color="error" />
+                                </IconButton>
+                              </Box>
+                            )}
                           </Box>
-                        </MenuItem>
+                        </Paper>
                       ))}
-                    </Select>
-                  </FormControl>
-                  
-                  {(editandoItem?.insumivel && editandoItem.insumivel !== "Nenhum") && (
-                    <TextField
-                      label="% de Regeneração"
-                      fullWidth
-                      type="number"
-                      value={editandoItem?.insumivelValor || 0}
-                      onChange={(e) => setEditandoItem(prev => ({ ...prev, insumivelValor: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))}
-                      sx={{ mt: 2 }}
-                      InputProps={{ inputProps: { min: 0, max: 100 }, style: { color: '#fff' } }}
-                      InputLabelProps={{ style: { color: '#94a3b8' } }}
-                      helperText="Proporção 2:1 (gasta metade para regenerar)"
-                      FormHelperTextProps={{ sx: { color: '#64748b' } }}
-                    />
-                  )}
-                  <Box sx={{ mt: 2 }}>
-                    <Button variant="outlined" onClick={uploadImagemItem}>📷 Upload Imagem</Button>
-                    {editandoItem.imagem && <img src={editandoItem.imagem} alt="" style={{ width: 80, height: 80, borderRadius: 8, marginTop: 8, cursor: "pointer" }} onClick={() => { setLightboxImage(editandoItem.imagem); setZoom(1); }} />}
-                  </Box>
-                </form>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setEditandoItem(null)}>Cancelar</Button>
-                <Button variant="contained" type="submit" form="form-item">Salvar</Button>
-              </DialogActions>
-            </Dialog>
-          )}
-        </>
-      )}
-      {/* 🟢 MODAL EDITAR PAÍS */}
-      {editandoPais && (
-        <Dialog open={!!editandoPais} onClose={() => setEditandoPais(null)} maxWidth="xs" fullWidth
-          PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
-          <DialogTitle>Editar País</DialogTitle>
-          <DialogContent>
-            <TextField label="Nome do país" fullWidth value={novoPaisNome} onChange={e => setNovoPaisNome(e.target.value)} sx={{ mt: 1 }}
+                    </Box>
+                  </>
+                )}
+
+                {selectedPais && selectedCidade && !selectedLoja && (
+                  <>
+                    <Button onClick={() => { setSelectedCidade(null); setLojas([]); }} size="small" sx={{ color: '#94a3b8' }}>← Voltar</Button>
+                    <Typography variant="subtitle1" sx={{ mt: 1, mb: 1, color: '#fff' }}>🏪 Lojas de {selectedCidade.nome}</Typography>
+                    {isMaster && (
+                      <Button variant="contained" startIcon={<AddIcon />} size="small" sx={{ mb: 1, bgcolor: '#2e7d32' }}
+                        onClick={() => { setEditandoLoja({ id: null, nome: "", donoNome: "", donoImagem: "", donoDescricao: "" }); setNovaLojaNome(""); }}>
+                        Nova Loja
+                      </Button>
+                    )}
+                    <Grid container spacing={0.5}>
+                      {lojas.map(l => (
+                        <Grid item xs={12} key={l.id}>
+                          <Paper sx={{ p: 1.5, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" } }} onClick={() => selecionarLoja(l)}>
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                              {l.donoImagem ? <img src={l.donoImagem} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", cursor: "pointer" }}
+                                onClick={(e) => { e.stopPropagation(); setLightboxImage(l.donoImagem); setZoom(1); }} /> :
+                                <Box sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: "#334155", display: "flex", alignItems: "center", justifyContent: "center" }}>👤</Box>}
+                              <Box sx={{ flex: 1 }}>
+                                <Typography variant="body2" sx={{ fontWeight: "bold", color: '#fff' }}>{l.nome}</Typography>
+                                {l.donoNome && <Typography variant="caption" sx={{ color: "#94a3b8" }}>👤 {l.donoNome}</Typography>}
+                              </Box>
+                              {isMaster && (
+                                <Box sx={{ display: 'flex', gap: 0.3 }}>
+                                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoLoja(l); setNovaLojaNome(l.nome); }}>
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarLoja(l.id); }}>
+                                    <DeleteIcon fontSize="small" color="error" />
+                                  </IconButton>
+                                </Box>
+                              )}
+                            </Box>
+                          </Paper>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </>
+                )}
+
+                {selectedPais && selectedCidade && selectedLoja && (
+                  <>
+                    <Button onClick={() => { setSelectedLoja(null); setItens([]); }} size="small" sx={{ color: '#94a3b8' }}>← Voltar</Button>
+                    <Typography variant="subtitle1" sx={{ mb: 1, color: '#fff' }}>🛒 {selectedLoja.nome} - Itens</Typography>
+                    {isMaster && (
+                      <Button variant="contained" startIcon={<AddIcon />} size="small" sx={{ mb: 1, bgcolor: '#2e7d32' }}
+                        onClick={() => setEditandoItem({ id: null, nome: "", descricao: "", valor: 0, dado: 1, durabilidade: 100, estoque: 1, imagem: "", tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" })}>
+                        Adicionar Item
+                      </Button>
+                    )}
+                    <Grid container spacing={1}>
+                      {itens.map((item) => {
+                        const demandaAtiva = demandaMap[item.id];
+                        let fatorDemanda = 1;
+                        if (demandaAtiva && demandaAtiva.expiraEm > Date.now()) {
+                          fatorDemanda = 1 + (demandaAtiva.aumento / 100);
+                        }
+                        const seed = (item.id || "0").split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                        const horaAtual = new Date().getHours();
+                        const variacaoItem = Math.sin(seed * 7.3 + horaAtual * 2.1) * 0.4;
+                        const variacaoDiaria = Math.sin(horaAtual * 0.5 + seed * 0.3) * 0.15;
+                        const fatorVariacao = 1 + variacaoItem + variacaoDiaria;
+                        const precoFinal = Math.round((item.valor || 0) * fatorDemanda * fatorVariacao);
+                        const precoExibicao = (item.valor || 0) > 0 ? Math.max(1, precoFinal) : 0;
+                        return (
+                          <Grid item xs={12} key={item.id}>
+                            <Paper sx={{ p: 1.5, bgcolor: "#0f172a", border: demandaAtiva ? "1px solid #ff9800" : "1px solid #334155" }}>
+                              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, minWidth: 65 }}>
+                                  {item.imagem ? <img src={item.imagem} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", cursor: "pointer" }}
+                                    onClick={() => { setLightboxImage(item.imagem); setZoom(1); }} /> :
+                                    <Box sx={{ width: 60, height: 60, borderRadius: 2, bgcolor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>📦</Box>}
+                                  <Chip label={`⚔️ ${item.dado || 1}`} size="small" sx={{ bgcolor: "#1e3a5f", fontSize: "0.55rem", height: 18, width: "100%" }} />
+                                </Box>
+                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                  <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: '#fff', mb: 0.3 }}>{item.nome}</Typography>
+                                  <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", maxHeight: 80, overflowY: "auto", whiteSpace: "pre-line", wordBreak: "break-word" }}>
+                                    {item.descricao}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "space-between", minWidth: 70 }}>
+                                  <Box>
+                                    <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold" }}>💰 {precoExibicao}</Typography>
+                                    {demandaAtiva && (
+                                      <Typography variant="caption" sx={{ color: "#ff9800", display: "block" }}>🔥 +{demandaAtiva.aumento}%</Typography>
+                                    )}
+                                  </Box>
+                                  {(item.estoque || 0) <= 0 ? (
+                                    <Button variant="contained" size="small" disabled sx={{ bgcolor: "#5e1b1b", color: "#ff8a80", fontSize: '0.65rem', "&.Mui-disabled": { color: "#ff8a80", bgcolor: "#5e1b1b" } }}>Esgotado</Button>
+                                  ) : (
+                                    <Button variant="contained" size="small" startIcon={<ShoppingCartIcon sx={{ fontSize: '0.8rem' }} />}
+                                      onClick={() => { setComprandoItem({ ...item, precoUnitario: precoExibicao, quantidadeCompra: 1 }); setCarteiraSelecionada(""); setCategoriaDestinoCompra("equipamentos"); }}
+                                      sx={{ bgcolor: "#2e7d32", "&:hover": { bgcolor: "#1b5e20" }, fontSize: '0.65rem' }}>Comprar</Button>
+                                  )}
+                                  {isMaster && (
+                                    <Box sx={{ display: "flex", gap: 0.3, mt: 0.3, justifyContent: 'flex-end' }}>
+                                      <IconButton size="small" onClick={() => setEditandoItem(item)}><EditIcon sx={{ fontSize: '0.8rem' }} /></IconButton>
+                                      <IconButton size="small" onClick={() => deletarItem(item.id)}><DeleteIcon sx={{ fontSize: '0.8rem' }} color="error" /></IconButton>
+                                    </Box>
+                                  )}
+                                </Box>
+                              </Box>
+                            </Paper>
+                          </Grid>
+                        );
+                      })}
+                    </Grid>
+                    {itens.length === 0 && <Typography sx={{ color: "#94a3b8", textAlign: "center", mt: 2 }}>Nenhum item disponível.</Typography>}
+                  </>
+                )}
+              </>
+            )}
+          </Box>
+        )}
+
+        {!minimizado && (
+          <Box sx={{ position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize", zIndex: 10 }}
+            onMouseDown={(e) => {
+              e.preventDefault(); e.stopPropagation();
+              setRedimensionando(true);
+              resizeStartRef.current = { x: e.clientX, y: e.clientY, width: tamanho.width, height: tamanho.height };
+            }} />
+        )}
+      </Paper>
+
+      {/* MODAL DE EDIÇÃO DE PAÍS */}
+      <Dialog open={!!editandoPais} onClose={() => setEditandoPais(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>✏️ Editar País</DialogTitle>
+        <DialogContent sx={{ bgcolor: '#1a1a2e', pt: 2 }}>
+          <TextField fullWidth size="small" label="Nome do país" value={novoPaisNome} onChange={(e) => setNovoPaisNome(e.target.value)}
+            InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#1a1a2e', borderTop: '1px solid #334155' }}>
+          <Button onClick={() => { setEditandoPais(null); setNovoPaisNome(""); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button variant="contained" onClick={salvarPais} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL DE EDIÇÃO DE CIDADE */}
+      <Dialog open={!!editandoCidade} onClose={() => setEditandoCidade(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>✏️ Editar Cidade</DialogTitle>
+        <DialogContent sx={{ bgcolor: '#1a1a2e', pt: 2 }}>
+          <TextField fullWidth size="small" label="Nome da cidade" value={novaCidadeNome} onChange={(e) => setNovaCidadeNome(e.target.value)}
+            InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#1a1a2e', borderTop: '1px solid #334155' }}>
+          <Button onClick={() => { setEditandoCidade(null); setNovaCidadeNome(""); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button variant="contained" onClick={salvarCidade} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL DE EDIÇÃO DE LOJA */}
+      <Dialog open={!!editandoLoja} onClose={() => setEditandoLoja(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
+          {editandoLoja?.id ? "✏️ Editar Loja" : "➕ Nova Loja"}
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#1a1a2e', pt: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField fullWidth size="small" label="Nome da Loja" value={novaLojaNome} onChange={(e) => setNovaLojaNome(e.target.value)}
               InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', mb: 0.5, display: 'block' }}>Cor da borda:</Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                {['#ff3b3b','#00e0ff','#ffd700','#00ff88','#a855f7','#ff9800','#4caf50','#2196f3','#e5e5e5','#fbbf24'].map(cor => (
-                  <Box key={cor} onClick={() => setEditandoPais(prev => ({ ...prev, cor }))}
-                    sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: cor, cursor: 'pointer', border: editandoPais.cor === cor ? '3px solid #fff' : '2px solid transparent' }} />
-                ))}
-              </Box>
-            </Box>
-            <Box sx={{ mt: 2 }}>
-              <Button variant="outlined" onClick={() => { uploadBandeira(editandoPais.id); }}>📷 Trocar Bandeira</Button>
-              {editandoPais.bandeira && <img src={editandoPais.bandeira} alt="" style={{ width: 64, height: 64, borderRadius: 8, marginTop: 8, cursor: 'pointer' }} onClick={() => { setLightboxImage(editandoPais.bandeira); setZoom(1); }} />}
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setEditandoPais(null)}>Cancelar</Button>
-            <Button variant="contained" onClick={async () => {
-              await setDoc(doc(db, "comercio_paises", editandoPais.id), { nome: novoPaisNome, cor: editandoPais.cor || null }, { merge: true });
-              setEditandoPais(null);
-              carregarPaises();
-            }}>Salvar</Button>
-          </DialogActions>
-        </Dialog>
-      )}
-      {/* 🟢 MODAL EDITAR CIDADE */}
-      {editandoCidade && (
-        <Dialog open={!!editandoCidade} onClose={() => setEditandoCidade(null)} maxWidth="xs" fullWidth
-          PaperProps={{ sx: { bgcolor: '#1a1a2e', color: '#fff' } }}>
-          <DialogTitle>Editar Cidade</DialogTitle>
-          <DialogContent>
-            <TextField label="Nome da cidade" fullWidth value={novaCidadeNome} onChange={e => setNovaCidadeNome(e.target.value)} sx={{ mt: 1 }}
+            <TextField fullWidth size="small" label="Nome do Dono" value={editandoLoja?.donoNome || ""}
+              onChange={(e) => setEditandoLoja(prev => ({ ...prev, donoNome: e.target.value }))}
               InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', mb: 0.5, display: 'block' }}>Cor da borda:</Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                {['#ff3b3b','#00e0ff','#ffd700','#00ff88','#a855f7','#ff9800','#4caf50','#2196f3','#e5e5e5','#fbbf24'].map(cor => (
-                  <Box key={cor} onClick={() => setEditandoCidade(prev => ({ ...prev, cor }))}
-                    sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: cor, cursor: 'pointer', border: editandoCidade.cor === cor ? '3px solid #fff' : '2px solid transparent' }} />
-                ))}
-              </Box>
-            </Box>
-            <Box sx={{ mt: 2 }}>
-              <Button variant="outlined" onClick={async () => {
-                const input = document.createElement("input"); input.type = "file"; input.accept = "image/*";
-                input.onchange = async () => {
-                  const file = input.files[0]; if (!file) return;
-                  const fd = new FormData(); fd.append("image", file);
+            <TextField fullWidth size="small" label="Descrição do Dono" value={editandoLoja?.donoDescricao || ""}
+              onChange={(e) => setEditandoLoja(prev => ({ ...prev, donoDescricao: e.target.value }))}
+              InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} multiline rows={2} />
+            <Button size="small" variant="outlined" component="label" sx={{ color: '#94a3b8', borderColor: '#555' }}>
+              📷 Upload Imagem do Dono
+              <input hidden type="file" accept="image/*" onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const fd = new FormData(); fd.append("image", file);
+                try {
                   const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
                   const data = await res.json();
-                  if (data?.success) setEditandoCidade(prev => ({ ...prev, imagem: data.data.url }));
-                };
-                input.click();
-              }}>📷 Imagem da Cidade</Button>
-              {editandoCidade.imagem && <img src={editandoCidade.imagem} alt="" style={{ width: 80, height: 80, borderRadius: 8, marginTop: 8, cursor: 'pointer' }} onClick={() => { setLightboxImage(editandoCidade.imagem); setZoom(1); }} />}
+                  if (data?.success) setEditandoLoja(prev => ({ ...prev, donoImagem: data.data.url }));
+                } catch (err) { alert("Erro no upload"); }
+              }} />
+            </Button>
+            {editandoLoja?.donoImagem && (
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <img src={editandoLoja.donoImagem} alt="Preview" style={{ width: 50, height: 50, borderRadius: '50%', objectFit: 'cover' }} />
+                <Button size="small" onClick={() => setEditandoLoja(prev => ({ ...prev, donoImagem: "" }))} sx={{ color: '#ef4444' }}>Remover</Button>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#1a1a2e', borderTop: '1px solid #334155' }}>
+          <Button onClick={() => { setEditandoLoja(null); setNovaLojaNome(""); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button variant="contained" onClick={salvarLoja} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL DE EDIÇÃO DE ITEM */}
+      <Dialog open={!!editandoItem} onClose={() => setEditandoItem(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
+          {editandoItem?.id ? "✏️ Editar Item" : "➕ Novo Item"}
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#1a1a2e', pt: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField fullWidth size="small" label="Nome do Item" value={editandoItem?.nome || ""}
+              onChange={(e) => setEditandoItem(prev => ({ ...prev, nome: e.target.value }))}
+              InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+            <TextField fullWidth size="small" label="Descrição" value={editandoItem?.descricao || ""}
+              onChange={(e) => setEditandoItem(prev => ({ ...prev, descricao: e.target.value }))}
+              InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} multiline rows={2} />
+            <Grid container spacing={1}>
+              <Grid item xs={6}>
+                <TextField fullWidth size="small" label="Valor (💰)" type="number" value={editandoItem?.valor || 0}
+                  onChange={(e) => setEditandoItem(prev => ({ ...prev, valor: Number(e.target.value) || 0 }))}
+                  InputProps={{ style: { color: '#fbbf24' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField fullWidth size="small" label="Dado (1-10)" type="number" value={editandoItem?.dado || 1}
+                  onChange={(e) => setEditandoItem(prev => ({ ...prev, dado: Math.min(10, Math.max(1, Number(e.target.value) || 1)) }))}
+                  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField fullWidth size="small" label="Durabilidade (%)" type="number" value={editandoItem?.durabilidade || 100}
+                  onChange={(e) => setEditandoItem(prev => ({ ...prev, durabilidade: Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))}
+                  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField fullWidth size="small" label="Estoque" type="number" value={editandoItem?.estoque || 1}
+                  onChange={(e) => setEditandoItem(prev => ({ ...prev, estoque: Math.max(0, Number(e.target.value) || 0) }))}
+                  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+              </Grid>
+            </Grid>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
+              <Select value={editandoItem?.tipoDano || "Nenhum"} onChange={(e) => setEditandoItem(prev => ({ ...prev, tipoDano: e.target.value }))}
+                sx={{ color: '#fff' }} label="Tipo de Dano">
+                {TIPOS_DANO.map(td => <MenuItem key={td.valor} value={td.valor} sx={{ color: td.cor }}>{td.label}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Consumível</InputLabel>
+              <Select value={editandoItem?.consumivel || "Nenhum"} onChange={(e) => setEditandoItem(prev => ({ ...prev, consumivel: e.target.value }))}
+                sx={{ color: '#fff' }} label="Consumível">
+                {TIPOS_CONSUMIVEL.map(tc => <MenuItem key={tc.valor} value={tc.valor} sx={{ color: tc.cor }}>{tc.label}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Insumível</InputLabel>
+              <Select value={editandoItem?.insumivel || "Nenhum"} onChange={(e) => setEditandoItem(prev => ({ ...prev, insumivel: e.target.value }))}
+                sx={{ color: '#fff' }} label="Insumível">
+                {TIPOS_INSUMIVEL.map(ti => <MenuItem key={ti.valor} value={ti.valor} sx={{ color: ti.cor }}>{ti.label}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <Button size="small" variant="outlined" onClick={uploadImagemItem} sx={{ color: '#94a3b8', borderColor: '#555' }}>
+              📷 Upload Imagem
+            </Button>
+            {editandoItem?.imagem && (
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <img src={editandoItem.imagem} alt="Preview" style={{ width: 50, height: 50, borderRadius: 8, objectFit: 'cover' }} />
+                <Button size="small" onClick={() => setEditandoItem(prev => ({ ...prev, imagem: "" }))} sx={{ color: '#ef4444' }}>Remover</Button>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#1a1a2e', borderTop: '1px solid #334155' }}>
+          <Button onClick={() => setEditandoItem(null)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button variant="contained" onClick={salvarItem} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL DE COMPRA */}
+      <Dialog open={!!comprandoItem} onClose={() => setComprandoItem(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>🛒 Comprar Item</DialogTitle>
+        <DialogContent sx={{ bgcolor: '#1a1a2e', pt: 2 }}>
+          {comprandoItem && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="body1" sx={{ color: '#fff', fontWeight: 'bold' }}>{comprandoItem.nome}</Typography>
+              <Typography variant="body2" sx={{ color: '#fbbf24' }}>Preço unitário: 💰 {comprandoItem.precoUnitario}</Typography>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: '#94a3b8' }}>Quantidade</InputLabel>
+                <Select value={comprandoItem.quantidadeCompra || 1} onChange={(e) => setComprandoItem(prev => ({ ...prev, quantidadeCompra: Number(e.target.value) }))}
+                  sx={{ color: '#fff' }} label="Quantidade">
+                  {[1,2,3,4,5,10,20].map(q => <MenuItem key={q} value={q}>{q}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                Total: <strong style={{ color: '#fbbf24' }}>💰 {comprandoItem.precoUnitario * (comprandoItem.quantidadeCompra || 1)}</strong>
+              </Typography>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: '#94a3b8' }}>Carteira</InputLabel>
+                <Select value={carteiraSelecionada} onChange={(e) => setCarteiraSelecionada(e.target.value)} sx={{ color: '#fff' }} label="Carteira">
+                  {(fichasMap[currentUserEmail]?.carteiras || []).map(c => (
+                    <MenuItem key={c.nome} value={c.nome}>{c.nome} (💰 {c.valor})</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: '#94a3b8' }}>Categoria Destino</InputLabel>
+                <Select value={categoriaDestinoCompra} onChange={(e) => setCategoriaDestinoCompra(e.target.value)} sx={{ color: '#fff' }} label="Categoria">
+                  <MenuItem value="equipamentos">⚔️ Equipamentos</MenuItem>
+                  <MenuItem value="vestes">👕 Vestimentas</MenuItem>
+                  <MenuItem value="diversos">📦 Diversos</MenuItem>
+                </Select>
+              </FormControl>
             </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setEditandoCidade(null)}>Cancelar</Button>
-            <Button variant="contained" onClick={async () => {
-              await setDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", editandoCidade.id), { nome: novaCidadeNome, cor: editandoCidade.cor || null, imagem: editandoCidade.imagem || "" }, { merge: true });
-              setEditandoCidade(null);
-              carregarCidades(selectedPais.id);
-            }}>Salvar</Button>
-          </DialogActions>
-        </Dialog>
-      )}
-      {/* Lightbox */}
+          )}
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#1a1a2e', borderTop: '1px solid #334155' }}>
+          <Button onClick={() => setComprandoItem(null)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button variant="contained" onClick={comprarItem} sx={{ bgcolor: '#2e7d32' }}>Confirmar Compra</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* LIGHTBOX */}
       {lightboxImage && (
-        <Box onClick={() => setLightboxImage(null)} sx={{ position: "fixed", inset: 0, bgcolor: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+        <Box onClick={() => setLightboxImage(null)} sx={{ position: "fixed", inset: 0, bgcolor: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999999 }}>
           <LightboxImage src={lightboxImage} zoom={zoom} setZoom={setZoom} />
         </Box>
       )}
-    </Paper>
+    </>,
+    document.body
   );
-
-  if (typeof document !== "undefined") return createPortal(hud, document.body);
-  return hud;
 }
 
 export default React.memo(CommerceHUD);

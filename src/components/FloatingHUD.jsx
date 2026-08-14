@@ -81,6 +81,24 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
   const [selectedPlayerForXP, setSelectedPlayerForXP] = useState("");
   const [openMasterDialogFallback, setOpenMasterDialogFallback] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+    // 🟢 JANELA FLUTUANTE - TAMANHO AJUSTÁVEL
+  const [minimizado, setMinimizado] = useState(false);
+  // 🟢 TAMANHO INICIAL - PODE SER SOBRESCRITO PELO FIRESTORE
+const [tamanho, setTamanho] = useState(() => {
+  // Tenta carregar do localStorage (fallback)
+  const saved = localStorage.getItem('floatingHUD_tamanho');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {}
+  }
+  return { width: 540, height: 600 };
+});
+  // 🟢 POSIÇÃO LOCAL (NÃO RESETA)
+const [posicaoLocal, setPosicaoLocal] = useState({ x: 20, y: 20 });
+const [posicaoSalva, setPosicaoSalva] = useState(false);
+  const [redimensionando, setRedimensionando] = useState(false);
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const [showTurnMenu, setShowTurnMenu] = useState(false);
   // 🟢 SORTE/AZAR
 const [sorteAzarOpen, setSorteAzarOpen] = useState(false);
@@ -95,6 +113,12 @@ const [profilesOpen, setProfilesOpen] = useState(false);
 const [comercioOpen, setComercioOpen] = useState(false);
 const [perfilVisivel, setPerfilVisivel] = useState(false);
 const [perfis, setPerfis] = useState([]);
+// 🟢 CARREGAR POSIÇÃO SALVA DO FIRESTORE
+useEffect(() => {
+  if (!hud?.floatingPos) return;
+  setPosicaoLocal(hud.floatingPos);
+  setPosicaoSalva(true);
+}, [hud?.floatingPos]);
 const [openProfileDialog, setOpenProfileDialog] = useState(false);
 const [lightboxOpen, setLightboxOpen] = useState(false);
 const [lightboxSrc, setLightboxSrc] = useState(null);
@@ -121,7 +145,26 @@ const [novoPerfil, setNovoPerfil] = useState({
     "Déspota": "#a855f7",
     "Ás": "#e5e5e5",
   };
-
+// 🟢 SALVAR TAMANHO NO LOCALSTORAGE
+useEffect(() => {
+  localStorage.setItem('floatingHUD_tamanho', JSON.stringify(tamanho));
+}, [tamanho]);
+// 🟢 SALVAR POSIÇÃO NO LOCALSTORAGE
+useEffect(() => {
+  localStorage.setItem('floatingHUD_posicao', JSON.stringify(posicaoLocal));
+}, [posicaoLocal]);
+// 🟢 CARREGAR POSIÇÃO DO LOCALSTORAGE (FALLBACK)
+useEffect(() => {
+  if (!posicaoSalva) {
+    const saved = localStorage.getItem('floatingHUD_posicao');
+    if (saved) {
+      try {
+        const pos = JSON.parse(saved);
+        setPosicaoLocal(pos);
+      } catch {}
+    }
+  }
+}, [posicaoSalva]);
   // 🟢 CARREGAR SORTE/AZAR
 useEffect(() => {
   const unsub = onSnapshot(doc(db, "game", "sorteAzar"), (snap) => {
@@ -172,6 +215,24 @@ setPerfis(unique);
 
   return () => unsubscribe();
 }, []);
+// 🟢 OUVIR EVENTOS DA SIDEBAR PARA ABRIR PERFIL E COMÉRCIO
+useEffect(() => {
+  const handleTogglePerfil = () => {
+    setPerfilVisivel(prev => !prev);
+  };
+  
+  const handleToggleComercio = () => {
+    setComercioOpen(prev => !prev);
+  };
+
+  window.addEventListener('togglePerfilDetalhado', handleTogglePerfil);
+  window.addEventListener('toggleCommerceHUD', handleToggleComercio);
+
+  return () => {
+    window.removeEventListener('togglePerfilDetalhado', handleTogglePerfil);
+    window.removeEventListener('toggleCommerceHUD', handleToggleComercio);
+  };
+}, []);
 
   useEffect(() => {
     if (refBox.current) {
@@ -196,13 +257,16 @@ setPerfis(unique);
       refBox.current.style.left = `${boundedX}px`;
       refBox.current.style.top = `${boundedY}px`;
     }
-    function onMouseUp() {
+function onMouseUp() {
   if (!dragging) return;
   setDragging(false);
   try {
     const rect = refBox.current.getBoundingClientRect();
     const pos = { x: rect.left, y: rect.top };
+    // 🟢 ATUALIZA POSIÇÃO LOCAL E SALVA NO FIRESTORE
+    setPosicaoLocal(pos);
     setFloatingPosLocal(pos);
+    saveFloatingPosGlobal(pos);
   } catch {}
 }
 
@@ -215,21 +279,35 @@ setPerfis(unique);
   }, [dragging, setFloatingPosLocal]);
 
   useEffect(() => {
-    if (!refBox.current || !hud) return;
-    const pos = hud.floatingPos || { x: 20, y: 20 };
-    try {
-      const x = Math.max(8, Math.min(window.innerWidth - (refBox.current.offsetWidth || 640) - 8, pos.x));
-      const y = Math.max(8, Math.min(window.innerHeight - (refBox.current.offsetHeight || 160) - 8, pos.y));
-      refBox.current.style.left = `${x}px`;
-      refBox.current.style.top = `${y}px`;
-    } catch {}
-  }, [hud]);
-
-  useEffect(() => {
   if (refBox.current) {
     setHudRect(refBox.current.getBoundingClientRect());
   }
 }, [collapsed, hud?.floatingPos]);
+  // 🟢 REDIMENSIONAMENTO DA JANELA
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (redimensionando) {
+        const newWidth = Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x));
+        const newHeight = Math.max(400, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y));
+        setTamanho({ width: newWidth, height: newHeight });
+      }
+    };
+
+const handleMouseUp = () => {
+  setRedimensionando(false);
+  // 🟢 NÃO SALVA NADA - O TAMANHO JÁ ESTÁ NO LOCALSTORAGE
+};
+
+    if (redimensionando) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [redimensionando]);
 
   const handleTurnClick = (e) => {
   if (!isMaster) return;
@@ -383,7 +461,19 @@ function PortalSelect({ children }) {
   useEffect(() => {
     // vazio de propósito: apenas força o componente a atualizar
   }, [hud.turn, hud.xpMap]);
-
+  // 🟢 SALVAR DATA DO JOGO PARA A REDE
+  useEffect(() => {
+    if (!hud?.world) return;
+    const season = hud.world.season || "Verão";
+    const year = hud.world.year ?? "879";
+    const day = hud.world.day ?? "1";
+    const stationIndex = SEASONS.indexOf(season);
+    const stationNum = stationIndex >= 0 ? stationIndex + 1 : 1;
+    const dataJogo = `${season} — ${day}/${stationNum}/${year}`;
+    localStorage.setItem('reqviem_world_date', dataJogo);
+    // Também salva o ano separado para usar nas notícias
+    localStorage.setItem('reqviem_world_year', `${year} D.C.`);
+  }, [hud?.world]);
 // ================================
 // SOM DO CRONÔMETRO: dispara no 1
 // ================================
@@ -572,67 +662,59 @@ console.log("HUD DEBUG:", {
   className={`floating-hud ${faseClass}`}
   sx={{
     position: "fixed",
-    left: hud?.floatingPos?.x ?? 20,
-    top: hud?.floatingPos?.y ?? 20,
+    left: posicaoLocal.x,
+    top: posicaoLocal.y,
     zIndex: 120000,
-    width: collapsed ? 360 : 540,
-    maxWidth: "95vw",
+    width: collapsed ? 360 : tamanho.width,
+height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
+    maxWidth: collapsed ? 360 : "95vw",
+    maxHeight: collapsed ? 80 : "90vh",
     borderRadius: 2,
     p: collapsed ? 0.5 : 1,
     cursor: "grab",
     userSelect: "none",
-    overflow: "visible",          // <-- IMPORTANTE PARA AS ANIMAÇÕES
+    overflow: "visible",
     background: "inherit",
-    color:
-      hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada"
-        ? "#fff"
-        : "#111",
-
+    color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111",
     boxShadow: "0 12px 28px rgba(0,0,0,0.6)",
+    display: "flex",
+    flexDirection: "column",
   }}
-       onMouseDown={(e) => {
-  const t = e.target;
+  onMouseDown={(e) => {
+    const t = e.target;
 
-  // Se o clique começou no botão do comércio (ou em qualquer filho dele), ignora todo o drag.
-  if (t.closest && t.closest(".commerce-button")) {
-    // evita iniciar drag e impede qualquer efeito colateral
-    e.stopPropagation();
-    return;
-  }
+    if (t.closest && t.closest(".commerce-button")) {
+      e.stopPropagation();
+      return;
+    }
 
-  // CHECAGEM: proteger contra elementos controláveis (botões, inputs, selects, svgs)
-  // importante: parênteses garantem a lógica correta
-  if (
-    !t.closest("button") &&
-    !t.closest("input") &&
-    !t.closest("select") &&
-    !t.closest("svg") &&
-    !t.closest("a") // adiciona anchors também
-  ) {
-    setDragging(true);
-    try {
-      const rect = refBox.current.getBoundingClientRect();
-      dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    } catch {}
-  }
-}}
-
-      >
+    if (
+      !t.closest("button") &&
+      !t.closest("input") &&
+      !t.closest("select") &&
+      !t.closest("svg") &&
+      !t.closest("a")
+    ) {
+      setDragging(true);
+      try {
+        const rect = refBox.current.getBoundingClientRect();
+        dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      } catch {}
+    }
+  }}
+>
         {collapsed ? (
           <Box sx={{ display: "flex", alignItems: "center" }}>{CollapsedView}</Box>
         ) : (
           <Paper elevation={0} sx={{ width: "100%", p: 0, bgcolor: "transparent" }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", mb: 0.5 }}>
               <DragIndicatorIcon sx={{ color: "inherit" }} />
-                            <Typography 
+              <Typography 
                 variant="h6" 
                 sx={{ 
                   fontWeight: 800, 
-                  textShadow,
-                  cursor: 'pointer',
-                  '&:hover': { color: '#a855f7' }
+                  textShadow
                 }}
-                onClick={() => setPerfilVisivel(true)}
               >
                 {hud.turn?.nick ? `Turno atual: ${hud.turn.nick}` : "Turno: —"}
               </Typography>
@@ -642,17 +724,17 @@ console.log("HUD DEBUG:", {
                     <ListIcon />
                   </IconButton>
                 )}
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    if (showTurnMenu) setShowTurnMenu(false);
-                    setCollapsed(true);
-                  }}
-                  title="Recolher HUD"
-                  aria-label="recolher-hud"
-                >
-                  <ExpandLessIcon />
-                </IconButton>
+ <IconButton
+  size="small"
+  onClick={() => {
+    if (showTurnMenu) setShowTurnMenu(false);
+    setMinimizado(!minimizado);
+  }}
+  title={minimizado ? "Expandir HUD" : "Minimizar HUD"}
+  aria-label={minimizado ? "expandir-hud" : "minimizar-hud"}
+>
+  {minimizado ? <ExpandMoreIcon /> : <ExpandLessIcon />}
+</IconButton>
               </Box>
             </Box>
 
@@ -875,7 +957,7 @@ console.log("HUD DEBUG:", {
     display: "flex", 
     flexDirection: "column", 
     gap: 1,
-    maxHeight: "400px",      // 🟢 ALTURA MÁXIMA FIXA
+    maxHeight: "250px",      // 🟢 ALTURA REDUZIDA PARA 250px
     overflowY: "auto",       // 🟢 ATIVA SCROLL VERTICAL
     pr: 1,                   // 🟢 Espaço para a barra de scroll
     "&::-webkit-scrollbar": {
@@ -1285,6 +1367,32 @@ console.log("HUD DEBUG:", {
               </Box>
             </Box>
           </Paper>
+        )}
+
+        {/* 🟢 ALÇA DE REDIMENSIONAMENTO */}
+        {!collapsed && !minimizado && (
+          <Box
+            sx={{
+              position: "absolute",
+              bottom: 0,
+              right: 0,
+              width: 16,
+              height: 16,
+              cursor: "nwse-resize",
+              zIndex: 10,
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setRedimensionando(true);
+              resizeStartRef.current = {
+                x: e.clientX,
+                y: e.clientY,
+                width: tamanho.width,
+                height: tamanho.height,
+              };
+            }}
+          />
         )}
       </Box>
       {/* 🟢 MODAL SORTE/AZAR */}

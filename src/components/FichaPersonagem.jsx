@@ -364,6 +364,15 @@ const [itemAlvoInsumivel, setItemAlvoInsumivel] = useState(null);
 const bloqueioRef = useRef(false); // 🟢 useRef é SÍNCRONO, ao contrário de useState
 // 🟢 MODAIS DE ANOTAÇÕES E BACKGROUND
 const [modalAnotacoesOpen, setModalAnotacoesOpen] = useState(false);
+// 🟢 JANELA FLUTUANTE DE ANOTAÇÕES
+const [anotacoesFlutuante, setAnotacoesFlutuante] = useState(false);
+const [anotacoesMinimizada, setAnotacoesMinimizada] = useState(false);
+const [anotacoesPos, setAnotacoesPos] = useState({ x: 100, y: 100 });
+const [anotacoesSize, setAnotacoesSize] = useState({ width: 600, height: 500 });
+const [arrastandoAnotacoes, setArrastandoAnotacoes] = useState(false);
+const [redimensionandoAnotacoes, setRedimensionandoAnotacoes] = useState(false);
+const dragStartRef = useRef({ x: 0, y: 0 });
+const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 const [modalBackgroundOpen, setModalBackgroundOpen] = useState(false);
 const [anotacoesTexto, setAnotacoesTexto] = useState("");
 const [backgroundTexto, setBackgroundTexto] = useState("");
@@ -399,7 +408,14 @@ const [inventarioSecundarioAtivo, setInventarioSecundarioAtivo] = useState(null)
 const [editandoNomeInventario, setEditandoNomeInventario] = useState(false);
 const [modalTransferirParaSecundarioOpen, setModalTransferirParaSecundarioOpen] = useState(false);
 const [modalTransferirDoSecundarioOpen, setModalTransferirDoSecundarioOpen] = useState(false);
-
+// 🟢 SISTEMA DE DESCANSO
+const [modalDescansoOpen, setModalDescansoOpen] = useState(false);
+const [descansoSelecionado, setDescansoSelecionado] = useState(null);
+const [descansoCheckboxes, setDescansoCheckboxes] = useState({
+  desconfortavel: false,
+  desabrigado: false,
+});
+const [descansoPreview, setDescansoPreview] = useState(null);
 // Lista de Traços (desbloqueados ao atingir nível 5 na perícia)
 const TRACOS_POR_PERICIA = {
   atletismo: "Atleta",
@@ -653,7 +669,34 @@ const ORIGENS = [
 useEffect(() => {
   fichaRef.current = ficha;
 }, [ficha]);
+// 🟢 Event listeners para arrastar e redimensionar anotações (IGUAL COMMERCEHUD)
+useEffect(() => {
+  const handleMouseMove = (e) => {
+    if (arrastandoAnotacoes) {
+      setAnotacoesPos({
+        x: e.clientX - dragStartRef.current.x,
+        y: e.clientY - dragStartRef.current.y,
+      });
+    }
+    if (redimensionandoAnotacoes) {
+      const newWidth = Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x));
+      const newHeight = Math.max(300, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y));
+      setAnotacoesSize({ width: newWidth, height: newHeight });
+    }
+  };
 
+  const handleMouseUp = () => {
+    setArrastandoAnotacoes(false);
+    setRedimensionandoAnotacoes(false);
+  };
+
+  window.addEventListener("mousemove", handleMouseMove);
+  window.addEventListener("mouseup", handleMouseUp);
+  return () => {
+    window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", handleMouseUp);
+  };
+}, [arrastandoAnotacoes, redimensionandoAnotacoes]);
 // ✅ NOVO - Carrega talentos APENAS uma vez quando a ficha é carregada
 useEffect(() => {
   if (ficha?.caracteristicas && talentosSelecionados.length === 0) {
@@ -1601,34 +1644,16 @@ const abrirModalDado = (item, tipo) => {
       return;
     }
 
-    let apiBase = "";
-    try {
-      apiBase = import.meta?.env?.VITE_SERVER_URL || "";
-    } catch {
-      apiBase = "";
-    }
-
-    if (!apiBase) {
-      apiBase =
-        window.location.hostname === "localhost"
-          ? "http://localhost:5000"
-          : "https://app-rpg.onrender.com";
-    }
-
+    const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("image", file);
 
     try {
-      const res = await fetch(`${apiBase}/upload`, {
-        method: "POST",
-        body: fd,
-      });
-
-      if (!res.ok) throw new Error(await res.text());
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
       const data = await res.json();
-      if (!data?.url) throw new Error("Sem URL");
+      if (!data?.success) throw new Error("Falha no upload");
 
-      const novasImagens = [...(ficha.imagens || []), data.url];
+      const novasImagens = [...(ficha.imagens || []), data.data.url];
 
       const novoIndex =
         ficha.imagens?.length === 0 ? 0 : ficha.imagemPrincipalIndex || 0;
@@ -2300,6 +2325,139 @@ const transferirParaSecundario = async () => {
     alert("Erro ao transferir item.");
   }
 };
+// 🟢 FUNÇÃO PARA CALCULAR DESCANSO (CORRIGIDA)
+const calcularDescanso = (tipo, checkboxesOverride = null) => {
+  // Valores base por tipo
+  const valoresBase = {
+    curto: { pe: 5, pv: 1, tempo: "0-3 horas" },
+    medio: { pe: 12, pv: 5, tempo: "4-7 horas" },
+    longo: { pe: 30, pv: 10, tempo: "8-12 horas" },
+  };
+  
+  const base = valoresBase[tipo];
+  if (!base) return null;
+  
+  // 🟢 USA OS CHECKBOXES PASSADOS OU OS DO ESTADO
+  const checkboxes = checkboxesOverride || descansoCheckboxes;
+  
+  // 🟢 VERIFICA DEFEITOS
+  const defeitos = ficha.defeitos?.split('; ').map(d => d.trim()) || [];
+  
+  let multiplicador = 1;
+  let penalidades = [];
+  
+  // Insônia: -10%
+  if (defeitos.includes("Insônia")) {
+    multiplicador -= 0.10;
+    penalidades.push("Insônia (-10%)");
+  }
+  
+  // Sono Pesado: -5%
+  if (defeitos.includes("Sono Pesado")) {
+    multiplicador -= 0.05;
+    penalidades.push("Sono Pesado (-5%)");
+  }
+  
+  // Sonambulismo: -10%
+  if (defeitos.includes("Sonambulismo")) {
+    multiplicador -= 0.10;
+    penalidades.push("Sonambulismo (-10%)");
+  }
+  
+  // 🟢 CHECKBOXES (USANDO OS VALORES CORRETOS)
+  if (checkboxes.desconfortavel) {
+    multiplicador -= 0.02;
+    penalidades.push("Descanso Desconfortável (-2%)");
+  }
+  
+  if (checkboxes.desabrigado) {
+    multiplicador -= 0.02;
+    penalidades.push("Descanso Desabrigado (-2%)");
+  }
+  
+  // Garante mínimo de 10%
+  multiplicador = Math.max(multiplicador, 0.10);
+  
+  // Calcula valores finais (arredondando para CIMA)
+  const peRecuperado = Math.ceil(base.pe * multiplicador);
+  const pvRecuperado = Math.ceil(base.pv * multiplicador);
+  
+  return {
+    ...base,
+    peRecuperado,
+    pvRecuperado,
+    multiplicador: Math.round(multiplicador * 100),
+    penalidades,
+    tipo,
+  };
+};
+
+// 🟢 FUNÇÃO AUXILIAR PARA RECALCULAR COM CHECKBOXES
+const calcularDescansoComCheckboxes = (tipo, checkboxes) => {
+  return calcularDescanso(tipo, checkboxes);
+};
+// 🟢 FUNÇÃO PARA APLICAR DESCANSO
+const aplicarDescanso = async () => {
+  if (!descansoPreview) return;
+  
+  const { peRecuperado, pvRecuperado, tipo, tempo } = descansoPreview;
+  
+  // Verifica se o jogador está no máximo
+  const pvAtual = Number(ficha.pontosVida || 0);
+  const peAtual = Number(ficha.pontosEnergia || 0);
+  const pvMax = pontosVidaMax;
+  const peMax = pontosEnergiaMax;
+  
+  // Calcula quanto realmente vai recuperar (limitado ao máximo)
+  const pvFinal = Math.min(pvAtual + pvRecuperado, pvMax);
+  const peFinal = Math.min(peAtual + peRecuperado, peMax);
+  
+  const pvReal = pvFinal - pvAtual;
+  const peReal = peFinal - peAtual;
+  
+  if (pvReal === 0 && peReal === 0) {
+    alert("⚠️ Você já está com P.V e P.E no máximo!");
+    setModalDescansoOpen(false);
+    return;
+  }
+  
+  // Confirmação
+  const confirmar = window.confirm(
+    `🛌 Descanso ${tipo.charAt(0).toUpperCase() + tipo.slice(1)} (${tempo})\n\n` +
+    `❤️ PV: +${pvReal} (${pvAtual} → ${pvFinal}/${pvMax})\n` +
+    `⚡ PE: +${peReal} (${peAtual} → ${peFinal}/${peMax})\n` +
+    (descansoPreview.multiplicador < 100 ? `\n⚠️ Multiplicador: ${descansoPreview.multiplicador}%\n${descansoPreview.penalidades.join(', ')}` : '') +
+    `\n\n⚠️ O jogador não deve alterar seu P.V e P.E sozinho!`
+  );
+  
+  if (!confirmar) return;
+  
+  try {
+    // Atualiza PV e PE
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, {
+      pontosVida: pvFinal,
+      pontosEnergia: peFinal,
+    }, { merge: true });
+    
+    // Atualiza estado local
+    setFicha(prev => ({
+      ...prev,
+      pontosVida: pvFinal,
+      pontosEnergia: peFinal,
+    }));
+    
+    alert(`✅ Descanso ${tipo} aplicado!\n❤️ +${pvReal} PV\n⚡ +${peReal} PE`);
+    setModalDescansoOpen(false);
+    setDescansoPreview(null);
+    setDescansoSelecionado(null);
+    setDescansoCheckboxes({ desconfortavel: false, desabrigado: false });
+    
+  } catch (error) {
+    console.error("Erro ao aplicar descanso:", error);
+    alert("Erro ao aplicar descanso.");
+  }
+};
 // 🟢 FUNÇÃO FINAL - SALVA USANDO OPERAÇÕES DIRETAS NO ARRAY
 const aplicarInsumivel = async () => {
   if (!insumivelSelecionado || !itemAlvoInsumivel) {
@@ -2451,10 +2609,12 @@ const custoTalentos = talentosSelecionados.reduce((total, talentoNome) => {
 }, 0);
 // Perícias: cada ponto custa 1 (sistema simples)
 const pontosPericiaGastos = Object.values(ficha.pericias || {})
-  .reduce((a, b) => a + Number(b || 0), 0);
+  .reduce((a, b) => a + Math.max(0, Number(b || 0)), 0);
 
 const pontosAtributoRestantes = pontosAtributoMax - pontosAtributoGastos - custoTalentos;
-const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
+// Desconta o bônus do background (não conta como gasto)
+const bonusBackground = ficha?.backgroundTipo ? (BACKGROUNDS.find(b => b.nome === ficha.backgroundTipo)?.bonus || 0) : 0;
+const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBackground;
 
 
     return (
@@ -2740,7 +2900,6 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     </Button>
   </Box>
 </Box>
-
   {/* Pontos de Vida */}
   <Box sx={{ mb: 1 }}>
     <Typography component="div">Pontos de Vida</Typography>
@@ -2832,6 +2991,27 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos;
     </Grid>
   </Grid>
 </Box>
+
+  {/* 🟢 BOTÃO DESCANSO (EMBAIXO DA ARMADURA) */}
+  <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
+    <Button
+      variant="contained"
+      onClick={() => setModalDescansoOpen(true)}
+      sx={{
+        bgcolor: '#2e7d32',
+        '&:hover': { bgcolor: '#1b5e20' },
+        borderRadius: 2,
+        py: 0.5,
+        px: 2,
+        fontSize: '0.8rem',
+        fontWeight: 'bold',
+        minWidth: 'auto',
+        width: '100%',
+      }}
+    >
+      🛌 Descansar
+    </Button>
+  </Box>
               </Grid>
             </Grid>
 
@@ -3319,7 +3499,10 @@ sx={{
   <Button 
     variant="outlined" 
     startIcon={<span>📝</span>}
-    onClick={() => setModalAnotacoesOpen(true)}
+        onClick={() => {
+      setAnotacoesFlutuante(true);
+      setAnotacoesMinimizada(false);
+    }}
     sx={{ color: '#fff', borderColor: '#ff9800', flex: 1 }}
   >
     Anotações ({anotacoesSalvos.length})
@@ -4599,17 +4782,15 @@ sx={{
                     const file = e.target.files?.[0];
                     if (!file) return;
                     
+                    const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
                     const fd = new FormData();
-                    fd.append("file", file);
+                    fd.append("image", file);
                     
                     try {
-                      const res = await fetch("https://reqviem.onrender.com/upload", {
-                        method: "POST",
-                        body: fd,
-                      });
+                      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
                       const data = await res.json();
-                      if (data.url) {
-                        atualizarItem(abaAtiva, index, "imagem", data.url);
+                      if (data?.success) {
+                        atualizarItem(abaAtiva, index, "imagem", data.data.url);
                       }
                     } catch (err) {
                       console.error("Erro no upload:", err);
@@ -5378,28 +5559,29 @@ sx={{
       const file = e.target.files?.[0];
       if (!file) return;
       try {
-        const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
+        const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
         const fd = new FormData();
-        fd.append("file", file);
-        const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+        fd.append("image", file);
+        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
         const data = await res.json();
-        if (data.url) {
+        if (data?.success) {
+          const url = data.data.image?.url || data.data.url;
           const el = backgroundTextareaRef.current;
-          if (el) {
-            const start = el.selectionStart || 0;
-            const end = el.selectionEnd || 0;
+          if (el && el.tagName === 'TEXTAREA') {
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
             const antes = backgroundTexto.substring(0, start);
             const depois = backgroundTexto.substring(end);
-            const imagemMarkdown = `\n![Imagem](${data.url})\n`;
+            const imagemMarkdown = `\n![Imagem](${url})\n`;
             const novoTexto = antes + imagemMarkdown + depois;
             setBackgroundTexto(novoTexto);
             setTimeout(() => {
               el.focus();
               const novaPos = start + imagemMarkdown.length;
               el.setSelectionRange(novaPos, novaPos);
-            }, 100);
+            }, 150);
           } else {
-            setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
+            setBackgroundTexto(prev => prev + `\n![Imagem](${url})\n`);
           }
         }
       } catch (err) {
@@ -5510,6 +5692,214 @@ sx={{
           </Button>
         </DialogActions>
       </Dialog>
+      {/* 🟢 JANELA FLUTUANTE DE ANOTAÇÕES */}
+{anotacoesFlutuante && (
+  <Box
+    sx={{
+      position: "fixed",
+      left: anotacoesPos.x,
+      top: anotacoesPos.y,
+      width: anotacoesMinimizada ? 300 : anotacoesSize.width,
+      height: anotacoesMinimizada ? 50 : anotacoesSize.height,
+      bgcolor: "#0f172a",
+      border: "2px solid #ff9800",
+      borderRadius: 2,
+      zIndex: 9999,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
+      userSelect: "none",
+    }}
+  >
+    {/* BARRA DE TÍTULO (arrastável) */}
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        p: 1,
+        bgcolor: "#ff9800",
+        cursor: "move",
+        minHeight: 40,
+      }}
+      onMouseDown={(e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        e.preventDefault();
+        setArrastandoAnotacoes(true);
+        dragStartRef.current = {
+          x: e.clientX - anotacoesPos.x,
+          y: e.clientY - anotacoesPos.y,
+        };
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <span>📝</span>
+        <Typography variant="subtitle2" sx={{ color: "#000", fontWeight: "bold" }}>
+          {anotacoesMinimizada ? `Anotações (${anotacoesSalvos.length})` : `Anotações - ${ficha?.nome || "Personagem"}`}
+        </Typography>
+      </Box>
+      <Box sx={{ display: "flex", gap: 0.5 }}>
+        <IconButton
+          size="small"
+          onClick={() => setAnotacoesMinimizada(!anotacoesMinimizada)}
+          sx={{ color: "#000", p: 0.5 }}
+        >
+          {anotacoesMinimizada ? "□" : "−"}
+        </IconButton>
+        <IconButton
+          size="small"
+          onClick={() => {
+            setAnotacoesFlutuante(false);
+            setAnotacoesMinimizada(false);
+          }}
+          sx={{ color: "#000", p: 0.5 }}
+        >
+          ✕
+        </IconButton>
+      </Box>
+    </Box>
+
+    {/* CONTEÚDO (só aparece se não estiver minimizado) */}
+    {!anotacoesMinimizada && (
+      <>
+        <Box sx={{ display: "flex", gap: 2, p: 2, flex: 1, overflow: "hidden" }}>
+          {/* Lista de anotações salvas */}
+          <Box sx={{ width: 200, borderRight: "1px solid #334155", pr: 1, overflowY: "auto" }}>
+            <Typography variant="caption" sx={{ color: "#94a3b8", mb: 1, display: "block" }}>
+              {anotacoesSalvos.length} anotações
+            </Typography>
+            {anotacoesSalvos.map((anot, idx) => (
+              <Paper
+                key={idx}
+                sx={{
+                  p: 1,
+                  mb: 0.5,
+                  bgcolor: anotacaoEditandoIndex === idx ? "#1e3a5f" : "#1a1a2e",
+                  cursor: "pointer",
+                  border: anotacaoEditandoIndex === idx ? "1px solid #ff9800" : "1px solid #334155",
+                }}
+                onClick={() => {
+                  setAnotacaoEditandoIndex(idx);
+                  setAnotacaoTitulo(anot.titulo);
+                  setAnotacoesTexto(anot.texto);
+                }}
+              >
+                <Typography variant="caption" sx={{ color: "#fff", fontWeight: "bold", display: "block" }}>
+                  {anot.titulo || `Anotação ${idx + 1}`}
+                </Typography>
+              </Paper>
+            ))}
+            <Button
+              size="small"
+              variant="contained"
+              fullWidth
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setAnotacaoEditandoIndex(null);
+                setAnotacaoTitulo("");
+                setAnotacoesTexto("");
+              }}
+              sx={{ mt: 1, bgcolor: "#ff9800", fontSize: "0.7rem" }}
+            >
+              Nova
+            </Button>
+          </Box>
+
+          {/* Editor */}
+          <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 1 }}>
+            <TextField
+              size="small"
+              placeholder="Título"
+              value={anotacaoTitulo}
+              onChange={(e) => setAnotacaoTitulo(e.target.value)}
+              InputProps={{ style: { color: "#fff", fontSize: "0.85rem" } }}
+              sx={{ bgcolor: "#1a1a2e" }}
+            />
+            <TextField
+              multiline
+              minRows={8}
+              maxRows={20}
+              placeholder="Conteúdo (Markdown)"
+              value={anotacoesTexto}
+              onChange={(e) => setAnotacoesTexto(e.target.value)}
+              InputProps={{ style: { color: "#fff", fontSize: "0.8rem", fontFamily: "monospace" } }}
+              sx={{ flex: 1, bgcolor: "#1a1a2e", "& .MuiInputBase-root": { height: "100%", alignItems: "flex-start" } }}
+            />
+            <Box sx={{ display: "flex", gap: 1 }}>
+              {anotacaoEditandoIndex !== null && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={async () => {
+                    const novas = [...anotacoesSalvos];
+                    novas[anotacaoEditandoIndex] = { titulo: anotacaoTitulo, texto: anotacoesTexto };
+                    setAnotacoesSalvos(novas);
+                    await setDoc(doc(db, "fichas", fichaId), { anotacoes: JSON.stringify(novas) }, { merge: true });
+                  }}
+                  sx={{ bgcolor: "#ff9800", fontSize: "0.7rem" }}
+                >
+                  Atualizar
+                </Button>
+              )}
+              {anotacaoEditandoIndex === null && anotacoesTexto.trim() && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={async () => {
+                    const novas = [...anotacoesSalvos, { titulo: anotacaoTitulo || "Anotação", texto: anotacoesTexto }];
+                    setAnotacoesSalvos(novas);
+                    setAnotacaoTitulo("");
+                    setAnotacoesTexto("");
+                    await setDoc(doc(db, "fichas", fichaId), { anotacoes: JSON.stringify(novas) }, { merge: true });
+                  }}
+                  sx={{ bgcolor: "#4caf50", fontSize: "0.7rem" }}
+                >
+                  Salvar
+                </Button>
+              )}
+            </Box>
+          </Box>
+        </Box>
+
+        {/* ALÇA DE REDIMENSIONAMENTO (canto inferior direito) */}
+        <Box
+          sx={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: 16,
+            height: 16,
+            cursor: "nwse-resize",
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setRedimensionandoAnotacoes(true);
+            resizeStartRef.current = {
+              x: e.clientX,
+              y: e.clientY,
+              width: anotacoesSize.width,
+              height: anotacoesSize.height,
+            };
+          }}
+        />
+      </>
+    )}
+  </Box>
+)}
+
+{/* Event listeners globais para arrastar e redimensionar */}
+{anotacoesFlutuante && (
+  <Box
+    sx={{
+      position: "fixed",
+      inset: 0,
+      zIndex: 9998,
+      display: arrastandoAnotacoes || redimensionandoAnotacoes ? "block" : "none",
+    }}
+  />
+)}
             {/* 🟢 MODAL APLICAR INSUMÍVEL */}
       <Dialog
         open={modalInsumivelOpen}
@@ -6017,7 +6407,6 @@ const novosDiversos = [...diversosAtuais, novoItem];
             Novo Capítulo
           </Button>
         </Box>
-        
         {/* Editor de capítulo */}
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <TextField
@@ -6031,112 +6420,134 @@ const novosDiversos = [...diversosAtuais, novoItem];
             sx={{ mb: 1 }}
           />
           
-          <Box sx={{ mb: 1, display: 'flex', gap: 1 }}>
-<Button 
-  size="small" 
-  variant="outlined" 
-  component="label"
-  startIcon={<span>📷</span>}
-  sx={{ color: '#94a3b8', borderColor: '#555' }}
->
-  Inserir Imagem
-  <input
-    hidden
-    type="file"
-    accept="image/*"
-    onChange={async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
-        const fd = new FormData();
-        fd.append("file", file);
-        const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
-        const data = await res.json();
-        if (data.url) {
-          // Usa o ref do input ao invés de querySelector
-          const textarea = backgroundTextareaRef.current;
-          if (textarea && textarea.querySelector('textarea')) {
-            const nativeTextarea = textarea.querySelector('textarea');
-            const start = nativeTextarea.selectionStart;
-            const end = nativeTextarea.selectionEnd;
-            const antes = backgroundTexto.substring(0, start);
-            const depois = backgroundTexto.substring(end);
-            const imagemMarkdown = `\n![Imagem](${data.url})\n`;
-            setBackgroundTexto(antes + imagemMarkdown + depois);
-            setTimeout(() => {
-              nativeTextarea.focus();
-              nativeTextarea.selectionStart = start + imagemMarkdown.length;
-              nativeTextarea.selectionEnd = start + imagemMarkdown.length;
-            }, 100);
-          } else {
-            setBackgroundTexto(prev => prev + `\n![Imagem](${data.url})\n`);
-          }
-        }
-      } catch (err) {
-        alert("Erro ao enviar imagem");
-      }
-    }}
-  />
-</Button>
+          {/* 🟢 Botão de upload + ações */}
+          <Box sx={{ mb: 1, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Button 
+              size="small" 
+              variant="outlined" 
+              component="label"
+              startIcon={<span>📷</span>}
+              sx={{ color: '#94a3b8', borderColor: '#555', fontSize: '0.7rem' }}
+            >
+              Inserir Imagem
+              <input hidden type="file" accept="image/*" onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
+                  const fd = new FormData();
+                  fd.append("image", file);
+                  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
+                  const data = await res.json();
+                  if (data?.success) {
+                    const url = data.data.image?.url || data.data.url;
+                    const el = backgroundTextareaRef.current;
+                    if (el) {
+                      el.focus();
+                      const img = document.createElement('img');
+                      img.src = url;
+                      img.alt = 'Imagem';
+                      img.style.maxWidth = '100%';
+                      img.style.borderRadius = '4px';
+                      img.style.cursor = 'pointer';
+                      img.onclick = () => { setLightboxSrc(url); setZoom(1); setLightboxOpen(true); };
+                      const selection = window.getSelection();
+                      if (selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        range.deleteContents();
+                        range.insertNode(img);
+                        range.setStartAfter(img);
+                        range.collapse(true);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                      } else {
+                        el.appendChild(img);
+                      }
+                      const br = document.createElement('br');
+                      el.appendChild(br);
+                      const html = el.innerHTML;
+                      const markdown = html
+                        .replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*>/g, '![$2]($1)')
+                        .replace(/<br\s*\/?>/g, '\n')
+                        .replace(/<div>/g, '\n').replace(/<\/div>/g, '')
+                        .replace(/<[^>]*>/g, '');
+                      setBackgroundTexto(markdown);
+                    }
+                  }
+                } catch (err) { alert("Erro ao enviar imagem"); }
+              }} />
+            </Button>
             
             {backgroundEditandoIndex !== null && (
-              <Button 
-                size="small" 
-                variant="contained" 
-                onClick={async () => {
-                  const novas = [...backgroundCapitulos];
-                  novas[backgroundEditandoIndex] = { titulo: backgroundTitulo, texto: backgroundTexto };
-                  setBackgroundCapitulos(novas);
-                  await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
-                  alert("Capítulo atualizado!");
-                }}
-                sx={{ bgcolor: '#9c27b0' }}
-              >
-                💾 Atualizar
-              </Button>
+              <Button size="small" variant="contained" onClick={async () => {
+                const novas = [...backgroundCapitulos];
+                novas[backgroundEditandoIndex] = { titulo: backgroundTitulo, texto: backgroundTexto };
+                setBackgroundCapitulos(novas);
+                await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
+                alert("Capítulo atualizado!");
+              }} sx={{ bgcolor: '#9c27b0', fontSize: '0.7rem' }}>💾 Atualizar</Button>
             )}
-            
             {backgroundEditandoIndex === null && backgroundTexto.trim() && (
-              <Button 
-                size="small" 
-                variant="contained" 
-                onClick={async () => {
-                  const novas = [...backgroundCapitulos, { titulo: backgroundTitulo || `Capítulo ${backgroundCapitulos.length + 1}`, texto: backgroundTexto }];
-                  setBackgroundCapitulos(novas);
-                  setBackgroundTitulo("");
-                  setBackgroundTexto("");
-                  await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
-                  alert("Capítulo salvo!");
-                }}
-                sx={{ bgcolor: '#4caf50' }}
-              >
-                ➕ Salvar
-              </Button>
+              <Button size="small" variant="contained" onClick={async () => {
+                const novas = [...backgroundCapitulos, { titulo: backgroundTitulo || `Capítulo ${backgroundCapitulos.length + 1}`, texto: backgroundTexto }];
+                setBackgroundCapitulos(novas);
+                setBackgroundTitulo("");
+                setBackgroundTexto("");
+                await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
+                alert("Capítulo salvo!");
+              }} sx={{ bgcolor: '#4caf50', fontSize: '0.7rem' }}>➕ Salvar</Button>
             )}
+            <Typography variant="caption" sx={{ color: '#64748b', ml: 1 }}>Clique na imagem para ampliar</Typography>
           </Box>
-          
-<TextField
-  id="background-textarea"
-  inputRef={backgroundTextareaRef}
-  label="Conteúdo (Markdown)"
-            fullWidth
-            multiline
-            minRows={15}
-            maxRows={30}
-            value={backgroundTexto}
-            onChange={(e) => setBackgroundTexto(e.target.value)}
-            InputProps={{ 
-              style: { color: '#fff', fontFamily: 'monospace', fontSize: '0.85rem' },
+
+          {/* 🟢 EDITOR WYSIWYG - IMAGEM E TEXTO JUNTOS */}
+          <Box 
+            contentEditable
+            suppressContentEditableWarning
+            ref={(el) => {
+              if (el) {
+                backgroundTextareaRef.current = el;
+                if (backgroundTexto && el.innerHTML === '') {
+                  el.innerHTML = backgroundTexto
+                    .replace(/\!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:4px;cursor:pointer" />')
+                    .replace(/\n/g, '<br/>');
+                }
+              }
             }}
-            InputLabelProps={{ style: { color: '#94a3b8' } }}
-            sx={{ 
-              flex: 1, 
-              '& .MuiInputBase-root': { 
-                height: '100%', 
-                overflowY: 'auto',
-                alignItems: 'flex-start'
-              } 
+            onInput={(e) => {
+              let html = e.currentTarget.innerHTML;
+              html = html.replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*>/g, '![$2]($1)');
+              html = html.replace(/<br\s*\/?>/g, '\n');
+              html = html.replace(/<div>/g, '\n').replace(/<\/div>/g, '');
+              html = html.replace(/<[^>]*>/g, '');
+              setBackgroundTexto(html);
+            }}
+            onClick={(e) => {
+              if (e.target.tagName === 'IMG') {
+                setLightboxSrc(e.target.src);
+                setZoom(1);
+                setLightboxOpen(true);
+              }
+            }}
+            onPaste={(e) => {
+              e.preventDefault();
+              const text = e.clipboardData.getData('text/plain');
+              document.execCommand('insertText', false, text);
+            }}
+            sx={{
+              flex: 1,
+              bgcolor: '#1a1a2e',
+              borderRadius: 1,
+              border: '1px solid #334155',
+              p: 1.5,
+              color: '#fff',
+              fontFamily: 'sans-serif',
+              fontSize: '0.85rem',
+              overflowY: 'auto',
+              minHeight: 200,
+              outline: 'none',
+              '&:focus': { borderColor: '#9c27b0' },
+              '& img': { maxWidth: '100%', borderRadius: 1, cursor: 'pointer', display: 'block', my: 1 }
             }}
           />
         </Box>
@@ -6436,17 +6847,15 @@ const novosDiversos = [...diversosAtuais, novoItem];
                         const file = e.target.files?.[0];
                         if (!file) return;
                         
+                        const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
                         const fd = new FormData();
-                        fd.append("file", file);
+                        fd.append("image", file);
                         
                         try {
-                          const apiBase = window.location.hostname === "localhost" 
-                            ? "http://localhost:5000" 
-                            : "https://reqviem.onrender.com";
-                          const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+                          const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
                           const data = await res.json();
-                          if (data.url) {
-                            atualizarHabilidade(i, "imagem", data.url);
+                          if (data?.success) {
+                            atualizarHabilidade(i, "imagem", data.data.url);
                           }
                         } catch (err) {
                           console.error("Erro no upload:", err);
@@ -7271,7 +7680,179 @@ const novosDiversos = [...diversosAtuais, novoItem];
       Transferir
     </Button>
   </DialogActions>
-</Dialog>
+      </Dialog>
+
+      {/* 🟢 MODAL DE DESCANSO */}
+      <Dialog
+        open={modalDescansoOpen}
+        onClose={() => {
+          setModalDescansoOpen(false);
+          setDescansoPreview(null);
+          setDescansoSelecionado(null);
+          setDescansoCheckboxes({ desconfortavel: false, desabrigado: false });
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "2px solid #2e7d32",
+            borderRadius: 2,
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#4caf50', textAlign: 'center', borderBottom: '1px solid #2e7d32' }}>
+          🛌 Descanso
+        </DialogTitle>
+        
+        <DialogContent sx={{ pt: 3 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {[
+              { id: 'curto', label: 'Descanso Curto', tempo: '0-3 horas', pe: 5, pv: 1, cor: '#4caf50' },
+              { id: 'medio', label: 'Descanso Médio', tempo: '4-7 horas', pe: 12, pv: 5, cor: '#ff9800' },
+              { id: 'longo', label: 'Descanso Longo', tempo: '8-12 horas', pe: 30, pv: 10, cor: '#f44336' },
+            ].map((opcao) => (
+              <Paper
+                key={opcao.id}
+                sx={{
+                  p: 2,
+                  bgcolor: descansoSelecionado === opcao.id ? '#1e3a5f' : '#1a1a2e',
+                  border: descansoSelecionado === opcao.id ? `2px solid ${opcao.cor}` : '1px solid #334155',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  '&:hover': { borderColor: opcao.cor, bgcolor: '#1e293b' },
+                }}
+                onClick={() => {
+                  setDescansoSelecionado(opcao.id);
+                  const resultado = calcularDescanso(opcao.id);
+                  setDescansoPreview(resultado);
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ color: opcao.cor, fontWeight: 'bold' }}>
+                      {opcao.label}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                      ⏱️ {opcao.tempo} • ❤️ +{opcao.pv} PV • ⚡ +{opcao.pe} PE
+                    </Typography>
+                  </Box>
+                  {descansoSelecionado === opcao.id && (
+                    <Typography sx={{ color: opcao.cor, fontSize: '1.5rem' }}>✅</Typography>
+                  )}
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+          <Box sx={{ mt: 3, p: 2, bgcolor: '#1a1a2e', borderRadius: 2, border: '1px solid #334155' }}>
+            <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
+              ⚠️ Condições Adicionais:
+            </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={descansoCheckboxes.desconfortavel}
+                  onChange={(e) => {
+                    const novoValor = e.target.checked;
+                    // 🟢 ATUALIZA O ESTADO PRIMEIRO
+                    setDescansoCheckboxes(prev => ({
+                      ...prev,
+                      desconfortavel: novoValor,
+                    }));
+                    // 🟢 DEPOIS RECALCULA COM O NOVO VALOR
+                    if (descansoSelecionado) {
+                      // Usa o novo valor diretamente
+                      const resultado = calcularDescansoComCheckboxes(descansoSelecionado, {
+                        ...descansoCheckboxes,
+                        desconfortavel: novoValor,
+                      });
+                      setDescansoPreview(resultado);
+                    }
+                  }}
+                  sx={{ color: '#94a3b8' }}
+                />
+              }
+              label={<Typography variant="body2" sx={{ color: '#94a3b8' }}>🛏️ Descanso Desconfortável (-2%)</Typography>}
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={descansoCheckboxes.desabrigado}
+                  onChange={(e) => {
+                    const novoValor = e.target.checked;
+                    // 🟢 ATUALIZA O ESTADO PRIMEIRO
+                    setDescansoCheckboxes(prev => ({
+                      ...prev,
+                      desabrigado: novoValor,
+                    }));
+                    // 🟢 DEPOIS RECALCULA COM O NOVO VALOR
+                    if (descansoSelecionado) {
+                      const resultado = calcularDescansoComCheckboxes(descansoSelecionado, {
+                        ...descansoCheckboxes,
+                        desabrigado: novoValor,
+                      });
+                      setDescansoPreview(resultado);
+                    }
+                  }}
+                  sx={{ color: '#94a3b8' }}
+                />
+              }
+              label={<Typography variant="body2" sx={{ color: '#94a3b8' }}>🏚️ Descanso Desabrigado (-2%)</Typography>}
+            />
+          </Box>
+
+          {descansoPreview && (
+            <Box sx={{ mt: 3, p: 2, bgcolor: '#1e3a5f', borderRadius: 2, border: '1px solid #2e7d32' }}>
+              <Typography variant="subtitle1" sx={{ color: '#4caf50', fontWeight: 'bold', mb: 1 }}>
+                📊 Resumo do Descanso:
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#fff' }}>
+                ❤️ PV: <strong style={{ color: '#ff4d4f' }}>+{descansoPreview.pvRecuperado}</strong>
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#fff' }}>
+                ⚡ PE: <strong style={{ color: '#facc15' }}>+{descansoPreview.peRecuperado}</strong>
+              </Typography>
+              {descansoPreview.multiplicador < 100 && (
+                <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mt: 1 }}>
+                  ⚠️ Multiplicador: {descansoPreview.multiplicador}%
+                  <br />
+                  {descansoPreview.penalidades.join(', ')}
+                </Typography>
+              )}
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 1 }}>
+                ⚠️ O jogador não deve alterar seu P.V e P.E sozinho!
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+          <Button
+            onClick={() => {
+              setModalDescansoOpen(false);
+              setDescansoPreview(null);
+              setDescansoSelecionado(null);
+              setDescansoCheckboxes({ desconfortavel: false, desabrigado: false });
+            }}
+            sx={{ color: '#94a3b8' }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!descansoPreview}
+            onClick={aplicarDescanso}
+            sx={{
+              bgcolor: '#2e7d32',
+              '&:hover': { bgcolor: '#1b5e20' },
+              '&.Mui-disabled': { bgcolor: '#334155' },
+            }}
+          >
+            ✅ Aplicar Descanso
+          </Button>
+        </DialogActions>
+      </Dialog>
+
     </Paper>
     );
   }

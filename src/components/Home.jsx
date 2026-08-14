@@ -6,7 +6,6 @@ import CloseIcon from "@mui/icons-material/Close";
 import { Link } from "react-router-dom";
 import HomePage from "../pages/HomePage";
 import SoundBoard from "./SoundBoard";
-import SocialBar from "./SocialBar";
 import FichaPersonagem from "./FichaPersonagem";
 import MemoizedChat from "./Chat";
 import LoginForm from "./LoginForm";
@@ -37,10 +36,6 @@ const Home = memo(function Home({
   
   // 🟢 Nome da ficha selecionada
   const [fichaNome, setFichaNome] = useState("");
-  const [socialBarKey, setSocialBarKey] = useState(0);
-  
-  // 🟢 FICHAS MAP PARA SOCIAL BAR
-  const [fichasMapSocial, setFichasMapSocial] = useState({});
 
   // 🟢 TUTORIAL E CHANGELOG
   const [modalTutorialOpen, setModalTutorialOpen] = useState(false);
@@ -53,20 +48,6 @@ const Home = memo(function Home({
 
   const tutorialTextareaRef = useRef(null);
   const changelogTextareaRef = useRef(null);
-
-  // Carregar fichas para SocialBar
-  useEffect(() => {
-    const col = collection(db, "fichas");
-    const unsub = onSnapshot(col, (snap) => {
-      const map = {};
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() || {};
-        map[docSnap.id] = { nome: data.nome || docSnap.id, ...data };
-      });
-      setFichasMapSocial(map);
-    });
-    return () => unsub();
-  }, []);
 
   // Atualizar nome da ficha selecionada
   useEffect(() => {
@@ -81,10 +62,6 @@ const Home = memo(function Home({
     } else {
       setFichaNome("");
     }
-  }, [selectedFichaEmail]);
-
-  useEffect(() => {
-    setSocialBarKey(prev => prev + 1);
   }, [selectedFichaEmail]);
   
   useEffect(() => {
@@ -235,6 +212,13 @@ const Home = memo(function Home({
                       >
                         🎙️ Voice
                       </Button>
+                                            <Button 
+                        variant="contained" 
+                        onClick={() => { if (window.__toggleConquistas) window.__toggleConquistas(); }}
+                        sx={{ bgcolor: '#ffd700', '&:hover': { bgcolor: '#eab308' }, color: '#000', fontWeight: 'bold' }}
+                      >
+                        🏆 Conquistas
+                      </Button>
                     </Box>
                   </Box>
 
@@ -352,18 +336,6 @@ const Home = memo(function Home({
             setZoom={setZoom}
           />
         </Box>
-      )}
-
-      {/* SOCIAL BAR */}
-      {user && (
-        <SocialBar 
-          key={selectedFichaEmail || 'mestre-vazio'}
-          userEmail={user?.email}
-          userNick={displayName}
-          fichasMap={fichasMapSocial}
-          isMaster={isMaster}
-          jogadorSelecionadoEmail={selectedFichaEmail}
-        />
       )}
 
       {/* MODAL TUTORIAL */}

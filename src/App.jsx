@@ -9,9 +9,12 @@ import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
 import { FloatingWindowsProvider } from "./context/FloatingWindowsContext";
 import FloatingChat from "./components/FloatingChat";
 import FloatingFicha from "./components/FloatingFicha";
+import Conquistas from "./components/Conquistas";
+import ConquistasWatcher from "./components/ConquistasWatcher";
 
 // Importe o Home do arquivo separado
 import Home from "./components/Home";
+import BolsaValores from "./components/BolsaValores";
 import LoadingProvider from "./context/LoadingProvider";
 import AudioProvider from "./context/AudioProvider";
 import VoiceProvider from "./context/VoiceProvider";
@@ -21,6 +24,7 @@ import BattleMap from "./components/BattleMap";
 import MapaMundi from "./pages/MapaMundi";
 import Sistema from "./pages/Sistema";
 import FloatingHUD from "./components/FloatingHUD";
+import SidebarHUD from "./components/SidebarHUD";
 import HUDMobile from "./components/HUDMobile";
 import RouteLoadingWatcher from "./components/RouteLoadingWatcher"; // extraia também
 import { openCommerceHUD, closeCommerceHUD } from "./CommerceHUDRoot";
@@ -64,6 +68,19 @@ export default function App() {
   const [selectedFichaEmail, setSelectedFichaEmail] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [fichaAtual, setFichaAtual] = useState(null);
+  const [bolsaAberta, setBolsaAberta] = useState(false);
+  const [conquistasOpen, setConquistasOpen] = useState(false);
+
+window.__toggleConquistas = () => setConquistasOpen(prev => !prev);
+
+  // 🟢 OUVIR EVENTO PARA ABRIR A BOLSA
+useEffect(() => {
+  const handleAbrirBolsa = () => {
+    setBolsaAberta(true);
+  };
+  window.addEventListener('abrirBolsaValores', handleAbrirBolsa);
+  return () => window.removeEventListener('abrirBolsaValores', handleAbrirBolsa);
+}, []);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -245,6 +262,42 @@ const handleRegister = useCallback(async (email) => {
   const isMasterFlag = role === "master";
   const currentUserEmail = user?.email || null;
 
+  // 🟢 Funções globais para os botões da sidebar
+  useEffect(() => {
+    window.__togglePerfis = () => {
+      window.dispatchEvent(new CustomEvent('togglePerfis'));
+    };
+    window.__toggleComercio = () => {
+      openCommerceHUD();
+    };
+  }, []);
+  // 🟢 Ouvir eventos de toggle da sidebar
+  useEffect(() => {
+    const handleTogglePerfis = () => {
+      // Dispara a abertura do PerfilDetalhado
+      window.dispatchEvent(new CustomEvent('abrirPerfilDetalhado'));
+    };
+    const handleToggleComercio = () => {
+      openCommerceHUD();
+    };
+    window.addEventListener('togglePerfis', handleTogglePerfis);
+    window.addEventListener('toggleComercio', handleToggleComercio);
+    return () => {
+      window.removeEventListener('togglePerfis', handleTogglePerfis);
+      window.removeEventListener('toggleComercio', handleToggleComercio);
+    };
+  }, []);
+  // 🟢 Atualizar fichasMapSocial para a sidebar
+useEffect(() => {
+  const interval = setInterval(() => {
+    if (window.__fichasMapSocial && Object.keys(window.__fichasMapSocial).length > 0) {
+      // Força re-render da sidebar
+      window.dispatchEvent(new CustomEvent('fichasMapUpdated', { detail: window.__fichasMapSocial }));
+    }
+  }, 2000);
+  return () => clearInterval(interval);
+}, []);
+
   return (
     <Router>
       <FloatingWindowsProvider>
@@ -253,7 +306,14 @@ const handleRegister = useCallback(async (email) => {
           <AudioProvider>
             <LoadingProvider>
               <RouteLoadingWatcher />
-              <GameProvider currentUserEmail={currentUserEmail} isMaster={isMasterFlag}>
+                <GameProvider currentUserEmail={currentUserEmail} isMaster={isMasterFlag}>
+                <ConquistasWatcher userEmail={currentUserEmail} />
+{!isMobile && <SidebarHUD 
+  userEmail={currentUserEmail} 
+  userNick={userNick} 
+  isMaster={isMasterFlag} 
+  fichasMap={window.__fichasMapSocial || {}}
+/>}
                 {!isMobile && (
                   <FloatingHUD 
                     userEmail={currentUserEmail} 
@@ -308,6 +368,21 @@ const handleRegister = useCallback(async (email) => {
   </>
 } />
                 </Routes>
+                              {bolsaAberta && (
+                <BolsaValores 
+                  userEmail={currentUserEmail} 
+                  onClose={() => setBolsaAberta(false)} 
+                  fichasMap={window.__fichasMapSocial || {}}
+                  isMaster={isMasterFlag}
+                />
+              )}
+                                            {conquistasOpen && (
+                <Conquistas 
+                  userEmail={currentUserEmail} 
+                  userNick={userNick} 
+                  onClose={() => setConquistasOpen(false)} 
+                />
+              )}
               </GameProvider>
             </LoadingProvider>
           </AudioProvider>

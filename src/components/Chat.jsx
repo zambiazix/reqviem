@@ -190,6 +190,11 @@ const [acaoHabilidadeDado, setAcaoHabilidadeDado] = useState(0);
 const [acaoHabilidadeCustoPE, setAcaoHabilidadeCustoPE] = useState(0);
 // 🟢 DEBUFFS (múltiplos valores para subtrair do dado final)
 const [acaoDebuffs, setAcaoDebuffs] = useState([]);
+// 🟢 VALOR MÍNIMO DE SUCESSO (VD - Valor de Dificuldade)
+const [acaoValorDificuldade, setAcaoValorDificuldade] = useState("");
+// 🟢 BÔNUS VARIÁVEL (valor positivo adicionado ao resultado)
+const [acaoBonusVariavel, setAcaoBonusVariavel] = useState(0);
+const [acaoBonusVariavelLista, setAcaoBonusVariavelLista] = useState([]);
 // 🟢 CONSUMÍVEL
 const [acaoItemConsumivel, setAcaoItemConsumivel] = useState(false); // É consumível?
 const [acaoConsumivelTipo, setAcaoConsumivelTipo] = useState(""); // PV, PE, RE
@@ -445,6 +450,23 @@ useEffect(() => {
   });
   return () => unsub();
 }, []);
+// 🟢 OUVIR EVENTO DO GERADOR DE EVENTOS ALEATÓRIOS
+useEffect(() => {
+  const handleEventoChat = async (e) => {
+    const { texto, personagem, userEmail: emailEvento, userNick: nickEvento } = e.detail;
+    
+    await addDoc(chatCol, {
+      userNick: nickEvento || personagem || userNick,
+      userEmail: emailEvento || userEmail,
+      type: "evento",
+      text: texto,
+      timestamp: serverTimestamp(),
+    });
+  };
+  
+  window.addEventListener('enviarEventoChat', handleEventoChat);
+  return () => window.removeEventListener('enviarEventoChat', handleEventoChat);
+}, [userNick, userEmail, chatCol]);
 
 // 🟢 OUVIR AÇÕES PENDENTES (contra o jogador selecionado ou logado)
 useEffect(() => {
@@ -570,6 +592,7 @@ async function rolarDadoMorte() {
     
     if (sucessos.length >= 2) {
       resultadoFinal = "sobreviveu";
+      window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'sobrevivente_morte' } }));
       break;
     }
     if (fracassos.length >= 2) {
@@ -708,9 +731,13 @@ async function rolarDadoMorte() {
     userNick, 
     userEmail, 
     type, 
-    text: text, // Já contém as quebras de linha
+    text: text,
     timestamp: serverTimestamp() 
   });
+  
+  // 🟢 CONQUISTA: Comunicador
+  window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'mensagens' } }));
+  
   setText("");
 }
 
@@ -1024,6 +1051,13 @@ if (acaoHabilidadeSelecionada) {
       total = Math.max(0, total - totalDebuff); // nunca negativo
       descricao.push(`Debuffs: -${totalDebuff} (${totalAntes} → ${total})`);
     }
+        // 🟢 APLICAR BÔNUS VARIÁVEL (adiciona ao total)
+    const totalBonus = acaoBonusVariavelLista.reduce((soma, b) => soma + b.valor, 0);
+    if (totalBonus > 0) {
+      const totalAntes = total;
+      total += totalBonus;
+      descricao.push(`Bônus: +${totalBonus} (${totalAntes} → ${total})`);
+    }
     
         const nomePersonagem = fichaJogador?.nome || userNick;
     const partesDescricao = descricao.length > 0 ? descricao.join("; ") : "";
@@ -1086,6 +1120,15 @@ if (acaoHabilidadeSelecionada) {
     if (custoTotalEnergia > 0) {
       mensagem += `\n\n⚡ Energia gasta: ${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
     }
+        // 🟢 VERIFICAR SUCESSO/FRACASSO (VD)
+    if (acaoValorDificuldade) {
+      const vd = Number(acaoValorDificuldade);
+      if (total >= vd) {
+        mensagem += `\n\n✅ **SUCESSO!** Resultado ${total} ≥ ${vd} (VD)`;
+      } else {
+        mensagem += `\n\n❌ **FRACASSO!** Resultado ${total} < ${vd} (VD)`;
+      }
+    }
 
                 if (acaoModo === "acao" && acaoAlvo && acaoTipo === "dano") {
       const pendenteRef = doc(collection(db, "acoesPendentes"));
@@ -1100,6 +1143,74 @@ if (acaoHabilidadeSelecionada) {
           tipoDanoAcao = hab.tipoDano;
         }
       }
+      // 🟢 FURTIVIDADE
+if (acaoTipo === "furtividade" && acaoAlvo) {
+  const fichaAlvo = fichasMap[acaoAlvo];
+  const percepcaoAlvo = fichaAlvo?.pericias?.percepcao || 0;
+  const inteligenciaAlvo = fichaAlvo?.atributos?.inteligencia || 0;
+  let mensagem = `🥷 **Ação de Furtividade**\n\n`;
+  
+  // 🟢 Se alvo não tem Percepção (0), falha garantida do atacante
+  if (percepcaoAlvo < 1) {
+    mensagem += `👁️ **${fichaAlvo?.nome || acaoAlvo}** NÃO tem Percepção!\n`;
+    mensagem += `✅ **FURTIVIDADE BEM-SUCEDIDA!**\n`;
+    mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será **CRÍTICO AUTOMÁTICO**!`;
+    
+    // Marca próximo ataque como crítico
+    await setDoc(doc(db, "game", "combate"), {
+      [`proximoCritico.${userEmail}`]: {
+        alvo: acaoAlvo,
+        atacante: userEmail,
+        timestamp: serverTimestamp(),
+      }
+    }, { merge: true });
+    
+  } else if (percepcaoAlvo >= 5) {
+    // 🟢 Alvo com Percepção nível 5 - atacante NÃO consegue
+    mensagem += `👁️ **${fichaAlvo?.nome || acaoAlvo}** tem PERCEPÇÃO NÍVEL 5!\n`;
+    mensagem += `❌ **FALHA!** O alvo percebeu sua movimentação!\n`;
+    mensagem += `🛡️ Você foi detectado! Nenhum efeito adicional.`;
+    
+  } else {
+    // 🟢 Testa contra Percepção do alvo
+    const ataqueFurtivo = total;
+    const defesaPercepcao = inteligenciaAlvo + percepcaoAlvo;
+    
+    mensagem += `🎯 Seu resultado: ${ataqueFurtivo}\n`;
+    mensagem += `👁️ Percepção do alvo: ${defesaPercepcao}\n\n`;
+    
+    if (ataqueFurtivo > defesaPercepcao) {
+      mensagem += `✅ **FURTIVIDADE BEM-SUCEDIDA!**\n`;
+      mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será **CRÍTICO AUTOMÁTICO**!`;
+      
+      await setDoc(doc(db, "game", "combate"), {
+        [`proximoCritico.${userEmail}`]: {
+          alvo: acaoAlvo,
+          atacante: userEmail,
+          timestamp: serverTimestamp(),
+        }
+      }, { merge: true });
+      
+    } else {
+      mensagem += `❌ **FURTIVIDADE FALHOU!**\n`;
+      mensagem += `👁️ O alvo está alerta. Nenhum efeito adicional.`;
+    }
+  }
+  
+  // Envia mensagem de furtividade
+  await addDoc(chatCol, {
+    userNick: fichaJogador?.nome || userNick,
+    userEmail: jogadorSelecionadoEmail,
+    type: "acao",
+    text: mensagem,
+    timestamp: serverTimestamp(),
+  });
+  
+  setAcaoOpen(false);
+  setRolagemEmAndamento(false);
+  // ... limpar estados ...
+  return;
+}
       
       // 2. Se não tem habilidade, verifica item
       if (tipoDanoAcao === "Nenhum" && acaoItem) {
@@ -1310,6 +1421,14 @@ if (acaoAtributo || acaoPericia) {
   await adicionarXpAtributoPericia(jogadorSelecionadoEmail, acaoAtributo, acaoPericia);
 }
 
+    // 🟢 CONQUISTAS
+    if (isCritico) {
+      window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'critico_perfeito' } }));
+    }
+    if (total > 50) {
+      window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'dano_massivo' } }));
+    }
+
 setAcaoOpen(false);
     } finally {
     setRolagemEmAndamento(false);
@@ -1324,6 +1443,8 @@ setAcaoOpen(false);
     setAcaoHabilidadeDado(0);
     setAcaoHabilidadeCustoPE(0);  // 🟢 ADICIONE
     setAcaoDebuffs([]);            // 🟢 ADICIONE
+    setAcaoBonusVariavelLista([]);  // 🟢 Limpa bônus
+    setAcaoValorDificuldade("");    // 🟢 Limpa VD
     setAcaoItemConsumivel(false);
     setAcaoConsumivelTipo("");
     setAcaoConsumivelValor(0);
@@ -1586,6 +1707,9 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   if (isErroCriticoDefensor) xpDefensor = 0;
   await adicionarXpAcao(alvo, xpDefensor);
   
+    // 🟢 CONQUISTA: Primeira Vitória
+    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'primeira_vitoria' } }));
+
   return { mensagem, isCriticoDefensor, isErroCriticoDefensor };
 }
 // 🟢 FUNÇÃO PARA APLICAR DANO COM EFEITOS REAIS DE TIPO DE DANO
@@ -1979,30 +2103,32 @@ useEffect(() => {
     {isMaster && (
       <FormControl size="small" sx={{ minWidth: 180, ml: 2 }}>
                 <Select
-          value={jogadorSelecionadoEmail === "mestre@reqviemrpg.com" ? "mestre" : jogadorSelecionadoEmail}
-                    onChange={(e) => {
-  const selectedEmail = e.target.value;
-      if (selectedEmail === "mestre") {
-    setFichaJogador(null);
-    setEnergiaAtual(0);
-    setJogadorSelecionadoEmail(null);
-    // Pequeno delay para garantir que o estado atualize
-    setTimeout(() => {
-      setJogadorSelecionadoEmail(userEmail);
-    }, 50);
-    setAcoesPendentes([]);
-    setAcaoModo("acao");
-    // 🟢 ATUALIZA O FICHASMAP PARA DISPARAR EVENTO
-    window.dispatchEvent(new CustomEvent('fichasMapUpdated', { detail: window.__fichasMapSocial || {} }));
-  } else {
-    const fichaData = fichasMap[selectedEmail];
-    if (fichaData) {
-      setFichaJogador(fichaData);
-      setEnergiaAtual(fichaData.pontosEnergia || 0);
-      setJogadorSelecionadoEmail(selectedEmail); // 🟢 SALVA O EMAIL DO JOGADOR
+  value={jogadorSelecionadoEmail === "mestre@reqviemrpg.com" ? "mestre" : jogadorSelecionadoEmail}
+  onChange={(e) => {
+    const selectedEmail = e.target.value;
+    if (selectedEmail === "mestre") {
+      setFichaJogador(null);
+      setEnergiaAtual(0);
+      setJogadorSelecionadoEmail(null);
+      setTimeout(() => {
+        setJogadorSelecionadoEmail(userEmail);
+        // 🟢 DISPARA EVENTO PARA A BOLSA
+        window.dispatchEvent(new CustomEvent('jogadorSelecionadoChat', { detail: userEmail }));
+      }, 50);
+      setAcoesPendentes([]);
+      setAcaoModo("acao");
+      window.dispatchEvent(new CustomEvent('fichasMapUpdated', { detail: window.__fichasMapSocial || {} }));
+    } else {
+      const fichaData = fichasMap[selectedEmail];
+      if (fichaData) {
+        setFichaJogador(fichaData);
+        setEnergiaAtual(fichaData.pontosEnergia || 0);
+        setJogadorSelecionadoEmail(selectedEmail);
+        // 🟢 DISPARA EVENTO PARA A BOLSA
+        window.dispatchEvent(new CustomEvent('jogadorSelecionadoChat', { detail: selectedEmail }));
+      }
     }
-  }
-}}
+  }}
           displayEmpty
           sx={{ 
             color: '#fff', 
@@ -2290,10 +2416,15 @@ useEffect(() => {
                         {m.text}
                       </Typography>
                     )}
-
-                                                            {m.type === "acao" && (
+{m.type === "acao" && (
   <Box>
-    <Typography sx={{ color: '#00bcd4', whiteSpace: 'pre-line', fontWeight: 'bold' }}>
+    <Typography sx={{ 
+      color: m.text?.includes('Furtividade') || m.text?.includes('furtividade') 
+        ? '#3b82f6' 
+        : '#00bcd4', 
+      whiteSpace: 'pre-line', 
+      fontWeight: 'bold' 
+    }}>
       {!isMaster && m.secretText ? m.secretText : m.text}
     </Typography>
     {/* 🟢 Mostra os dados rolados se existirem e não for secreto */}
@@ -2337,8 +2468,26 @@ useEffect(() => {
     )}
   </Box>
 )}
+{m.type === "evento" && (
+  <Box sx={{
+    bgcolor: '#1e1a3e',
+    border: '1px solid #ec4899',
+    borderRadius: 2,
+    p: 1.5,
+    animation: 'pulse 2s infinite',
+  }}>
+    <Typography sx={{ 
+      color: '#ec4899', 
+      whiteSpace: 'pre-line', 
+      fontWeight: 'bold',
+      fontStyle: 'italic',
+    }}>
+      {m.text}
+    </Typography>
+  </Box>
+)}
 
-                    {m.type === "text" && (
+{m.type === "text" && (
   <Typography sx={{ whiteSpace: 'pre-line' }}>
     {m.text}
     {m.edited && (
@@ -2628,7 +2777,7 @@ useEffect(() => {
           </Badge>
         </Fab>
       </Fade>
-            {/* 🟢 MODAL DE AÇÃO */}
+       {/* 🟢 MODAL DE AÇÃO - VERSÃO COMPLETA */}
       <Dialog 
         open={acaoOpen} 
         onClose={() => setAcaoOpen(false)}
@@ -2637,233 +2786,497 @@ useEffect(() => {
         PaperProps={{
           sx: {
             bgcolor: "#0f172a",
-            border: "1px solid #1e293b",
-            borderRadius: 2
+            border: "2px solid #9c27b0",
+            borderRadius: 3,
+            boxShadow: "0 0 30px rgba(156, 39, 176, 0.3)",
+            background: "linear-gradient(145deg, #0f172a, #1a1a2e)",
           }
         }}
       >
-        <DialogTitle sx={{ color: '#fff', display: 'flex', alignItems: 'center', gap: 1 }}>
-  <span style={{ fontSize: '1.5rem' }}>{acaoModo === "reacao" ? '🛡️' : '⚔️'}</span>
-  {acaoModo === "reacao" ? 'REAGIR' : 'Ação'} - {fichaJogador?.nome || userNick}
-  {acoesPendentes.length > 0 && acaoModo === "reacao" && (
-    <Typography variant="caption" sx={{ color: '#ef4444', ml: 2 }}>
-      Atacante: {fichasMap[acoesPendentes[0]?.atacante]?.nome || acoesPendentes[0]?.atacante}
-    </Typography>
-  )}
-</DialogTitle>
+        <DialogTitle sx={{ 
+          color: '#fff', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          borderBottom: '2px solid #9c27b0',
+          pb: 2,
+          background: 'linear-gradient(90deg, rgba(156,39,176,0.2), transparent)',
+        }}>
+          <span style={{ fontSize: '1.8rem' }}>{acaoModo === "reacao" ? '🛡️' : '⚔️'}</span>
+          <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#9c27b0' }}>
+            {acaoModo === "reacao" ? 'REAGIR' : 'AÇÃO'}
+          </Typography>
+          <Typography variant="subtitle1" sx={{ color: '#94a3b8', ml: 1 }}>
+            - {fichaJogador?.nome || userNick}
+          </Typography>
+          {acoesPendentes.length > 0 && acaoModo === "reacao" && (
+            <Chip 
+              label={`⚔️ ${fichasMap[acoesPendentes[0]?.atacante]?.nome || 'Atacante'}`}
+              size="small"
+              sx={{ 
+                bgcolor: '#ef4444', 
+                color: '#fff',
+                fontWeight: 'bold',
+                ml: 'auto',
+                animation: 'pulse 1.5s infinite'
+              }}
+            />
+          )}
+        </DialogTitle>
         
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
             
-            {/* Atributo */}
-            <FormControl fullWidth size="small">
-              <InputLabel sx={{ color: '#94a3b8' }}>Atributo</InputLabel>
-              <Select
-                value={acaoAtributo}
-                onChange={(e) => setAcaoAtributo(e.target.value)}
-                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-              >
-                <MenuItem value="">Nenhum</MenuItem>
-                {fichaJogador?.atributos && Object.entries(fichaJogador.atributos).map(([k, v]) => (
-                  <MenuItem key={k} value={k} disabled={v < 1}>
-                    {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {/* 🟢 TEXTO INFORMATIVO */}
+            <Box sx={{ 
+              p: 1.5, 
+              bgcolor: 'rgba(156, 39, 176, 0.1)', 
+              borderRadius: 2,
+              border: '1px solid rgba(156, 39, 176, 0.3)',
+              mb: 1
+            }}>
+              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                ℹ️ <strong style={{ color: '#9c27b0' }}>Atributo</strong> e 
+                <strong style={{ color: '#ff9800' }}> VD (Valor Mínimo para Sucesso)</strong> são obrigatórios.
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                Todos os demais campos são <strong style={{ color: '#4caf50' }}>opcionais</strong>.
+              </Typography>
+            </Box>
             
-            {/* Perícia */}
-            <FormControl fullWidth size="small">
-              <InputLabel sx={{ color: '#94a3b8' }}>Perícia</InputLabel>
-              <Select
-                value={acaoPericia}
-                onChange={(e) => setAcaoPericia(e.target.value)}
-                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-              >
-                <MenuItem value="">Nenhuma</MenuItem>
-                {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
-                  <MenuItem key={k} value={k} disabled={v < 1}>
-                    {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            {/* 🟢 Segunda Perícia (aparece se Aura = nível 5) */}
-{fichaJogador?.pericias?.aura >= 5 && acaoPericia && (
+ {/* Atributo */}
+<FormControl fullWidth size="small">
+  <InputLabel sx={{ color: '#94a3b8', '&.Mui-focused': { color: '#9c27b0' } }}>Atributo</InputLabel>
+  <Select
+    value={acaoAtributo}
+    onChange={(e) => setAcaoAtributo(e.target.value)}
+    sx={{ 
+      color: '#fff', 
+      bgcolor: '#1a1a2e',
+      borderRadius: 2,
+      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155', transition: 'border-color 0.3s' },
+      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#9c27b0' },
+      '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#9c27b0', borderWidth: 2 },
+      '& .MuiSelect-icon': { color: '#9c27b0' },
+      transition: 'all 0.3s',
+    }}
+    MenuProps={{
+      PaperProps: { 
+        sx: { 
+          bgcolor: "#1a1a2e", 
+          color: "#fff",
+          borderRadius: 2,
+          border: '1px solid #9c27b0',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+          mt: 1,
+          '& .MuiMenuItem-root': {
+            color: '#94a3b8',
+            transition: 'all 0.2s',
+            '&:hover': { bgcolor: 'rgba(156,39,176,0.2)', color: '#fff' },
+            '&.Mui-selected': { bgcolor: 'rgba(156,39,176,0.3)', color: '#9c27b0', fontWeight: 'bold' },
+            '&.Mui-disabled': { color: '#4caf50', fontWeight: 'bold', opacity: 1 }
+          }
+        } 
+      },
+      anchorOrigin: { vertical: "bottom", horizontal: "left" },
+      transformOrigin: { vertical: "top", horizontal: "left" },
+    }}
+  >
+    <MenuItem value="">Nenhum</MenuItem>
+    {fichaJogador?.atributos && Object.entries(fichaJogador.atributos).map(([k, v]) => (
+      <MenuItem key={k} value={k} disabled={v <= 0}>
+        {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
+{/* Perícia */}
+<FormControl fullWidth size="small">
+  <InputLabel sx={{ color: '#94a3b8', '&.Mui-focused': { color: '#00e0ff' } }}>Perícia</InputLabel>
+  <Select
+    value={acaoPericia}
+    onChange={(e) => setAcaoPericia(e.target.value)}
+    sx={{ 
+      color: '#fff', 
+      bgcolor: '#1a1a2e',
+      borderRadius: 2,
+      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155', transition: 'border-color 0.3s' },
+      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#00e0ff' },
+      '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#00e0ff', borderWidth: 2 },
+      '& .MuiSelect-icon': { color: '#00e0ff' },
+      transition: 'all 0.3s',
+    }}
+    MenuProps={{
+      PaperProps: { 
+        sx: { 
+          bgcolor: "#1a1a2e", 
+          color: "#fff",
+          borderRadius: 2,
+          border: '1px solid #00e0ff',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+          mt: 1,
+          '& .MuiMenuItem-root': {
+            color: '#94a3b8',
+            transition: 'all 0.2s',
+            '&:hover': { bgcolor: 'rgba(0,224,255,0.2)', color: '#fff' },
+            '&.Mui-selected': { bgcolor: 'rgba(0,224,255,0.3)', color: '#00e0ff', fontWeight: 'bold' },
+            '&.Mui-disabled': { color: '#4caf50', fontWeight: 'bold', opacity: 1 }
+          }
+        } 
+      },
+      anchorOrigin: { vertical: "bottom", horizontal: "left" },
+      transformOrigin: { vertical: "top", horizontal: "left" },
+    }}
+  >
+    <MenuItem value="">Nenhuma</MenuItem>
+    {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
+      <MenuItem key={k} value={k} disabled={v <= 0}>
+        {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
+{/* 🟢 Segunda Perícia (aparece se Aura = nível 5 E perícia principal for Aura) */}
+{fichaJogador?.pericias?.aura >= 5 && acaoPericia === "aura" && (
   <FormControl fullWidth size="small">
-    <InputLabel sx={{ color: '#94a3b8' }}>Segunda Perícia (Aura Nv.5)</InputLabel>
+    <InputLabel sx={{ color: '#94a3b8', '&.Mui-focused': { color: '#ffd700' } }}>Segunda Perícia (Aura Nv.5)</InputLabel>
     <Select
       value={acaoPericia2}
       onChange={(e) => setAcaoPericia2(e.target.value)}
-      sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
+      sx={{ 
+        color: '#fff', 
+        bgcolor: '#1a1a2e',
+        borderRadius: 2,
+        border: '1px solid rgba(255,215,0,0.3)',
+        '& .MuiOutlinedInput-notchedOutline': { borderColor: '#ffd70044', transition: 'border-color 0.3s' },
+        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#ffd700' },
+        '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#ffd700', borderWidth: 2 },
+        '& .MuiSelect-icon': { color: '#ffd700' },
+        transition: 'all 0.3s',
+      }}
+      MenuProps={{
+        PaperProps: { 
+          sx: { 
+            bgcolor: "#1a1a2e", 
+            color: "#fff",
+            borderRadius: 2,
+            border: '1px solid #ffd700',
+            boxShadow: '0 8px 30px rgba(255,215,0,0.2)',
+            mt: 1,
+            '& .MuiMenuItem-root': {
+              color: '#94a3b8',
+              transition: 'all 0.2s',
+              '&:hover': { bgcolor: 'rgba(255,215,0,0.2)', color: '#fff' },
+              '&.Mui-selected': { bgcolor: 'rgba(255,215,0,0.3)', color: '#ffd700', fontWeight: 'bold' }
+            }
+          } 
+        },
+        anchorOrigin: { vertical: "bottom", horizontal: "left" },
+        transformOrigin: { vertical: "top", horizontal: "left" },
+      }}
     >
       <MenuItem value="">Nenhuma</MenuItem>
-      {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
-        <MenuItem key={k} value={k} disabled={v < 1 || k === acaoPericia}>
-          {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
-        </MenuItem>
-      ))}
+    {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
+      <MenuItem key={k} value={k} disabled={v <= 0 || k === acaoPericia}>
+        {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+      </MenuItem>
+    ))}
     </Select>
   </FormControl>
 )}
-            
-            {/* Item */}
-            <FormControl fullWidth size="small">
-              <InputLabel sx={{ color: '#94a3b8' }}>Item</InputLabel>
-              <Select
-                value={acaoItem}
-                                onChange={(e) => {
-                  setAcaoItem(e.target.value);
-                  const todosItens = [
-                    ...(fichaJogador?.equipamentos || []),
-                    ...(fichaJogador?.vestes || []),
-                    ...(fichaJogador?.diversos || [])
-                  ];
-                  const itemEncontrado = todosItens.find(it => it.nome === e.target.value);
-                  setAcaoItemDado(itemEncontrado?.dado || 0);
-                  
-                  // 🟢 Verificar se é consumível
-                  if (itemEncontrado?.consumivel && itemEncontrado.consumivel !== "Nenhum") {
-                    setAcaoItemConsumivel(true);
-                    setAcaoConsumivelTipo(itemEncontrado.consumivel);
-                    setAcaoConsumivelValor(itemEncontrado.consumivelValor || 0);
-                    setAcaoConsumivelPercentual(itemEncontrado.consumivelPercentual || 100);
-                    setAcaoItemDado(0); // Consumível não adiciona dado
-                    setAcaoTipo(""); // Remove dano
-                  } else {
-                    setAcaoItemConsumivel(false);
-                    setAcaoConsumivelTipo("");
-                    setAcaoConsumivelValor(0);
-                    setAcaoConsumivelPercentual(100);
-                  }
-                }}
-                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-              >
-                <MenuItem value="">Nenhum</MenuItem>
-                {[
-                  ...(fichaJogador?.equipamentos || []).map(it => it.nome),
-                  ...(fichaJogador?.vestes || []).map(it => it.nome),
-                  ...(fichaJogador?.diversos || []).map(it => it.nome)
-                ].filter(n => n).map((nome, i) => (
-                  <MenuItem key={i} value={nome}>{nome}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-                                 {/* 🟢 SELEÇÃO DE ALVO (apenas modo ação normal) */}
-            {acaoModo === "acao" && (
-              <FormControl fullWidth size="small">
-                <InputLabel sx={{ color: '#94a3b8' }}>🎯 Alvo (opcional)</InputLabel>
-                <Select
-                  value={acaoAlvo}
-                  onChange={(e) => setAcaoAlvo(e.target.value)}
-                  sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-                  MenuProps={{
-                    container: document.body,
-                    PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 400 } },
-                    anchorOrigin: { vertical: "bottom", horizontal: "left" },
-                    transformOrigin: { vertical: "top", horizontal: "left" },
-                  }}
-                >
-                  <MenuItem value="">Nenhum (ação livre)</MenuItem>
-                  
-                  <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
-                    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-                      ── PERSONAGENS DO JOGADOR ──
-                    </Typography>
-                  </MenuItem>
-                  
-                  {Object.entries(fichasMap)
-                    .filter(([email, data]) => email !== userEmail && (data.tipoFicha || "PJ") === "PJ")
-                    .map(([email, data]) => {
-                      const corAura = CORES_AURA_CHAT[data.tipoAura] || '#4caf50';
-                      return (
-                        <MenuItem key={email} value={email} sx={{ pl: 3 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: corAura }} />
-                            <Typography sx={{ color: corAura, fontSize: '0.85rem' }}>
-                              {data.nome || email}
-                            </Typography>
-                          </Box>
-                        </MenuItem>
-                      );
-                    })}
-                  
-                  {Object.entries(fichasMap).some(([email, data]) => email !== userEmail && data.tipoFicha === "PM") && (
-                    <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
-                      <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
-                        ── PERSONAGENS DO MESTRE ──
-                      </Typography>
-                    </MenuItem>
-                  )}
-                  
-                  {Object.entries(fichasMap)
-                    .filter(([email, data]) => email !== userEmail && data.tipoFicha === "PM")
-                    .map(([email, data]) => {
-                      const corAura = CORES_AURA_CHAT[data.tipoAura] || '#ff9800';
-                      return (
-                        <MenuItem key={email} value={email} sx={{ pl: 3 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: corAura }} />
-                            <Typography sx={{ color: corAura, fontSize: '0.85rem' }}>
-                              {data.nome || email}
-                            </Typography>
-                          </Box>
-                        </MenuItem>
-                      );
-                    })}
-                </Select>
-              </FormControl>
-            )}
-{/* 🟢 TIPO DE AÇÃO (CHECKBOX) */}
-{acaoModo === "acao" && (
-  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-    <FormControlLabel
-      control={
-        <Checkbox
-          checked={acaoTipo === "dano"}
-          onChange={() => setAcaoTipo(acaoTipo === "dano" ? "" : "dano")}
-          sx={{ color: '#ef4444' }}
-        />
+{/* Item */}
+<FormControl fullWidth size="small">
+  <InputLabel sx={{ color: '#94a3b8', '&.Mui-focused': { color: '#ff9800' } }}>Item</InputLabel>
+  <Select
+    value={acaoItem}
+    onChange={(e) => {
+      setAcaoItem(e.target.value);
+      const todosItens = [
+        ...(fichaJogador?.equipamentos || []),
+        ...(fichaJogador?.vestes || []),
+        ...(fichaJogador?.diversos || [])
+      ];
+      const itemEncontrado = todosItens.find(it => it.nome === e.target.value);
+      setAcaoItemDado(itemEncontrado?.dado || 0);
+      
+      if (itemEncontrado?.consumivel && itemEncontrado.consumivel !== "Nenhum") {
+        setAcaoItemConsumivel(true);
+        setAcaoConsumivelTipo(itemEncontrado.consumivel);
+        setAcaoConsumivelValor(itemEncontrado.consumivelValor || 0);
+        setAcaoConsumivelPercentual(itemEncontrado.consumivelPercentual || 100);
+        setAcaoItemDado(0);
+        setAcaoTipo("");
+      } else {
+        setAcaoItemConsumivel(false);
+        setAcaoConsumivelTipo("");
+        setAcaoConsumivelValor(0);
+        setAcaoConsumivelPercentual(100);
       }
-      label="☠️ Dano"
-      sx={{ color: '#fff' }}
-    />
-  </Box>
+    }}
+    sx={{ 
+      color: '#fff', 
+      bgcolor: '#1a1a2e',
+      borderRadius: 2,
+      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155', transition: 'border-color 0.3s' },
+      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' },
+      '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800', borderWidth: 2 },
+      '& .MuiSelect-icon': { color: '#ff9800' },
+      transition: 'all 0.3s',
+    }}
+    MenuProps={{
+      PaperProps: { 
+        sx: { 
+          bgcolor: "#1a1a2e", 
+          color: "#fff",
+          borderRadius: 2,
+          border: '1px solid #ff9800',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+          mt: 1,
+          maxHeight: 400,
+          '& .MuiMenuItem-root': {
+            color: '#94a3b8',
+            transition: 'all 0.2s',
+            '&:hover': { bgcolor: 'rgba(255,152,0,0.2)', color: '#fff' },
+            '&.Mui-selected': { bgcolor: 'rgba(255,152,0,0.3)', color: '#ff9800', fontWeight: 'bold' },
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 0.5,
+            padding: '8px 16px',
+          }
+        } 
+      },
+      anchorOrigin: { vertical: "bottom", horizontal: "left" },
+      transformOrigin: { vertical: "top", horizontal: "left" },
+    }}
+    renderValue={(selected) => {
+      const todosItens = [
+        ...(fichaJogador?.equipamentos || []),
+        ...(fichaJogador?.vestes || []),
+        ...(fichaJogador?.diversos || [])
+      ];
+      const item = todosItens.find(it => it.nome === selected);
+      if (!item) return <Typography sx={{ color: '#94a3b8' }}>{selected}</Typography>;
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>{item.nome}</Typography>
+          <Chip label={`🎲${item.dado || 1}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 20, fontSize: '0.6rem' }} />
+          <Chip label={`🔧${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ff9800', height: 20, fontSize: '0.6rem' }} />
+          {item.tipoDano && item.tipoDano !== "Nenhum" && (
+            <Chip label={`🗡️${item.tipoDano}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ef4444', height: 20, fontSize: '0.6rem' }} />
+          )}
+          {item.consumivel && item.consumivel !== "Nenhum" && (
+            <Chip label={`🧪${item.consumivel}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#4caf50', height: 20, fontSize: '0.6rem' }} />
+          )}
+        </Box>
+      );
+    }}
+  >
+    <MenuItem value="">Nenhum</MenuItem>
+    {[
+      ...(fichaJogador?.equipamentos || []).map(it => ({ ...it, categoria: 'equipamentos' })),
+      ...(fichaJogador?.vestes || []).map(it => ({ ...it, categoria: 'vestes' })),
+      ...(fichaJogador?.diversos || []).map(it => ({ ...it, categoria: 'diversos' }))
+    ].filter(n => n.nome).map((item, i) => (
+      <MenuItem key={i} value={item.nome}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>{item.nome}</Typography>
+            <Chip label={`🎲${item.dado || 1}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 18, fontSize: '0.55rem' }} />
+            <Chip label={`🔧${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ff9800', height: 18, fontSize: '0.55rem' }} />
+            {item.tipoDano && item.tipoDano !== "Nenhum" && (
+              <Chip label={`🗡️${item.tipoDano}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ef4444', height: 18, fontSize: '0.55rem' }} />
+            )}
+            {item.consumivel && item.consumivel !== "Nenhum" && (
+              <Chip label={`🧪${item.consumivel}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#4caf50', height: 18, fontSize: '0.55rem' }} />
+            )}
+          </Box>
+          <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.6rem' }}>
+            [{item.categoria}] {item.quantidade > 1 ? `Qtd: ${item.quantidade}` : ''}
+          </Typography>
+        </Box>
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
+{/* 🟢 SELEÇÃO DE ALVO */}
+{acaoModo === "acao" && (
+  <FormControl fullWidth size="small">
+    <InputLabel sx={{ color: '#94a3b8', '&.Mui-focused': { color: '#4caf50' } }}>🎯 Alvo</InputLabel>
+    <Select
+      value={acaoAlvo}
+      onChange={(e) => setAcaoAlvo(e.target.value)}
+      sx={{ 
+        color: '#fff', 
+        bgcolor: '#1a1a2e',
+        borderRadius: 2,
+        '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155', transition: 'border-color 0.3s' },
+        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#4caf50' },
+        '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#4caf50', borderWidth: 2 },
+        '& .MuiSelect-icon': { color: '#4caf50' },
+        transition: 'all 0.3s',
+      }}
+      MenuProps={{
+        container: document.body,
+        PaperProps: { 
+          sx: { 
+            bgcolor: "#1a1a2e", 
+            color: "#fff",
+            borderRadius: 2,
+            border: '1px solid #4caf50',
+            boxShadow: '0 8px 30px rgba(76,175,80,0.3)',
+            mt: 1,
+            maxHeight: 400,
+            '& .MuiMenuItem-root': {
+              color: '#94a3b8',
+              transition: 'all 0.2s',
+              '&:hover': { bgcolor: 'rgba(76,175,80,0.2)', color: '#fff' },
+              '&.Mui-selected': { bgcolor: 'rgba(76,175,80,0.3)', color: '#4caf50', fontWeight: 'bold' },
+              '&.Mui-disabled': { opacity: 1, cursor: 'default' }
+            }
+          } 
+        },
+        anchorOrigin: { vertical: "bottom", horizontal: "left" },
+        transformOrigin: { vertical: "top", horizontal: "left" },
+      }}
+    >
+      <MenuItem value="">Nenhum (ação livre)</MenuItem>
+      
+      <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+        <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+          ── PERSONAGENS DO JOGADOR ──
+        </Typography>
+      </MenuItem>
+      
+      {Object.entries(fichasMap)
+        .filter(([email, data]) => email !== userEmail && (data.tipoFicha || "PJ") === "PJ")
+        .map(([email, data]) => {
+          const corAura = CORES_AURA_CHAT[data.tipoAura] || '#4caf50';
+          return (
+            <MenuItem key={email} value={email} sx={{ pl: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: corAura, boxShadow: `0 0 8px ${corAura}` }} />
+                <Typography sx={{ color: corAura, fontSize: '0.85rem', fontWeight: 'bold' }}>
+                  {data.nome || email}
+                </Typography>
+                {data.tipoAura && (
+                  <Chip label={data.tipoAura} size="small" sx={{ bgcolor: `${corAura}22`, color: corAura, height: 18, fontSize: '0.55rem' }} />
+                )}
+              </Box>
+            </MenuItem>
+          );
+        })}
+      
+      {Object.entries(fichasMap).some(([email, data]) => email !== userEmail && data.tipoFicha === "PM") && (
+        <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
+          <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+            ── PERSONAGENS DO MESTRE ──
+          </Typography>
+        </MenuItem>
+      )}
+      
+      {Object.entries(fichasMap)
+        .filter(([email, data]) => email !== userEmail && data.tipoFicha === "PM")
+        .map(([email, data]) => {
+          const corAura = CORES_AURA_CHAT[data.tipoAura] || '#ff9800';
+          return (
+            <MenuItem key={email} value={email} sx={{ pl: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: corAura, boxShadow: `0 0 8px ${corAura}` }} />
+                <Typography sx={{ color: corAura, fontSize: '0.85rem', fontWeight: 'bold' }}>
+                  {data.nome || email}
+                </Typography>
+                {data.tipoAura && (
+                  <Chip label={data.tipoAura} size="small" sx={{ bgcolor: `${corAura}22`, color: corAura, height: 18, fontSize: '0.55rem' }} />
+                )}
+              </Box>
+            </MenuItem>
+          );
+        })}
+    </Select>
+  </FormControl>
 )}
+            {/* 🟢 TIPO DE AÇÃO */}
+            {acaoModo === "acao" && (
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={acaoTipo === "dano"}
+                      onChange={() => setAcaoTipo(acaoTipo === "dano" ? "" : "dano")}
+                      sx={{ color: '#ef4444' }}
+                    />
+                  }
+                  label="☠️ Dano"
+                  sx={{ color: '#fff' }}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={acaoTipo === "furtividade"}
+                      onChange={() => {
+                        if (acaoTipo === "furtividade") {
+                          setAcaoTipo("");
+                        } else {
+                          const agilidade = fichaJogador?.atributos?.agilidade || 0;
+                          const furtividade = fichaJogador?.pericias?.furtividade || 0;
+                          
+                          if (agilidade < 1) {
+                            alert("❌ Você precisa de pelo menos 1 ponto em AGILIDADE para usar Furtividade!");
+                            return;
+                          }
+                          if (furtividade < 1) {
+                            alert("❌ Você precisa de pelo menos 1 ponto em FURTIVIDADE para usar Furtividade!");
+                            return;
+                          }
+                          
+                          setAcaoAtributo("agilidade");
+                          setAcaoPericia("furtividade");
+                          setAcaoPericia2("");
+                          setAcaoTipo("furtividade");
+                        }
+                      }}
+                      sx={{ color: '#3b82f6' }}
+                    />
+                  }
+                  label="🥷 Furtividade"
+                  sx={{ color: '#fff' }}
+                />
+              </Box>
+            )}
 
-{/* 🟢 TIPO DE REAÇÃO (apenas modo reação) */}
-{acaoModo === "reacao" && (
-  <Box sx={{ p: 2, bgcolor: '#1a1a2e', borderRadius: 1, border: '1px solid #ef4444' }}>
-    <Typography variant="subtitle2" sx={{ color: '#ef4444', mb: 1 }}>
-      ⚠️ Você está sob ataque! Escolha sua reação:
-    </Typography>
-    <Box sx={{ display: 'flex', gap: 2 }}>
-      <FormControlLabel
-        control={
-          <Checkbox
-            checked={acaoTipo === "esquiva"}
-            onChange={() => setAcaoTipo(acaoTipo === "esquiva" ? "" : "esquiva")}
-            sx={{ color: '#4caf50' }}
-          />
-        }
-        label="🛡️ Esquiva"
-        sx={{ color: '#fff' }}
-      />
-      <FormControlLabel
-        control={
-          <Checkbox
-            checked={acaoTipo === "contragolpe"}
-            onChange={() => setAcaoTipo(acaoTipo === "contragolpe" ? "" : "contragolpe")}
-            sx={{ color: '#ff9800' }}
-          />
-        }
-        label="⚔️ Contragolpe"
-        sx={{ color: '#fff' }}
-      />
-    </Box>
-  </Box>
-)}
+            {/* 🟢 TIPO DE REAÇÃO */}
+            {acaoModo === "reacao" && (
+              <Box sx={{ p: 2, bgcolor: '#1a1a2e', borderRadius: 1, border: '1px solid #ef4444' }}>
+                <Typography variant="subtitle2" sx={{ color: '#ef4444', mb: 1 }}>
+                  ⚠️ Você está sob ataque! Escolha sua reação:
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={acaoTipo === "esquiva"}
+                        onChange={() => setAcaoTipo(acaoTipo === "esquiva" ? "" : "esquiva")}
+                        sx={{ color: '#4caf50' }}
+                      />
+                    }
+                    label="🛡️ Esquiva"
+                    sx={{ color: '#fff' }}
+                  />
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={acaoTipo === "contragolpe"}
+                        onChange={() => setAcaoTipo(acaoTipo === "contragolpe" ? "" : "contragolpe")}
+                        sx={{ color: '#ff9800' }}
+                      />
+                    }
+                    label="⚔️ Contragolpe"
+                    sx={{ color: '#fff' }}
+                  />
+                </Box>
+              </Box>
+            )}
             
             {/* Casting */}
             <TextField
@@ -2900,146 +3313,283 @@ useEffect(() => {
               FormHelperTextProps={{ sx: { color: '#64748b' } }}
             />
             
-                        {/* 🟢 HABILIDADE (SUBSTITUI VARIÁVEL DE HABILIDADE) */}
-            <FormControl fullWidth size="small">
-              <InputLabel sx={{ color: '#94a3b8' }}>Habilidade</InputLabel>
-              <Select
-                value={acaoHabilidadeSelecionada}
-                onChange={(e) => {
-  const nomeHabilidade = e.target.value;
-  setAcaoHabilidadeSelecionada(nomeHabilidade);
-  
-  // Busca o dado E o custo de PE da habilidade selecionada
-  if (nomeHabilidade && fichaJogador?.habilidades) {
-    const hab = fichaJogador.habilidades.find(h => h.nome === nomeHabilidade);
-    setAcaoHabilidadeDado(hab?.dado || 0);
-    setAcaoHabilidadeCustoPE(hab?.custoPE || 0); // 🟢 Custo de PE
-  } else {
-    setAcaoHabilidadeDado(0);
-    setAcaoHabilidadeCustoPE(0);
-  }
-}}
-                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-              >
-                <MenuItem value="">Nenhuma</MenuItem>
-                {fichaJogador?.habilidades?.map((hab, i) => (
-                  <MenuItem key={i} value={hab.nome} disabled={!hab.nome}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ color: '#fff' }}>
-                        {hab.nome || `Habilidade ${i + 1}`}
-                      </Typography>
-                      <Chip 
-                        label={`d${hab.dado || 1}`} 
-                        size="small" 
-                        sx={{ 
-                          bgcolor: '#1e3a5f', 
-                          color: '#00e0ff',
-                          fontSize: '0.7rem',
-                          height: 20,
-                        }} 
-                      />
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+ {/* Habilidade */}
+<FormControl fullWidth size="small">
+  <InputLabel sx={{ color: '#94a3b8', '&.Mui-focused': { color: '#a855f7' } }}>Habilidade</InputLabel>
+  <Select
+    value={acaoHabilidadeSelecionada}
+    onChange={(e) => {
+      const nomeHabilidade = e.target.value;
+      setAcaoHabilidadeSelecionada(nomeHabilidade);
+      
+      if (nomeHabilidade && fichaJogador?.habilidades) {
+        const hab = fichaJogador.habilidades.find(h => h.nome === nomeHabilidade);
+        setAcaoHabilidadeDado(hab?.dado || 0);
+        setAcaoHabilidadeCustoPE(hab?.custoPE || 0);
+      } else {
+        setAcaoHabilidadeDado(0);
+        setAcaoHabilidadeCustoPE(0);
+      }
+    }}
+    sx={{ 
+      color: '#fff', 
+      bgcolor: '#1a1a2e',
+      borderRadius: 2,
+      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155', transition: 'border-color 0.3s' },
+      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#a855f7' },
+      '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#a855f7', borderWidth: 2 },
+      '& .MuiSelect-icon': { color: '#a855f7' },
+      transition: 'all 0.3s',
+    }}
+    MenuProps={{
+      PaperProps: { 
+        sx: { 
+          bgcolor: "#1a1a2e", 
+          color: "#fff",
+          borderRadius: 2,
+          border: '1px solid #a855f7',
+          boxShadow: '0 8px 30px rgba(168,85,247,0.3)',
+          mt: 1,
+          maxHeight: 400,
+          '& .MuiMenuItem-root': {
+            color: '#94a3b8',
+            transition: 'all 0.2s',
+            '&:hover': { bgcolor: 'rgba(168,85,247,0.2)', color: '#fff' },
+            '&.Mui-selected': { bgcolor: 'rgba(168,85,247,0.3)', color: '#a855f7', fontWeight: 'bold' },
+          }
+        } 
+      },
+      anchorOrigin: { vertical: "bottom", horizontal: "left" },
+      transformOrigin: { vertical: "top", horizontal: "left" },
+    }}
+    renderValue={(selected) => {
+      if (!selected) return <Typography sx={{ color: '#94a3b8' }}>Nenhuma</Typography>;
+      const hab = fichaJogador?.habilidades?.find(h => h.nome === selected);
+      if (!hab) return <Typography sx={{ color: '#fff' }}>{selected}</Typography>;
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>{hab.nome}</Typography>
+          <Chip label={`🎲${hab.dado || 1}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 20, fontSize: '0.6rem' }} />
+          {hab.custoPE > 0 && (
+            <Chip label={`⚡${hab.custoPE} PE`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#facc15', height: 20, fontSize: '0.6rem' }} />
+          )}
+        </Box>
+      );
+    }}
+  >
+    <MenuItem value="">Nenhuma</MenuItem>
+    {fichaJogador?.habilidades?.map((hab, i) => (
+      <MenuItem key={i} value={hab.nome} disabled={!hab.nome}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+          <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>{hab.nome || `Habilidade ${i + 1}`}</Typography>
+          <Chip label={`🎲${hab.dado || 1}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 18, fontSize: '0.55rem' }} />
+          {hab.custoPE > 0 && (
+            <Chip label={`⚡${hab.custoPE} PE`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#facc15', height: 18, fontSize: '0.55rem' }} />
+          )}
+          {hab.tipoDano && hab.tipoDano !== "Nenhum" && (
+            <Chip label={`🗡️${hab.tipoDano}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ef4444', height: 18, fontSize: '0.55rem' }} />
+          )}
+        </Box>
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
+            
             {acaoHabilidadeSelecionada && (
-  <Box>
-    <Typography variant="caption" sx={{ color: '#00e0ff', display: 'block' }}>
-      ⚡ Dado da habilidade: <strong>+{acaoHabilidadeDado}d10</strong>
-    </Typography>
-    {acaoHabilidadeCustoPE > 0 && (
-      <Typography variant="caption" sx={{ color: '#facc15', display: 'block' }}>
-        💛 Custo de PE: <strong>{acaoHabilidadeCustoPE} PE</strong>
-      </Typography>
-    )}
-  </Box>
-)}
-            {/* 🟢 DEBUFFS (valores a subtrair do dado final) */}
-<Paper sx={{ p: 2, bgcolor: '#1a1a2e', border: '1px solid #ef4444' }}>
-  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-    <Typography variant="subtitle2" sx={{ color: '#ef4444' }}>
-      🔻 Debuffs (valores subtraídos do resultado final)
-    </Typography>
-    <Button
-      size="small"
-      variant="outlined"
-      onClick={() => setAcaoDebuffs([...acaoDebuffs, { id: Date.now(), valor: 1 }])}
-      sx={{ 
-        color: '#ef4444', 
-        borderColor: '#ef4444',
-        fontSize: '0.65rem',
-        minWidth: 'auto',
-        px: 1
-      }}
-    >
-      + Adicionar
-    </Button>
-  </Box>
-  
-  {acaoDebuffs.length === 0 && (
-    <Typography variant="caption" sx={{ color: '#64748b' }}>
-      Nenhum debuff. Clique em "+ Adicionar" se houver penalidades.
-    </Typography>
-  )}
-  
-  {acaoDebuffs.map((debuff, idx) => (
-    <Box key={debuff.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-      <Typography variant="caption" sx={{ color: '#ef4444', minWidth: 60 }}>
-        Debuff {idx + 1}:
-      </Typography>
-      <TextField
-        size="small"
-        type="number"
-        value={debuff.valor}
-        onChange={(e) => {
-          const val = Math.min(100, Math.max(1, Number(e.target.value) || 1));
-          const novos = [...acaoDebuffs];
-          novos[idx] = { ...novos[idx], valor: val };
-          setAcaoDebuffs(novos);
-        }}
-        InputProps={{ 
-          inputProps: { min: 1, max: 100 },
-          sx: { color: '#ef4444', fontSize: '0.8rem' }
-        }}
-        sx={{ 
-          width: 70, 
-          bgcolor: '#0f172a',
-          '& input': { textAlign: 'center' }
-        }}
-      />
-      <Typography variant="caption" sx={{ color: '#64748b' }}>
-        (-{debuff.valor})
-      </Typography>
-      <IconButton 
-        size="small" 
-        onClick={() => setAcaoDebuffs(acaoDebuffs.filter((_, i) => i !== idx))}
-        sx={{ color: '#ef4444', ml: 'auto' }}
-      >
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Box>
-  ))}
-  
-  {acaoDebuffs.length > 0 && (
-    <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 1, fontWeight: 'bold' }}>
-      🔻 Total de penalidade: -{acaoDebuffs.reduce((soma, d) => soma + d.valor, 0)}
-    </Typography>
-  )}
-</Paper>
-                        {/* 🟢 CONFIGURAÇÃO DE CONSUMÍVEL (aparece se item for consumível) */}
+              <Box>
+                <Typography variant="caption" sx={{ color: '#00e0ff', display: 'block' }}>
+                  ⚡ Dado da habilidade: <strong>+{acaoHabilidadeDado}d10</strong>
+                </Typography>
+                {acaoHabilidadeCustoPE > 0 && (
+                  <Typography variant="caption" sx={{ color: '#facc15', display: 'block' }}>
+                    💛 Custo de PE: <strong>{acaoHabilidadeCustoPE} PE</strong>
+                  </Typography>
+                )}
+              </Box>
+            )}
+            
+            {/* Debuffs */}
+            <Paper sx={{ p: 2, bgcolor: '#1a1a2e', border: '1px solid #ef4444' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ color: '#ef4444' }}>
+                  🔻 Debuffs
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setAcaoDebuffs([...acaoDebuffs, { id: Date.now(), valor: 1 }])}
+                  sx={{ 
+                    color: '#ef4444', 
+                    borderColor: '#ef4444',
+                    fontSize: '0.65rem',
+                    minWidth: 'auto',
+                    px: 1
+                  }}
+                >
+                  + Adicionar
+                </Button>
+              </Box>
+              
+              {acaoDebuffs.length === 0 && (
+                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                  Nenhum debuff.
+                </Typography>
+              )}
+              
+              {acaoDebuffs.map((debuff, idx) => (
+                <Box key={debuff.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Typography variant="caption" sx={{ color: '#ef4444', minWidth: 60 }}>
+                    Debuff {idx + 1}:
+                  </Typography>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={debuff.valor}
+                    onChange={(e) => {
+                      const val = Math.min(100, Math.max(1, Number(e.target.value) || 1));
+                      const novos = [...acaoDebuffs];
+                      novos[idx] = { ...novos[idx], valor: val };
+                      setAcaoDebuffs(novos);
+                    }}
+                    InputProps={{ 
+                      inputProps: { min: 1, max: 100 },
+                      sx: { color: '#ef4444', fontSize: '0.8rem' }
+                    }}
+                    sx={{ 
+                      width: 70, 
+                      bgcolor: '#0f172a',
+                      '& input': { textAlign: 'center' }
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    (-{debuff.valor})
+                  </Typography>
+                  <IconButton 
+                    size="small" 
+                    onClick={() => setAcaoDebuffs(acaoDebuffs.filter((_, i) => i !== idx))}
+                    sx={{ color: '#ef4444', ml: 'auto' }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              ))}
+              
+              {acaoDebuffs.length > 0 && (
+                <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 1, fontWeight: 'bold' }}>
+                  🔻 Total: -{acaoDebuffs.reduce((soma, d) => soma + d.valor, 0)}
+                </Typography>
+              )}
+            </Paper>
+            
+            {/* Bônus */}
+            <Paper sx={{ p: 2, bgcolor: '#1a1a2e', border: '1px solid #4caf50' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ color: '#4caf50' }}>
+                  🟢 Bônus
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setAcaoBonusVariavelLista([...acaoBonusVariavelLista, { id: Date.now(), valor: 1 }])}
+                  sx={{ 
+                    color: '#4caf50', 
+                    borderColor: '#4caf50',
+                    fontSize: '0.65rem',
+                    minWidth: 'auto',
+                    px: 1
+                  }}
+                >
+                  + Adicionar
+                </Button>
+              </Box>
+              
+              {acaoBonusVariavelLista.length === 0 && (
+                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                  Nenhum bônus.
+                </Typography>
+              )}
+              
+              {acaoBonusVariavelLista.map((bonus, idx) => (
+                <Box key={bonus.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Typography variant="caption" sx={{ color: '#4caf50', minWidth: 60 }}>
+                    Bônus {idx + 1}:
+                  </Typography>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={bonus.valor}
+                    onChange={(e) => {
+                      const val = Math.min(100, Math.max(1, Number(e.target.value) || 1));
+                      const novos = [...acaoBonusVariavelLista];
+                      novos[idx] = { ...novos[idx], valor: val };
+                      setAcaoBonusVariavelLista(novos);
+                    }}
+                    InputProps={{ 
+                      inputProps: { min: 1, max: 100 },
+                      sx: { color: '#4caf50', fontSize: '0.8rem' }
+                    }}
+                    sx={{ 
+                      width: 70, 
+                      bgcolor: '#0f172a',
+                      '& input': { textAlign: 'center' }
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    (+{bonus.valor})
+                  </Typography>
+                  <IconButton 
+                    size="small" 
+                    onClick={() => setAcaoBonusVariavelLista(acaoBonusVariavelLista.filter((_, i) => i !== idx))}
+                    sx={{ color: '#4caf50', ml: 'auto' }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              ))}
+              
+              {acaoBonusVariavelLista.length > 0 && (
+                <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 1, fontWeight: 'bold' }}>
+                  🟢 Total: +{acaoBonusVariavelLista.reduce((soma, b) => soma + b.valor, 0)}
+                </Typography>
+              )}
+            </Paper>
+
+            {/* VD */}
+            <TextField
+              label="🎯 Valor Mínimo para Sucesso (VD)"
+              type="number"
+              size="small"
+              value={acaoValorDificuldade}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                if (val >= 1 && val <= 1000) {
+                  setAcaoValorDificuldade(val);
+                } else if (e.target.value === "") {
+                  setAcaoValorDificuldade("");
+                }
+              }}
+              InputProps={{ 
+                inputProps: { min: 1, max: 1000 },
+                sx: { color: '#fff' } 
+              }}
+              sx={{ bgcolor: '#1a1a2e', '& .MuiInputLabel-root': { color: '#94a3b8' } }}
+              helperText="Definido pelo Mestre. Sucesso se resultado ≥ VD (1-1000)."
+              FormHelperTextProps={{ sx: { color: '#64748b' } }}
+            />
+            
+            {/* Configuração de Consumível */}
             {acaoItemConsumivel && (
-              <Paper sx={{ p: 2, bgcolor: '#1e1a2e', border: '1px solid #4caf50', mb: 2 }}>
+              <Paper sx={{ p: 2, bgcolor: '#1e1a2e', border: '1px solid #4caf50' }}>
                 <Typography variant="subtitle2" sx={{ color: '#4caf50', mb: 1 }}>
                   🧪 Item Consumível: {acaoItem}
                 </Typography>
                 <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
                   Tipo: <strong style={{ color: '#fff' }}>{acaoConsumivelTipo}</strong> | 
-                  Valor máximo: <strong style={{ color: '#fff' }}>{acaoConsumivelValor}</strong>
+                  Valor: <strong style={{ color: '#fff' }}>{acaoConsumivelValor}</strong>
                 </Typography>
                 <Box sx={{ mt: 1 }}>
                   <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                    Percentual a usar: <strong style={{ color: '#4caf50' }}>{acaoConsumivelPercentual}%</strong>
+                    Percentual: <strong style={{ color: '#4caf50' }}>{acaoConsumivelPercentual}%</strong>
                   </Typography>
                   <Slider
                     value={acaoConsumivelPercentual}
@@ -3056,18 +3606,13 @@ useEffect(() => {
                 </Typography>
                 {acaoConsumivelPercentual < 100 && (
                   <Typography variant="caption" sx={{ color: '#ff9800', display: 'block' }}>
-                    ⚠️ Consumo parcial - durabilidade será reduzida
-                  </Typography>
-                )}
-                {acaoConsumivelPercentual >= 100 && (
-                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block' }}>
-                    ⚠️ Consumo total - 1 unidade será removida
+                    ⚠️ Consumo parcial - durabilidade reduzida
                   </Typography>
                 )}
               </Paper>
             )}
 
-                        {/* Resumo */}
+            {/* Resumo */}
             {fichaJogador && (
               <Paper sx={{ p: 2, bgcolor: '#16213e', border: '1px solid #334155' }}>
                 <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1 }}>
@@ -3077,23 +3622,33 @@ useEffect(() => {
                   Total de d10: <strong style={{ color: '#fff' }}>
                     {(acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] || 0) + 
                      (acaoPericia && fichaJogador?.pericias?.[acaoPericia] || 0) +
-(acaoPericia2 && fichaJogador?.pericias?.[acaoPericia2] || 0) +
+                     (acaoPericia2 && fichaJogador?.pericias?.[acaoPericia2] || 0) +
                      acaoItemDado + acaoCasting + acaoEmbuicao + acaoHabilidadeDado}
                   </strong>
                 </Typography>
                 {acaoEmbuicao > 0 && (
                   <Typography variant="caption" sx={{ color: '#facc15' }}>
-                    ⚡ Custo de Energia: {acaoEmbuicao * 5} PE
+                    ⚡ Custo: {acaoEmbuicao * 5} PE
                   </Typography>
                 )}
                 {acaoHabilidadeCustoPE > 0 && (
                   <Typography variant="caption" sx={{ color: '#facc15', display: 'block' }}>
-                    💛 Custo da Habilidade: {acaoHabilidadeCustoPE} PE
+                    💛 Custo Habilidade: {acaoHabilidadeCustoPE} PE
                   </Typography>
                 )}
                 {acaoDebuffs.length > 0 && (
                   <Typography variant="caption" sx={{ color: '#ef4444', display: 'block' }}>
-                    🔻 Penalidade total: -{acaoDebuffs.reduce((soma, d) => soma + d.valor, 0)}
+                    🔻 Penalidade: -{acaoDebuffs.reduce((soma, d) => soma + d.valor, 0)}
+                  </Typography>
+                )}
+                {acaoBonusVariavelLista.length > 0 && (
+                  <Typography variant="caption" sx={{ color: '#4caf50', display: 'block' }}>
+                    🟢 Bônus: +{acaoBonusVariavelLista.reduce((soma, b) => soma + b.valor, 0)}
+                  </Typography>
+                )}
+                {acaoValorDificuldade && (
+                  <Typography variant="caption" sx={{ color: '#ff9800', display: 'block' }}>
+                    🎯 VD: {acaoValorDificuldade}
                   </Typography>
                 )}
               </Paper>
@@ -3106,16 +3661,15 @@ useEffect(() => {
             Cancelar
           </Button>
           <Button 
-  variant="contained"
-  onClick={rolarAcao}
-  disabled={rolagemEmAndamento}
-  sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
->
-  {rolagemEmAndamento ? '🔄 Rolando...' : '⚔️ Rolar Ação'}
-</Button>
+            variant="contained"
+            onClick={rolarAcao}
+            disabled={rolagemEmAndamento}
+            sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+          >
+            {rolagemEmAndamento ? '🔄 Rolando...' : '⚔️ Rolar Ação'}
+          </Button>
         </DialogActions>
       </Dialog>
-      {/* 🟢 MODAL GALERIA DE IMAGENS */}
             {/* 🟢 MODAL GALERIA DE IMAGENS */}
       <Dialog 
         open={galeriaOpen} 
