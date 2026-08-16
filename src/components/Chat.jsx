@@ -1,5 +1,5 @@
 // src/components/Chat.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, memo, useCallback, useMemo } from "react";
 import {
   Box,
   Button,
@@ -125,6 +125,259 @@ function LightboxImage({ src, zoom, setZoom }) {
     />
   );
 }
+// 🟢 COMPONENTE DE MENSAGEM MEMOIZADO (evita re-render desnecessário)
+const MessageItem = memo(({ 
+  m, 
+  prev, 
+  avatars, 
+  userEmail, 
+  isMaster, 
+  canEdit, 
+  canDelete, 
+  editMessage, 
+  deleteMessage,
+  setLightboxImage,
+  setZoom,
+  getDisplayNick,
+  getAvatar,
+  masterNameStyle,
+  getInitials,
+  updateDoc,
+  doc,
+  db
+}) => {
+  const showDivider = !prev || prev.userEmail !== m.userEmail;
+  const dataHora = m.timestamp?.toDate ? m.timestamp.toDate() : null;
+  const horaFormatada = dataHora
+    ? `${dataHora.toLocaleDateString("pt-BR")} ${dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+    : "";
+
+  return (
+    <React.Fragment>
+      {showDivider && <Divider sx={{ my: 0.5, opacity: 0.3 }} />}
+      <ListItem
+        alignItems="flex-start"
+        sx={{
+          flexDirection: m.userEmail === userEmail ? "row-reverse" : "row",
+          px: 0,
+          py: 0.25,
+        }}
+      >
+        <Avatar
+          src={getAvatar(m.userEmail, avatars[m.userEmail] || "")}
+          onClick={() => {
+            if (avatars[m.userEmail]) {
+              setLightboxImage(avatars[m.userEmail]);
+              setZoom(1);
+            }
+          }}
+          sx={{
+            width: 32,
+            height: 32,
+            cursor: avatars[m.userEmail] ? "pointer" : "default",
+            bgcolor: avatars[m.userEmail] ? "transparent" : "#333",
+            fontSize: 14,
+            mr: m.userEmail === userEmail ? 0 : 1,
+            ml: m.userEmail === userEmail ? 1 : 0,
+            ...(m.userEmail === "mestre@reqviemrpg.com" && {
+              border: "2px solid #FFD700",
+              boxShadow: "0 0 15px #FFD700",
+              animation: "pulse 2s infinite",
+            }),
+          }}
+        >
+          {!avatars[m.userEmail] && getInitials(m.userNick)}
+        </Avatar>
+
+        <Box
+          sx={{
+            maxWidth: "75%",
+            bgcolor: m.userEmail === userEmail ? "#1e3a5f" : "#2a2a2a",
+            borderRadius: 2,
+            p: 1.5,
+            boxShadow: 2,
+            wordBreak: "break-word",
+            contentVisibility: 'auto',
+            containIntrinsicSize: 'auto 100px',
+          }}
+        >
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.5 }}>
+            <Typography 
+              variant="subtitle2" 
+              sx={m.userEmail === "mestre@reqviemrpg.com" ? masterNameStyle : { fontWeight: "bold" }}
+            >
+              {getDisplayNick(m.userEmail, m.userNick)}
+            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              {canEdit(m) && (
+                <IconButton size="small" onClick={() => editMessage(m)}>
+                  <EditIcon fontSize="inherit" />
+                </IconButton>
+              )}
+              {canDelete(m) && (
+                <IconButton size="small" onClick={() => deleteMessage(m)}>
+                  <DeleteIcon fontSize="inherit" />
+                </IconButton>
+              )}
+            </Box>
+          </Box>
+
+          {m.type === "image" && (
+            <img
+              src={m.text}
+              loading="lazy"
+              decoding="async"
+              style={{ maxWidth: "100%", borderRadius: 8, cursor: "pointer" }}
+              onClick={() => { setLightboxImage(m.text); setZoom(1); }}
+            />
+          )}
+
+          {m.type === "image-group" && (
+            <>
+              {m.text && <Typography sx={{ mb: 0.5, whiteSpace: 'pre-line' }}>{m.text}</Typography>}
+              {m.images?.map((img, idx) => (
+                <img
+                  key={idx}
+                  src={img}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ maxWidth: "100%", display: "block", marginTop: 6, borderRadius: 8, cursor: "pointer" }}
+                  onClick={() => { setLightboxImage(img); setZoom(1); }}
+                />
+              ))}
+            </>
+          )}
+
+          {m.type === "gif" && (
+            <img
+              src={m.text}
+              loading="lazy"
+              decoding="async"
+              style={{ maxWidth: "100%", borderRadius: 8, cursor: "pointer" }}
+              onClick={() => { setLightboxImage(m.text); setZoom(1); }}
+            />
+          )}
+
+          {m.type === "video" && (
+            <video controls src={m.text} preload="none" style={{ maxWidth: "100%", borderRadius: 8 }} />
+          )}
+
+          {m.type === "youtube" && (
+            <iframe
+              width="100%"
+              height="135"
+              src={m.text.replace("watch?v=", "embed/")}
+              frameBorder="0"
+              allowFullScreen
+              loading="lazy"
+              style={{ borderRadius: 8 }}
+            />
+          )}
+
+          {m.type === "link" && (
+            <a href={m.text} target="_blank" rel="noreferrer">{m.text}</a>
+          )}
+
+          {m.type === "dice" && (
+            <Box>
+              <Typography color="primary" sx={{ fontWeight: "bold" }}>
+                {!isMaster && m.secretText ? m.secretText : m.text}
+              </Typography>
+              {isMaster && m.secretText && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                  <Typography variant="caption" sx={{ color: '#ef4444', fontSize: '0.65rem' }}>🔒 SECRETO</Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={async () => {
+                      await updateDoc(doc(db, "chat", m.id), { secretText: null, revealed: true });
+                    }}
+                    sx={{ fontSize: '0.6rem', minWidth: 'auto', px: 0.5, py: 0.2, color: '#4caf50', borderColor: '#4caf50' }}
+                  >
+                    👁️ Revelar
+                  </Button>
+                </Box>
+              )}
+              {m.revealed && (
+                <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>✅ Revelado pelo Mestre</Typography>
+              )}
+            </Box>
+          )}
+
+          {m.type === "dice_morte" && (
+            <Box>
+              {isMaster ? (
+                <Typography sx={{ color: '#ef4444', fontWeight: 'bold' }}>{m.text}</Typography>
+              ) : (
+                <Typography sx={{ color: '#666', fontStyle: 'italic' }}>💀 Dado de Morte rolado...</Typography>
+              )}
+            </Box>
+          )}
+
+          {m.type === "dice_morte_result" && (
+            <Typography sx={{ color: '#ef4444', fontWeight: 'bold', whiteSpace: 'pre-line' }}>{m.text}</Typography>
+          )}
+
+          {m.type === "acao" && (
+            <Box>
+              <Typography sx={{ 
+                color: m.text?.includes('Furtividade') || m.text?.includes('furtividade') ? '#3b82f6' : '#00bcd4', 
+                whiteSpace: 'pre-line', 
+                fontWeight: 'bold' 
+              }}>
+                {!isMaster && m.secretText ? m.secretText : m.text}
+              </Typography>
+              {m.dadosRolados && m.dadosRolados.length > 0 && !m.secretText && (
+                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
+                  🎲 Dados: [{m.dadosRolados.join(", ")}]
+                </Typography>
+              )}
+              {isMaster && m.secretText && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                  <Typography variant="caption" sx={{ color: '#ef4444', fontSize: '0.65rem' }}>🔒 SECRETO</Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={async () => {
+                      await updateDoc(doc(db, "chat", m.id), { secretText: null, revealed: true });
+                    }}
+                    sx={{ fontSize: '0.6rem', minWidth: 'auto', px: 0.5, py: 0.2, color: '#4caf50', borderColor: '#4caf50' }}
+                  >
+                    👁️ Revelar
+                  </Button>
+                </Box>
+              )}
+              {m.revealed && (
+                <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>✅ Revelado pelo Mestre</Typography>
+              )}
+            </Box>
+          )}
+
+          {m.type === "evento" && (
+            <Box sx={{ bgcolor: '#1e1a3e', border: '1px solid #ec4899', borderRadius: 2, p: 1.5, animation: 'pulse 2s infinite' }}>
+              <Typography sx={{ color: '#ec4899', whiteSpace: 'pre-line', fontWeight: 'bold', fontStyle: 'italic' }}>
+                {m.text}
+              </Typography>
+            </Box>
+          )}
+
+          {m.type === "text" && (
+            <Typography sx={{ whiteSpace: 'pre-line' }}>
+              {m.text}
+              {m.edited && (
+                <Typography component="span" sx={{ ml: 0.5, fontSize: "0.7rem", opacity: 0.6 }}>(editado)</Typography>
+              )}
+            </Typography>
+          )}
+
+          <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 0.5 }}>
+            <Typography variant="caption" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>{horaFormatada}</Typography>
+          </Box>
+        </Box>
+      </ListItem>
+    </React.Fragment>
+  );
+});
 
 // 🟢 ESTILO PARA O NOME DO MESTRE (BRILHO DOURADO)
 const masterNameStyle = {
@@ -465,27 +718,40 @@ useEffect(() => {
   useEffect(() => {
     const container = chatRef.current;
     if (!container) return;
+    let scrollTimeout = null;
+    
     const handleScroll = () => {
-      const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
-      const atBottom = distance < 80;
+      // 🟢 THROTTLE: Executa no máximo a cada 100ms
+      if (scrollTimeout) return;
       
-      // 🟢 SCROLL INFINITO: Quando chega no TOPO, carrega mais antigas do Firestore
-      if (container.scrollTop < 50 && !carregandoAntigas && temMaisMensagens) {
-        carregarMensagensAntigas();
-      }
-      
-      if (atBottom) {
-        setAutoScroll(true);
-        setShowScrollButton(false);
-        setUnreadCount(0);
-      } else {
-        setAutoScroll(false);
-        setShowScrollButton(true);
-      }
+      scrollTimeout = setTimeout(() => {
+        scrollTimeout = null;
+        
+        const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+        const atBottom = distance < 80;
+        
+        // 🟢 SCROLL INFINITO: Quando chega no TOPO, carrega mais antigas do Firestore
+        if (container.scrollTop < 50 && !carregandoAntigas && temMaisMensagens) {
+          carregarMensagensAntigas();
+        }
+        
+        if (atBottom) {
+          setAutoScroll(true);
+          setShowScrollButton(false);
+          setUnreadCount(0);
+        } else {
+          setAutoScroll(false);
+          setShowScrollButton(true);
+        }
+      }, 100);
     };
+    
     container.addEventListener("scroll", handleScroll);
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [carregandoAntigas, quantidadeMensagens, todasMensagens]);
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+    };
+  }, [carregandoAntigas, temMaisMensagens]);
 
   // 🟢 FUNÇÃO PARA CARREGAR MENSAGENS ANTIGAS DO FIRESTORE
   const carregarMensagensAntigas = async () => {
@@ -2401,6 +2667,9 @@ useEffect(() => {
           position: "relative", 
           scrollBehavior: "smooth", 
           pb: 1,
+          WebkitOverflowScrolling: 'touch',
+          transform: 'translateZ(0)',
+          willChange: 'transform',
           // 🟢 BLOQUEIO VISUAL PARA JOGADORES QUANDO TRAVADO
           ...(chatTravado && !isMaster && {
             filter: 'blur(10px)',
@@ -2602,9 +2871,8 @@ useEffect(() => {
                         }}
                       />
                     )}
-
                     {m.type === "video" && (
-                      <video controls src={m.text} style={{ maxWidth: "100%", borderRadius: 8 }} />
+                      <video controls src={m.text} preload="none" style={{ maxWidth: "100%", borderRadius: 8 }} />
                     )}
 
                     {m.type === "youtube" && (
@@ -2614,6 +2882,7 @@ useEffect(() => {
                         src={m.text.replace("watch?v=", "embed/")}
                         frameBorder="0"
                         allowFullScreen
+                        loading="lazy"
                         style={{ borderRadius: 8 }}
                       />
                     )}

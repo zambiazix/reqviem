@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import {
   Paper, Typography, Button, List, ListItem, ListItemText,
   Divider, Box, Slider, Dialog, DialogTitle, DialogContent,
@@ -11,7 +11,7 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import { db } from "../firebaseConfig";
-import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { useAudio } from "../context/AudioProvider";
 
 // 🔹 Playlists padrão
@@ -30,6 +30,112 @@ const DEFAULT_AMBIANCE_LIST = [
   { name: "Fogueira", url: "https://res.cloudinary.com/dwaxw0l83/video/upload/v1760632376/Fogueira_tjjv8t.mp3" },
 ];
 
+// 🟢 FUNÇÃO PARA NORMALIZAR URL
+const normalizarUrl = (url) => (url || "").trim().replace(/\/+$/, "").toLowerCase();
+
+// 🟢 COMPONENTE DE TRACK MEMOIZADO
+const TrackItem = memo(({ 
+  track, isPlaying, isMaster, volumes, 
+  onPlay, onStop, onVolumeChange, onEdit, onDelete 
+}) => {
+  const trackVolume = volumes[track.url] ?? 80;
+  
+  return (
+    <ListItem divider sx={{ flexDirection: "column", alignItems: "stretch", contentVisibility: 'auto', containIntrinsicSize: 'auto 50px' }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
+        {isPlaying ? (
+          <IconButton color="error" onClick={() => onStop(track.url)} size="small">
+            <StopIcon fontSize="small" />
+          </IconButton>
+        ) : (
+          <IconButton color="primary" onClick={() => onPlay(track.url, track.name)} size="small">
+            <PlayArrowIcon fontSize="small" />
+          </IconButton>
+        )}
+        <ListItemText 
+          primary={track.name} 
+          sx={{ 
+            flex: 1,
+            '& .MuiListItemText-primary': {
+              fontWeight: isPlaying ? 'bold' : 'normal',
+              color: isPlaying ? '#4CAF50' : 'inherit',
+              fontSize: '0.8rem',
+            }
+          }}
+        />
+        {isMaster && (
+          <Box sx={{ display: 'flex', flexShrink: 0 }}>
+            <IconButton size="small" onClick={() => onEdit()} sx={{ p: 0.5 }}>
+              <EditIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" color="error" onClick={() => onDelete()} sx={{ p: 0.5 }}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        )}
+      </Box>
+      {isPlaying && (
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1, pl: 4 }}>
+          <Typography variant="caption" sx={{ minWidth: 45, fontSize: '0.6rem' }}>Vol:</Typography>
+          <Slider
+            size="small"
+            value={trackVolume}
+            onChange={(_, v) => onVolumeChange(track.url, v)}
+            min={0}
+            max={100}
+            sx={{ flex: 1 }}
+          />
+          <Typography variant="caption" sx={{ minWidth: 35, fontSize: '0.6rem' }}>{trackVolume}%</Typography>
+        </Box>
+      )}
+    </ListItem>
+  );
+});
+
+// 🟢 COMPONENTE DE LISTA MEMOIZADO
+const TrackList = memo(({ title, tracks, category, isMaster, playingTracks, volumes, onPlay, onStop, onVolumeChange, onEdit, onDelete, onAdd }) => (
+  <>
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 1 }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: "bold", fontSize: '0.9rem' }}>
+        {title}
+      </Typography>
+      {isMaster && (
+        <Button
+          size="small"
+          startIcon={<AddIcon />}
+          variant="contained"
+          onClick={() => onAdd(category)}
+          sx={{ minWidth: 'auto', px: 1 }}
+        >
+          Adicionar
+        </Button>
+      )}
+    </Box>
+
+    <List dense>
+      {tracks.map((t, i) => {
+        const normalizedUrl = normalizarUrl(t.url);
+        const isPlaying = Array.isArray(playingTracks) && playingTracks.includes(normalizedUrl);
+        
+        return (
+          <TrackItem
+            key={`${category}-${i}-${t.url}`}
+            track={t}
+            isPlaying={isPlaying}
+            isMaster={isMaster}
+            volumes={volumes}
+            onPlay={onPlay}
+            onStop={onStop}
+            onVolumeChange={onVolumeChange}
+            onEdit={() => onEdit(category, i)}
+            onDelete={() => onDelete(category, i)}
+          />
+        );
+      })}
+    </List>
+  </>
+));
+
 export default function SoundBoard({ isMaster }) {
   const { playMusic, pauseMusic, stopAllMusic, setVolume, playingTracks, unlockAudio } = useAudio();
   
@@ -38,7 +144,7 @@ export default function SoundBoard({ isMaster }) {
   const [othersTracks, setOthersTracks] = useState([]);
   const [volumes, setVolumes] = useState({});
 
-  // 🟢 Carregar biblioteca do Firestore
+  // 🟢 Carregar biblioteca do Firestore (com cleanup otimizado)
   useEffect(() => {
     const docs = [
       { id: "music", setter: setMusicTracks, fallback: DEFAULT_MUSIC_LIST },
@@ -60,31 +166,22 @@ export default function SoundBoard({ isMaster }) {
     return () => unsubs.forEach((u) => u?.());
   }, []);
 
-  // 🟢 PLAY usando AudioProvider (com nome da música)
-  const handlePlay = (url, name) => {
+  // 🟢 CALLBACKS MEMOIZADOS
+  const handlePlay = useCallback((url, name) => {
     unlockAudio();
     playMusic(url, name);
-  };
+  }, [unlockAudio, playMusic]);
 
-  // 🟢 STOP
-  const handleStop = (url) => {
+  const handleStop = useCallback((url) => {
     pauseMusic(url);
-  };
+  }, [pauseMusic]);
 
-  // 🟢 STOP ALL
-  const handleStopAll = () => {
-    stopAllMusic();
-  };
-
-  // 🟢 VOLUME
-  const handleVolumeChange = (url, newVolume) => {
+  const handleVolumeChange = useCallback((url, newVolume) => {
     setVolumes(prev => ({ ...prev, [url]: newVolume }));
     setVolume(url, newVolume);
-  };
+  }, [setVolume]);
 
-  // -------------------------
-  // ---- Library editing ----
-  // -------------------------
+  // 🟢 ESTADOS DO MODAL
   const [openLibDialog, setOpenLibDialog] = useState(false);
   const [libMode, setLibMode] = useState("music");
   const [editIndex, setEditIndex] = useState(null);
@@ -93,19 +190,22 @@ export default function SoundBoard({ isMaster }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef();
 
-  const writeLibraryDoc = async (docId, list) => {
+  // 🟢 WRITE LIBRARY DOC (MEMOIZADO)
+  const writeLibraryDoc = useCallback(async (docId, list) => {
     await setDoc(doc(db, "soundLibrary", docId), { list });
-  };
+  }, []);
 
-  const openAddDialog = (category) => {
+  // 🟢 OPEN ADD DIALOG
+  const openAddDialog = useCallback((category) => {
     setLibMode(category);
     setEditIndex(null);
     setLibName("");
     setSelectedFile(null);
     setOpenLibDialog(true);
-  };
+  }, []);
 
-  const openEditDialog = (category, idx) => {
+  // 🟢 OPEN EDIT DIALOG
+  const openEditDialog = useCallback((category, idx) => {
     setLibMode(category);
     setEditIndex(idx);
     const list = category === "music" ? musicTracks : 
@@ -114,23 +214,26 @@ export default function SoundBoard({ isMaster }) {
     setLibName(entry?.name || "");
     setSelectedFile(null);
     setOpenLibDialog(true);
-  };
+  }, [musicTracks, ambianceTracks, othersTracks]);
 
-  const handleFileSelect = (e) => {
+  // 🟢 HANDLE FILE SELECT
+  const handleFileSelect = useCallback((e) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
     }
-  };
+  }, []);
 
-  const clearSelectedFile = () => {
+  // 🟢 CLEAR SELECTED FILE
+  const clearSelectedFile = useCallback(() => {
     setSelectedFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  };
+  }, []);
 
-  const uploadToBackend = async (file) => {
+  // 🟢 UPLOAD TO BACKEND (OTIMIZADO)
+  const uploadToBackend = useCallback(async (file) => {
     setUploading(true);
     try {
       const formData = new FormData();
@@ -156,9 +259,10 @@ export default function SoundBoard({ isMaster }) {
     } finally {
       setUploading(false);
     }
-  };
+  }, []);
 
-  const handleSaveLibrary = async () => {
+  // 🟢 HANDLE SAVE LIBRARY (OTIMIZADO)
+  const handleSaveLibrary = useCallback(async () => {
     if (!libName.trim()) {
       alert("Informe o nome da faixa.");
       return;
@@ -202,10 +306,11 @@ export default function SoundBoard({ isMaster }) {
     setLibName("");
     setSelectedFile(null);
     setOpenLibDialog(false);
-  };
+  }, [libName, editIndex, selectedFile, libMode, musicTracks, ambianceTracks, othersTracks, uploadToBackend, writeLibraryDoc]);
 
-  const handleDeleteLibrary = async (category, idx) => {
-    if (!confirm("Excluir essa faixa do acervo?")) return;
+  // 🟢 HANDLE DELETE LIBRARY (OTIMIZADO)
+  const handleDeleteLibrary = useCallback(async (category, idx) => {
+    if (!window.confirm("Excluir essa faixa do acervo?")) return;
     const list = category === "music" ? [...musicTracks] : 
                  category === "ambiance" ? [...ambianceTracks] : [...othersTracks];
     list.splice(idx, 1);
@@ -213,92 +318,20 @@ export default function SoundBoard({ isMaster }) {
     if (category === "music") setMusicTracks(list);
     else if (category === "ambiance") setAmbianceTracks(list);
     else setOthersTracks(list);
-  };
+  }, [musicTracks, ambianceTracks, othersTracks, writeLibraryDoc]);
 
-  // 🎨 RENDERIZAÇÃO
-  function renderList(title, tracks, category) {
-    return (
-      <>
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 1 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
-            {title}
-          </Typography>
-          {isMaster && (
-            <Button
-              size="small"
-              startIcon={<AddIcon />}
-              variant="contained"
-              onClick={() => openAddDialog(category)}
-            >
-              Adicionar
-            </Button>
-          )}
-        </Box>
-
-        <List dense>
-          {tracks.map((t, i) => {
-            const normalizedUrl = t.url.trim().replace(/\/+$/, "").toLowerCase();
-            const isPlaying = playingTracks.includes(normalizedUrl);
-            const trackVolume = volumes[t.url] ?? 80;
-            
-            return (
-              <ListItem key={i} divider sx={{ flexDirection: "column", alignItems: "stretch" }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
-                  {isPlaying ? (
-                    <IconButton color="error" onClick={() => handleStop(t.url)} size="small">
-                      <StopIcon />
-                    </IconButton>
-                  ) : (
-                                        <IconButton color="primary" onClick={() => handlePlay(t.url, t.name)} size="small">
-                      <PlayArrowIcon />
-                    </IconButton>
-                  )}
-                  <ListItemText 
-                    primary={t.name} 
-                    sx={{ 
-                      flex: 1,
-                      '& .MuiListItemText-primary': {
-                        fontWeight: isPlaying ? 'bold' : 'normal',
-                        color: isPlaying ? '#4CAF50' : 'inherit'
-                      }
-                    }}
-                  />
-                  {isMaster && (
-                    <Box>
-                      <IconButton size="small" onClick={() => openEditDialog(category, i)}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" color="error" onClick={() => handleDeleteLibrary(category, i)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  )}
-                </Box>
-                {isPlaying && (
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1, pl: 4 }}>
-                    <Typography variant="caption" sx={{ minWidth: 45 }}>Vol:</Typography>
-                    <Slider
-                      size="small"
-                      value={trackVolume}
-                      onChange={(_, v) => handleVolumeChange(t.url, v)}
-                      min={0}
-                      max={100}
-                      sx={{ flex: 1 }}
-                    />
-                    <Typography variant="caption" sx={{ minWidth: 35 }}>{trackVolume}%</Typography>
-                  </Box>
-                )}
-              </ListItem>
-            );
-          })}
-        </List>
-      </>
-    );
-  }
+  // 🟢 MEMOIZAR PLAYING TRACKS PARA PERFORMANCE
+  const playingTracksMemo = useMemo(() => {
+    if (Array.isArray(playingTracks)) return playingTracks;
+    if (typeof playingTracks === 'object' && playingTracks !== null) {
+      return Object.keys(playingTracks).filter(key => playingTracks[key]);
+    }
+    return [];
+  }, [playingTracks]);
 
   if (!isMaster) {
     return (
-      <Paper sx={{ p: 2, mt: 2, height: "50vh", overflowY: "auto" }}>
+      <Paper sx={{ p: 2, mt: 2, height: "50vh", overflowY: "auto", WebkitOverflowScrolling: 'touch' }}>
         <Typography variant="h6" sx={{ mb: 1 }}>🎵 Trilha Sonora</Typography>
         <Typography variant="body2" color="text.secondary">
           Aguardando o mestre tocar as músicas...
@@ -308,18 +341,64 @@ export default function SoundBoard({ isMaster }) {
   }
 
   return (
-    <Paper sx={{ p: 2, mt: 2, height: "50vh", overflowY: "auto" }}>
+    <Paper sx={{ 
+      p: 2, 
+      mt: 2, 
+      height: "50vh", 
+      overflowY: "auto", 
+      WebkitOverflowScrolling: 'touch',
+      '&::-webkit-scrollbar': { width: '4px' },
+      '&::-webkit-scrollbar-thumb': { background: 'rgba(0,224,255,0.2)', borderRadius: '10px' },
+    }}>
       <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
         🎵 Trilha Sonora
       </Typography>
 
-      {renderList("🎶 Músicas", musicTracks, "music")}
+      <TrackList
+        title="🎶 Músicas"
+        tracks={musicTracks}
+        category="music"
+        isMaster={isMaster}
+        playingTracks={playingTracksMemo}
+        volumes={volumes}
+        onPlay={handlePlay}
+        onStop={handleStop}
+        onVolumeChange={handleVolumeChange}
+        onEdit={openEditDialog}
+        onDelete={handleDeleteLibrary}
+        onAdd={openAddDialog}
+      />
       <Divider sx={{ my: 1 }} />
-      {renderList("🌲 Ambientes", ambianceTracks, "ambiance")}
+      <TrackList
+        title="🌲 Ambientes"
+        tracks={ambianceTracks}
+        category="ambiance"
+        isMaster={isMaster}
+        playingTracks={playingTracksMemo}
+        volumes={volumes}
+        onPlay={handlePlay}
+        onStop={handleStop}
+        onVolumeChange={handleVolumeChange}
+        onEdit={openEditDialog}
+        onDelete={handleDeleteLibrary}
+        onAdd={openAddDialog}
+      />
       <Divider sx={{ my: 1 }} />
-      {renderList("🎧 Outros", othersTracks, "others")}
+      <TrackList
+        title="🎧 Outros"
+        tracks={othersTracks}
+        category="others"
+        isMaster={isMaster}
+        playingTracks={playingTracksMemo}
+        volumes={volumes}
+        onPlay={handlePlay}
+        onStop={handleStop}
+        onVolumeChange={handleVolumeChange}
+        onEdit={openEditDialog}
+        onDelete={handleDeleteLibrary}
+        onAdd={openAddDialog}
+      />
 
-      {/* Modal de Adicionar/Editar */}
       <Dialog open={openLibDialog} onClose={() => setOpenLibDialog(false)} fullWidth maxWidth="sm">
         <DialogTitle>{editIndex !== null ? "Editar Faixa" : "Adicionar Faixa"}</DialogTitle>
         <DialogContent>

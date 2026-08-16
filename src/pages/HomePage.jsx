@@ -1,5 +1,5 @@
 // src/pages/HomePage.jsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
 import {
   Paper, Typography, Divider, List, ListItem, ListItemText, ListItemAvatar,
   Button, TextField, Box, IconButton, Dialog, DialogTitle, DialogContent,
@@ -21,38 +21,207 @@ const CORES_AURA = {
   "Fundador": "#00ff88", "Déspota": "#a855f7", "Ás": "#e5e5e5",
 };
 
-// 🟢 LISTA INICIAL DE JOGADORES
 const JOGADORES_INICIAIS = [
   "Rodrigo", "Carol", "Sergio", "Vini", "Gui", "Pedrin", "Silvia", "João", "Gabi"
 ];
 
-// 🟢 Função para normalizar texto (remove acentos, lowercase)
+// 🟢 NORMALIZAR TEXTO (memoizado global)
 const normalizar = (texto) => {
   return (texto || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, ""); // remove acentos
+    .replace(/[\u0300-\u036f]/g, "");
 };
 
-function LightboxImage({ src, zoom, setZoom }) {
+// 🟢 LIGHTBOX OTIMIZADO
+const LightboxImage = memo(({ src, zoom, setZoom }) => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [start, setStart] = useState({ x: 0, y: 0 });
-  const handleMouseDown = (e) => { e.preventDefault(); setDragging(true); setStart({ x: e.clientX - position.x, y: e.clientY - position.y }); };
-  const handleMouseMove = (e) => { if (!dragging) return; setPosition({ x: e.clientX - start.x, y: e.clientY - start.y }); };
-  const handleMouseUp = () => setDragging(false);
+
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setDragging(true);
+    setStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  }, [position]);
+
   useEffect(() => {
+    if (!dragging) return;
+    
+    const handleMouseMove = (e) => {
+      setPosition({ x: e.clientX - start.x, y: e.clientY - start.y });
+    };
+    const handleMouseUp = () => setDragging(false);
+    
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
-    return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
   }, [dragging, start]);
+
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    setZoom((z) => Math.min(Math.max(z + (e.deltaY > 0 ? -0.1 : 0.1), 0.5), 5));
+  }, [setZoom]);
+
   return (
-    <img src={src} alt="ampliada" onClick={(e) => e.stopPropagation()} onMouseDown={handleMouseDown}
-      onWheel={(e) => { e.preventDefault(); setZoom((z) => Math.min(Math.max(z + (e.deltaY > 0 ? -0.1 : 0.1), 0.5), 5)); }}
-      style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`, transition: dragging ? "none" : "transform 0.2s ease", maxWidth: "90%", maxHeight: "90%", borderRadius: 10, cursor: dragging ? "grabbing" : "grab", userSelect: "none", touchAction: "none" }}
+    <img
+      src={src}
+      alt="ampliada"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={handleMouseDown}
+      onWheel={handleWheel}
+      loading="eager"
+      decoding="async"
+      draggable={false}
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+        transition: dragging ? "none" : "transform 0.2s ease",
+        maxWidth: "90%",
+        maxHeight: "90%",
+        borderRadius: 10,
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none",
+        pointerEvents: dragging ? "none" : "auto",
+      }}
     />
   );
-}
+});
+
+// 🟢 ITEM DE FICHA MEMOIZADO
+const FichaItem = memo(({ 
+  fid, ficha, isPM, selectedFichaEmail, setSelectedFichaEmail,
+  setContaToDelete, setDeleteContaDialogOpen, setFichaToDelete, setDeleteFichaDialogOpen,
+  setLightboxImage, setZoom, jogadorAtual, jogadores, atrelarJogador, isSalvando,
+  nivelInfo, posicao, auraCor
+}) => {
+  return (
+    <ListItem 
+      selected={selectedFichaEmail === fid} 
+      onClick={() => setSelectedFichaEmail(fid)}
+      sx={{ 
+        cursor: 'pointer', 
+        '&:hover': { bgcolor: 'rgba(255,255,255,0.08)' }, 
+        borderRadius: 1, 
+        mb: 0.5, 
+        bgcolor: selectedFichaEmail === fid ? '#1e3a5f' : 'transparent', 
+        borderLeft: auraCor ? `3px solid ${auraCor}` : 'none', 
+        pr: 2,
+        flexWrap: 'wrap',
+        contentVisibility: 'auto',
+        containIntrinsicSize: 'auto 60px',
+      }}
+      secondaryAction={
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          {!isPM && (
+            <IconButton edge="end" size="small" onClick={(e) => { e.stopPropagation(); setContaToDelete(fid); setDeleteContaDialogOpen(true); }} sx={{ color: '#dc2626', '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.1)' } }} title="Deletar Conta">
+              <PersonRemoveIcon fontSize="small" />
+            </IconButton>
+          )}
+          <IconButton edge="end" size="small" onClick={(e) => { e.stopPropagation(); setFichaToDelete(fid); setDeleteFichaDialogOpen(true); }} sx={{ color: '#ef4444', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }} title="Deletar Ficha">
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      }
+    >
+      <ListItemAvatar>
+        <Avatar 
+          src={ficha?.imagemPersonagem || ficha?.imagens?.[0] || ""} 
+          sx={{ width: 36, height: 36, bgcolor: '#333', cursor: 'pointer', border: auraCor ? `2px solid ${auraCor}` : '1px solid #555', flexShrink: 0 }}
+          onClick={(e) => { e.stopPropagation(); const img = ficha?.imagemPersonagem || ficha?.imagens?.[0]; if (img) { setLightboxImage(img); setZoom(1); } }}
+          imgProps={{ loading: 'lazy', decoding: 'async' }}
+        >
+          {(ficha?.nome || fid)[0]?.toUpperCase()}
+        </Avatar>
+      </ListItemAvatar>
+      
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <ListItemText 
+          primary={ficha?.nome || fid}
+          secondary={
+            <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.3, flexWrap: 'wrap' }}>
+              {ficha?.tipoAura && (
+                <Chip label={ficha.tipoAura} size="small" 
+                  sx={{ bgcolor: `${auraCor}22`, color: auraCor, fontWeight: 'bold', fontSize: '0.55rem', height: 16 }} />
+              )}
+              {jogadorAtual && (
+                <Chip 
+                  label={`👤 ${jogadorAtual}`}
+                  size="small"
+                  sx={{ bgcolor: '#1e3a5f', color: '#94a3b8', fontSize: '0.55rem', height: 16 }}
+                />
+              )}
+              {posicao && (
+                <Chip 
+                  label={`🏆 #${posicao}`} 
+                  size="small" 
+                  sx={{ 
+                    bgcolor: posicao === 1 ? '#FFD700' : posicao === 2 ? '#C0C0C0' : posicao === 3 ? '#CD7F32' : '#1e3a5f',
+                    color: posicao <= 3 ? '#000' : '#fff',
+                    fontSize: '0.55rem', 
+                    height: 16,
+                    fontWeight: 'bold'
+                  }} 
+                />
+              )}
+              <Chip 
+                label={`⭐ LV ${nivelInfo.level}`} 
+                size="small" 
+                sx={{ bgcolor: '#1e3a5f', color: '#8ecaff', fontSize: '0.55rem', height: 16, fontWeight: 'bold' }} 
+              />
+            </Box>
+          }
+          primaryTypographyProps={{ sx: { color: auraCor || '#fff', fontWeight: 'bold', fontSize: '0.85rem', textShadow: auraCor ? `0 0 6px ${auraCor}44` : 'none' } }}
+          secondaryTypographyProps={{ component: 'div' }}
+        />
+      </Box>
+      
+      <FormControl 
+        size="small" 
+        sx={{ minWidth: 120, ml: 1 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Select
+          value={jogadorAtual}
+          onChange={(e) => atrelarJogador(fid, e.target.value)}
+          disabled={isSalvando}
+          displayEmpty
+          sx={{ 
+            color: jogadorAtual ? '#fff' : '#64748b',
+            fontSize: '0.7rem',
+            height: 30,
+            '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
+            '& .MuiSelect-icon': { color: '#94a3b8' }
+          }}
+          MenuProps={{
+            PaperProps: { 
+              sx: { 
+                bgcolor: "#1a1a2e", 
+                color: "#fff",
+                maxHeight: 300,
+                '& .MuiMenuItem-root': {
+                  fontSize: '0.75rem',
+                  '&:hover': { bgcolor: '#1e3a5f' }
+                }
+              } 
+            }
+          }}
+        >
+          <MenuItem value="">
+            <em style={{ color: '#64748b' }}>Nenhum</em>
+          </MenuItem>
+          {jogadores.map(nome => (
+            <MenuItem key={nome} value={nome}>{nome}</MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+    </ListItem>
+  );
+});
 
 export default function HomePage({ user, role, fichasList, selectedFichaEmail, setSelectedFichaEmail, criarContaEJogador }) {
   const [newEmail, setNewEmail] = useState("");
@@ -65,31 +234,23 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
   const [fichasDataMap, setFichasDataMap] = useState({});
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
-  
-  // 🟢 ESTADOS DA BUSCA
   const [termoBusca, setTermoBusca] = useState("");
-  
-  // 🟢 ESTADOS DOS JOGADORES
   const [jogadores, setJogadores] = useState(JOGADORES_INICIAIS);
   const [editandoJogadores, setEditandoJogadores] = useState(false);
   const [novoJogadorNome, setNovoJogadorNome] = useState("");
-  const [jogadorPorFicha, setJogadorPorFicha] = useState({}); // { emailFicha: "NomeJogador" }
-  const [salvandoJogador, setSalvandoJogador] = useState({}); // controle de loading por ficha
-    const [xpMap, setXpMap] = useState({});
+  const [jogadorPorFicha, setJogadorPorFicha] = useState({});
+  const [salvandoJogador, setSalvandoJogador] = useState({});
+  const [xpMap, setXpMap] = useState({});
 
-  // 🟢 CARREGAR XP MAP EM TEMPO REAL
+  // 🟢 CARREGAR XP MAP
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "game", "hud"), (snap) => {
-      if (snap.exists()) {
-        setXpMap(snap.data().xpMap || {});
-      } else {
-        setXpMap({});
-      }
+      setXpMap(snap.exists() ? (snap.data().xpMap || {}) : {});
     });
     return () => unsub();
   }, []);
 
-  // 🟢 TEMPO REAL - onSnapshot na coleção de fichas
+  // 🟢 CARREGAR FICHAS
   useEffect(() => {
     const col = collection(db, "fichas");
     const unsub = onSnapshot(col, (snap) => {
@@ -102,67 +263,75 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
     return () => unsub();
   }, []);
 
-  // 🟢 CARREGAR LISTA DE JOGADORES E MAPEAMENTO DO FIRESTORE
+  // 🟢 CARREGAR JOGADORES E MAPEAMENTO
   useEffect(() => {
+    let mounted = true;
+    
     const carregarDados = async () => {
       try {
-        // Carregar lista de jogadores
         const refJogadores = doc(db, "app_info", "jogadores");
         const snapJogadores = await getDoc(refJogadores);
-        if (snapJogadores.exists() && snapJogadores.data().lista) {
+        if (mounted && snapJogadores.exists() && snapJogadores.data().lista) {
           setJogadores(snapJogadores.data().lista);
         }
         
-        // Carregar mapeamento ficha -> jogador
         const refMap = doc(db, "app_info", "jogadorPorFicha");
         const snapMap = await getDoc(refMap);
-        if (snapMap.exists()) {
+        if (mounted && snapMap.exists()) {
           setJogadorPorFicha(snapMap.data().map || {});
         }
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
       }
     };
+    
     carregarDados();
+    return () => { mounted = false; };
   }, []);
-    // 🟢 FUNÇÃO PARA CALCULAR RANKING
-  const getRanking = () => {
-    const ranking = [];
+
+  // 🟢 RANKING MEMOIZADO
+  const ranking = useMemo(() => {
+    const rankingArray = [];
     Object.keys(xpMap).forEach(email => {
       const xpData = xpMap[email];
-      ranking.push({ email, level: xpData?.level || 1, xp: xpData?.xp || 0 });
+      rankingArray.push({ email, level: xpData?.level || 1, xp: xpData?.xp || 0 });
     });
-    ranking.sort((a, b) => {
+    rankingArray.sort((a, b) => {
       if (b.level !== a.level) return b.level - a.level;
       return b.xp - a.xp;
     });
-    return ranking.map((r, index) => ({ ...r, posicao: index + 1 }));
-  };
+    return rankingArray.map((r, index) => ({ ...r, posicao: index + 1 }));
+  }, [xpMap]);
 
-  const ranking = getRanking();
+  // 🟢 MAPA DE POSIÇÕES MEMOIZADO
+  const posicoesMap = useMemo(() => {
+    const map = {};
+    ranking.forEach(r => { map[r.email] = r.posicao; });
+    return map;
+  }, [ranking]);
 
-  const getPosicao = (email) => {
-    const encontrado = ranking.find(r => r.email === email);
-    return encontrado ? encontrado.posicao : null;
-  };
-
-  const getNivelInfo = (email) => {
+  // 🟢 GETTERS MEMOIZADOS
+  const getPosicao = useCallback((email) => posicoesMap[email] || null, [posicoesMap]);
+  
+  const getNivelInfo = useCallback((email) => {
     const data = xpMap[email];
     return { level: data?.level || 1, xp: data?.xp || 0 };
-  };
+  }, [xpMap]);
 
-  // 🟢 SALVAR LISTA DE JOGADORES NO FIRESTORE
-  const salvarJogadores = async (novaLista) => {
+  const getAuraColor = useCallback((fichaData) => CORES_AURA[fichaData?.tipoAura] || null, []);
+
+  // 🟢 SALVAR JOGADORES
+  const salvarJogadores = useCallback(async (novaLista) => {
     try {
       await setDoc(doc(db, "app_info", "jogadores"), { lista: novaLista }, { merge: true });
       setJogadores(novaLista);
     } catch (err) {
       console.error("Erro ao salvar jogadores:", err);
     }
-  };
+  }, []);
 
-  // 🟢 ADICIONAR NOVO JOGADOR
-  const adicionarJogador = () => {
+  // 🟢 ADICIONAR JOGADOR
+  const adicionarJogador = useCallback(() => {
     const nome = novoJogadorNome.trim();
     if (!nome) return;
     if (jogadores.includes(nome)) {
@@ -172,21 +341,20 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
     const novaLista = [...jogadores, nome].sort((a, b) => normalizar(a).localeCompare(normalizar(b)));
     salvarJogadores(novaLista);
     setNovoJogadorNome("");
-  };
+  }, [novoJogadorNome, jogadores, salvarJogadores]);
 
   // 🟢 REMOVER JOGADOR
-  const removerJogador = (nome) => {
+  const removerJogador = useCallback((nome) => {
     if (!window.confirm(`Remover "${nome}" da lista de jogadores?`)) return;
     const novaLista = jogadores.filter(j => j !== nome);
     salvarJogadores(novaLista);
-  };
+  }, [jogadores, salvarJogadores]);
 
-  // 🟢 ATRELAR JOGADOR À FICHA
-  const atrelarJogador = async (emailFicha, nomeJogador) => {
+  // 🟢 ATRELAR JOGADOR
+  const atrelarJogador = useCallback(async (emailFicha, nomeJogador) => {
     setSalvandoJogador(prev => ({ ...prev, [emailFicha]: true }));
     try {
       const novoMap = { ...jogadorPorFicha, [emailFicha]: nomeJogador || null };
-      // Se for vazio, remove do map
       if (!nomeJogador) delete novoMap[emailFicha];
       
       await setDoc(doc(db, "app_info", "jogadorPorFicha"), { map: novoMap }, { merge: true });
@@ -197,9 +365,10 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
     } finally {
       setSalvandoJogador(prev => ({ ...prev, [emailFicha]: false }));
     }
-  };
+  }, [jogadorPorFicha]);
 
-  const handleCreateAccountAndFicha = async () => {
+  // 🟢 CRIAR CONTA
+  const handleCreateAccountAndFicha = useCallback(async () => {
     if (!newEmail || !newPassword) { alert("Preencha o e-mail e a senha para criar a conta."); return; }
     if (newEmail === "mestre@reqviemrpg.com") { alert("Não é possível criar conta para o Mestre!"); return; }
     setCreating(true);
@@ -208,17 +377,22 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
       setNewEmail(""); setNewPassword("");
     } catch (err) { console.error("Erro:", err); }
     finally { setCreating(false); }
-  };
+  }, [newEmail, newPassword, criarContaEJogador]);
 
-  const handleDeleteFicha = async (email) => {
+  // 🟢 DELETAR FICHA
+  const handleDeleteFicha = useCallback(async (email) => {
     try {
       await deleteDoc(doc(db, "fichas", email));
       if (selectedFichaEmail === email) setSelectedFichaEmail(null);
       setDeleteFichaDialogOpen(false); setFichaToDelete(null);
-    } catch (err) { alert("Erro ao deletar ficha: " + err.message); setDeleteFichaDialogOpen(false); }
-  };
+    } catch (err) { 
+      alert("Erro ao deletar ficha: " + err.message); 
+      setDeleteFichaDialogOpen(false); 
+    }
+  }, [selectedFichaEmail, setSelectedFichaEmail]);
 
-  const handleDeleteConta = async (email) => {
+  // 🟢 DELETAR CONTA
+  const handleDeleteConta = useCallback(async (email) => {
     try {
       const apiBase = window.location.hostname === "localhost" ? "http://localhost:5000" : "https://reqviem.onrender.com";
       const response = await fetch(`${apiBase}/api/admin/delete-user`, {
@@ -230,41 +404,30 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
         if (selectedFichaEmail === email) setSelectedFichaEmail(null);
       } else { alert(`Erro: ${data.error}`); }
       setDeleteContaDialogOpen(false); setContaToDelete(null);
-    } catch (err) { alert("Erro ao conectar com o servidor: " + err.message); setDeleteContaDialogOpen(false); }
-  };
+    } catch (err) { 
+      alert("Erro ao conectar com o servidor: " + err.message); 
+      setDeleteContaDialogOpen(false); 
+    }
+  }, [selectedFichaEmail, setSelectedFichaEmail, user?.email]);
 
-  const isMestre = (email) => email === "mestre@reqviemrpg.com";
-  const getAuraColor = (fichaData) => CORES_AURA[fichaData?.tipoAura] || null;
-
-  if (role !== "master") {
-    return <FichaPersonagem user={user} fichaId={selectedFichaEmail} isMestre={false} />;
-  }
-
-  // Pega todas as fichas do onSnapshot
-  const todasFichas = Object.keys(fichasDataMap);
-  
-  // 🟢 FILTRAR E ORDENAR FICHAS COM BASE NA BUSCA (nome ficha, email E nome do jogador)
+  // 🟢 FILTRAR FICHAS (MEMOIZADO)
   const fichasFiltradas = useMemo(() => {
+    const todasFichas = Object.keys(fichasDataMap);
     let pj = todasFichas.filter(fid => (fichasDataMap[fid]?.tipoFicha || "PJ") === "PJ" && fid !== "mestre@reqviemrpg.com");
     let pm = todasFichas.filter(fid => fichasDataMap[fid]?.tipoFicha === "PM" && fid !== "mestre@reqviemrpg.com");
     
     if (termoBusca.trim()) {
       const termoNormalizado = normalizar(termoBusca);
-      pj = pj.filter(fid => {
+      const filtro = (fid) => {
         const nome = normalizar(fichasDataMap[fid]?.nome || "");
         const email = normalizar(fid);
         const jogador = normalizar(jogadorPorFicha[fid] || "");
         return nome.includes(termoNormalizado) || email.includes(termoNormalizado) || jogador.includes(termoNormalizado);
-      });
-      pm = pm.filter(fid => {
-        const nome = normalizar(fichasDataMap[fid]?.nome || "");
-        const email = normalizar(fid);
-        const jogador = normalizar(jogadorPorFicha[fid] || "");
-        return nome.includes(termoNormalizado) || email.includes(termoNormalizado) || jogador.includes(termoNormalizado);
-      });
+      };
+      pj = pj.filter(filtro);
+      pm = pm.filter(filtro);
     }
     
-    // Ordenar alfabeticamente (ignorando acentos)
     const ordenar = (a, b) => {
       const nomeA = normalizar(fichasDataMap[a]?.nome || a);
       const nomeB = normalizar(fichasDataMap[b]?.nome || b);
@@ -275,140 +438,27 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
     pm.sort(ordenar);
     
     return { pj, pm };
-  }, [todasFichas, fichasDataMap, termoBusca, jogadorPorFicha]);
+  }, [fichasDataMap, termoBusca, jogadorPorFicha]);
 
-  // Renderiza um item de ficha (reutilizado para PJ e PM)
-  const renderFichaItem = (fid, isPM = false) => {
-    const ficha = fichasDataMap[fid];
-    const auraCor = getAuraColor(ficha);
-    const jogadorAtual = jogadorPorFicha[fid] || "";
-    const isSalvando = salvandoJogador[fid] || false;
-        const nivelInfo = getNivelInfo(fid);
-    const posicao = getPosicao(fid);
-    
-    return (
-      <ListItem 
-        key={fid} 
-        selected={selectedFichaEmail === fid} 
-        onClick={() => setSelectedFichaEmail(fid)}
-        sx={{ 
-          cursor: 'pointer', 
-          '&:hover': { bgcolor: 'rgba(255,255,255,0.08)' }, 
-          borderRadius: 1, 
-          mb: 0.5, 
-          bgcolor: selectedFichaEmail === fid ? '#1e3a5f' : 'transparent', 
-          borderLeft: auraCor ? `3px solid ${auraCor}` : 'none', 
-          pr: 2,
-          flexWrap: 'wrap',
-        }}
-        secondaryAction={
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
-            {!isPM && (
-              <IconButton edge="end" size="small" onClick={(e) => { e.stopPropagation(); setContaToDelete(fid); setDeleteContaDialogOpen(true); }} sx={{ color: '#dc2626', '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.1)' } }} title="Deletar Conta"><PersonRemoveIcon fontSize="small" /></IconButton>
-            )}
-            <IconButton edge="end" size="small" onClick={(e) => { e.stopPropagation(); setFichaToDelete(fid); setDeleteFichaDialogOpen(true); }} sx={{ color: '#ef4444', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }} title="Deletar Ficha"><DeleteIcon fontSize="small" /></IconButton>
-          </Box>
-        }
-      >
-        <ListItemAvatar>
-          <Avatar src={ficha?.imagemPersonagem || ficha?.imagens?.[0] || ""} sx={{ width: 36, height: 36, bgcolor: '#333', cursor: 'pointer', border: auraCor ? `2px solid ${auraCor}` : '1px solid #555' }}
-            onClick={(e) => { e.stopPropagation(); const img = ficha?.imagemPersonagem || ficha?.imagens?.[0]; if (img) { setLightboxImage(img); setZoom(1); } }}>
-            {(ficha?.nome || fid)[0]?.toUpperCase()}
-          </Avatar>
-        </ListItemAvatar>
-        
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <ListItemText 
-            primary={ficha?.nome || fid}
-            secondary={
-              <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.3, flexWrap: 'wrap' }}>
-                {ficha?.tipoAura && (
-                  <Chip label={ficha.tipoAura} size="small" 
-                    sx={{ bgcolor: `${auraCor}22`, color: auraCor, fontWeight: 'bold', fontSize: '0.55rem', height: 16 }} />
-                )}
-                {jogadorAtual && (
-                  <Chip 
-                    label={`👤 ${jogadorAtual}`}
-                    size="small"
-                    sx={{ bgcolor: '#1e3a5f', color: '#94a3b8', fontSize: '0.55rem', height: 16 }}
-                  />
-                )}
-                                {posicao && (
-                  <Chip 
-                    label={`🏆 #${posicao}`} 
-                    size="small" 
-                    sx={{ 
-                      bgcolor: posicao === 1 ? '#FFD700' : posicao === 2 ? '#C0C0C0' : posicao === 3 ? '#CD7F32' : '#1e3a5f',
-                      color: posicao <= 3 ? '#000' : '#fff',
-                      fontSize: '0.55rem', 
-                      height: 16,
-                      fontWeight: 'bold'
-                    }} 
-                  />
-                )}
-                <Chip 
-                  label={`⭐ LV ${nivelInfo.level}`} 
-                  size="small" 
-                  sx={{ bgcolor: '#1e3a5f', color: '#8ecaff', fontSize: '0.55rem', height: 16, fontWeight: 'bold' }} 
-                />
-              </Box>
-            }
-            primaryTypographyProps={{ sx: { color: auraCor || '#fff', fontWeight: 'bold', fontSize: '0.85rem', textShadow: auraCor ? `0 0 6px ${auraCor}44` : 'none' } }}
-            secondaryTypographyProps={{ component: 'div' }}
-          />
-        </Box>
-        
-        {/* 🟢 DROPLIST PARA ATRELAR JOGADOR */}
-        <FormControl 
-          size="small" 
-          sx={{ minWidth: 120, ml: 1 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Select
-            value={jogadorAtual}
-            onChange={(e) => atrelarJogador(fid, e.target.value)}
-            disabled={isSalvando}
-            displayEmpty
-            sx={{ 
-              color: jogadorAtual ? '#fff' : '#64748b',
-              fontSize: '0.7rem',
-              height: 30,
-              '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-              '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
-              '& .MuiSelect-icon': { color: '#94a3b8' }
-            }}
-            MenuProps={{
-              PaperProps: { 
-                sx: { 
-                  bgcolor: "#1a1a2e", 
-                  color: "#fff",
-                  maxHeight: 300,
-                  '& .MuiMenuItem-root': {
-                    fontSize: '0.75rem',
-                    '&:hover': { bgcolor: '#1e3a5f' }
-                  }
-                } 
-              }
-            }}
-          >
-            <MenuItem value="">
-              <em style={{ color: '#64748b' }}>Nenhum</em>
-            </MenuItem>
-            {jogadores.map(nome => (
-              <MenuItem key={nome} value={nome}>{nome}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </ListItem>
-    );
-  };
+  if (role !== "master") {
+    return <FichaPersonagem user={user} fichaId={selectedFichaEmail} isMestre={false} />;
+  }
+
+  const todasFichas = Object.keys(fichasDataMap);
 
   return (
-    <Paper sx={{ p: 2, flex: 1, overflowY: "auto", bgcolor: "#0f172a" }}>
+    <Paper sx={{ 
+      p: 2, 
+      flex: 1, 
+      overflowY: "auto", 
+      bgcolor: "#0f172a",
+      WebkitOverflowScrolling: 'touch',
+      '&::-webkit-scrollbar': { width: '4px' },
+      '&::-webkit-scrollbar-thumb': { background: 'rgba(0,224,255,0.2)', borderRadius: '10px' },
+    }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Typography variant="h6" sx={{ color: "#fff" }}>Fichas</Typography>
         
-        {/* 🟢 BOTÃO EDITAR JOGADORES */}
         <Button
           size="small"
           variant={editandoJogadores ? "contained" : "outlined"}
@@ -425,14 +475,12 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
         </Button>
       </Box>
       
-      {/* 🟢 PAINEL DE EDIÇÃO DE JOGADORES */}
       {editandoJogadores && (
         <Paper sx={{ p: 2, mb: 2, bgcolor: '#1a1a2e', border: '1px solid #ff980044', borderRadius: 2 }}>
           <Typography variant="subtitle2" sx={{ color: '#ff9800', mb: 1 }}>
             👥 Gerenciar Jogadores ({jogadores.length})
           </Typography>
           
-          {/* Adicionar novo */}
           <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
             <TextField
               size="small"
@@ -454,7 +502,6 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
             </Button>
           </Box>
           
-          {/* Lista de jogadores */}
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             {jogadores.map(nome => (
               <Chip
@@ -480,7 +527,6 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
       
       <Divider sx={{ my: 1, bgcolor: "#334155" }} />
       
-      {/* 🟢 BARRA DE BUSCA */}
       <TextField
         fullWidth
         size="small"
@@ -513,20 +559,36 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
         }}
       />
 
-      {/* 🟢 FICHA DO MESTRE */}
       {(normalizar("mestre").includes(normalizar(termoBusca)) || !termoBusca) && (
         <ListItem
           selected={selectedFichaEmail === "mestre@reqviemrpg.com"}
           onClick={() => setSelectedFichaEmail("mestre@reqviemrpg.com")}
-          sx={{ cursor: 'pointer', borderRadius: 2, mb: 1.5, bgcolor: selectedFichaEmail === "mestre@reqviemrpg.com" ? 'rgba(255,215,0,0.15)' : 'rgba(255,215,0,0.05)', border: selectedFichaEmail === "mestre@reqviemrpg.com" ? '2px solid #FFD700' : '1px solid rgba(255,215,0,0.3)', boxShadow: '0 0 12px rgba(255,215,0,0.2)', '&:hover': { bgcolor: 'rgba(255,215,0,0.12)', boxShadow: '0 0 20px rgba(255,215,0,0.4)' } }}
+          sx={{ 
+            cursor: 'pointer', 
+            borderRadius: 2, 
+            mb: 1.5, 
+            bgcolor: selectedFichaEmail === "mestre@reqviemrpg.com" ? 'rgba(255,215,0,0.15)' : 'rgba(255,215,0,0.05)', 
+            border: selectedFichaEmail === "mestre@reqviemrpg.com" ? '2px solid #FFD700' : '1px solid rgba(255,215,0,0.3)', 
+            boxShadow: '0 0 12px rgba(255,215,0,0.2)', 
+            '&:hover': { bgcolor: 'rgba(255,215,0,0.12)', boxShadow: '0 0 20px rgba(255,215,0,0.4)' },
+            contentVisibility: 'auto',
+            containIntrinsicSize: 'auto 50px',
+          }}
         >
           <ListItemAvatar>
-            <Avatar src={fichasDataMap["mestre@reqviemrpg.com"]?.imagemPersonagem || ""} sx={{ width: 40, height: 40, border: '2px solid #FFD700', cursor: 'pointer' }}
-              onClick={(e) => { e.stopPropagation(); const img = fichasDataMap["mestre@reqviemrpg.com"]?.imagemPersonagem; if (img) { setLightboxImage(img); setZoom(1); } }} />
+            <Avatar 
+              src={fichasDataMap["mestre@reqviemrpg.com"]?.imagemPersonagem || ""} 
+              sx={{ width: 40, height: 40, border: '2px solid #FFD700', cursor: 'pointer' }}
+              onClick={(e) => { e.stopPropagation(); const img = fichasDataMap["mestre@reqviemrpg.com"]?.imagemPersonagem; if (img) { setLightboxImage(img); setZoom(1); } }} 
+              imgProps={{ loading: 'lazy', decoding: 'async' }}
+            />
           </ListItemAvatar>
-          <ListItemText primary="👑 MESTRE" secondary="mestre@reqviemrpg.com"
+          <ListItemText 
+            primary="👑 MESTRE" 
+            secondary="mestre@reqviemrpg.com"
             primaryTypographyProps={{ sx: { color: '#FFD700', fontWeight: 'bold', fontSize: '0.95rem', textShadow: '0 0 8px rgba(255,215,0,0.5)' } }}
-            secondaryTypographyProps={{ sx: { color: 'rgba(255,215,0,0.6)', fontSize: '0.7rem' } }} />
+            secondaryTypographyProps={{ sx: { color: 'rgba(255,215,0,0.6)', fontSize: '0.7rem' } }} 
+          />
         </ListItem>
       )}
 
@@ -534,7 +596,6 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
         <Typography sx={{ color: "#94a3b8" }}>Nenhuma ficha criada.</Typography>
       ) : (
         <>
-          {/* 🟢 CONTADOR DE RESULTADOS */}
           {termoBusca && (
             <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1 }}>
               {fichasFiltradas.pj.length + fichasFiltradas.pm.length} resultado(s) para "{termoBusca}"
@@ -545,7 +606,29 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
             <Box sx={{ mb: 2 }}>
               <Typography variant="subtitle2" sx={{ color: '#4caf50', fontWeight: 'bold', borderBottom: '1px solid #4caf50', pb: 0.5, mb: 1 }}>── PERSONAGENS DO JOGADOR ──</Typography>
               <List dense>
-                {fichasFiltradas.pj.map(fid => renderFichaItem(fid, false))}
+                {fichasFiltradas.pj.map(fid => (
+                  <FichaItem
+                    key={fid}
+                    fid={fid}
+                    ficha={fichasDataMap[fid]}
+                    isPM={false}
+                    selectedFichaEmail={selectedFichaEmail}
+                    setSelectedFichaEmail={setSelectedFichaEmail}
+                    setContaToDelete={setContaToDelete}
+                    setDeleteContaDialogOpen={setDeleteContaDialogOpen}
+                    setFichaToDelete={setFichaToDelete}
+                    setDeleteFichaDialogOpen={setDeleteFichaDialogOpen}
+                    setLightboxImage={setLightboxImage}
+                    setZoom={setZoom}
+                    jogadorAtual={jogadorPorFicha[fid] || ""}
+                    jogadores={jogadores}
+                    atrelarJogador={atrelarJogador}
+                    isSalvando={salvandoJogador[fid] || false}
+                    nivelInfo={getNivelInfo(fid)}
+                    posicao={getPosicao(fid)}
+                    auraCor={getAuraColor(fichasDataMap[fid])}
+                  />
+                ))}
               </List>
             </Box>
           )}
@@ -554,7 +637,29 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
             <Box sx={{ mb: 2 }}>
               <Typography variant="subtitle2" sx={{ color: '#ff9800', fontWeight: 'bold', borderBottom: '1px solid #ff9800', pb: 0.5, mb: 1 }}>── PERSONAGENS DO MESTRE ──</Typography>
               <List dense>
-                {fichasFiltradas.pm.map(fid => renderFichaItem(fid, true))}
+                {fichasFiltradas.pm.map(fid => (
+                  <FichaItem
+                    key={fid}
+                    fid={fid}
+                    ficha={fichasDataMap[fid]}
+                    isPM={true}
+                    selectedFichaEmail={selectedFichaEmail}
+                    setSelectedFichaEmail={setSelectedFichaEmail}
+                    setContaToDelete={setContaToDelete}
+                    setDeleteContaDialogOpen={setDeleteContaDialogOpen}
+                    setFichaToDelete={setFichaToDelete}
+                    setDeleteFichaDialogOpen={setDeleteFichaDialogOpen}
+                    setLightboxImage={setLightboxImage}
+                    setZoom={setZoom}
+                    jogadorAtual={jogadorPorFicha[fid] || ""}
+                    jogadores={jogadores}
+                    atrelarJogador={atrelarJogador}
+                    isSalvando={salvandoJogador[fid] || false}
+                    nivelInfo={getNivelInfo(fid)}
+                    posicao={getPosicao(fid)}
+                    auraCor={getAuraColor(fichasDataMap[fid])}
+                  />
+                ))}
               </List>
             </Box>
           )}
@@ -603,7 +708,6 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
         </DialogActions>
       </Dialog>
 
-      {/* LIGHTBOX */}
       {lightboxImage && (
         <Box onClick={() => setLightboxImage(null)} sx={{ position: "fixed", inset: 0, bgcolor: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999999 }}>
           <LightboxImage src={lightboxImage} zoom={zoom} setZoom={setZoom} />

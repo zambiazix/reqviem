@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"; // 🟢 useRef importado
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import {
   Box,
   Button,
@@ -26,12 +26,160 @@ import remarkGfm from "remark-gfm";
 
 const MESTRE_EMAIL = "mestre@reqviemrpg.com";
 
+// 🟢 LIGHTBOX OTIMIZADO
+const LightboxImage = memo(({ src, zoom, setZoom, onClose }) => {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [start, setStart] = useState({ x: 0, y: 0 });
+
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+    setStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  }, [position]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    
+    const handleMouseMove = (e) => {
+      setPosition({ x: e.clientX - start.x, y: e.clientY - start.y });
+    };
+    const handleMouseUp = () => setDragging(false);
+    
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragging, start]);
+
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
+  }, [setZoom]);
+
+  return (
+    <div
+      onClick={onClose}
+      onWheel={handleWheel}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        background: "rgba(0,0,0,0.85)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 3000,
+        cursor: "zoom-out",
+      }}
+    >
+      <img
+        src={src}
+        alt="ampliada"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={handleMouseDown}
+        draggable={false}
+        loading="eager"
+        decoding="async"
+        style={{
+          transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+          transition: dragging ? "none" : "transform 0.2s ease",
+          maxWidth: "90%",
+          maxHeight: "90%",
+          borderRadius: 10,
+          cursor: dragging ? "grabbing" : "grab",
+          userSelect: "none",
+          touchAction: "none",
+        }}
+      />
+      <IconButton
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        sx={{
+          position: "fixed",
+          top: 16,
+          right: 16,
+          color: "#fff",
+          background: "rgba(0,0,0,0.5)",
+          "&:hover": { background: "rgba(0,0,0,0.8)" },
+        }}
+      >
+        <CloseIcon />
+      </IconButton>
+    </div>
+  );
+});
+
+// 🟢 COMPONENTE DE TÓPICO MEMOIZADO
+const TopicCard = memo(({ topic, index, isMaster, onEdit, onDelete, setLightboxImage, setZoom }) => {
+  return (
+    <Box
+      sx={{
+        bgcolor: "#2a2a2a",
+        borderRadius: 2,
+        p: 2,
+        position: "relative",
+        overflowWrap: "break-word",
+        contentVisibility: 'auto',
+        containIntrinsicSize: 'auto 150px',
+      }}
+    >
+      <Typography variant="h6">{topic.title}</Typography>
+      <Box sx={{ mt: 1 }} className="markdown-content">
+        <ReactMarkdown
+          children={topic.content}
+          remarkPlugins={[remarkGfm]}
+          components={{
+            img: ({ ...props }) => (
+              <img
+                {...props}
+                loading="lazy"
+                decoding="async"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxImage(e.target.src);
+                  setZoom(1);
+                }}
+                style={{
+                  maxWidth: "100%",
+                  borderRadius: "8px",
+                  marginTop: "8px",
+                  cursor: "pointer",
+                }}
+                draggable={false}
+              />
+            ),
+            video: ({ ...props }) => (
+              <video {...props} controls preload="none" style={{ maxWidth: "100%", borderRadius: "8px" }} />
+            ),
+          }}
+        />
+      </Box>
+
+      {isMaster && (
+        <Box sx={{ position: "absolute", top: 8, right: 8, display: 'flex', gap: 0.5 }}>
+          <IconButton color="info" size="small" onClick={() => onEdit(index)}>
+            <EditIcon fontSize="small" />
+          </IconButton>
+          <IconButton color="error" size="small" onClick={() => onDelete(index)}>
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      )}
+    </Box>
+  );
+});
+
 export default function Sistema() {
   const navigate = useNavigate();
   const auth = getAuth();
   const currentUser = auth.currentUser;
-  const isMaster = currentUser?.email === MESTRE_EMAIL;
-  const contentInputRef = useRef(null); // 🟢 ref para o textarea
+  const isMaster = useMemo(() => currentUser?.email === MESTRE_EMAIL, [currentUser]);
+  const contentInputRef = useRef(null);
 
   // estados
   const [topicsLeft, setTopicsLeft] = useState([]);
@@ -47,7 +195,8 @@ export default function Sistema() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
 
-  const markdownStyles = `
+  // 🟢 MEMOIZAR ESTILOS MARKDOWN
+  const markdownStyles = useMemo(() => `
     .markdown-content img {
       max-width: 100%;
       height: auto;
@@ -65,7 +214,7 @@ export default function Sistema() {
       margin: 8px 0;
       display: block;
     }
-  `;
+  `, []);
 
   // 🔹 Carrega tópicos do Firestore
   useEffect(() => {
@@ -79,8 +228,8 @@ export default function Sistema() {
     return () => unsub();
   }, []);
 
-  // 🔹 Abre modal
-  const handleOpenDialog = (sideSel, index = null) => {
+  // 🔹 Abre modal (MEMOIZADO)
+  const handleOpenDialog = useCallback((sideSel, index = null) => {
     setSide(sideSel);
     setEditIndex(index);
     if (index !== null) {
@@ -92,10 +241,10 @@ export default function Sistema() {
       setContent("");
     }
     setOpenDialog(true);
-  };
+  }, [topicsLeft, topicsRight]);
 
-  // 🟢 Upload de imagem via ImgBB (backend)
-  const handleImageUpload = async (e) => {
+  // 🟢 Upload de imagem (MEMOIZADO)
+  const handleImageUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -128,7 +277,6 @@ export default function Sistema() {
 
       const markdownImage = `![${file.name}](${imageUrl})`;
 
-      // Insere no ponto do cursor
       const textarea = contentInputRef.current;
       if (textarea) {
         const start = textarea.selectionStart;
@@ -151,12 +299,12 @@ export default function Sistema() {
       alert("Erro ao enviar imagem. Tente novamente.");
     } finally {
       setUploading(false);
-      e.target.value = ""; // limpa input
+      e.target.value = "";
     }
-  };
+  }, []);
 
-  // 🔹 Salvar tópico
-  const handleSave = async () => {
+  // 🔹 Salvar tópico (MEMOIZADO)
+  const handleSave = useCallback(async () => {
     const newLeft = [...topicsLeft];
     const newRight = [...topicsRight];
 
@@ -172,10 +320,10 @@ export default function Sistema() {
     setTopicsLeft(newLeft);
     setTopicsRight(newRight);
     setOpenDialog(false);
-  };
+  }, [topicsLeft, topicsRight, side, editIndex, title, content]);
 
-  // 🔹 Deletar tópico
-  const handleDelete = async (sideSel, index) => {
+  // 🔹 Deletar tópico (MEMOIZADO)
+  const handleDelete = useCallback(async (sideSel, index) => {
     const newLeft = [...topicsLeft];
     const newRight = [...topicsRight];
 
@@ -185,16 +333,27 @@ export default function Sistema() {
     await setDoc(doc(db, "world", "Sistema"), { left: newLeft, right: newRight });
     setTopicsLeft(newLeft);
     setTopicsRight(newRight);
-  };
+  }, [topicsLeft, topicsRight]);
 
-  // === Lightbox zoom ===
-  const handleWheelZoom = (e) => {
-    e.preventDefault();
-    setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5));
-  };
+  // 🟢 CALLBACKS PARA O TOPIC CARD
+  const handleEditTopic = useCallback((sideSel, index) => {
+    handleOpenDialog(sideSel, index);
+  }, [handleOpenDialog]);
 
-  // 🔹 Renderiza coluna
-  const renderColumn = (sideSel, topics) => (
+  const handleDeleteTopic = useCallback((sideSel, index) => {
+    if (window.confirm("Excluir este tópico?")) {
+      handleDelete(sideSel, index);
+    }
+  }, [handleDelete]);
+
+  const handleCloseLightbox = useCallback(() => setLightboxImage(null), []);
+
+  const handleCloseDialog = useCallback(() => setOpenDialog(false), []);
+
+  const handleGoBack = useCallback(() => navigate("/"), [navigate]);
+
+  // 🟢 RENDERIZAR COLUNA (MEMOIZADO)
+  const renderColumn = useCallback((sideSel, topics) => (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2, height: "100%" }}>
       {isMaster && (
         <Button
@@ -202,6 +361,7 @@ export default function Sistema() {
           color="primary"
           startIcon={<AddIcon />}
           onClick={() => handleOpenDialog(sideSel)}
+          size="small"
         >
           Adicionar Tópico ({sideSel === "left" ? "Esquerda" : "Direita"})
         </Button>
@@ -214,60 +374,19 @@ export default function Sistema() {
       )}
 
       {topics.map((t, i) => (
-        <Box
-          key={i}
-          sx={{
-            bgcolor: "#2a2a2a",
-            borderRadius: 2,
-            p: 2,
-            position: "relative",
-            overflowWrap: "break-word",
-          }}
-        >
-          <Typography variant="h6">{t.title}</Typography>
-          <Box sx={{ mt: 1 }} className="markdown-content">
-            <ReactMarkdown
-              children={t.content}
-              remarkPlugins={[remarkGfm]}
-              components={{
-                img: ({ ...props }) => (
-                  <img
-                    {...props}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLightboxImage(e.target.src);
-                      setZoom(1);
-                    }}
-                    style={{
-                      maxWidth: "100%",
-                      borderRadius: "8px",
-                      marginTop: "8px",
-                      cursor: "pointer",
-                    }}
-                    draggable={false}
-                  />
-                ),
-                video: ({ ...props }) => (
-                  <video {...props} controls style={{ maxWidth: "100%", borderRadius: "8px" }} />
-                ),
-              }}
-            />
-          </Box>
-
-          {isMaster && (
-            <Box sx={{ position: "absolute", top: 8, right: 8 }}>
-              <IconButton color="info" onClick={() => handleOpenDialog(sideSel, i)}>
-                <EditIcon />
-              </IconButton>
-              <IconButton color="error" onClick={() => handleDelete(sideSel, i)}>
-                <DeleteIcon />
-              </IconButton>
-            </Box>
-          )}
-        </Box>
+        <TopicCard
+          key={`${sideSel}-${i}-${t.title}`}
+          topic={t}
+          index={i}
+          isMaster={isMaster}
+          onEdit={(idx) => handleEditTopic(sideSel, idx)}
+          onDelete={(idx) => handleDeleteTopic(sideSel, idx)}
+          setLightboxImage={setLightboxImage}
+          setZoom={setZoom}
+        />
       ))}
     </Box>
-  );
+  ), [isMaster, handleOpenDialog, handleEditTopic, handleDeleteTopic, setLightboxImage, setZoom]);
 
   return (
     <Box
@@ -289,8 +408,9 @@ export default function Sistema() {
           variant="contained"
           color="secondary"
           startIcon={<ArrowBackIcon />}
-          onClick={() => navigate("/")}
+          onClick={handleGoBack}
           sx={{ mb: 3 }}
+          size="small"
         >
           Voltar
         </Button>
@@ -318,7 +438,7 @@ export default function Sistema() {
       </Box>
 
       {/* modal de criação/edição */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth maxWidth="md">
+      <Dialog open={openDialog} onClose={handleCloseDialog} fullWidth maxWidth="md">
         <DialogTitle>{editIndex !== null ? "Editar Tópico" : "Novo Tópico"}</DialogTitle>
         <DialogContent>
           <TextField
@@ -359,7 +479,7 @@ export default function Sistema() {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
+          <Button onClick={handleCloseDialog}>Cancelar</Button>
           <Button variant="contained" onClick={handleSave}>
             Salvar
           </Button>
@@ -368,79 +488,12 @@ export default function Sistema() {
 
       {/* LIGHTBOX */}
       {lightboxImage && (
-        <div
-          onClick={() => setLightboxImage(null)}
-          onWheel={handleWheelZoom}
-          className="lightbox-overlay"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            background: "rgba(0,0,0,0.85)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 3000,
-            cursor: "zoom-in",
-          }}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const img = e.currentTarget.querySelector("img");
-            const startX = e.clientX - (parseFloat(img.dataset.x || "0"));
-            const startY = e.clientY - (parseFloat(img.dataset.y || "0"));
-
-            const handleMouseMove = (ev) => {
-              ev.preventDefault();
-              const x = ev.clientX - startX;
-              const y = ev.clientY - startY;
-              img.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
-              img.dataset.x = x;
-              img.dataset.y = y;
-            };
-
-            const handleMouseUp = () => {
-              window.removeEventListener("mousemove", handleMouseMove);
-              window.removeEventListener("mouseup", handleMouseUp);
-            };
-
-            window.addEventListener("mousemove", handleMouseMove);
-            window.addEventListener("mouseup", handleMouseUp);
-          }}
-        >
-          <img
-            src={lightboxImage}
-            alt="ampliada"
-            style={{
-              transform: `scale(${zoom})`,
-              transition: "transform 0.1s ease",
-              maxWidth: "90%",
-              maxHeight: "90%",
-              borderRadius: 10,
-              cursor: "grab",
-              userSelect: "none",
-            }}
-            onClick={(e) => e.stopPropagation()}
-            draggable={false}
-            data-x="0"
-            data-y="0"
-          />
-          <IconButton
-            onClick={() => setLightboxImage(null)}
-            sx={{
-              position: "fixed",
-              top: 16,
-              right: 16,
-              color: "#fff",
-              background: "rgba(0,0,0,0.5)",
-              "&:hover": { background: "rgba(0,0,0,0.8)" },
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </div>
+        <LightboxImage
+          src={lightboxImage}
+          zoom={zoom}
+          setZoom={setZoom}
+          onClose={handleCloseLightbox}
+        />
       )}
     </Box>
   );

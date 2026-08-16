@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -134,8 +134,16 @@ const [novoPerfil, setNovoPerfil] = useState({
   resumo: "",
 });
 
-  const playersFromXp = Object.keys(hud?.xpMap || {});
-  const mergedEmails = Object.keys(fichasMap || {});
+  const mergedEmails = useMemo(() => Object.keys(fichasMap || {}), [fichasMap]);
+  
+  const pjEmails = useMemo(() => 
+    mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ"),
+  [mergedEmails, fichasMap]);
+  
+  const pmEmails = useMemo(() => 
+    mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM"),
+  [mergedEmails, fichasMap]);
+  
   const textShadow = "0px 0px 3px rgba(0,0,0,0.85)";
     const CORES_AURA_HUD = {
     "Titã": "#ff3b3b",
@@ -248,14 +256,21 @@ useEffect(() => {
   }, [collapsed, hud]); // depende do hud e collapsed para manter atualizado
 
   useEffect(() => {
+    let rafId = null;
+    
     function onMouseMove(e) {
       if (!dragging || !refBox.current) return;
-      const newX = e.clientX - dragOffset.current.x;
-      const newY = e.clientY - dragOffset.current.y;
-      const boundedX = Math.max(8, Math.min(window.innerWidth - refBox.current.offsetWidth - 8, newX));
-      const boundedY = Math.max(8, Math.min(window.innerHeight - refBox.current.offsetHeight - 8, newY));
-      refBox.current.style.left = `${boundedX}px`;
-      refBox.current.style.top = `${boundedY}px`;
+      
+      if (rafId) cancelAnimationFrame(rafId);
+      
+      rafId = requestAnimationFrame(() => {
+        const newX = e.clientX - dragOffset.current.x;
+        const newY = e.clientY - dragOffset.current.y;
+        const boundedX = Math.max(8, Math.min(window.innerWidth - refBox.current.offsetWidth - 8, newX));
+        const boundedY = Math.max(8, Math.min(window.innerHeight - refBox.current.offsetHeight - 8, newY));
+        refBox.current.style.left = `${boundedX}px`;
+        refBox.current.style.top = `${boundedY}px`;
+      });
     }
 function onMouseUp() {
   if (!dragging) return;
@@ -285,11 +300,17 @@ function onMouseUp() {
 }, [collapsed, hud?.floatingPos]);
   // 🟢 REDIMENSIONAMENTO DA JANELA
   useEffect(() => {
+    let rafId = null;
+    
     const handleMouseMove = (e) => {
       if (redimensionando) {
-        const newWidth = Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x));
-        const newHeight = Math.max(400, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y));
-        setTamanho({ width: newWidth, height: newHeight });
+        if (rafId) cancelAnimationFrame(rafId);
+        
+        rafId = requestAnimationFrame(() => {
+          const newWidth = Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x));
+          const newHeight = Math.max(400, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y));
+          setTamanho({ width: newWidth, height: newHeight });
+        });
       }
     };
 
@@ -339,12 +360,6 @@ const handleMouseUp = () => {
   // debug logs: tudo síncrono no clique
   try {
     // eslint-disable-next-line no-console
-    console.log("handleTurnClick -> sync rect:", {
-      rect,
-      refBoxCurrent: !!refBox.current,
-      hudRectBefore: hudRect,
-      showTurnMenuBefore: showTurnMenu,
-    });
   } catch {}
 };
 
@@ -352,7 +367,6 @@ const handleMouseUp = () => {
     const nome = (fichasMap[email]?.nome) || email;
     try {
       await setTurn({ id: email, nick: nome, email });
-      handleCloseTurnModal();
       setShowTurnMenu(false);
       try { playSFX("/musicas/mudou_turno.mp3"); } catch {}
     } catch (e) {
@@ -391,20 +405,17 @@ const removerSorteAzar = async (email) => {
   const [runningLocal, setRunningLocal] = useState(false);
   const intervalRef = useRef(null);
 
-  const faseClass = (() => {
-  switch (hud?.world?.phase) {
-    case "manhã": return "fase-manha text-dark";
-    case "tarde": return "fase-tarde text-dark";
-    case "noite": return "fase-noite text-light";
-    case "madrugada": return "fase-madrugada text-light";
-    default: return "fase-manha text-dark";
-  }
-})();
+  const faseClass = useMemo(() => {
+    switch (hud?.world?.phase) {
+      case "manhã": return "fase-manha text-dark";
+      case "tarde": return "fase-tarde text-dark";
+      case "noite": return "fase-noite text-light";
+      case "madrugada": return "fase-madrugada text-light";
+      default: return "fase-manha text-dark";
+    }
+  }, [hud?.world?.phase]);
 
-console.log("HUD DEBUG:", {
-  fichasMap,
-  hud
-});
+
 
 function PortalSelect({ children }) {
   return (
@@ -485,7 +496,7 @@ useEffect(() => {
   // evita tocar várias vezes enquanto o valor repete
   if (prevRemainingRef.current !== remaining) {
     if (remaining === 1) {
-      console.log("🔔 TIMER: chegou no 1 → tocando SFX");
+      
       playSFX("/musicas/cronometro_zerou.mp3");
     }
   }
@@ -541,17 +552,14 @@ useEffect(() => {
     } catch {}
   };
 
-  const displayTime = (secs) => {
+  const displayTime = useCallback((secs) => {
     const s = Number(secs) || 0;
     const mm = Math.floor(s / 60);
     const ss = s % 60;
     return `${String(mm).padStart(1, "0")}:${String(ss).padStart(2, "0")}`;
-  };
+  }, []);
 
-  if (!currentUserEmail) return null;
-  if (loading) return null;
-
-  const getBg = (phase) => {
+  const getBg = useCallback((phase) => {
     switch (phase) {
       case "manhã": return "linear-gradient(180deg,#fff9e6,#fff3c4)";
       case "tarde": return "linear-gradient(180deg,#fff0e0,#ffd1a8)";
@@ -559,36 +567,40 @@ useEffect(() => {
       case "madrugada": return "linear-gradient(180deg,#031026,#0a2440)";
       default: return "linear-gradient(180deg,#fff9e6,#fff3c4)";
     }
-  };
+  }, []);
 
-  const displayNameFor = (email) => {
+  const displayNameFor = useCallback((email) => {
     if (!email) return "—";
     return fichasMap[email]?.nome || email;
-  };
+  }, [fichasMap]);
 
-  const calcularStatus = (email) => {
-  const ficha = fichasMap?.[email];
-  if (!ficha) return null;
+  const calcularStatus = useCallback((email) => {
+    const ficha = fichasMap?.[email];
+    if (!ficha) return null;
 
-  const constituicao = Number(ficha?.atributos?.constituicao || 0);
-  const sobrevivencia = Number(ficha?.pericias?.sobrevivencia || 0);
-  const pvMax = 100 + (constituicao + sobrevivencia) * 10;
-  const pvAtual = Number(ficha?.pontosVida || 0);
+    const constituicao = Number(ficha?.atributos?.constituicao || 0);
+    const sobrevivencia = Number(ficha?.pericias?.sobrevivencia || 0);
+    const pvMax = 100 + (constituicao + sobrevivencia) * 10;
+    const pvAtual = Number(ficha?.pontosVida || 0);
 
-  const vontade = Number(ficha?.atributos?.vontade || 0);
-  const aura = Number(ficha?.pericias?.aura || 0);
-  const peMax = 10 + (vontade + aura) * 5;
-  const peAtual = Number(ficha?.pontosEnergia || 0);
+    const vontade = Number(ficha?.atributos?.vontade || 0);
+    const aura = Number(ficha?.pericias?.aura || 0);
+    const peMax = 10 + (vontade + aura) * 5;
+    const peAtual = Number(ficha?.pontosEnergia || 0);
 
-  return {
-    pvAtual,
-    pvMax,
-    peAtual,
-    peMax,
-    pvPercent: pvMax > 0 ? (pvAtual / pvMax) * 100 : 0,
-    pePercent: peMax > 0 ? (peAtual / peMax) * 100 : 0,
-  };
-};
+    return {
+      pvAtual,
+      pvMax,
+      peAtual,
+      peMax,
+      pvPercent: pvMax > 0 ? (pvAtual / pvMax) * 100 : 0,
+      pePercent: peMax > 0 ? (peAtual / peMax) * 100 : 0,
+    };
+  }, [fichasMap]);
+
+  if (!currentUserEmail) return null;
+  if (loading) return null;
+
 
   const CollapsedView = (
     <Paper
@@ -634,7 +646,7 @@ useEffect(() => {
   const anchorRect =
     turnAnchorEl && refBox.current ? refBox.current.getBoundingClientRect() : null;
   
-console.log("FASE ATUAL:", hud?.world?.phase, "CLASS:", faseClass);
+
 
 // --- Substituir por este menuRect robusto ----
 const menuRect = (() => {
@@ -651,10 +663,7 @@ const menuRect = (() => {
 })();
 
 if (!fichasMap) return null;
-console.log("HUD DEBUG:", {
-  fichasMap,
-  hud
-});
+
   return (
     <>
       <Box
@@ -775,8 +784,8 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
           '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.2)', borderRadius: '10px' }
         }}>
           {(() => {
-            const pj = mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ");
-            const pm = mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM");
+            const pj = pjEmails;
+            const pm = pmEmails;
             const grupos = [];
             if (pj.length > 0) grupos.push({ titulo: '── PERSONAGENS DO JOGADOR ──', fichas: pj, cor: '#4caf50' });
             if (pm.length > 0) grupos.push({ titulo: '── PERSONAGENS DO MESTRE ──', fichas: pm, cor: '#ff9800' });
@@ -980,12 +989,12 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
     // 🟢 MESTRE VÊ SEPARADO POR PJ/PM COM CORES DE AURA
     <>
       {/* PJ - Personagens dos Jogadores */}
-      {mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ").length > 0 && (
+      {pjEmails.length > 0 && (
         <Box sx={{ mb: 1 }}>
           <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', borderBottom: '1px solid #4caf5022', pb: 0.3, mb: 0.5, display: 'block' }}>
             ── PERSONAGENS DO JOGADOR ──
           </Typography>
-          {mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ").map((email) => {
+          {pjEmails.map((email) => {
             const status = calcularStatus(email);
             const aura = fichasMap[email]?.tipoAura;
             const corAura = CORES_AURA_HUD[aura] || '#4caf50';
@@ -1030,12 +1039,12 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
       )}
 
       {/* PM - Personagens do Mestre */}
-      {mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM").length > 0 && (
+      {pmEmails.length > 0 && (
         <Box sx={{ mb: 1 }}>
           <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold', borderBottom: '1px solid #ff980022', pb: 0.3, mb: 0.5, display: 'block' }}>
             ── PERSONAGENS DO MESTRE ──
           </Typography>
-          {mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM").map((email) => {
+          {pmEmails.map((email) => {
             const status = calcularStatus(email);
             const aura = fichasMap[email]?.tipoAura;
             const corAura = CORES_AURA_HUD[aura] || '#ff9800';
@@ -1167,7 +1176,7 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
       ── PERSONAGENS DO JOGADOR ──
     </Typography>
   </MenuItem>
-  {mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ").map((email) => (
+  {pjEmails.map((email) => (
     <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
       {displayNameFor(email)}
     </MenuItem>
@@ -1179,7 +1188,7 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
       </Typography>
     </MenuItem>
   )}
-  {mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM").map((email) => (
+  {pmEmails.map((email) => (
     <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
       {displayNameFor(email)}
     </MenuItem>
@@ -1445,7 +1454,7 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
                     ── PERSONAGENS DO JOGADOR ──
                   </Typography>
                 </MenuItem>
-                {mergedEmails.filter(e => (fichasMap[e]?.tipoFicha || "PJ") === "PJ").map((email) => (
+                {pjEmails.map((email) => (
                   <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
                     {displayNameFor(email)}
                   </MenuItem>
@@ -1457,7 +1466,7 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
                     </Typography>
                   </MenuItem>
                 )}
-                {mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM").map((email) => (
+                {pmEmails.map((email) => (
                   <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
                     {displayNameFor(email)}
                   </MenuItem>
