@@ -367,8 +367,8 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       const file = input.files[0]; if (!file) return;
       const fd = new FormData(); fd.append("image", file);
       const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-      const data = await res.json();
-      if (data?.success) setEditandoItem(prev => ({ ...prev, imagem: data.data.url }));
+            const data = await res.json();
+      if (data?.success) setEditandoItem(prev => ({ ...prev, imagem: data.data.image?.url || data.data.url }));
     };
     input.click();
   };
@@ -565,10 +565,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                             <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{p.nome}</Typography>
                             {isMaster && (
                               <Box sx={{ display: 'flex', gap: 0.3 }}>
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoPais(p); setNovoPaisNome(p.nome); }}>
+                                                                <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditandoPais(p); setNovoPaisNome(p.nome); }}>
                                   <EditIcon fontSize="small" />
                                 </IconButton>
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarPais(p.id); }}>
+                                                                <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deletarPais(p.id); }}>
                                   <DeleteIcon fontSize="small" color="error" />
                                 </IconButton>
                               </Box>
@@ -600,10 +600,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                             <Typography variant="body2" sx={{ flex: 1, color: '#fff' }}>{c.nome}</Typography>
                             {isMaster && (
                               <Box sx={{ display: 'flex', gap: 0.3 }}>
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoCidade(c); setNovaCidadeNome(c.nome); }}>
+                                                                <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditandoCidade(c); setNovaCidadeNome(c.nome); }}>
                                   <EditIcon fontSize="small" />
                                 </IconButton>
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarCidade(c.id); }}>
+                                                                <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deletarCidade(c.id); }}>
                                   <DeleteIcon fontSize="small" color="error" />
                                 </IconButton>
                               </Box>
@@ -639,12 +639,12 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                               </Box>
                               {isMaster && (
                                 <Box sx={{ display: 'flex', gap: 0.3 }}>
-                                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEditandoLoja(l); setNovaLojaNome(l.nome); }}>
-                                    <EditIcon fontSize="small" />
-                                  </IconButton>
-                                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarLoja(l.id); }}>
-                                    <DeleteIcon fontSize="small" color="error" />
-                                  </IconButton>
+                                                                  <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditandoLoja(l); setNovaLojaNome(l.nome); }}>
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                                                  <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deletarLoja(l.id); }}>
+                                  <DeleteIcon fontSize="small" color="error" />
+                                </IconButton>
                                 </Box>
                               )}
                             </Box>
@@ -711,8 +711,8 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                                   )}
                                   {isMaster && (
                                     <Box sx={{ display: "flex", gap: 0.3, mt: 0.3, justifyContent: 'flex-end' }}>
-                                      <IconButton size="small" onClick={() => setEditandoItem(item)}><EditIcon sx={{ fontSize: '0.8rem' }} /></IconButton>
-                                      <IconButton size="small" onClick={() => deletarItem(item.id)}><DeleteIcon sx={{ fontSize: '0.8rem' }} color="error" /></IconButton>
+                                                                            <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditandoItem(item); }}><EditIcon sx={{ fontSize: '0.8rem' }} /></IconButton>
+                                                                            <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deletarItem(item.id); }}><DeleteIcon sx={{ fontSize: '0.8rem' }} color="error" /></IconButton>
                                     </Box>
                                   )}
                                 </Box>
@@ -789,8 +789,8 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                 const fd = new FormData(); fd.append("image", file);
                 try {
                   const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-                  const data = await res.json();
-                  if (data?.success) setEditandoLoja(prev => ({ ...prev, donoImagem: data.data.url }));
+                                    const data = await res.json();
+                  if (data?.success) setEditandoLoja(prev => ({ ...prev, donoImagem: data.data.image?.url || data.data.url }));
                 } catch (err) { alert("Erro no upload"); }
               }} />
             </Button>
