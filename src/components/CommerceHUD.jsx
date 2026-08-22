@@ -16,6 +16,22 @@ import { db } from "../firebaseConfig";
 import { collection, doc, getDocs, setDoc, deleteDoc, onSnapshot, updateDoc } from "firebase/firestore";
 
 const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
+// 🟢 Função para extrair URL direta do ImgBB
+const getImagemDireta = (data) => {
+  if (!data?.success) return null;
+  // Prioridade 1: URL direta da imagem
+  if (data.data?.image?.url) return data.data.image.url;
+  // Prioridade 2: URL direta antiga
+  if (data.data?.url && data.data.url.startsWith('https://i.ibb.co')) return data.data.url;
+  // Prioridade 3: URL de página (converte para direta)
+  if (data.data?.url && data.data.url.includes('ibb.co')) {
+    const id = data.data.url.split('/').pop();
+    return `https://i.ibb.co/${id}`;
+  }
+  // Prioridade 4: display_url
+  if (data.data?.display_url) return data.data.display_url;
+  return null;
+};
 
 const TIPOS_DANO = [
   { valor: "Nenhum", label: "Nenhum (sem efeito)", cor: "#888888" },
@@ -48,6 +64,26 @@ const TIPOS_INSUMIVEL = [
   { valor: "Vestimenta_Pesada", label: "🔨 Kit de Forja (16-50)", cor: "#A0522D" },
   { valor: "Todos", label: "🔄 Regenerar Tudo", cor: "#00ff88" },
 ];
+// 🟢 CATEGORIAS DE LOJA
+const CATEGORIAS_LOJA = [
+  "Alfaiataria",
+  "Estábulo",
+  "Biblioteca",
+  "Mercearia",
+  "Estalagem",
+  "Forja",
+  "Oficina",
+  "Feira",
+  "Restaurante",
+  "Taverna",
+  "Farmácia",
+  "Transporte",
+  "Caça & Pesca",
+  "Carpintaria",
+  "Central-Pneumática",
+  "Penhores",
+  "Corporação",
+];
 
 function LightboxImage({ src, zoom, setZoom }) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -75,8 +111,10 @@ function LightboxImage({ src, zoom, setZoom }) {
   }, [dragging, start]);
 
   return (
-    <img src={src} alt="ampliada" onClick={(e) => e.stopPropagation()} onMouseDown={handleMouseDown}
+        <img src={src} alt="ampliada" onClick={(e) => e.stopPropagation()} onMouseDown={handleMouseDown}
       onWheel={(e) => { e.preventDefault(); setZoom((z) => Math.min(Math.max(z + e.deltaY * -0.001, 0.5), 5)); }}
+      loading="eager"
+      decoding="sync"
       style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`, transition: dragging ? "none" : "transform 0.2s ease", maxWidth: "90%", maxHeight: "90%", borderRadius: 10, cursor: dragging ? "grabbing" : "grab", userSelect: "none" }}
     />
   );
@@ -98,6 +136,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
   const [editandoPais, setEditandoPais] = useState(null);
   const [editandoCidade, setEditandoCidade] = useState(null);
   const [editandoLoja, setEditandoLoja] = useState(null);
+    const [lojaBaseId, setLojaBaseId] = useState("");
   const [editandoItem, setEditandoItem] = useState(null);
   const [novoPaisNome, setNovoPaisNome] = useState("");
   const [novaCidadeNome, setNovaCidadeNome] = useState("");
@@ -314,13 +353,40 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
   const salvarLoja = async () => {
     if (!novaLojaNome.trim() || !selectedPais || !selectedCidade) return;
     const id = editandoLoja?.id || novaLojaNome.trim().toLowerCase().replace(/\s+/g, '_');
+    
+    // Salva a loja
     await setDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", id), {
       nome: novaLojaNome.trim(),
       donoNome: editandoLoja?.donoNome || "",
       donoImagem: editandoLoja?.donoImagem || "",
       donoDescricao: editandoLoja?.donoDescricao || "",
+      categoria: editandoLoja?.categoria || "",
     });
-    setEditandoLoja(null); setNovaLojaNome("");
+    
+    // 🟢 Se for nova loja e houver loja base selecionada, copia os itens
+    if (!editandoLoja?.id && lojaBaseId) {
+      try {
+        const itensOrigemSnap = await getDocs(
+          collection(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", lojaBaseId, "itens")
+        );
+        
+        for (const itemDoc of itensOrigemSnap.docs) {
+          const itemData = itemDoc.data();
+          const novoItemId = Date.now().toString() + "_" + itemDoc.id;
+          await setDoc(
+            doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", id, "itens", novoItemId),
+            itemData
+          );
+        }
+        console.log(`✅ ${itensOrigemSnap.size} itens copiados da loja base`);
+      } catch (err) {
+        console.error("Erro ao copiar itens da loja base:", err);
+      }
+    }
+    
+    setEditandoLoja(null);
+    setNovaLojaNome("");
+    setLojaBaseId("");
     carregarLojas(selectedPais.id, selectedCidade.id);
   };
 
@@ -367,8 +433,9 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       const file = input.files[0]; if (!file) return;
       const fd = new FormData(); fd.append("image", file);
       const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-            const data = await res.json();
-      if (data?.success) setEditandoItem(prev => ({ ...prev, imagem: data.data.image?.url || data.data.url }));
+                  const data = await res.json();
+      const urlDireta = getImagemDireta(data);
+      if (urlDireta) setEditandoItem(prev => ({ ...prev, imagem: urlDireta }));
     };
     input.click();
   };
@@ -621,20 +688,44 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                     <Typography variant="subtitle1" sx={{ mt: 1, mb: 1, color: '#fff' }}>🏪 Lojas de {selectedCidade.nome}</Typography>
                     {isMaster && (
                       <Button variant="contained" startIcon={<AddIcon />} size="small" sx={{ mb: 1, bgcolor: '#2e7d32' }}
-                        onClick={() => { setEditandoLoja({ id: null, nome: "", donoNome: "", donoImagem: "", donoDescricao: "" }); setNovaLojaNome(""); }}>
+                                                onClick={() => { setEditandoLoja({ id: null, nome: "", donoNome: "", donoImagem: "", donoDescricao: "", categoria: "" }); setNovaLojaNome(""); setLojaBaseId(""); }}>
                         Nova Loja
                       </Button>
                     )}
-                    <Grid container spacing={0.5}>
-                      {lojas.map(l => (
+                                        <Grid container spacing={0.5}>
+                      {lojas
+                        .sort((a, b) => {
+                          // Agrupa por categoria (ordenar por categoria e depois nome)
+                          const catA = a.categoria || "";
+                          const catB = b.categoria || "";
+                          if (catA !== catB) return catA.localeCompare(catB);
+                          return (a.nome || "").localeCompare(b.nome || "");
+                        })
+                        .map(l => (
                         <Grid item xs={12} key={l.id}>
                           <Paper sx={{ p: 1.5, cursor: "pointer", bgcolor: "#0f172a", "&:hover": { bgcolor: "#1e3a5f" } }} onClick={() => selecionarLoja(l)}>
                             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                               {l.donoImagem ? <img src={l.donoImagem} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", cursor: "pointer" }}
                                 onClick={(e) => { e.stopPropagation(); setLightboxImage(l.donoImagem); setZoom(1); }} /> :
                                 <Box sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: "#334155", display: "flex", alignItems: "center", justifyContent: "center" }}>👤</Box>}
-                              <Box sx={{ flex: 1 }}>
-                                <Typography variant="body2" sx={{ fontWeight: "bold", color: '#fff' }}>{l.nome}</Typography>
+                                                            <Box sx={{ flex: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: "bold", color: '#fff' }}>{l.nome}</Typography>
+                                  {l.categoria && (
+                                    <Chip 
+                                      label={l.categoria} 
+                                      size="small" 
+                                      sx={{ 
+                                        bgcolor: '#1e3a5f', 
+                                        color: '#94a3b8', 
+                                        fontSize: '0.6rem', 
+                                        height: 18,
+                                        maxWidth: 120,
+                                        '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                                      }} 
+                                    />
+                                  )}
+                                </Box>
                                 {l.donoNome && <Typography variant="caption" sx={{ color: "#94a3b8" }}>👤 {l.donoNome}</Typography>}
                               </Box>
                               {isMaster && (
@@ -765,9 +856,8 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
           <Button variant="contained" onClick={salvarCidade} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
         </DialogActions>
       </Dialog>
-
       {/* MODAL DE EDIÇÃO DE LOJA */}
-      <Dialog open={!!editandoLoja} onClose={() => setEditandoLoja(null)} maxWidth="sm" fullWidth>
+      <Dialog open={!!editandoLoja} onClose={() => { setEditandoLoja(null); setLojaBaseId(""); }} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
           {editandoLoja?.id ? "✏️ Editar Loja" : "➕ Nova Loja"}
         </DialogTitle>
@@ -775,6 +865,61 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField fullWidth size="small" label="Nome da Loja" value={novaLojaNome} onChange={(e) => setNovaLojaNome(e.target.value)}
               InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
+
+            {/* 🟢 CATEGORIA DA LOJA */}
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: '#94a3b8' }}>Categoria</InputLabel>
+              <Select
+                value={editandoLoja?.categoria || ""}
+                onChange={(e) => setEditandoLoja(prev => ({ ...prev, categoria: e.target.value }))}
+                sx={{ color: '#fff' }}
+                label="Categoria"
+              >
+                <MenuItem value="">
+                  <em style={{ color: '#64748b' }}>Sem categoria</em>
+                </MenuItem>
+                {CATEGORIAS_LOJA.map(cat => (
+                  <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* 🟢 COPIAR DE LOJA EXISTENTE (apenas para NOVA loja) */}
+            {!editandoLoja?.id && (
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: '#94a3b8' }}>📋 Copiar de loja existente</InputLabel>
+                <Select
+                  value={lojaBaseId}
+                  onChange={(e) => {
+                    const lojaOrigem = lojas.find(l => l.id === e.target.value);
+                    if (lojaOrigem) {
+                      setLojaBaseId(e.target.value);
+                      setEditandoLoja(prev => ({
+                        ...prev,
+                        nome: lojaOrigem.nome + " (cópia)",
+                        donoNome: lojaOrigem.donoNome || "",
+                        donoImagem: lojaOrigem.donoImagem || "",
+                        donoDescricao: lojaOrigem.donoDescricao || "",
+                        categoria: lojaOrigem.categoria || "",
+                      }));
+                      setNovaLojaNome(lojaOrigem.nome + " (cópia)");
+                    }
+                  }}
+                  sx={{ color: '#fff' }}
+                  label="Copiar de loja existente"
+                >
+                  <MenuItem value="">
+                    <em style={{ color: '#64748b' }}>Nenhuma (loja vazia)</em>
+                  </MenuItem>
+                  {lojas.filter(l => l.id !== editandoLoja?.id).map(l => (
+                    <MenuItem key={l.id} value={l.id}>
+                      {l.nome} {l.categoria ? `(${l.categoria})` : ""}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
             <TextField fullWidth size="small" label="Nome do Dono" value={editandoLoja?.donoNome || ""}
               onChange={(e) => setEditandoLoja(prev => ({ ...prev, donoNome: e.target.value }))}
               InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
@@ -789,8 +934,9 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                 const fd = new FormData(); fd.append("image", file);
                 try {
                   const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-                                    const data = await res.json();
-                  if (data?.success) setEditandoLoja(prev => ({ ...prev, donoImagem: data.data.image?.url || data.data.url }));
+                  const data = await res.json();
+                  const urlDireta = getImagemDireta(data);
+                  if (urlDireta) setEditandoLoja(prev => ({ ...prev, donoImagem: urlDireta }));
                 } catch (err) { alert("Erro no upload"); }
               }} />
             </Button>
@@ -803,11 +949,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
           </Box>
         </DialogContent>
         <DialogActions sx={{ bgcolor: '#1a1a2e', borderTop: '1px solid #334155' }}>
-          <Button onClick={() => { setEditandoLoja(null); setNovaLojaNome(""); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button onClick={() => { setEditandoLoja(null); setNovaLojaNome(""); setLojaBaseId(""); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
           <Button variant="contained" onClick={salvarLoja} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
         </DialogActions>
       </Dialog>
-
       {/* MODAL DE EDIÇÃO DE ITEM */}
       <Dialog open={!!editandoItem} onClose={() => setEditandoItem(null)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
