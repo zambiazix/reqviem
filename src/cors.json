@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["http://localhost:5173", "https://reqviem.vercel.app"],
+    "method": ["GET", "POST", "PUT", "HEAD", "DELETE"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Authorization"]
+  }
+]
