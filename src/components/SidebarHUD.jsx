@@ -22,6 +22,8 @@ import RedeCyberpunk from "./RedeCyberpunk";
 import CassinoJogos from "./CassinoJogos";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import Chaveamento from "./Chaveamento";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
+import IAChat from "./IAChat";
 
 const ICONES_PADRAO = [
   { id: "whatsapp", icon: <GroupsIcon />, label: "Chat de Personagens", cor: "#00e0ff" },
@@ -34,6 +36,7 @@ const ICONES_PADRAO = [
   { id: "rede", icon: <LanguageIcon />, label: "Rede", cor: "#10b981" },
   { id: "cassino", icon: <VideogameAssetIcon />, label: "Cassino", cor: "#eab308" },
     { id: "chaveamento", icon: <EmojiEventsIcon />, label: "Chaveamento", cor: "#a855f7" },
+    { id: "ia", icon: <SmartToyIcon />, label: "IA Réquiem", cor: "#a855f7" },
 ];
 
 function SidebarHUD({ userEmail = null, userNick = "", isMaster = false, fichasMap = {}, whatsappNotificacoes = {}, setWhatsappNotificacoes = () => {} }) {
@@ -153,6 +156,7 @@ const toggleModulo = (id) => {
 />}
       {moduloAtivo === "cassino" && <CassinoJogos userEmail={userEmail} userNick={userNick} isMaster={isMaster} onClose={() => setModuloAtivo(null)} />}
               {moduloAtivo === "chaveamento" && <Chaveamento isMaster={isMaster} fichasMap={fichasMap} onClose={() => setModuloAtivo(null)} />}
+                {moduloAtivo === "ia" && <IAChat onClose={() => setModuloAtivo(null)} userNick={userNick} />}
     </>, document.body
   );
 }
