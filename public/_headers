@@ -1,0 +1,9 @@
+/*
+  Content-Type: text/javascript
+  X-Content-Type-Options: nosniff
+
+/manifest.json
+  Content-Type: application/json
+
+/*.js
+  Content-Type: application/javascript
