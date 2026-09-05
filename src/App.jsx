@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useCallback, useMemo, lazy, Suspense } from "react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
-import { CssBaseline } from "@mui/material";
+import { CssBaseline, Typography } from "@mui/material";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { auth, db } from "./firebaseConfig";
 import { signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "firebase/auth";
@@ -18,7 +18,7 @@ import WhatsAppNotifier from "./components/WhatsAppNotifier";
 import Home from "./components/Home";
 import BolsaValores from "./components/BolsaValores";
 import LoadingProvider from "./context/LoadingProvider";
-import AudioProvider from "./context/AudioProvider";
+import { AudioProvider } from "./context/AudioProvider";
 import VoiceProvider from "./context/VoiceProvider";
 import JitsiProvider from "./context/JitsiProvider";
 import GameProvider from "./context/GameProvider";
@@ -74,11 +74,17 @@ export default function App() {
   const [bolsaAberta, setBolsaAberta] = useState(false);
   const [conquistasOpen, setConquistasOpen] = useState(false);
   const [whatsappNotificacoes, setWhatsappNotificacoes] = useState({});
+    const [battleMapVisible, setBattleMapVisible] = useState(false);
 
   // 🟢 TOGGLE CONQUISTAS GLOBAL
   useEffect(() => {
     window.__toggleConquistas = () => setConquistasOpen(prev => !prev);
     return () => { delete window.__toggleConquistas; };
+  }, []);
+    // 🟢 TOGGLE BATTLE MAP GLOBAL
+  useEffect(() => {
+    window.__toggleBattleMap = () => setBattleMapVisible(prev => !prev);
+    return () => { delete window.__toggleBattleMap; };
   }, []);
 
   // 🟢 OUVIR EVENTO PARA ABRIR A BOLSA
@@ -429,7 +435,9 @@ export default function App() {
                     />
                     <Route path="/map" element={
                       <>
-                        <BattleMap />
+                        <Typography sx={{ color: '#fff', textAlign: 'center', mt: 4 }}>
+                          Grid de Batalha disponível na Sidebar
+                        </Typography>
                         {!isMobile && <FloatingChat {...floatingChatProps} />}
                         {!isMobile && <FloatingFicha {...floatingFichaProps} />}
                       </>
@@ -463,6 +471,7 @@ export default function App() {
                       onClose={() => setConquistasOpen(false)} 
                     />
                   )}
+                                    <BattleMap visible={battleMapVisible} onClose={() => setBattleMapVisible(false)} />
                 </GameProvider>
               </LoadingProvider>
             </AudioProvider>

@@ -23,6 +23,7 @@ import CassinoJogos from "./CassinoJogos";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import Chaveamento from "./Chaveamento";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
+import GridOnIcon from "@mui/icons-material/GridOn";
 import IAChat from "./IAChat";
 
 const ICONES_PADRAO = [
@@ -37,6 +38,7 @@ const ICONES_PADRAO = [
   { id: "cassino", icon: <VideogameAssetIcon />, label: "Cassino", cor: "#eab308" },
     { id: "chaveamento", icon: <EmojiEventsIcon />, label: "Chaveamento", cor: "#a855f7" },
     { id: "ia", icon: <SmartToyIcon />, label: "IA Réquiem", cor: "#a855f7" },
+        { id: "battlemap", icon: <GridOnIcon />, label: "Grid de Batalha", cor: "#00e0ff" },
 ];
 
 function SidebarHUD({ userEmail = null, userNick = "", isMaster = false, fichasMap = {}, whatsappNotificacoes = {}, setWhatsappNotificacoes = () => {} }) {
@@ -81,6 +83,11 @@ const toggleModulo = (id) => {
   if (id === "comercio") {
     // 🟢 DISPARA O MESMO EVENTO QUE O FloatingHUD USA PARA ABRIR COMÉRCIO
     window.dispatchEvent(new CustomEvent('toggleCommerceHUD'));
+    return;
+  }
+    if (id === "battlemap") {
+    // 🟢 ABRE O GRID DE BATALHA FLUTUANTE
+    window.__toggleBattleMap();
     return;
   }
   setModuloAtivo(prev => prev === id ? null : id);

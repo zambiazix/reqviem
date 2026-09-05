@@ -6,7 +6,7 @@ import { db } from "../firebaseConfig";
 const AudioContextGlobal = createContext();
 export const useAudio = () => useContext(AudioContextGlobal);
 
-export default function AudioProvider({ children }) {
+function AudioProvider({ children }) {
   const audioCtxRef = useRef(null);
   const destinationRef = useRef(null);
   const streamRef = useRef(null);
@@ -69,18 +69,60 @@ export default function AudioProvider({ children }) {
         await audioCtxRef.current.resume();
       }
       setInteractionAllowed(true);
-      // process pending tracks that were marked playing
+      // process pending tracks ONLY ONCE
       const pend = Array.from(pendingRef.current);
       pendingRef.current.clear();
       for (const u of pend) {
         await _playLocal(u, { initiatedByLocal: false });
       }
-      console.log("Áudio desbloqueado e pendências processadas.");
+      console.log("Áudio desbloqueado.");
     } catch (e) {
-      console.warn("Falha ao desbloquear o AudioContext:", e);
+      console.warn("Falha ao desbloquear:", e);
       setInteractionAllowed(true);
     }
   };
+// 🟢 FORÇAR DESBLOQUEIO DO ÁUDIO NO PRIMEIRO CLIQUE
+useEffect(() => {
+  const unlockOnInteraction = async () => {
+    if (audioCtxRef.current?.state === "suspended") {
+      try {
+        await audioCtxRef.current.resume();
+        console.log("✅ AudioContext resumed by user interaction");
+      } catch (e) {
+        console.warn("Failed to resume AudioContext:", e);
+      }
+    }
+  };
+
+  const events = ['click', 'touchstart', 'keydown'];
+  const handler = () => {
+    unlockOnInteraction();
+    // Remove listeners after first interaction
+    events.forEach(ev => window.removeEventListener(ev, handler));
+  };
+
+  events.forEach(ev => window.addEventListener(ev, handler, { once: true }));
+
+  return () => {
+    events.forEach(ev => window.removeEventListener(ev, handler));
+  };
+}, []);
+  // 🟢 NOVO: Desbloqueia áudio no PRIMEIRO clique/toque em qualquer lugar
+  useEffect(() => {
+    const desbloquearAudio = () => {
+      unlockAudio();
+    };
+    
+    window.addEventListener('click', desbloquearAudio, { once: true });
+    window.addEventListener('touchstart', desbloquearAudio, { once: true });
+    window.addEventListener('keydown', desbloquearAudio, { once: true });
+    
+    return () => {
+      window.removeEventListener('click', desbloquearAudio);
+      window.removeEventListener('touchstart', desbloquearAudio);
+      window.removeEventListener('keydown', desbloquearAudio);
+    };
+  }, [unlockAudio]);
 
   // internal play that expects canonical full URLs
     async function _playLocal(rawUrl, nameOrOptions = "", { initiatedByLocal = true } = {}) {
@@ -97,9 +139,12 @@ export default function AudioProvider({ children }) {
 
     // if not unlocked, mark pending + update UI but don't call actual .play()
     if (!interactionAllowed) {
-      pendingRef.current.add(full);
-      setPlayingTracks((p) => [...new Set([...p, full])]);
-      console.log("Pendente até interação:", full);
+      // 🟢 SÓ adiciona se ainda não estiver pendente
+      if (!pendingRef.current.has(full)) {
+        pendingRef.current.add(full);
+        setPlayingTracks((p) => [...new Set([...p, full])]);
+        console.log("Pendente até interação:", full);
+      }
       return;
     }
 
@@ -397,3 +442,6 @@ export default function AudioProvider({ children }) {
     </AudioContextGlobal.Provider>
   );
 }
+
+// ✅ EXPORTAÇÃO CORRETA (substitui o export default)
+export { AudioProvider };

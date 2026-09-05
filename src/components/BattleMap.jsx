@@ -1,16 +1,22 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Stage, Layer, Line, Image as KonvaImage, Transformer } from "react-konva";
 import useImage from "use-image";
-import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { Box, Paper, Typography, IconButton, Button } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import MinimizeIcon from "@mui/icons-material/Minimize";
+import AddIcon from "@mui/icons-material/Add";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { io } from "socket.io-client";
 import { getAuth } from "firebase/auth";
 
 const GRID_SIZE = 50;
 const MESTRE_EMAIL = "mestre@reqviemrpg.com";
-const serverUrl = import.meta.env.VITE_SERVER_URL
+const serverUrl = import.meta.env.VITE_SERVER_URL || "https://reqviem.onrender.com";
 
-export default function BattleMap() {
-  const navigate = useNavigate();
+export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [tokens, setTokens] = useState([]);
@@ -20,8 +26,16 @@ export default function BattleMap() {
   const stageRef = useRef();
   const socketRef = useRef(null);
   const lastEmitRef = useRef(0);
+  
+  // 🟢 Estados da janela flutuante
+  const [posicao, setPosicao] = useState({ x: 150, y: 80 });
+  const [tamanho, setTamanho] = useState({ width: 800, height: 600 });
+  const [minimizado, setMinimizado] = useState(false);
+  const [arrastando, setArrastando] = useState(false);
+  const [redimensionando, setRedimensionando] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
-  // 🔹 Controle de autenticação
   useEffect(() => {
     const auth = getAuth();
     const unsub = auth.onAuthStateChanged((user) => {
@@ -30,111 +44,79 @@ export default function BattleMap() {
     return () => unsub();
   }, []);
 
-  // 🔹 Conexão com o servidor socket
   useEffect(() => {
-  const s = io(serverUrl, { transports: ["websocket"] });
-  socketRef.current = s;
+    if (!visible) return;
+    const s = io(serverUrl, { transports: ["websocket"] });
+    socketRef.current = s;
 
-  s.on("connect", () => console.log("🟢 Socket conectado:", s.id));
-  
-  s.on("init", (data) => {
-    console.log("📦 Init recebido:", data);
-    setTokens(data || []);
-  });
-  
-  s.on("addToken", (token) => {
-    console.log("➕ Token adicionado:", token.id);
-    setTokens((prev) => (prev.some((t) => t.id === token.id) ? prev : [...prev, token]));
-  });
-  
-  s.on("updateToken", (token) => {
-    console.log("🔄 Token atualizado:", token.id);
-    setTokens((prev) => prev.map((t) => (t.id === token.id ? token : t)));
-  });
-  
-  s.on("deleteToken", (id) => {
-    console.log("🗑️ Token deletado:", id);
-    setTokens((prev) => {
-      const newTokens = prev.filter((t) => t.id !== id);
-      console.log("📊 Tokens restantes:", newTokens.length);
-      return newTokens;
+    s.on("connect", () => console.log("🟢 Socket conectado:", s.id));
+    s.on("init", (data) => setTokens(data || []));
+    s.on("addToken", (token) => setTokens((prev) => prev.some((t) => t.id === token.id) ? prev : [...prev, token]));
+    s.on("updateToken", (token) => setTokens((prev) => prev.map((t) => (t.id === token.id ? token : t))));
+    s.on("deleteToken", (id) => {
+      setTokens((prev) => prev.filter((t) => t.id !== id));
+      if (selectedId === id) setSelectedId(null);
     });
-    if (selectedId === id) setSelectedId(null);
-  });
-  
-  s.on("reorder", (newTokens) => {
-    console.log("📋 Reorder recebido");
-    setTokens(newTokens);
-  });
+    s.on("reorder", (newTokens) => setTokens(newTokens));
 
-  return () => {
-    console.log("🔴 Desconectando socket");
-    s.disconnect();
-    socketRef.current = null;
-  };
-}, []); // 👈 ARRAY VAZIO - CONECTA APENAS UMA VEZ!
-
-  // 🔹 Upload de token (apenas Mestre)
-  const handleFileUpload = async (e) => {
-  if (!isMaster) return alert("Apenas o Mestre pode adicionar tokens.");
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  const formData = new FormData();
-  formData.append("file", file);
-  
-  try {
-    const resp = await fetch(`${serverUrl}/upload`, { 
-      method: "POST",
-      body: formData  // SEM headers extras!
-    });
-    
-    if (!resp.ok) {
-      const errorData = await resp.json();
-      throw new Error(errorData.error || 'Upload falhou');
-    }
-    
-    const data = await resp.json();
-    if (!data?.url) throw new Error("Upload falhou");
-    
-    const tokenObj = {
-      id: Date.now(),
-      src: data.url,
-      x: 100,
-      y: 100,
-      width: 100,
-      height: 100,
+    return () => {
+      s.disconnect();
+      socketRef.current = null;
     };
-    socketRef.current?.emit("addToken", tokenObj);
-  } catch (err) {
-    console.error("Erro no upload:", err);
-    alert("Erro no upload: " + (err.message || err));
-  }
-};
+  }, [visible]);
+
+  // 🟢 Arrastar e redimensionar janela
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (arrastando) setPosicao({ x: e.clientX - dragStartRef.current.x, y: e.clientY - dragStartRef.current.y });
+      if (redimensionando) setTamanho({ 
+        width: Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x)),
+        height: Math.max(300, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y))
+      });
+    };
+    const handleMouseUp = () => { setArrastando(false); setRedimensionando(false); };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
+  }, [arrastando, redimensionando]);
+
+  const handleFileUpload = async (e) => {
+    if (!isMaster) return alert("Apenas o Mestre pode adicionar tokens.");
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const resp = await fetch(`${serverUrl}/upload`, { 
+        method: "POST",
+        body: formData,
+        mode: 'cors',
+      });
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({ error: "Erro no servidor" }));
+        throw new Error(errorData.error || 'Upload falhou');
+      }
+      const data = await resp.json();
+      if (!data?.url) throw new Error("Upload falhou");
+      const tokenObj = { id: Date.now(), src: data.url, x: 100, y: 100, width: 100, height: 100 };
+      socketRef.current?.emit("addToken", tokenObj);
+    } catch (err) {
+      console.error("Erro no upload:", err);
+      alert("Erro no upload: " + (err.message || err));
+    }
+  };
 
   const emitUpdate = (token) => {
     const now = Date.now();
-    const THROTTLE_MS = 60;
-    if (now - lastEmitRef.current > THROTTLE_MS) {
+    if (now - lastEmitRef.current > 60) {
       lastEmitRef.current = now;
       socketRef.current?.emit("updateToken", token);
     }
   };
 
   const updateTokenFinal = (token) => {
-  // Atualiza local primeiro
-  setTokens((prev) =>
-    prev.map((t) => (t.id === token.id ? token : t))
-  );
-
-  // Depois sincroniza
-  socketRef.current?.emit("updateToken", token);
-};
-
-  const reorderAndEmit = (newOrder) => {
-    if (!isMaster) return;
-    setTokens(newOrder);
-    socketRef.current?.emit("reorder", newOrder);
+    setTokens((prev) => prev.map((t) => (t.id === token.id ? token : t)));
+    socketRef.current?.emit("updateToken", token);
   };
 
   const bringForward = () => {
@@ -145,7 +127,7 @@ export default function BattleMap() {
       const arr = [...prev];
       const [item] = arr.splice(idx, 1);
       arr.splice(idx + 1, 0, item);
-      reorderAndEmit(arr);
+      socketRef.current?.emit("reorder", arr);
       return arr;
     });
   };
@@ -158,7 +140,7 @@ export default function BattleMap() {
       const arr = [...prev];
       const [item] = arr.splice(idx, 1);
       arr.splice(idx - 1, 0, item);
-      reorderAndEmit(arr);
+      socketRef.current?.emit("reorder", arr);
       return arr;
     });
   };
@@ -169,200 +151,118 @@ export default function BattleMap() {
     setSelectedId(null);
   };
 
-  // === ZOOM E PAN (DESKTOP + TOUCH) ===
-  const lastTouchRef = useRef(null);
-  const lastDistRef = useRef(null);
-
-  // Zoom via scroll (desktop)
   const handleWheel = (e) => {
     e.evt.preventDefault();
     const stage = stageRef.current;
     if (!stage) return;
-    const scaleBy = 1.05;
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
-    const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    };
-    const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+    const mousePointTo = { x: (pointer.x - stage.x()) / oldScale, y: (pointer.y - stage.y()) / oldScale };
+    const newScale = e.evt.deltaY > 0 ? oldScale / 1.05 : oldScale * 1.05;
     setScale(newScale);
-    const newPos = {
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
-    };
-    setStagePos(newPos);
+    setStagePos({ x: pointer.x - mousePointTo.x * newScale, y: pointer.y - mousePointTo.y * newScale });
   };
 
-  // Toque inicial
-  const handleTouchStart = (e) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const touches = e.evt.touches;
-    if (touches.length === 1) {
-      const touch = touches[0];
-      lastTouchRef.current = { x: touch.clientX, y: touch.clientY };
-    } else if (touches.length === 2) {
-      const [t1, t2] = touches;
-      const dx = t1.clientX - t2.clientX;
-      const dy = t1.clientY - t2.clientY;
-      lastDistRef.current = Math.sqrt(dx * dx + dy * dy);
-    }
-  };
+  if (!visible) return null;
 
-  // Movimento de toque
-  const handleTouchMove = (e) => {
-    e.evt.preventDefault();
-    const stage = stageRef.current;
-    if (!stage) return;
-    const touches = e.evt.touches;
+  return createPortal(
+    <Paper elevation={10} onContextMenu={(e) => e.preventDefault()} sx={{
+      position: "fixed", left: posicao.x, top: posicao.y,
+      width: minimizado ? 280 : tamanho.width,
+      height: minimizado ? 48 : tamanho.height,
+      bgcolor: "#0f172a", color: "#fff", borderRadius: 2,
+      border: "2px solid #00e0ff", zIndex: 9990,
+      display: "flex", flexDirection: "column", overflow: "hidden",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.8), 0 0 20px rgba(0,224,255,0.3)",
+    }}>
+      {/* BARRA DE TÍTULO */}
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 1, bgcolor: "#1a1a2e", cursor: "move", minHeight: 40, borderBottom: "1px solid #334155", flexShrink: 0 }}
+        onMouseDown={(e) => { if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return; e.preventDefault(); setArrastando(true); dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y }; }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <span style={{ fontSize: '1.3rem' }}>🗺️</span>
+          <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: "#00e0ff" }}>
+            {minimizado ? "Grid" : "Grid de Batalha"}
+          </Typography>
+        </Box>
+        <Box sx={{ display: "flex", gap: 0.5 }}>
+          {isMaster && (
+            <>
+              <Button size="small" startIcon={<AddIcon />} onClick={() => fileInputRef.current?.click()} sx={{ minWidth: 'auto', px: 1, fontSize: '0.6rem', bgcolor: '#22c55e', color: '#fff', '&:hover': { bgcolor: '#16a34a' } }}>
+                Token
+              </Button>
+              <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileUpload} />
+              {selectedId && (
+                <>
+                  <IconButton size="small" onClick={bringForward} sx={{ color: '#00e0ff', p: 0.5 }}><ArrowUpwardIcon fontSize="small" /></IconButton>
+                  <IconButton size="small" onClick={sendBackward} sx={{ color: '#00e0ff', p: 0.5 }}><ArrowDownwardIcon fontSize="small" /></IconButton>
+                  <IconButton size="small" onClick={deleteToken} sx={{ color: '#ef4444', p: 0.5 }}><DeleteIcon fontSize="small" /></IconButton>
+                </>
+              )}
+            </>
+          )}
+          <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#94a3b8", p: 0.5 }}>{minimizado ? "□" : "−"}</IconButton>
+          <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }}><CloseIcon fontSize="small" /></IconButton>
+        </Box>
+      </Box>
 
-    if (touches.length === 1 && lastTouchRef.current) {
-      const touch = touches[0];
-      const dx = touch.clientX - lastTouchRef.current.x;
-      const dy = touch.clientY - lastTouchRef.current.y;
-      setStagePos((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
-      lastTouchRef.current = { x: touch.clientX, y: touch.clientY };
-    } else if (touches.length === 2) {
-      const [t1, t2] = touches;
-      const dx = t1.clientX - t2.clientX;
-      const dy = t1.clientY - t2.clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (lastDistRef.current) {
-        const stageScale = stage.scaleX();
-        const newScale = stageScale * (dist / lastDistRef.current);
-        setScale(Math.min(Math.max(newScale, 0.2), 5));
-      }
-      lastDistRef.current = dist;
-    }
-  };
-
-  const handleTouchEnd = () => {
-    lastTouchRef.current = null;
-    lastDistRef.current = null;
-  };
-
-  // Mouse: pan + seleção
-  const handleMouseDown = (e) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    if (e.evt.button === 2 && e.target === stage) {
-      e.evt.preventDefault();
-      stage.draggable(true);
-      stage.startDrag();
-      setSelectedId(null);
-    }
-    if (e.evt.button === 0 && e.target === stage) {
-      setSelectedId(null);
-    }
-  };
-
-  const handleMouseUp = () => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    if (stage.draggable()) {
-      stage.stopDrag();
-      stage.draggable(false);
-      setStagePos({ x: stage.x(), y: stage.y() });
-    }
-  };
-
-  // === RENDERIZAÇÃO ===
-  return (
-    <div style={{ background: "#222", height: "100vh" }} onContextMenu={(e) => e.preventDefault()}>
-      {/* Controles */}
-      <div style={{ position: "absolute", top: 10, left: 10, zIndex: 10 }}>
-        <button onClick={() => navigate("/")}>Voltar</button>
-        {isMaster && (
-          <>
-            <button onClick={() => fileInputRef.current.click()} style={{ marginLeft: 10 }}>
-              Adicionar Token
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              style={{ display: "none" }}
-              accept="image/*"
-              onChange={handleFileUpload}
-            />
-            {selectedId && (
-              <>
-                <button onClick={bringForward} style={{ marginLeft: 10 }}>
-                  Para Frente
-                </button>
-                <button onClick={sendBackward} style={{ marginLeft: 10 }}>
-                  Para Trás
-                </button>
-                <button onClick={deleteToken} style={{ marginLeft: 10, color: "red" }}>
-                  Excluir
-                </button>
-              </>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Mapa */}
-      <Stage
-        ref={stageRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
-        x={stagePos.x}
-        y={stagePos.y}
-        scaleX={scale}
-        scaleY={scale}
-        draggable={false}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {/* Tokens */}
-        <Layer>
-          {tokens.map((token) => (
-            <Token
-              key={token.id}
-              token={token}
-              isSelected={isMaster && selectedId === token.id}
-              onSelect={() => isMaster && setSelectedId(token.id)}
-              canResize={isMaster}
-              onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
-              onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
-              onTransformEnd={(attrs) =>
-                isMaster && updateTokenFinal({ ...token, ...attrs })
+      {!minimizado && (
+        <Box sx={{ flex: 1, position: 'relative', bgcolor: '#1a1a2e' }}>
+          <Stage
+            ref={stageRef}
+            width={tamanho.width}
+            height={tamanho.height - 40}
+            x={stagePos.x}
+            y={stagePos.y}
+            scaleX={scale}
+            scaleY={scale}
+            onWheel={handleWheel}
+            onMouseDown={(e) => {
+              if (e.evt.button === 2 && e.target === stageRef.current) {
+                e.evt.preventDefault();
+                stageRef.current.draggable(true);
+                stageRef.current.startDrag();
+                setSelectedId(null);
               }
-            />
-          ))}
-        </Layer>
+              if (e.evt.button === 0 && e.target === stageRef.current) setSelectedId(null);
+            }}
+            onMouseUp={() => {
+              if (stageRef.current?.draggable()) {
+                stageRef.current.stopDrag();
+                stageRef.current.draggable(false);
+                setStagePos({ x: stageRef.current.x(), y: stageRef.current.y() });
+              }
+            }}
+          >
+            <Layer>
+              {tokens.map((token) => (
+                <Token key={token.id} token={token} isSelected={isMaster && selectedId === token.id}
+                  onSelect={() => isMaster && setSelectedId(token.id)} canResize={isMaster}
+                  onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
+                  onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
+                  onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })} />
+              ))}
+            </Layer>
+            <Layer>
+              {Array.from({ length: 100 }).map((_, i) => (
+                <Line key={`v-${i}`} points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]} stroke="#555" strokeWidth={1} />
+              ))}
+              {Array.from({ length: 100 }).map((_, i) => (
+                <Line key={`h-${i}`} points={[-2500, i * GRID_SIZE - 2500, 2500, i * GRID_SIZE - 2500]} stroke="#555" strokeWidth={1} />
+              ))}
+            </Layer>
+          </Stage>
+        </Box>
+      )}
 
-        {/* Grid */}
-        <Layer>
-          {Array.from({ length: 200 }).map((_, i) => (
-            <Line
-              key={`v-${i}`}
-              points={[i * GRID_SIZE - 5000, -5000, i * GRID_SIZE - 5000, 5000]}
-              stroke="#555"
-              strokeWidth={1}
-            />
-          ))}
-          {Array.from({ length: 200 }).map((_, i) => (
-            <Line
-              key={`h-${i}`}
-              points={[-5000, i * GRID_SIZE - 5000, 5000, i * GRID_SIZE - 5000]}
-              stroke="#555"
-              strokeWidth={1}
-            />
-          ))}
-        </Layer>
-      </Stage>
-    </div>
+      {!minimizado && (
+        <Box sx={{ position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize", zIndex: 10 }}
+          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setRedimensionando(true); resizeStartRef.current = { x: e.clientX, y: e.clientY, width: tamanho.width, height: tamanho.height }; }} />
+      )}
+    </Paper>,
+    document.body
   );
 }
 
-// === Componente de Token ===
 function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
   const [image] = useImage(token.src, "anonymous");
   const shapeRef = useRef();
@@ -393,12 +293,7 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
         onTransformEnd={() => {
           if (!canResize) return;
           const node = shapeRef.current;
-          const newAttrs = {
-            x: node.x(),
-            y: node.y(),
-            width: node.width() * node.scaleX(),
-            height: node.height() * node.scaleY(),
-          };
+          const newAttrs = { x: node.x(), y: node.y(), width: node.width() * node.scaleX(), height: node.height() * node.scaleY() };
           node.scaleX(1);
           node.scaleY(1);
           onTransformEnd?.(newAttrs);

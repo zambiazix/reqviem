@@ -15,3 +15,6 @@ yarn-error.log*
 # Arquivos de sistema
 Thumbs.db
 dist_app/
+
+# Ignorar backend (está em outro repositório)
+backend/

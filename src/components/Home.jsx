@@ -153,7 +153,7 @@ const HeaderSection = memo(({
         </Box>
       </Box>
       <Box sx={{ display: "flex", justifyContent: "center", gap: 1.5, flexWrap: "wrap" }}>
-        <Button variant="contained" component={Link} to="/map" size="small">Grid</Button>
+        
         <Button variant="contained" component={Link} to="/cronica" size="small">Crônica</Button>
         <Button variant="contained" component={Link} to="/sistema" size="small">Sistema</Button>
         {!fichaAtual?.isConvidado && (
@@ -173,7 +173,7 @@ const HeaderSection = memo(({
           size="small"
           onClick={() => window.__startJitsiMeeting?.({ 
             name: fichaAtual?.nome || userNick, 
-            email: user?.email, 
+            email: userEmail, 
             avatar: fichaAtual?.imagemPrincipal || fichaAtual?.imagemPersonagem || null 
           })} 
           sx={{ bgcolor: '#e74c3c', '&:hover': { bgcolor: '#c0392b' } }}
@@ -534,7 +534,7 @@ const Home = memo(function Home({
             <>
               <Grid item sx={{ flex: "1 1 25%", minWidth: 0, display: "flex", flexDirection: "column", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
                 <HomePage
-                  user={user?.email || user?.displayName || "Usuário"}
+                  user={user?.email || "Usuário"}
                   role={role}
                   fichasList={fichasList}
                   selectedFichaEmail={selectedFichaEmail}
@@ -551,7 +551,7 @@ const Home = memo(function Home({
                     selectedFichaEmail ? (
                       <FichaPersonagem 
                         key={selectedFichaEmail || 'empty'} 
-                        user={user?.email || user?.displayName || "Usuário"} 
+                        user={{ email: user?.email }} 
                         fichaId={selectedFichaEmail} 
                         isMestre={true} 
                       />
@@ -589,7 +589,7 @@ const Home = memo(function Home({
                   ) : (
                     <FichaPersonagem 
                       key={user?.email || 'player'} 
-                      user={user?.email || user?.displayName || "Usuário"} 
+                      user={{ email: user?.email }} 
                       fichaId={user?.email} 
                       isMestre={false} 
                     />

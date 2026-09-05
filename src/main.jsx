@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
-import AudioProvider from "./context/AudioProvider.jsx";
+import { AudioProvider } from "./context/AudioProvider.jsx";
 import VoiceProvider from "./context/VoiceProvider.jsx";
 
 // 🔹 Renderização principal
@@ -23,21 +23,21 @@ if ("serviceWorker" in navigator) {
       .register("/service-worker.js")
       .then((registration) => {
         // Força atualização imediata ao detectar uma nova versão
-registration.addEventListener('updatefound', () => {
-  const newWorker = registration.installing;
-  newWorker.addEventListener('statechange', () => {
-    // Quando o novo service worker estiver ativado, recarrega a página com cache limpo
-    if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
-      window.location.reload(true); // true = hard reload (ignora cache)
-    }
-  });
-});
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          newWorker.addEventListener('statechange', () => {
+            // Quando o novo service worker estiver ativado, recarrega a página com cache limpo
+            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+              window.location.reload(true); // true = hard reload (ignora cache)
+            }
+          });
+        });
 
-// Se já houver um service worker esperando (waiting), ativa-o imediatamente
-if (registration.waiting) {
-  registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-  window.location.reload(true);
-}
+        // Se já houver um service worker esperando (waiting), ativa-o imediatamente
+        if (registration.waiting) {
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+          window.location.reload(true);
+        }
         console.log("✅ Service Worker registrado com sucesso:", registration);
       })
       .catch((error) => {
@@ -45,4 +45,3 @@ if (registration.waiting) {
       });
   });
 }
-//
