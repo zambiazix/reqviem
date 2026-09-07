@@ -29,7 +29,7 @@ import FloatingHUD from "./components/FloatingHUD";
 import SidebarHUD from "./components/SidebarHUD";
 import HUDMobile from "./components/HUDMobile";
 import RouteLoadingWatcher from "./components/RouteLoadingWatcher";
-import { openCommerceHUD, closeCommerceHUD } from "./CommerceHUDRoot";
+import CommerceHUD from "./components/CommerceHUD"; // 🟢 IMPORTADO
 
 const MASTER_EMAIL = "mestre@reqviemrpg.com";
 
@@ -74,14 +74,20 @@ export default function App() {
   const [bolsaAberta, setBolsaAberta] = useState(false);
   const [conquistasOpen, setConquistasOpen] = useState(false);
   const [whatsappNotificacoes, setWhatsappNotificacoes] = useState({});
-    const [battleMapVisible, setBattleMapVisible] = useState(false);
+  const [battleMapVisible, setBattleMapVisible] = useState(false);
+  const [comercioOpen, setComercioOpen] = useState(false); // 🟢 ESTADO DO COMMERCE
+
+  // 🟢 FUNÇÕES DO COMMERCE
+  const openCommerceHUD = () => setComercioOpen(true);
+  const closeCommerceHUD = () => setComercioOpen(false);
 
   // 🟢 TOGGLE CONQUISTAS GLOBAL
   useEffect(() => {
     window.__toggleConquistas = () => setConquistasOpen(prev => !prev);
     return () => { delete window.__toggleConquistas; };
   }, []);
-    // 🟢 TOGGLE BATTLE MAP GLOBAL
+  
+  // 🟢 TOGGLE BATTLE MAP GLOBAL
   useEffect(() => {
     window.__toggleBattleMap = () => setBattleMapVisible(prev => !prev);
     return () => { delete window.__toggleBattleMap; };
@@ -408,6 +414,14 @@ export default function App() {
                   <ConquistasWatcher userEmail={currentUserEmail} />
                   <WhatsAppNotifier {...whatsappNotifierProps} />
                   
+                  {/* 🟢 COMMERCE HUD RENDERIZADO AQUI */}
+                  <CommerceHUD 
+                    isMaster={isMasterFlag} 
+                    visible={comercioOpen} 
+                    onClose={() => setComercioOpen(false)} 
+                    currentUserEmail={currentUserEmail} 
+                  />
+                  
                   {!isMobile && <SidebarHUD {...sidebarHudProps} />}
                   
                   {!isMobile && <FloatingHUD {...floatingHudProps} />}
@@ -471,7 +485,8 @@ export default function App() {
                       onClose={() => setConquistasOpen(false)} 
                     />
                   )}
-                                    <BattleMap visible={battleMapVisible} onClose={() => setBattleMapVisible(false)} />
+                  
+                  <BattleMap visible={battleMapVisible} onClose={() => setBattleMapVisible(false)} />
                 </GameProvider>
               </LoadingProvider>
             </AudioProvider>

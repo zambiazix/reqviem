@@ -18,3 +18,5 @@ dist_app/
 
 # Ignorar backend (está em outro repositório)
 backend/
+# Local Netlify folder
+.netlify

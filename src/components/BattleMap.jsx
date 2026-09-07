@@ -14,7 +14,7 @@ import { getAuth } from "firebase/auth";
 
 const GRID_SIZE = 50;
 const MESTRE_EMAIL = "mestre@reqviemrpg.com";
-const serverUrl = import.meta.env.VITE_SERVER_URL || "https://reqviem.onrender.com";
+const serverUrl = "https://reqviem.onrender.com";
 
 export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
