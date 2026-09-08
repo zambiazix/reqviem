@@ -35,6 +35,15 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [redimensionando, setRedimensionando] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  useEffect(() => {
+  // Quando maximizar, verifica se o token ainda existe
+  if (!minimizado && selectedId) {
+    const tokenExiste = tokens.some(t => t.id === selectedId);
+    if (!tokenExiste) {
+      setSelectedId(null);
+    }
+  }
+}, [minimizado, tokens, selectedId]);
 
   useEffect(() => {
     const auth = getAuth();
@@ -272,12 +281,12 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
   const shapeRef = useRef();
   const trRef = useRef();
 
-  useEffect(() => {
-    if (isSelected && trRef.current && shapeRef.current) {
-      trRef.current.nodes([shapeRef.current]);
-      trRef.current.getLayer().batchDraw();
-    }
-  }, [isSelected]);
+useEffect(() => {
+  if (isSelected && trRef.current && shapeRef.current) {
+    trRef.current.nodes([shapeRef.current]);
+    trRef.current.getLayer().batchDraw();
+  }
+}, [isSelected, token.id]); // 🟢 ADICIONOU token.id AQUI!
 
   if (!image) return null;
 
