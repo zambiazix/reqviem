@@ -293,13 +293,6 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
     }
   }, [isSelected]);
 
-  // 🟢 FORÇA A SELEÇÃO NO CLIQUE COM onMouseDown
-  const handleClick = (e) => {
-    e.cancelBubble = true;
-    e.evt.stopPropagation();
-    onSelect();
-  };
-
   if (!image) return null;
 
   return (
@@ -311,8 +304,7 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
         width={token.width}
         height={token.height}
         draggable={true}
-        onClick={handleClick}
-        onTap={handleClick}
+        onClick={() => onSelect()}
         ref={shapeRef}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
