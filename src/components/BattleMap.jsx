@@ -281,12 +281,12 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
   const shapeRef = useRef();
   const trRef = useRef();
 
-useEffect(() => {
-  if (isSelected && trRef.current && shapeRef.current) {
-    trRef.current.nodes([shapeRef.current]);
-    trRef.current.getLayer().batchDraw();
-  }
-}, [isSelected, token.id]); // 🟢 ADICIONOU token.id AQUI!
+  useEffect(() => {
+    if (isSelected && trRef.current && shapeRef.current) {
+      trRef.current.nodes([shapeRef.current]);
+      trRef.current.getLayer().batchDraw();
+    }
+  }, [isSelected]); // 🟢 SEM token.id!
 
   if (!image) return null;
 
@@ -298,21 +298,26 @@ useEffect(() => {
         y={token.y}
         width={token.width}
         height={token.height}
-        draggable={true} // 🟢 QUALQUER UM ARRASTA
+        draggable={true}
         onClick={onSelect}
         ref={shapeRef}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
-          if (!canResize) return; // 🟢 SÓ MESTRE REDIMENSIONA
+          if (!canResize) return;
           const node = shapeRef.current;
-          const newAttrs = { x: node.x(), y: node.y(), width: node.width() * node.scaleX(), height: node.height() * node.scaleY() };
+          const newAttrs = { 
+            x: node.x(), 
+            y: node.y(), 
+            width: node.width() * node.scaleX(), 
+            height: node.height() * node.scaleY() 
+          };
           node.scaleX(1);
           node.scaleY(1);
           onTransformEnd?.(newAttrs);
         }}
       />
-      {isSelected && <Transformer ref={trRef} />} {/* 🟢 TODOS VEEM A CAIXINHA */}
+      {isSelected && <Transformer ref={trRef} />}
     </>
   );
 }
