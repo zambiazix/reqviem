@@ -244,14 +244,15 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
           >
             <Layer>
 {tokens.map((token) => (
-  <Token key={token.id} 
+  <Token 
+    key={token.id} 
     token={token} 
-    isSelected={selectedId === token.id} // 🟢 QUALQUER UM SELECIONA
-    onSelect={() => setSelectedId(token.id)} // 🟢 QUALQUER UM SELECIONA
-    canResize={isMaster} // 🟢 SÓ MESTRE REDIMENSIONA
+    isSelected={selectedId === token.id}
+    onSelect={() => setSelectedId(token.id)}
+    canResize={isMaster}
     onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
     onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
-    onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })} // 🟢 SÓ MESTRE
+    onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
   />
 ))}
             </Layer>
@@ -286,7 +287,13 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
       trRef.current.nodes([shapeRef.current]);
       trRef.current.getLayer().batchDraw();
     }
-  }, [isSelected]); // 🟢 SEM token.id!
+  }, [isSelected]);
+
+  // 🟢 FORÇA A SELEÇÃO NO CLIQUE
+  const handleClick = (e) => {
+    e.cancelBubble = true;
+    onSelect();
+  };
 
   if (!image) return null;
 
@@ -299,7 +306,7 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
         width={token.width}
         height={token.height}
         draggable={true}
-        onClick={onSelect}
+        onClick={handleClick}
         ref={shapeRef}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
