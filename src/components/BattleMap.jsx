@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Stage, Layer, Line, Image as KonvaImage, Transformer } from "react-konva";
 import useImage from "use-image";
 import { createPortal } from "react-dom";
@@ -6,6 +6,7 @@ import { Box, Paper, Typography, IconButton, Button } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import MinimizeIcon from "@mui/icons-material/Minimize";
 import AddIcon from "@mui/icons-material/Add";
+import RemoveIcon from "@mui/icons-material/Remove";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -26,8 +27,9 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const stageRef = useRef();
   const socketRef = useRef(null);
   const lastEmitRef = useRef(0);
+  const trRef = useRef(null);
   
-  // 🟢 Estados da janela flutuante
+  // Estados da janela flutuante
   const [posicao, setPosicao] = useState({ x: 150, y: 80 });
   const [tamanho, setTamanho] = useState({ width: 800, height: 600 });
   const [minimizado, setMinimizado] = useState(false);
@@ -35,15 +37,6 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [redimensionando, setRedimensionando] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
-  useEffect(() => {
-  // Quando maximizar, verifica se o token ainda existe
-  if (!minimizado && selectedId) {
-    const tokenExiste = tokens.some(t => t.id === selectedId);
-    if (!tokenExiste) {
-      setSelectedId(null);
-    }
-  }
-}, [minimizado, tokens, selectedId]);
 
   useEffect(() => {
     const auth = getAuth();
@@ -74,7 +67,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     };
   }, [visible]);
 
-  // 🟢 Arrastar e redimensionar janela
+  // Arrastar e redimensionar janela
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (arrastando) setPosicao({ x: e.clientX - dragStartRef.current.x, y: e.clientY - dragStartRef.current.y });
@@ -172,6 +165,11 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     setStagePos({ x: pointer.x - mousePointTo.x * newScale, y: pointer.y - mousePointTo.y * newScale });
   };
 
+  // 🟢 FUNÇÃO PARA SELECIONAR TOKEN
+  const handleSelectToken = useCallback((id) => {
+    setSelectedId(id);
+  }, []);
+
   if (!visible) return null;
 
   return createPortal(
@@ -194,6 +192,12 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
           </Typography>
         </Box>
         <Box sx={{ display: "flex", gap: 0.5 }}>
+          <IconButton size="small" onClick={() => setScale(s => Math.min(2, s + 0.1))} sx={{ color: '#94a3b8', p: 0.5 }}>
+            <AddIcon fontSize="small" />
+          </IconButton>
+          <IconButton size="small" onClick={() => setScale(s => Math.max(0.5, s - 0.1))} sx={{ color: '#94a3b8', p: 0.5 }}>
+            <RemoveIcon fontSize="small" />
+          </IconButton>
           {isMaster && (
             <>
               <Button size="small" startIcon={<AddIcon />} onClick={() => fileInputRef.current?.click()} sx={{ minWidth: 'auto', px: 1, fontSize: '0.6rem', bgcolor: '#22c55e', color: '#fff', '&:hover': { bgcolor: '#16a34a' } }}>
@@ -243,18 +247,18 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
             }}
           >
             <Layer>
-{tokens.map((token) => (
-  <Token 
-    key={token.id} 
-    token={token} 
-    isSelected={selectedId === token.id}
-    onSelect={() => setSelectedId(token.id)}
-    canResize={isMaster}
-    onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
-    onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
-    onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
-  />
-))}
+              {tokens.map((token) => (
+                <Token 
+                  key={token.id} 
+                  token={token} 
+                  isSelected={selectedId === token.id}
+                  onSelect={() => handleSelectToken(token.id)}
+                  canResize={isMaster}
+                  onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
+                  onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
+                  onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
+                />
+              ))}
             </Layer>
             <Layer>
               {Array.from({ length: 100 }).map((_, i) => (
@@ -289,9 +293,10 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
     }
   }, [isSelected]);
 
-  // 🟢 FORÇA A SELEÇÃO NO CLIQUE
+  // 🟢 FORÇA A SELEÇÃO NO CLIQUE COM onMouseDown
   const handleClick = (e) => {
     e.cancelBubble = true;
+    e.evt.stopPropagation();
     onSelect();
   };
 
@@ -307,6 +312,7 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
         height={token.height}
         draggable={true}
         onClick={handleClick}
+        onTap={handleClick}
         ref={shapeRef}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
