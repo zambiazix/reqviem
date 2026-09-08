@@ -234,13 +234,17 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
             }}
           >
             <Layer>
-              {tokens.map((token) => (
-                <Token key={token.id} token={token} isSelected={isMaster && selectedId === token.id}
-                  onSelect={() => isMaster && setSelectedId(token.id)} canResize={isMaster}
-                  onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
-                  onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
-                  onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })} />
-              ))}
+{tokens.map((token) => (
+  <Token key={token.id} 
+    token={token} 
+    isSelected={selectedId === token.id} // 🟢 QUALQUER UM SELECIONA
+    onSelect={() => setSelectedId(token.id)} // 🟢 QUALQUER UM SELECIONA
+    canResize={isMaster} // 🟢 SÓ MESTRE REDIMENSIONA
+    onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
+    onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
+    onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })} // 🟢 SÓ MESTRE
+  />
+))}
             </Layer>
             <Layer>
               {Array.from({ length: 100 }).map((_, i) => (
@@ -269,11 +273,11 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
   const trRef = useRef();
 
   useEffect(() => {
-    if (isSelected && trRef.current && shapeRef.current && canResize) {
+    if (isSelected && trRef.current && shapeRef.current) {
       trRef.current.nodes([shapeRef.current]);
       trRef.current.getLayer().batchDraw();
     }
-  }, [isSelected, canResize]);
+  }, [isSelected]);
 
   if (!image) return null;
 
@@ -285,13 +289,13 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
         y={token.y}
         width={token.width}
         height={token.height}
-        draggable
+        draggable={true} // 🟢 QUALQUER UM ARRASTA
         onClick={onSelect}
         ref={shapeRef}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
-          if (!canResize) return;
+          if (!canResize) return; // 🟢 SÓ MESTRE REDIMENSIONA
           const node = shapeRef.current;
           const newAttrs = { x: node.x(), y: node.y(), width: node.width() * node.scaleX(), height: node.height() * node.scaleY() };
           node.scaleX(1);
@@ -299,7 +303,7 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
           onTransformEnd?.(newAttrs);
         }}
       />
-      {isSelected && canResize && <Transformer ref={trRef} />}
+      {isSelected && <Transformer ref={trRef} />} {/* 🟢 TODOS VEEM A CAIXINHA */}
     </>
   );
 }
