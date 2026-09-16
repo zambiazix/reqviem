@@ -447,46 +447,56 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
           scaleX={scale}
           scaleY={scale}
           onWheel={handleWheel}
-          onMouseDown={(e) => {
-            const stage = stageRef.current;
-            if (!stage) return;
+onMouseDown={(e) => {
+  const stage = stageRef.current;
+  if (!stage) return;
 
-            // Botão direito = pan
-            if (e.evt.button === 2) {
-              e.evt.preventDefault();
-              stage.draggable(true);
-              stage.startDrag();
-              setSelectedIds([]);
-              return;
-            }
+  // Botão direito = pan
+  if (e.evt.button === 2) {
+    e.evt.preventDefault();
+    stage.draggable(true);
+    stage.startDrag();
+    setSelectedIds([]);
+    return;
+  }
 
-            if (e.evt.button !== 0) return;
+  if (e.evt.button !== 0) return;
 
-            const pointer = stage.getPointerPosition();
-            if (!pointer) return;
-            const shape = stage.getIntersection(pointer);
-            const name = shape?.name?.() || "";
+  const pointer = stage.getPointerPosition();
+  if (!pointer) return;
+  const shape = stage.getIntersection(pointer);
 
-            if (name.startsWith("token-")) {
-              const id = Number(name.replace("token-", ""));
-              if (e.evt.shiftKey) {
-                setSelectedIds((cur) =>
-                  cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
-                );
-              } else if (!selectedIds.includes(id)) {
-                // Se já está selecionado (parte de multi), mantém a seleção p/ arrastar todos
-                setSelectedIds([id]);
-              }
-              // Se já está na seleção, não mexe — deixa o multi-drag acontecer
-            } else {
-              // Clique no vazio → inicia seleção retangular
-              const stageX = (pointer.x - stage.x()) / stage.scaleX();
-              const stageY = (pointer.y - stage.y()) / stage.scaleY();
-              selStartRef.current = { x: stageX, y: stageY };
-              selRectRef.current = { x: stageX, y: stageY, width: 0, height: 0 };
-              setSelectionRect({ x: stageX, y: stageY, width: 0, height: 0 });
-            }
-          }}
+  // 🟢 Se o clique foi em algo do Transformer (âncora ou borda), sai fora.
+  // Deixa o Transformer cuidar do redimensionamento sozinho.
+  let node = shape;
+  while (node) {
+    const cn = node.getClassName?.() || "";
+    if (cn === "Transformer") return;
+    node = node.getParent?.();
+  }
+
+  const name = shape?.name?.() || "";
+
+  if (name.startsWith("token-")) {
+    const id = Number(name.replace("token-", ""));
+    if (e.evt.shiftKey) {
+      setSelectedIds((cur) =>
+        cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+      );
+    } else if (!selectedIds.includes(id)) {
+      // Se já está selecionado (parte de multi), mantém a seleção p/ arrastar todos
+      setSelectedIds([id]);
+    }
+    // Se já está na seleção, não mexe — deixa o multi-drag acontecer
+  } else {
+    // Clique no vazio → inicia seleção retangular
+    const stageX = (pointer.x - stage.x()) / stage.scaleX();
+    const stageY = (pointer.y - stage.y()) / stage.scaleY();
+    selStartRef.current = { x: stageX, y: stageY };
+    selRectRef.current = { x: stageX, y: stageY, width: 0, height: 0 };
+    setSelectionRect({ x: stageX, y: stageY, width: 0, height: 0 });
+  }
+}}
           onMouseUp={() => {
             const stage = stageRef.current;
             if (stage?.draggable()) {
