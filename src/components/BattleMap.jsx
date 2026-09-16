@@ -234,52 +234,66 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
           dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y };
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
           <span style={{ fontSize: "1.3rem" }}>🗺️</span>
           <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: "#00e0ff" }}>
             {minimizado ? "Grid" : "Grid de Batalha"}
           </Typography>
         </Box>
-        <Box sx={{ display: "flex", gap: 0.5 }}>
-          <IconButton size="small" onClick={() => setScale((s) => Math.min(2, s + 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
-            <AddIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={() => setScale((s) => Math.max(0.5, s - 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
-            <RemoveIcon fontSize="small" />
-          </IconButton>
-          {isMaster && (
+<Box sx={{ display: "flex", gap: 0.5, alignItems: "center", flexShrink: 0 }}>
+  {/* 🟢 Só mostra os controles quando NÃO está minimizado */}
+  {!minimizado && (
+    <>
+      <IconButton size="small" onClick={() => setScale((s) => Math.min(2, s + 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
+        <AddIcon fontSize="small" />
+      </IconButton>
+      <IconButton size="small" onClick={() => setScale((s) => Math.max(0.5, s - 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
+        <RemoveIcon fontSize="small" />
+      </IconButton>
+      {isMaster && (
+        <>
+          <Button
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={() => fileInputRef.current?.click()}
+            sx={{ minWidth: "auto", px: 1, fontSize: "0.6rem", bgcolor: "#22c55e", color: "#fff", "&:hover": { bgcolor: "#16a34a" } }}
+          >
+            Token
+          </Button>
+          <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileUpload} />
+          {selectedId && (
             <>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={() => fileInputRef.current?.click()}
-                sx={{ minWidth: "auto", px: 1, fontSize: "0.6rem", bgcolor: "#22c55e", color: "#fff", "&:hover": { bgcolor: "#16a34a" } }}
-              >
-                Token
-              </Button>
-              <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileUpload} />
-              {selectedId && (
-                <>
-                  <IconButton size="small" onClick={bringForward} sx={{ color: "#00e0ff", p: 0.5 }} title="Trazer para frente">
-                    <ArrowUpwardIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" onClick={sendBackward} sx={{ color: "#00e0ff", p: 0.5 }} title="Enviar para trás">
-                    <ArrowDownwardIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" onClick={deleteToken} sx={{ color: "#ef4444", p: 0.5 }} title="Excluir">
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </>
-              )}
+              <IconButton size="small" onClick={bringForward} sx={{ color: "#00e0ff", p: 0.5 }} title="Trazer para frente">
+                <ArrowUpwardIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={sendBackward} sx={{ color: "#00e0ff", p: 0.5 }} title="Enviar para trás">
+                <ArrowDownwardIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={deleteToken} sx={{ color: "#ef4444", p: 0.5 }} title="Excluir">
+                <DeleteIcon fontSize="small" />
+              </IconButton>
             </>
           )}
-          <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#94a3b8", p: 0.5 }}>
-            {minimizado ? "□" : "−"}
-          </IconButton>
-          <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Box>
+        </>
+      )}
+    </>
+  )}
+
+  {/* 🟢 Botão minimizar/expandir — SEMPRE visível, cor ciano pra destacar */}
+  <IconButton
+    size="small"
+    onClick={() => setMinimizado(!minimizado)}
+    sx={{ color: "#00e0ff", p: 0.5 }}
+    title={minimizado ? "Expandir" : "Minimizar"}
+  >
+    {minimizado ? "□" : "−"}
+  </IconButton>
+
+  {/* 🟢 Fechar — SEMPRE visível */}
+  <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }} title="Fechar">
+    <CloseIcon fontSize="small" />
+  </IconButton>
+</Box>
       </Box>
 
       {!minimizado && (
