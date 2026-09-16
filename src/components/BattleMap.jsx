@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Stage, Layer, Line, Image as KonvaImage, Transformer } from "react-konva";
+import { Stage, Layer, Line, Image as KonvaImage, Transformer, Group, Rect } from "react-konva";
 import useImage from "use-image";
 import { createPortal } from "react-dom";
 import { Box, Paper, Typography, IconButton, Button } from "@mui/material";
@@ -368,33 +368,27 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     document.body
   );
 }
-
 // ============================================================
 // TOKEN
 // ============================================================
 function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
   const [image] = useImage(token.src, "anonymous");
-  const shapeRef = useRef();
+  const groupRef = useRef();
   const trRef = useRef();
 
-  // 🟢 Agora depende de "image" também: religa o Transformer quando a imagem terminar de carregar
+  // Religa o Transformer quando a seleção muda ou a imagem termina de carregar
   useEffect(() => {
     if (!isSelected) return;
     const tr = trRef.current;
-    const shape = shapeRef.current;
-    if (!tr || !shape) return;
-    tr.nodes([shape]);
+    const group = groupRef.current;
+    if (!tr || !group) return;
+    tr.nodes([group]);
     tr.getLayer()?.batchDraw();
   }, [isSelected, image]);
 
-  // 🟢 Seleciona no MOUSEDOWN (mais confiável que onClick para drag)
-  const handleMouseDown = (e) => {
-    if (e.evt.button !== 0) return;
-    e.cancelBubble = true; // impede o Stage de limpar a seleção
-    onSelect();
-  };
-
-  const handleTap = (e) => {
+  // Seleciona com botão esquerdo (ignora botão direito para pan)
+  const handleSelect = (e) => {
+    if (e.evt?.button === 2) return;
     e.cancelBubble = true;
     onSelect();
   };
@@ -403,33 +397,48 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
 
   return (
     <>
-      <KonvaImage
-        image={image}
+      <Group
+        ref={groupRef}
         x={token.x}
         y={token.y}
         width={token.width}
         height={token.height}
         draggable
-        ref={shapeRef}
-        onMouseDown={handleMouseDown}
-        onTap={handleTap}
+        onMouseDown={handleSelect}
+        onTouchStart={handleSelect}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
           if (!canResize) return;
-          const node = shapeRef.current;
+          const node = groupRef.current;
           if (!node) return;
           const newAttrs = {
             x: node.x(),
             y: node.y(),
-            width: Math.max(20, node.width() * node.scaleX()),
-            height: Math.max(20, node.height() * node.scaleY()),
+            width: Math.max(20, token.width * node.scaleX()),
+            height: Math.max(20, token.height * node.scaleY()),
           };
           node.scaleX(1);
           node.scaleY(1);
           onTransformEnd?.(newAttrs);
         }}
-      />
+      >
+        {/* 🟢 Rect invisível: captura o clique em TODA a área do token */}
+        <Rect
+          width={token.width}
+          height={token.height}
+          fill="rgba(0,0,0,0.01)"
+        />
+
+        {/* 🟢 Imagem só visual, não captura clique (listening=false) */}
+        <KonvaImage
+          image={image}
+          width={token.width}
+          height={token.height}
+          listening={false}
+        />
+      </Group>
+
       {isSelected && (
         <Transformer
           ref={trRef}
