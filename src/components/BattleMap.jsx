@@ -29,7 +29,14 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const stageRef = useRef();
   const socketRef = useRef(null);
   const lastEmitRef = useRef(0);
+
+  // Refs de seleção retangular (fora do Stage, via window listeners)
   const selStartRef = useRef(null);
+  const selRectRef = useRef(null);
+  const tokensRef = useRef([]);
+  useEffect(() => { tokensRef.current = tokens; }, [tokens]);
+
+  // Multi-drag
   const multiDragRef = useRef(null);
 
   const [posicao, setPosicao] = useState({ x: 150, y: 80 });
@@ -75,7 +82,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     };
   }, [visible]);
 
-  // Arrastar/redimensionar janela
+  // Arrastar/redimensionar JANELA
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (arrastando)
@@ -97,6 +104,64 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [arrastando, redimensionando]);
+
+  // 🟢 Seleção retangular via window listeners (não sobrecarrega o Stage)
+  useEffect(() => {
+    if (!selectionRect) return;
+
+    const handleMove = (e) => {
+      const stage = stageRef.current;
+      const start = selStartRef.current;
+      if (!stage || !start) return;
+
+      const rect = stage.container().getBoundingClientRect();
+      const pointerX = e.clientX - rect.left;
+      const pointerY = e.clientY - rect.top;
+      const stageX = (pointerX - stage.x()) / stage.scaleX();
+      const stageY = (pointerY - stage.y()) / stage.scaleY();
+
+      const x = Math.min(start.x, stageX);
+      const y = Math.min(start.y, stageY);
+      const width = Math.abs(stageX - start.x);
+      const height = Math.abs(stageY - start.y);
+      const newRect = { x, y, width, height };
+      selRectRef.current = newRect;
+      setSelectionRect(newRect);
+    };
+
+    const handleUp = (e) => {
+      const rect = selRectRef.current;
+      if (rect && (rect.width > 5 || rect.height > 5)) {
+        const ids = tokensRef.current
+          .filter(
+            (t) =>
+              t.x < rect.x + rect.width &&
+              t.x + t.width > rect.x &&
+              t.y < rect.y + rect.height &&
+              t.y + t.height > rect.y
+          )
+          .map((t) => t.id);
+        if (e.shiftKey) {
+          setSelectedIds((cur) => Array.from(new Set([...cur, ...ids])));
+        } else {
+          setSelectedIds(ids);
+        }
+      } else {
+        // clique simples no vazio → deseleciona
+        if (!e.shiftKey) setSelectedIds([]);
+      }
+      selStartRef.current = null;
+      selRectRef.current = null;
+      setSelectionRect(null);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [selectionRect]);
 
   // Upload
   const handleFileUpload = async (e) => {
@@ -123,7 +188,6 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     }
   };
 
-  // Helpers
   const emitUpdate = (token) => {
     const now = Date.now();
     if (now - lastEmitRef.current > 60) {
@@ -171,7 +235,6 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     setSelectedIds([]);
   };
 
-  // 🟢 NOVO: apagar tudo
   const clearAll = () => {
     if (!isMaster) return;
     if (!tokens.length) {
@@ -203,15 +266,15 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     });
   };
 
-  // 🟢 NOVO: drag de múltiplos tokens juntos
+  // Multi-drag: chamado no início do drag de um token
   const handleTokenDragStart = (tokenId) => {
     if (selectedIds.includes(tokenId) && selectedIds.length > 1) {
-      const anchor = tokens.find((t) => t.id === tokenId);
+      const anchor = tokensRef.current.find((t) => t.id === tokenId);
       if (!anchor) return;
       multiDragRef.current = {
         anchorId: tokenId,
         anchorStart: { x: anchor.x, y: anchor.y },
-        others: tokens
+        others: tokensRef.current
           .filter((t) => selectedIds.includes(t.id) && t.id !== tokenId)
           .map((t) => ({ id: t.id, x: t.x, y: t.y })),
       };
@@ -220,6 +283,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     }
   };
 
+  // Durante o drag: move só os OUTROS (o principal o Konva já move internamente)
   const handleTokenDragMove = (tokenId, pos) => {
     if (multiDragRef.current && multiDragRef.current.anchorId === tokenId) {
       const { anchorStart, others } = multiDragRef.current;
@@ -227,45 +291,45 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       const dy = pos.y - anchorStart.y;
       setTokens((prev) =>
         prev.map((t) => {
-          if (t.id === tokenId) return { ...t, x: pos.x, y: pos.y };
-          const other = others.find((o) => o.id === t.id);
-          if (other) return { ...t, x: other.x + dx, y: other.y + dy };
+          if (t.id === tokenId) return t; // não mexe no principal
+          const o = others.find((x) => x.id === t.id);
+          if (o) return { ...t, x: o.x + dx, y: o.y + dy };
           return t;
         })
       );
-      // Emite só o anchor durante o drag (throttled)
-      const anchorTok = tokens.find((t) => t.id === tokenId);
-      if (anchorTok) emitUpdate({ ...anchorTok, x: pos.x, y: pos.y });
-    } else {
-      const tk = tokens.find((t) => t.id === tokenId);
-      if (tk) emitUpdate({ ...tk, x: pos.x, y: pos.y });
+      // Sincroniza só o anchor (throttled)
+      emitUpdate({ id: tokenId, x: pos.x, y: pos.y });
     }
   };
 
+  // Fim do drag: aplica posição final em todos e emite socket
   const handleTokenDragEnd = (tokenId, pos) => {
     if (multiDragRef.current && multiDragRef.current.anchorId === tokenId) {
       const { anchorStart, others } = multiDragRef.current;
       const dx = pos.x - anchorStart.x;
       const dy = pos.y - anchorStart.y;
-      const finalMoved = [
+      const finalMoves = [
         { id: tokenId, x: pos.x, y: pos.y },
         ...others.map((o) => ({ id: o.id, x: o.x + dx, y: o.y + dy })),
       ];
+      const movedById = Object.fromEntries(finalMoves.map((m) => [m.id, m]));
+
       setTokens((prev) =>
         prev.map((t) => {
-          const m = finalMoved.find((fm) => fm.id === t.id);
+          const m = movedById[t.id];
           return m ? { ...t, x: m.x, y: m.y } : t;
         })
       );
-      // Emite update para todos os que moveram
-      finalMoved.forEach((m) => {
-        const tk = tokens.find((t) => t.id === m.id);
-        if (tk) socketRef.current?.emit("updateToken", { ...tk, x: m.x, y: m.y });
+      // Emite update para todos
+      finalMoves.forEach((m) => {
+        const t = tokensRef.current.find((x) => x.id === m.id);
+        if (t) socketRef.current?.emit("updateToken", { ...t, x: m.x, y: m.y });
       });
       multiDragRef.current = null;
     } else {
-      const tk = tokens.find((t) => t.id === tokenId);
-      if (tk) updateTokenFinal({ ...tk, x: pos.x, y: pos.y });
+      // Drag individual normal
+      const t = tokensRef.current.find((x) => x.id === tokenId);
+      if (t) updateTokenFinal({ ...t, x: pos.x, y: pos.y });
     }
   };
 
@@ -330,7 +394,6 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                   >
                     Token
                   </Button>
-                  {/* 🟢 NOVO: botão Limpar tudo */}
                   <Button
                     size="small" startIcon={<ClearAllIcon />}
                     onClick={clearAll}
@@ -397,74 +460,36 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
               return;
             }
 
-            // Botão esquerdo
-            if (e.evt.button === 0) {
-              const pointer = stage.getPointerPosition();
-              if (!pointer) return;
-              const shape = stage.getIntersection(pointer);
-              const name = shape?.name?.() || "";
+            if (e.evt.button !== 0) return;
 
-              if (name.startsWith("token-")) {
-                const id = Number(name.replace("token-", ""));
-                if (e.evt.shiftKey) {
-                  setSelectedIds((cur) =>
-                    cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
-                  );
-                } else {
-                  setSelectedIds((cur) => (cur.includes(id) ? cur : [id]));
-                }
-              } else if (!shape || shape === stage) {
-                // 🟢 Inicia seleção retangular no vazio
-                const stageX = (pointer.x - stage.x()) / stage.scaleX();
-                const stageY = (pointer.y - stage.y()) / stage.scaleY();
-                selStartRef.current = { x: stageX, y: stageY };
-                setSelectionRect({ x: stageX, y: stageY, width: 0, height: 0 });
-                if (!e.evt.shiftKey) setSelectedIds([]);
-              }
-            }
-          }}
-          onMouseMove={(e) => {
-            if (!selStartRef.current) return;
-            const stage = stageRef.current;
-            if (!stage) return;
             const pointer = stage.getPointerPosition();
             if (!pointer) return;
-            const stageX = (pointer.x - stage.x()) / stage.scaleX();
-            const stageY = (pointer.y - stage.y()) / stage.scaleY();
-            const x = Math.min(selStartRef.current.x, stageX);
-            const y = Math.min(selStartRef.current.y, stageY);
-            const width = Math.abs(stageX - selStartRef.current.x);
-            const height = Math.abs(stageY - selStartRef.current.y);
-            setSelectionRect({ x, y, width, height });
-          }}
-          onMouseUp={(e) => {
-            const stage = stageRef.current;
-            if (!stage) return;
+            const shape = stage.getIntersection(pointer);
+            const name = shape?.name?.() || "";
 
-            // Finaliza seleção retangular
-            if (selStartRef.current) {
-              const rect = selectionRect;
-              if (rect && (rect.width > 5 || rect.height > 5)) {
-                const ids = tokens
-                  .filter(
-                    (t) =>
-                      t.x < rect.x + rect.width &&
-                      t.x + t.width > rect.x &&
-                      t.y < rect.y + rect.height &&
-                      t.y + t.height > rect.y
-                  )
-                  .map((t) => t.id);
-                if (e.evt.shiftKey) {
-                  setSelectedIds((cur) => Array.from(new Set([...cur, ...ids])));
-                } else {
-                  setSelectedIds(ids);
-                }
+            if (name.startsWith("token-")) {
+              const id = Number(name.replace("token-", ""));
+              if (e.evt.shiftKey) {
+                setSelectedIds((cur) =>
+                  cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+                );
+              } else if (!selectedIds.includes(id)) {
+                // Se já está selecionado (parte de multi), mantém a seleção p/ arrastar todos
+                setSelectedIds([id]);
               }
-              selStartRef.current = null;
-              setSelectionRect(null);
+              // Se já está na seleção, não mexe — deixa o multi-drag acontecer
+            } else {
+              // Clique no vazio → inicia seleção retangular
+              const stageX = (pointer.x - stage.x()) / stage.scaleX();
+              const stageY = (pointer.y - stage.y()) / stage.scaleY();
+              selStartRef.current = { x: stageX, y: stageY };
+              selRectRef.current = { x: stageX, y: stageY, width: 0, height: 0 };
+              setSelectionRect({ x: stageX, y: stageY, width: 0, height: 0 });
             }
-
-            if (stage.draggable()) {
+          }}
+          onMouseUp={() => {
+            const stage = stageRef.current;
+            if (stage?.draggable()) {
               stage.stopDrag();
               stage.draggable(false);
               setStagePos({ x: stage.x(), y: stage.y() });
@@ -488,7 +513,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                 key={token.id}
                 token={token}
                 isSelected={selectedIds.includes(token.id)}
-                canResize={isMaster && selectedIds.length === 1}
+                canResize={isMaster && selectedIds.length === 1 && selectedIds[0] === token.id}
                 onDragStart={() => handleTokenDragStart(token.id)}
                 onMoveDuring={(pos) => handleTokenDragMove(token.id, pos)}
                 onDragEnd={(pos) => handleTokenDragEnd(token.id, pos)}
@@ -497,7 +522,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
             ))}
           </Layer>
 
-          {/* 🟢 RETÂNGULO DE SELEÇÃO */}
+          {/* RETÂNGULO DE SELEÇÃO (por último, sem capturar clique) */}
           {selectionRect && (
             <Layer listening={false}>
               <Rect
@@ -515,7 +540,6 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
         </Stage>
       </Box>
 
-      {/* Handle de redimensionar janela */}
       {!minimizado && (
         <Box
           sx={{ position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize", zIndex: 10 }}
@@ -574,14 +598,11 @@ function Token({ token, isSelected, canResize, onDragStart, onMoveDuring, onDrag
           onTransformEnd?.(newAttrs);
         }}
       >
-        {/* Rect: recebe clique/drag. Borda ciano quando selecionado (visual p/ multi-select) */}
         <Rect
           name={`token-${token.id}`}
           width={token.width}
           height={token.height}
           fill="rgba(0,0,0,0.01)"
-          stroke={isSelected && !canResize ? "#00e0ff" : undefined}
-          strokeWidth={isSelected && !canResize ? 2 : 0}
         />
         <KonvaImage image={image} width={token.width} height={token.height} listening={false} />
       </Group>
