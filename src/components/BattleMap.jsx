@@ -9,6 +9,7 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import DeleteIcon from "@mui/icons-material/Delete";
+import ClearAllIcon from "@mui/icons-material/ClearAll";
 import { io } from "socket.io-client";
 import { getAuth } from "firebase/auth";
 
@@ -20,12 +21,16 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [tokens, setTokens] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
   const [isMaster, setIsMaster] = useState(false);
+  const [selectionRect, setSelectionRect] = useState(null);
+
   const fileInputRef = useRef();
   const stageRef = useRef();
   const socketRef = useRef(null);
   const lastEmitRef = useRef(0);
+  const selStartRef = useRef(null);
+  const multiDragRef = useRef(null);
 
   const [posicao, setPosicao] = useState({ x: 150, y: 80 });
   const [tamanho, setTamanho] = useState({ width: 800, height: 600 });
@@ -60,7 +65,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     );
     s.on("deleteToken", (id) => {
       setTokens((prev) => prev.filter((t) => t.id !== id));
-      setSelectedId((cur) => (cur === id ? null : cur));
+      setSelectedIds((cur) => cur.filter((sid) => sid !== id));
     });
     s.on("reorder", (newTokens) => setTokens(newTokens));
 
@@ -133,9 +138,10 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   };
 
   const bringForward = () => {
-    if (!selectedId || !isMaster) return;
+    if (!selectedIds.length || !isMaster) return;
     setTokens((prev) => {
-      const idx = prev.findIndex((t) => t.id === selectedId);
+      const id = selectedIds[0];
+      const idx = prev.findIndex((t) => t.id === id);
       if (idx < 0 || idx >= prev.length - 1) return prev;
       const arr = [...prev];
       const [item] = arr.splice(idx, 1);
@@ -146,9 +152,10 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   };
 
   const sendBackward = () => {
-    if (!selectedId || !isMaster) return;
+    if (!selectedIds.length || !isMaster) return;
     setTokens((prev) => {
-      const idx = prev.findIndex((t) => t.id === selectedId);
+      const id = selectedIds[0];
+      const idx = prev.findIndex((t) => t.id === id);
       if (idx <= 0) return prev;
       const arr = [...prev];
       const [item] = arr.splice(idx, 1);
@@ -158,10 +165,23 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     });
   };
 
-  const deleteToken = () => {
-    if (!selectedId || !isMaster) return;
-    socketRef.current?.emit("deleteToken", selectedId);
-    setSelectedId(null);
+  const deleteSelected = () => {
+    if (!selectedIds.length || !isMaster) return;
+    selectedIds.forEach((id) => socketRef.current?.emit("deleteToken", id));
+    setSelectedIds([]);
+  };
+
+  // 🟢 NOVO: apagar tudo
+  const clearAll = () => {
+    if (!isMaster) return;
+    if (!tokens.length) {
+      alert("Não há nenhum token no grid.");
+      return;
+    }
+    if (!window.confirm(`Apagar TODOS os ${tokens.length} tokens do grid? Essa ação é irreversível.`)) return;
+    tokens.forEach((t) => socketRef.current?.emit("deleteToken", t.id));
+    setTokens([]);
+    setSelectedIds([]);
   };
 
   const handleWheel = (e) => {
@@ -181,6 +201,72 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       x: pointer.x - mousePointTo.x * newScale,
       y: pointer.y - mousePointTo.y * newScale,
     });
+  };
+
+  // 🟢 NOVO: drag de múltiplos tokens juntos
+  const handleTokenDragStart = (tokenId) => {
+    if (selectedIds.includes(tokenId) && selectedIds.length > 1) {
+      const anchor = tokens.find((t) => t.id === tokenId);
+      if (!anchor) return;
+      multiDragRef.current = {
+        anchorId: tokenId,
+        anchorStart: { x: anchor.x, y: anchor.y },
+        others: tokens
+          .filter((t) => selectedIds.includes(t.id) && t.id !== tokenId)
+          .map((t) => ({ id: t.id, x: t.x, y: t.y })),
+      };
+    } else {
+      multiDragRef.current = null;
+    }
+  };
+
+  const handleTokenDragMove = (tokenId, pos) => {
+    if (multiDragRef.current && multiDragRef.current.anchorId === tokenId) {
+      const { anchorStart, others } = multiDragRef.current;
+      const dx = pos.x - anchorStart.x;
+      const dy = pos.y - anchorStart.y;
+      setTokens((prev) =>
+        prev.map((t) => {
+          if (t.id === tokenId) return { ...t, x: pos.x, y: pos.y };
+          const other = others.find((o) => o.id === t.id);
+          if (other) return { ...t, x: other.x + dx, y: other.y + dy };
+          return t;
+        })
+      );
+      // Emite só o anchor durante o drag (throttled)
+      const anchorTok = tokens.find((t) => t.id === tokenId);
+      if (anchorTok) emitUpdate({ ...anchorTok, x: pos.x, y: pos.y });
+    } else {
+      const tk = tokens.find((t) => t.id === tokenId);
+      if (tk) emitUpdate({ ...tk, x: pos.x, y: pos.y });
+    }
+  };
+
+  const handleTokenDragEnd = (tokenId, pos) => {
+    if (multiDragRef.current && multiDragRef.current.anchorId === tokenId) {
+      const { anchorStart, others } = multiDragRef.current;
+      const dx = pos.x - anchorStart.x;
+      const dy = pos.y - anchorStart.y;
+      const finalMoved = [
+        { id: tokenId, x: pos.x, y: pos.y },
+        ...others.map((o) => ({ id: o.id, x: o.x + dx, y: o.y + dy })),
+      ];
+      setTokens((prev) =>
+        prev.map((t) => {
+          const m = finalMoved.find((fm) => fm.id === t.id);
+          return m ? { ...t, x: m.x, y: m.y } : t;
+        })
+      );
+      // Emite update para todos os que moveram
+      finalMoved.forEach((m) => {
+        const tk = tokens.find((t) => t.id === m.id);
+        if (tk) socketRef.current?.emit("updateToken", { ...tk, x: m.x, y: m.y });
+      });
+      multiDragRef.current = null;
+    } else {
+      const tk = tokens.find((t) => t.id === tokenId);
+      if (tk) updateTokenFinal({ ...tk, x: pos.x, y: pos.y });
+    }
   };
 
   if (!visible) return null;
@@ -244,8 +330,17 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                   >
                     Token
                   </Button>
+                  {/* 🟢 NOVO: botão Limpar tudo */}
+                  <Button
+                    size="small" startIcon={<ClearAllIcon />}
+                    onClick={clearAll}
+                    title="Apagar tudo do grid"
+                    sx={{ minWidth: "auto", px: 1, fontSize: "0.6rem", bgcolor: "#dc2626", color: "#fff", "&:hover": { bgcolor: "#b91c1c" } }}
+                  >
+                    Limpar
+                  </Button>
                   <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileUpload} />
-                  {selectedId && (
+                  {selectedIds.length > 0 && (
                     <>
                       <IconButton size="small" onClick={bringForward} sx={{ color: "#00e0ff", p: 0.5 }} title="Trazer para frente">
                         <ArrowUpwardIcon fontSize="small" />
@@ -253,7 +348,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                       <IconButton size="small" onClick={sendBackward} sx={{ color: "#00e0ff", p: 0.5 }} title="Enviar para trás">
                         <ArrowDownwardIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small" onClick={deleteToken} sx={{ color: "#ef4444", p: 0.5 }} title="Excluir">
+                      <IconButton size="small" onClick={deleteSelected} sx={{ color: "#ef4444", p: 0.5 }} title="Excluir selecionados">
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </>
@@ -271,7 +366,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
         </Box>
       </Box>
 
-      {/* CONTAINER DO STAGE — sempre montado, só escondido quando minimizado */}
+      {/* CONTAINER DO STAGE */}
       <Box
         sx={{
           flex: 1, position: "relative", bgcolor: "#1a1a2e", overflow: "hidden",
@@ -298,40 +393,85 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
               e.evt.preventDefault();
               stage.draggable(true);
               stage.startDrag();
-              setSelectedId(null);
+              setSelectedIds([]);
               return;
             }
 
-            // Botão esquerdo = selecionar ou deselecionar
+            // Botão esquerdo
             if (e.evt.button === 0) {
               const pointer = stage.getPointerPosition();
               if (!pointer) return;
               const shape = stage.getIntersection(pointer);
               const name = shape?.name?.() || "";
 
-              console.log("[Stage] clique | shape:", name || "(vazio)");
-
               if (name.startsWith("token-")) {
                 const id = Number(name.replace("token-", ""));
-                console.log("[Stage] → selecionando token:", id);
-                setSelectedId(id);
-              } else if (!shape) {
-                console.log("[Stage] → clique no vazio");
-                setSelectedId(null);
+                if (e.evt.shiftKey) {
+                  setSelectedIds((cur) =>
+                    cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+                  );
+                } else {
+                  setSelectedIds((cur) => (cur.includes(id) ? cur : [id]));
+                }
+              } else if (!shape || shape === stage) {
+                // 🟢 Inicia seleção retangular no vazio
+                const stageX = (pointer.x - stage.x()) / stage.scaleX();
+                const stageY = (pointer.y - stage.y()) / stage.scaleY();
+                selStartRef.current = { x: stageX, y: stageY };
+                setSelectionRect({ x: stageX, y: stageY, width: 0, height: 0 });
+                if (!e.evt.shiftKey) setSelectedIds([]);
               }
-              // Se clicou no Transformer ou outra coisa, não faz nada
             }
           }}
-          onMouseUp={() => {
+          onMouseMove={(e) => {
+            if (!selStartRef.current) return;
             const stage = stageRef.current;
-            if (stage?.draggable()) {
+            if (!stage) return;
+            const pointer = stage.getPointerPosition();
+            if (!pointer) return;
+            const stageX = (pointer.x - stage.x()) / stage.scaleX();
+            const stageY = (pointer.y - stage.y()) / stage.scaleY();
+            const x = Math.min(selStartRef.current.x, stageX);
+            const y = Math.min(selStartRef.current.y, stageY);
+            const width = Math.abs(stageX - selStartRef.current.x);
+            const height = Math.abs(stageY - selStartRef.current.y);
+            setSelectionRect({ x, y, width, height });
+          }}
+          onMouseUp={(e) => {
+            const stage = stageRef.current;
+            if (!stage) return;
+
+            // Finaliza seleção retangular
+            if (selStartRef.current) {
+              const rect = selectionRect;
+              if (rect && (rect.width > 5 || rect.height > 5)) {
+                const ids = tokens
+                  .filter(
+                    (t) =>
+                      t.x < rect.x + rect.width &&
+                      t.x + t.width > rect.x &&
+                      t.y < rect.y + rect.height &&
+                      t.y + t.height > rect.y
+                  )
+                  .map((t) => t.id);
+                if (e.evt.shiftKey) {
+                  setSelectedIds((cur) => Array.from(new Set([...cur, ...ids])));
+                } else {
+                  setSelectedIds(ids);
+                }
+              }
+              selStartRef.current = null;
+              setSelectionRect(null);
+            }
+
+            if (stage.draggable()) {
               stage.stopDrag();
               stage.draggable(false);
               setStagePos({ x: stage.x(), y: stage.y() });
             }
           }}
         >
-          {/* GRID (embaixo, sem capturar eventos) */}
+          {/* GRID */}
           <Layer listening={false}>
             {Array.from({ length: 100 }).map((_, i) => (
               <Line key={`v-${i}`} points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]} stroke="#555" strokeWidth={1} />
@@ -341,20 +481,37 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
             ))}
           </Layer>
 
-          {/* TOKENS (por cima) */}
+          {/* TOKENS */}
           <Layer>
             {tokens.map((token) => (
               <Token
                 key={token.id}
                 token={token}
-                isSelected={selectedId === token.id}
-                canResize={isMaster}
-                onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
-                onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
+                isSelected={selectedIds.includes(token.id)}
+                canResize={isMaster && selectedIds.length === 1}
+                onDragStart={() => handleTokenDragStart(token.id)}
+                onMoveDuring={(pos) => handleTokenDragMove(token.id, pos)}
+                onDragEnd={(pos) => handleTokenDragEnd(token.id, pos)}
                 onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
               />
             ))}
           </Layer>
+
+          {/* 🟢 RETÂNGULO DE SELEÇÃO */}
+          {selectionRect && (
+            <Layer listening={false}>
+              <Rect
+                x={selectionRect.x}
+                y={selectionRect.y}
+                width={selectionRect.width}
+                height={selectionRect.height}
+                fill="rgba(0, 224, 255, 0.15)"
+                stroke="#00e0ff"
+                strokeWidth={1 / scale}
+                dash={[6 / scale, 4 / scale]}
+              />
+            </Layer>
+          )}
         </Stage>
       </Box>
 
@@ -376,14 +533,13 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
 }
 
 // ============================================================
-// TOKEN — Rect + Image dentro de um Group
+// TOKEN
 // ============================================================
-function Token({ token, isSelected, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
+function Token({ token, isSelected, canResize, onDragStart, onMoveDuring, onDragEnd, onTransformEnd }) {
   const [image] = useImage(token.src, "anonymous");
   const groupRef = useRef();
   const trRef = useRef();
 
-  // Anexa o Transformer ao Group quando selecionado
   useEffect(() => {
     if (!isSelected) return;
     if (!trRef.current || !groupRef.current) return;
@@ -400,6 +556,7 @@ function Token({ token, isSelected, onMoveDuring, onDragEnd, onTransformEnd, can
         x={token.x}
         y={token.y}
         draggable
+        onDragStart={onDragStart}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
@@ -417,23 +574,19 @@ function Token({ token, isSelected, onMoveDuring, onDragEnd, onTransformEnd, can
           onTransformEnd?.(newAttrs);
         }}
       >
-        {/* Rect transparente — é ele que recebe o clique e o drag */}
+        {/* Rect: recebe clique/drag. Borda ciano quando selecionado (visual p/ multi-select) */}
         <Rect
           name={`token-${token.id}`}
           width={token.width}
           height={token.height}
           fill="rgba(0,0,0,0.01)"
+          stroke={isSelected && !canResize ? "#00e0ff" : undefined}
+          strokeWidth={isSelected && !canResize ? 2 : 0}
         />
-        {/* Imagem só visual */}
-        <KonvaImage
-          image={image}
-          width={token.width}
-          height={token.height}
-          listening={false}
-        />
+        <KonvaImage image={image} width={token.width} height={token.height} listening={false} />
       </Group>
 
-      {isSelected && (
+      {isSelected && canResize && (
         <Transformer
           ref={trRef}
           rotateEnabled={false}
@@ -442,7 +595,6 @@ function Token({ token, isSelected, onMoveDuring, onDragEnd, onTransformEnd, can
           borderStroke="#00e0ff"
           anchorStroke="#00e0ff"
           anchorFill="#0f172a"
-          enabledAnchors={canResize ? undefined : []}
           boundBoxFunc={(oldBox, newBox) => (newBox.width < 20 || newBox.height < 20 ? oldBox : newBox)}
         />
       )}
