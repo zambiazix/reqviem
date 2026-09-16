@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Stage, Layer, Line, Image as KonvaImage, Transformer, Group, Rect } from "react-konva";
 import useImage from "use-image";
 import { createPortal } from "react-dom";
@@ -27,7 +27,6 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const socketRef = useRef(null);
   const lastEmitRef = useRef(0);
 
-  // Estados da janela flutuante
   const [posicao, setPosicao] = useState({ x: 150, y: 80 });
   const [tamanho, setTamanho] = useState({ width: 800, height: 600 });
   const [minimizado, setMinimizado] = useState(false);
@@ -36,6 +35,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
+  // Auth
   useEffect(() => {
     const auth = getAuth();
     const unsub = auth.onAuthStateChanged((user) => {
@@ -44,7 +44,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     return () => unsub();
   }, []);
 
-  // ================= SOCKET =================
+  // Socket
   useEffect(() => {
     if (!visible) return;
     const s = io(serverUrl, { transports: ["websocket"] });
@@ -68,9 +68,9 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       s.disconnect();
       socketRef.current = null;
     };
-  }, [visible]); // 👈 só "visible". Minimizar NÃO desconecta.
+  }, [visible]);
 
-  // ================= ARRASTAR / REDIMENSIONAR JANELA =================
+  // Arrastar/redimensionar janela
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (arrastando)
@@ -93,7 +93,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     };
   }, [arrastando, redimensionando]);
 
-  // ================= UPLOAD =================
+  // Upload
   const handleFileUpload = async (e) => {
     if (!isMaster) return alert("Apenas o Mestre pode adicionar tokens.");
     const file = e.target.files?.[0];
@@ -108,24 +108,17 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       }
       const data = await resp.json();
       if (!data?.url) throw new Error("Upload falhou");
-      const tokenObj = {
-        id: Date.now(),
-        src: data.url,
-        x: 100,
-        y: 100,
-        width: 100,
-        height: 100,
-      };
+      const tokenObj = { id: Date.now(), src: data.url, x: 100, y: 100, width: 100, height: 100 };
       socketRef.current?.emit("addToken", tokenObj);
     } catch (err) {
       console.error("Erro no upload:", err);
       alert("Erro no upload: " + (err.message || err));
     } finally {
-      e.target.value = ""; // permite subir o mesmo arquivo de novo
+      e.target.value = "";
     }
   };
 
-  // ================= HELPERS =================
+  // Helpers
   const emitUpdate = (token) => {
     const now = Date.now();
     if (now - lastEmitRef.current > 60) {
@@ -177,6 +170,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     if (!stage) return;
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
+    if (!pointer) return;
     const mousePointTo = {
       x: (pointer.x - stage.x()) / oldScale,
       y: (pointer.y - stage.y()) / oldScale,
@@ -188,11 +182,6 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       y: pointer.y - mousePointTo.y * newScale,
     });
   };
-
-  const handleSelectToken = useCallback((id) => {
-  console.log("[BattleMap] handleSelectToken:", id);
-  setSelectedId(id);
-}, []);
 
   if (!visible) return null;
 
@@ -220,15 +209,9 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       {/* BARRA DE TÍTULO */}
       <Box
         sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          p: 1,
-          bgcolor: "#1a1a2e",
-          cursor: "move",
-          minHeight: 40,
-          borderBottom: "1px solid #334155",
-          flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          p: 1, bgcolor: "#1a1a2e", cursor: "move", minHeight: 40,
+          borderBottom: "1px solid #334155", flexShrink: 0,
         }}
         onMouseDown={(e) => {
           if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
@@ -243,141 +226,139 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
             {minimizado ? "Grid" : "Grid de Batalha"}
           </Typography>
         </Box>
-<Box sx={{ display: "flex", gap: 0.5, alignItems: "center", flexShrink: 0 }}>
-  {/* 🟢 Só mostra os controles quando NÃO está minimizado */}
-  {!minimizado && (
-    <>
-      <IconButton size="small" onClick={() => setScale((s) => Math.min(2, s + 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
-        <AddIcon fontSize="small" />
-      </IconButton>
-      <IconButton size="small" onClick={() => setScale((s) => Math.max(0.5, s - 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
-        <RemoveIcon fontSize="small" />
-      </IconButton>
-      {isMaster && (
-        <>
-          <Button
-            size="small"
-            startIcon={<AddIcon />}
-            onClick={() => fileInputRef.current?.click()}
-            sx={{ minWidth: "auto", px: 1, fontSize: "0.6rem", bgcolor: "#22c55e", color: "#fff", "&:hover": { bgcolor: "#16a34a" } }}
-          >
-            Token
-          </Button>
-          <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileUpload} />
-          {selectedId && (
+        <Box sx={{ display: "flex", gap: 0.5, alignItems: "center", flexShrink: 0 }}>
+          {!minimizado && (
             <>
-              <IconButton size="small" onClick={bringForward} sx={{ color: "#00e0ff", p: 0.5 }} title="Trazer para frente">
-                <ArrowUpwardIcon fontSize="small" />
+              <IconButton size="small" onClick={() => setScale((s) => Math.min(2, s + 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
+                <AddIcon fontSize="small" />
               </IconButton>
-              <IconButton size="small" onClick={sendBackward} sx={{ color: "#00e0ff", p: 0.5 }} title="Enviar para trás">
-                <ArrowDownwardIcon fontSize="small" />
+              <IconButton size="small" onClick={() => setScale((s) => Math.max(0.5, s - 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
+                <RemoveIcon fontSize="small" />
               </IconButton>
-              <IconButton size="small" onClick={deleteToken} sx={{ color: "#ef4444", p: 0.5 }} title="Excluir">
-                <DeleteIcon fontSize="small" />
-              </IconButton>
+              {isMaster && (
+                <>
+                  <Button
+                    size="small" startIcon={<AddIcon />}
+                    onClick={() => fileInputRef.current?.click()}
+                    sx={{ minWidth: "auto", px: 1, fontSize: "0.6rem", bgcolor: "#22c55e", color: "#fff", "&:hover": { bgcolor: "#16a34a" } }}
+                  >
+                    Token
+                  </Button>
+                  <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileUpload} />
+                  {selectedId && (
+                    <>
+                      <IconButton size="small" onClick={bringForward} sx={{ color: "#00e0ff", p: 0.5 }} title="Trazer para frente">
+                        <ArrowUpwardIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" onClick={sendBackward} sx={{ color: "#00e0ff", p: 0.5 }} title="Enviar para trás">
+                        <ArrowDownwardIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" onClick={deleteToken} sx={{ color: "#ef4444", p: 0.5 }} title="Excluir">
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </>
+                  )}
+                </>
+              )}
             </>
           )}
-        </>
-      )}
-    </>
-  )}
-
-  {/* 🟢 Botão minimizar/expandir — SEMPRE visível, cor ciano pra destacar */}
-  <IconButton
-    size="small"
-    onClick={() => setMinimizado(!minimizado)}
-    sx={{ color: "#00e0ff", p: 0.5 }}
-    title={minimizado ? "Expandir" : "Minimizar"}
-  >
-    {minimizado ? "□" : "−"}
-  </IconButton>
-
-  {/* 🟢 Fechar — SEMPRE visível */}
-  <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }} title="Fechar">
-    <CloseIcon fontSize="small" />
-  </IconButton>
-</Box>
+          <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#00e0ff", p: 0.5 }} title={minimizado ? "Expandir" : "Minimizar"}>
+            {minimizado ? "□" : "−"}
+          </IconButton>
+          <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }} title="Fechar">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
       </Box>
 
-{/* 🟢 Container do Stage — SEMPRE montado, apenas escondido quando minimizado */}
-<Box
-  sx={{
-    flex: 1,
-    position: "relative",
-    bgcolor: "#1a1a2e",
-    overflow: "hidden",
-    // 👇 Quando minimizado, esconde mas MANTÉM montado pra preservar o Konva
-    ...(minimizado
-      ? { position: "absolute", top: -99999, left: -99999, width: tamanho.width, height: tamanho.height - 40 }
-      : {}),
-  }}
->
-  <Stage
-    ref={stageRef}
-    width={tamanho.width}
-    height={tamanho.height - 40}
-    x={stagePos.x}
-    y={stagePos.y}
-    scaleX={scale}
-    scaleY={scale}
-    onWheel={handleWheel}
-    onMouseDown={(e) => {
-      if (e.evt.button === 2 && e.target === stageRef.current) {
-        e.evt.preventDefault();
-        stageRef.current.draggable(true);
-        stageRef.current.startDrag();
-        setSelectedId(null);
-      }
-      if (e.evt.button === 0 && e.target === stageRef.current) {
-        setSelectedId(null);
-      }
-    }}
-    onMouseUp={() => {
-      if (stageRef.current?.draggable()) {
-        stageRef.current.stopDrag();
-        stageRef.current.draggable(false);
-        setStagePos({ x: stageRef.current.x(), y: stageRef.current.y() });
-      }
-    }}
-  >
-    {/* 🟢 GRID PRIMEIRO (embaixo) e SEM capturar eventos */}
-    <Layer listening={false}>
-      {Array.from({ length: 100 }).map((_, i) => (
-        <Line
-          key={`v-${i}`}
-          points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]}
-          stroke="#555"
-          strokeWidth={1}
-        />
-      ))}
-      {Array.from({ length: 100 }).map((_, i) => (
-        <Line
-          key={`h-${i}`}
-          points={[-2500, i * GRID_SIZE - 2500, 2500, i * GRID_SIZE - 2500]}
-          stroke="#555"
-          strokeWidth={1}
-        />
-      ))}
-    </Layer>
+      {/* CONTAINER DO STAGE — sempre montado, só escondido quando minimizado */}
+      <Box
+        sx={{
+          flex: 1, position: "relative", bgcolor: "#1a1a2e", overflow: "hidden",
+          ...(minimizado
+            ? { position: "absolute", top: -99999, left: -99999, width: tamanho.width, height: tamanho.height - 40 }
+            : {}),
+        }}
+      >
+        <Stage
+          ref={stageRef}
+          width={tamanho.width}
+          height={tamanho.height - 40}
+          x={stagePos.x}
+          y={stagePos.y}
+          scaleX={scale}
+          scaleY={scale}
+          onWheel={handleWheel}
+          onMouseDown={(e) => {
+            const stage = stageRef.current;
+            if (!stage) return;
 
-    {/* 🟢 TOKENS POR CIMA */}
-    <Layer>
-      {tokens.map((token) => (
-        <Token
-          key={token.id}
-          token={token}
-          isSelected={selectedId === token.id}
-          onSelect={() => handleSelectToken(token.id)}
-          canResize={isMaster}
-          onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
-          onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
-          onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
-        />
-      ))}
-    </Layer>
-  </Stage>
-</Box>
+            // Botão direito = pan
+            if (e.evt.button === 2) {
+              e.evt.preventDefault();
+              stage.draggable(true);
+              stage.startDrag();
+              setSelectedId(null);
+              return;
+            }
 
+            // Botão esquerdo = selecionar ou deselecionar
+            if (e.evt.button === 0) {
+              const pointer = stage.getPointerPosition();
+              if (!pointer) return;
+              const shape = stage.getIntersection(pointer);
+              const name = shape?.name?.() || "";
+
+              console.log("[Stage] clique | shape:", name || "(vazio)");
+
+              if (name.startsWith("token-")) {
+                const id = Number(name.replace("token-", ""));
+                console.log("[Stage] → selecionando token:", id);
+                setSelectedId(id);
+              } else if (!shape) {
+                console.log("[Stage] → clique no vazio");
+                setSelectedId(null);
+              }
+              // Se clicou no Transformer ou outra coisa, não faz nada
+            }
+          }}
+          onMouseUp={() => {
+            const stage = stageRef.current;
+            if (stage?.draggable()) {
+              stage.stopDrag();
+              stage.draggable(false);
+              setStagePos({ x: stage.x(), y: stage.y() });
+            }
+          }}
+        >
+          {/* GRID (embaixo, sem capturar eventos) */}
+          <Layer listening={false}>
+            {Array.from({ length: 100 }).map((_, i) => (
+              <Line key={`v-${i}`} points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]} stroke="#555" strokeWidth={1} />
+            ))}
+            {Array.from({ length: 100 }).map((_, i) => (
+              <Line key={`h-${i}`} points={[-2500, i * GRID_SIZE - 2500, 2500, i * GRID_SIZE - 2500]} stroke="#555" strokeWidth={1} />
+            ))}
+          </Layer>
+
+          {/* TOKENS (por cima) */}
+          <Layer>
+            {tokens.map((token) => (
+              <Token
+                key={token.id}
+                token={token}
+                isSelected={selectedId === token.id}
+                canResize={isMaster}
+                onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
+                onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
+                onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
+              />
+            ))}
+          </Layer>
+        </Stage>
+      </Box>
+
+      {/* Handle de redimensionar janela */}
       {!minimizado && (
         <Box
           sx={{ position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize", zIndex: 10 }}
@@ -393,77 +374,64 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     document.body
   );
 }
-function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
-  const [image, status] = useImage(token.src, "anonymous");
-  const shapeRef = useRef();
+
+// ============================================================
+// TOKEN — Rect + Image dentro de um Group
+// ============================================================
+function Token({ token, isSelected, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
+  const [image] = useImage(token.src, "anonymous");
+  const groupRef = useRef();
   const trRef = useRef();
 
-  // LOG: se a imagem carregou
-  useEffect(() => {
-    console.log("[Token]", token.id, "| status:", status, "| hasImage:", !!image, "| isSelected:", isSelected);
-  }, [status, image, isSelected, token.id]);
-
-  // Anexa o Transformer ao Rect quando selecionado
+  // Anexa o Transformer ao Group quando selecionado
   useEffect(() => {
     if (!isSelected) return;
-    if (!trRef.current || !shapeRef.current) return;
-    trRef.current.nodes([shapeRef.current]);
+    if (!trRef.current || !groupRef.current) return;
+    trRef.current.nodes([groupRef.current]);
     trRef.current.getLayer()?.batchDraw();
   }, [isSelected, image]);
 
-  const handleMouseDown = (e) => {
-    console.log("[Token] MOUSEDOWN recebido no id:", token.id, "| button:", e.evt?.button);
-    e.cancelBubble = true;
-    onSelect();
-  };
-
-  if (!image) {
-    console.warn("[Token] imagem NÃO carregou. id:", token.id, "status:", status);
-    return null;
-  }
+  if (!image) return null;
 
   return (
     <>
-      {/* 🟢 RECT VERMELHO — se você VIR vermelho, o elemento tá clicável */}
-      <Rect
-        ref={shapeRef}
+      <Group
+        ref={groupRef}
         x={token.x}
         y={token.y}
-        width={token.width}
-        height={token.height}
-        fill="rgba(255, 0, 0, 0.4)"
-        stroke="yellow"
-        strokeWidth={2}
         draggable
-        onMouseDown={handleMouseDown}
-        onTap={handleMouseDown}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
           if (!canResize) return;
-          const node = shapeRef.current;
+          const node = groupRef.current;
           if (!node) return;
           const newAttrs = {
             x: node.x(),
             y: node.y(),
-            width: Math.max(20, node.width() * node.scaleX()),
-            height: Math.max(20, node.height() * node.scaleY()),
+            width: Math.max(20, token.width * node.scaleX()),
+            height: Math.max(20, token.height * node.scaleY()),
           };
           node.scaleX(1);
           node.scaleY(1);
           onTransformEnd?.(newAttrs);
         }}
-      />
-
-      {/* Imagem por cima, sem capturar clique */}
-      <KonvaImage
-        image={image}
-        x={token.x}
-        y={token.y}
-        width={token.width}
-        height={token.height}
-        listening={false}
-      />
+      >
+        {/* Rect transparente — é ele que recebe o clique e o drag */}
+        <Rect
+          name={`token-${token.id}`}
+          width={token.width}
+          height={token.height}
+          fill="rgba(0,0,0,0.01)"
+        />
+        {/* Imagem só visual */}
+        <KonvaImage
+          image={image}
+          width={token.width}
+          height={token.height}
+          listening={false}
+        />
+      </Group>
 
       {isSelected && (
         <Transformer
@@ -474,6 +442,8 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
           borderStroke="#00e0ff"
           anchorStroke="#00e0ff"
           anchorFill="#0f172a"
+          enabledAnchors={canResize ? undefined : []}
+          boundBoxFunc={(oldBox, newBox) => (newBox.width < 20 || newBox.height < 20 ? oldBox : newBox)}
         />
       )}
     </>
