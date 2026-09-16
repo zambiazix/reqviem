@@ -296,76 +296,84 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
 </Box>
       </Box>
 
-      {!minimizado && (
-        <Box sx={{ flex: 1, position: "relative", bgcolor: "#1a1a2e", overflow: "hidden" }}>
-          <Stage
-            ref={stageRef}
-            width={tamanho.width}
-            height={tamanho.height - 40}
-            x={stagePos.x}
-            y={stagePos.y}
-            scaleX={scale}
-            scaleY={scale}
-            onWheel={handleWheel}
-            onMouseDown={(e) => {
-              // Botão direito no vazio = pan
-              if (e.evt.button === 2 && e.target === stageRef.current) {
-                e.evt.preventDefault();
-                stageRef.current.draggable(true);
-                stageRef.current.startDrag();
-                setSelectedId(null);
-              }
-              // Botão esquerdo no vazio = deseleciona
-              if (e.evt.button === 0 && e.target === stageRef.current) {
-                setSelectedId(null);
-              }
-            }}
-            onMouseUp={() => {
-              if (stageRef.current?.draggable()) {
-                stageRef.current.stopDrag();
-                stageRef.current.draggable(false);
-                setStagePos({ x: stageRef.current.x(), y: stageRef.current.y() });
-              }
-            }}
-          >
-            {/* 🟢 GRID PRIMEIRO (embaixo) e SEM capturar eventos */}
-            <Layer listening={false}>
-              {Array.from({ length: 100 }).map((_, i) => (
-                <Line
-                  key={`v-${i}`}
-                  points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]}
-                  stroke="#555"
-                  strokeWidth={1}
-                />
-              ))}
-              {Array.from({ length: 100 }).map((_, i) => (
-                <Line
-                  key={`h-${i}`}
-                  points={[-2500, i * GRID_SIZE - 2500, 2500, i * GRID_SIZE - 2500]}
-                  stroke="#555"
-                  strokeWidth={1}
-                />
-              ))}
-            </Layer>
+{/* 🟢 Container do Stage — SEMPRE montado, apenas escondido quando minimizado */}
+<Box
+  sx={{
+    flex: 1,
+    position: "relative",
+    bgcolor: "#1a1a2e",
+    overflow: "hidden",
+    // 👇 Quando minimizado, esconde mas MANTÉM montado pra preservar o Konva
+    ...(minimizado
+      ? { position: "absolute", top: -99999, left: -99999, width: tamanho.width, height: tamanho.height - 40 }
+      : {}),
+  }}
+>
+  <Stage
+    ref={stageRef}
+    width={tamanho.width}
+    height={tamanho.height - 40}
+    x={stagePos.x}
+    y={stagePos.y}
+    scaleX={scale}
+    scaleY={scale}
+    onWheel={handleWheel}
+    onMouseDown={(e) => {
+      if (e.evt.button === 2 && e.target === stageRef.current) {
+        e.evt.preventDefault();
+        stageRef.current.draggable(true);
+        stageRef.current.startDrag();
+        setSelectedId(null);
+      }
+      if (e.evt.button === 0 && e.target === stageRef.current) {
+        setSelectedId(null);
+      }
+    }}
+    onMouseUp={() => {
+      if (stageRef.current?.draggable()) {
+        stageRef.current.stopDrag();
+        stageRef.current.draggable(false);
+        setStagePos({ x: stageRef.current.x(), y: stageRef.current.y() });
+      }
+    }}
+  >
+    {/* 🟢 GRID PRIMEIRO (embaixo) e SEM capturar eventos */}
+    <Layer listening={false}>
+      {Array.from({ length: 100 }).map((_, i) => (
+        <Line
+          key={`v-${i}`}
+          points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]}
+          stroke="#555"
+          strokeWidth={1}
+        />
+      ))}
+      {Array.from({ length: 100 }).map((_, i) => (
+        <Line
+          key={`h-${i}`}
+          points={[-2500, i * GRID_SIZE - 2500, 2500, i * GRID_SIZE - 2500]}
+          stroke="#555"
+          strokeWidth={1}
+        />
+      ))}
+    </Layer>
 
-            {/* 🟢 TOKENS POR CIMA */}
-            <Layer>
-              {tokens.map((token) => (
-                <Token
-                  key={token.id}
-                  token={token}
-                  isSelected={selectedId === token.id}
-                  onSelect={() => handleSelectToken(token.id)}
-                  canResize={isMaster}
-                  onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
-                  onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
-                  onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
-                />
-              ))}
-            </Layer>
-          </Stage>
-        </Box>
-      )}
+    {/* 🟢 TOKENS POR CIMA */}
+    <Layer>
+      {tokens.map((token) => (
+        <Token
+          key={token.id}
+          token={token}
+          isSelected={selectedId === token.id}
+          onSelect={() => handleSelectToken(token.id)}
+          canResize={isMaster}
+          onMoveDuring={(attrs) => emitUpdate({ ...token, ...attrs })}
+          onDragEnd={(attrs) => updateTokenFinal({ ...token, ...attrs })}
+          onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
+        />
+      ))}
+    </Layer>
+  </Stage>
+</Box>
 
       {!minimizado && (
         <Box
