@@ -4,7 +4,6 @@ import useImage from "use-image";
 import { createPortal } from "react-dom";
 import { Box, Paper, Typography, IconButton, Button } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import MinimizeIcon from "@mui/icons-material/Minimize";
 import AddIcon from "@mui/icons-material/Add";
 import RemoveIcon from "@mui/icons-material/Remove";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
@@ -27,8 +26,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const stageRef = useRef();
   const socketRef = useRef(null);
   const lastEmitRef = useRef(0);
-  const trRef = useRef(null);
-  
+
   // Estados da janela flutuante
   const [posicao, setPosicao] = useState({ x: 150, y: 80 });
   const [tamanho, setTamanho] = useState({ width: 800, height: 600 });
@@ -46,18 +44,23 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     return () => unsub();
   }, []);
 
+  // ================= SOCKET =================
   useEffect(() => {
     if (!visible) return;
     const s = io(serverUrl, { transports: ["websocket"] });
     socketRef.current = s;
 
     s.on("connect", () => console.log("🟢 Socket conectado:", s.id));
-    s.on("init", (data) => setTokens(data || []));
-    s.on("addToken", (token) => setTokens((prev) => prev.some((t) => t.id === token.id) ? prev : [...prev, token]));
-    s.on("updateToken", (token) => setTokens((prev) => prev.map((t) => (t.id === token.id ? token : t))));
+    s.on("init", (data) => setTokens(Array.isArray(data) ? data : []));
+    s.on("addToken", (token) =>
+      setTokens((prev) => (prev.some((t) => t.id === token.id) ? prev : [...prev, token]))
+    );
+    s.on("updateToken", (token) =>
+      setTokens((prev) => prev.map((t) => (t.id === token.id ? token : t)))
+    );
     s.on("deleteToken", (id) => {
       setTokens((prev) => prev.filter((t) => t.id !== id));
-      if (selectedId === id) setSelectedId(null);
+      setSelectedId((cur) => (cur === id ? null : cur));
     });
     s.on("reorder", (newTokens) => setTokens(newTokens));
 
@@ -65,49 +68,64 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       s.disconnect();
       socketRef.current = null;
     };
-  }, [visible]);
+  }, [visible]); // 👈 só "visible". Minimizar NÃO desconecta.
 
-  // Arrastar e redimensionar janela
+  // ================= ARRASTAR / REDIMENSIONAR JANELA =================
   useEffect(() => {
     const handleMouseMove = (e) => {
-      if (arrastando) setPosicao({ x: e.clientX - dragStartRef.current.x, y: e.clientY - dragStartRef.current.y });
-      if (redimensionando) setTamanho({ 
-        width: Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x)),
-        height: Math.max(300, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y))
-      });
+      if (arrastando)
+        setPosicao({ x: e.clientX - dragStartRef.current.x, y: e.clientY - dragStartRef.current.y });
+      if (redimensionando)
+        setTamanho({
+          width: Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x)),
+          height: Math.max(300, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y)),
+        });
     };
-    const handleMouseUp = () => { setArrastando(false); setRedimensionando(false); };
+    const handleMouseUp = () => {
+      setArrastando(false);
+      setRedimensionando(false);
+    };
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
-    return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
   }, [arrastando, redimensionando]);
 
+  // ================= UPLOAD =================
   const handleFileUpload = async (e) => {
     if (!isMaster) return alert("Apenas o Mestre pode adicionar tokens.");
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const resp = await fetch(`${serverUrl}/upload`, { 
-        method: "POST",
-        body: formData,
-        mode: 'cors',
-      });
+      const resp = await fetch(`${serverUrl}/upload`, { method: "POST", body: formData, mode: "cors" });
       if (!resp.ok) {
         const errorData = await resp.json().catch(() => ({ error: "Erro no servidor" }));
-        throw new Error(errorData.error || 'Upload falhou');
+        throw new Error(errorData.error || "Upload falhou");
       }
       const data = await resp.json();
       if (!data?.url) throw new Error("Upload falhou");
-      const tokenObj = { id: Date.now(), src: data.url, x: 100, y: 100, width: 100, height: 100 };
+      const tokenObj = {
+        id: Date.now(),
+        src: data.url,
+        x: 100,
+        y: 100,
+        width: 100,
+        height: 100,
+      };
       socketRef.current?.emit("addToken", tokenObj);
     } catch (err) {
       console.error("Erro no upload:", err);
       alert("Erro no upload: " + (err.message || err));
+    } finally {
+      e.target.value = ""; // permite subir o mesmo arquivo de novo
     }
   };
 
+  // ================= HELPERS =================
   const emitUpdate = (token) => {
     const now = Date.now();
     if (now - lastEmitRef.current > 60) {
@@ -159,67 +177,113 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     if (!stage) return;
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
-    const mousePointTo = { x: (pointer.x - stage.x()) / oldScale, y: (pointer.y - stage.y()) / oldScale };
+    const mousePointTo = {
+      x: (pointer.x - stage.x()) / oldScale,
+      y: (pointer.y - stage.y()) / oldScale,
+    };
     const newScale = e.evt.deltaY > 0 ? oldScale / 1.05 : oldScale * 1.05;
     setScale(newScale);
-    setStagePos({ x: pointer.x - mousePointTo.x * newScale, y: pointer.y - mousePointTo.y * newScale });
+    setStagePos({
+      x: pointer.x - mousePointTo.x * newScale,
+      y: pointer.y - mousePointTo.y * newScale,
+    });
   };
 
-  // 🟢 FUNÇÃO PARA SELECIONAR TOKEN
-  const handleSelectToken = useCallback((id) => {
-    setSelectedId(id);
-  }, []);
+  const handleSelectToken = useCallback((id) => setSelectedId(id), []);
 
   if (!visible) return null;
 
   return createPortal(
-    <Paper elevation={10} onContextMenu={(e) => e.preventDefault()} sx={{
-      position: "fixed", left: posicao.x, top: posicao.y,
-      width: minimizado ? 280 : tamanho.width,
-      height: minimizado ? 48 : tamanho.height,
-      bgcolor: "#0f172a", color: "#fff", borderRadius: 2,
-      border: "2px solid #00e0ff", zIndex: 9990,
-      display: "flex", flexDirection: "column", overflow: "hidden",
-      boxShadow: "0 8px 32px rgba(0,0,0,0.8), 0 0 20px rgba(0,224,255,0.3)",
-    }}>
+    <Paper
+      elevation={10}
+      onContextMenu={(e) => e.preventDefault()}
+      sx={{
+        position: "fixed",
+        left: posicao.x,
+        top: posicao.y,
+        width: minimizado ? 280 : tamanho.width,
+        height: minimizado ? 48 : tamanho.height,
+        bgcolor: "#0f172a",
+        color: "#fff",
+        borderRadius: 2,
+        border: "2px solid #00e0ff",
+        zIndex: 9990,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.8), 0 0 20px rgba(0,224,255,0.3)",
+      }}
+    >
       {/* BARRA DE TÍTULO */}
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 1, bgcolor: "#1a1a2e", cursor: "move", minHeight: 40, borderBottom: "1px solid #334155", flexShrink: 0 }}
-        onMouseDown={(e) => { if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return; e.preventDefault(); setArrastando(true); dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y }; }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          p: 1,
+          bgcolor: "#1a1a2e",
+          cursor: "move",
+          minHeight: 40,
+          borderBottom: "1px solid #334155",
+          flexShrink: 0,
+        }}
+        onMouseDown={(e) => {
+          if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+          e.preventDefault();
+          setArrastando(true);
+          dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y };
+        }}
+      >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <span style={{ fontSize: '1.3rem' }}>🗺️</span>
+          <span style={{ fontSize: "1.3rem" }}>🗺️</span>
           <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: "#00e0ff" }}>
             {minimizado ? "Grid" : "Grid de Batalha"}
           </Typography>
         </Box>
         <Box sx={{ display: "flex", gap: 0.5 }}>
-          <IconButton size="small" onClick={() => setScale(s => Math.min(2, s + 0.1))} sx={{ color: '#94a3b8', p: 0.5 }}>
+          <IconButton size="small" onClick={() => setScale((s) => Math.min(2, s + 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
             <AddIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={() => setScale(s => Math.max(0.5, s - 0.1))} sx={{ color: '#94a3b8', p: 0.5 }}>
+          <IconButton size="small" onClick={() => setScale((s) => Math.max(0.5, s - 0.1))} sx={{ color: "#94a3b8", p: 0.5 }}>
             <RemoveIcon fontSize="small" />
           </IconButton>
           {isMaster && (
             <>
-              <Button size="small" startIcon={<AddIcon />} onClick={() => fileInputRef.current?.click()} sx={{ minWidth: 'auto', px: 1, fontSize: '0.6rem', bgcolor: '#22c55e', color: '#fff', '&:hover': { bgcolor: '#16a34a' } }}>
+              <Button
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => fileInputRef.current?.click()}
+                sx={{ minWidth: "auto", px: 1, fontSize: "0.6rem", bgcolor: "#22c55e", color: "#fff", "&:hover": { bgcolor: "#16a34a" } }}
+              >
                 Token
               </Button>
               <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileUpload} />
               {selectedId && (
                 <>
-                  <IconButton size="small" onClick={bringForward} sx={{ color: '#00e0ff', p: 0.5 }}><ArrowUpwardIcon fontSize="small" /></IconButton>
-                  <IconButton size="small" onClick={sendBackward} sx={{ color: '#00e0ff', p: 0.5 }}><ArrowDownwardIcon fontSize="small" /></IconButton>
-                  <IconButton size="small" onClick={deleteToken} sx={{ color: '#ef4444', p: 0.5 }}><DeleteIcon fontSize="small" /></IconButton>
+                  <IconButton size="small" onClick={bringForward} sx={{ color: "#00e0ff", p: 0.5 }} title="Trazer para frente">
+                    <ArrowUpwardIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" onClick={sendBackward} sx={{ color: "#00e0ff", p: 0.5 }} title="Enviar para trás">
+                    <ArrowDownwardIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small" onClick={deleteToken} sx={{ color: "#ef4444", p: 0.5 }} title="Excluir">
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
                 </>
               )}
             </>
           )}
-          <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#94a3b8", p: 0.5 }}>{minimizado ? "□" : "−"}</IconButton>
-          <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }}><CloseIcon fontSize="small" /></IconButton>
+          <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#94a3b8", p: 0.5 }}>
+            {minimizado ? "□" : "−"}
+          </IconButton>
+          <IconButton size="small" onClick={onClose} sx={{ color: "#ef4444", p: 0.5 }}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
         </Box>
       </Box>
 
       {!minimizado && (
-        <Box sx={{ flex: 1, position: 'relative', bgcolor: '#1a1a2e' }}>
+        <Box sx={{ flex: 1, position: "relative", bgcolor: "#1a1a2e", overflow: "hidden" }}>
           <Stage
             ref={stageRef}
             width={tamanho.width}
@@ -230,13 +294,17 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
             scaleY={scale}
             onWheel={handleWheel}
             onMouseDown={(e) => {
+              // Botão direito no vazio = pan
               if (e.evt.button === 2 && e.target === stageRef.current) {
                 e.evt.preventDefault();
                 stageRef.current.draggable(true);
                 stageRef.current.startDrag();
                 setSelectedId(null);
               }
-              if (e.evt.button === 0 && e.target === stageRef.current) setSelectedId(null);
+              // Botão esquerdo no vazio = deseleciona
+              if (e.evt.button === 0 && e.target === stageRef.current) {
+                setSelectedId(null);
+              }
             }}
             onMouseUp={() => {
               if (stageRef.current?.draggable()) {
@@ -246,11 +314,32 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
               }
             }}
           >
+            {/* 🟢 GRID PRIMEIRO (embaixo) e SEM capturar eventos */}
+            <Layer listening={false}>
+              {Array.from({ length: 100 }).map((_, i) => (
+                <Line
+                  key={`v-${i}`}
+                  points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]}
+                  stroke="#555"
+                  strokeWidth={1}
+                />
+              ))}
+              {Array.from({ length: 100 }).map((_, i) => (
+                <Line
+                  key={`h-${i}`}
+                  points={[-2500, i * GRID_SIZE - 2500, 2500, i * GRID_SIZE - 2500]}
+                  stroke="#555"
+                  strokeWidth={1}
+                />
+              ))}
+            </Layer>
+
+            {/* 🟢 TOKENS POR CIMA */}
             <Layer>
               {tokens.map((token) => (
-                <Token 
-                  key={token.id} 
-                  token={token} 
+                <Token
+                  key={token.id}
+                  token={token}
                   isSelected={selectedId === token.id}
                   onSelect={() => handleSelectToken(token.id)}
                   canResize={isMaster}
@@ -260,38 +349,55 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                 />
               ))}
             </Layer>
-            <Layer>
-              {Array.from({ length: 100 }).map((_, i) => (
-                <Line key={`v-${i}`} points={[i * GRID_SIZE - 2500, -2500, i * GRID_SIZE - 2500, 2500]} stroke="#555" strokeWidth={1} />
-              ))}
-              {Array.from({ length: 100 }).map((_, i) => (
-                <Line key={`h-${i}`} points={[-2500, i * GRID_SIZE - 2500, 2500, i * GRID_SIZE - 2500]} stroke="#555" strokeWidth={1} />
-              ))}
-            </Layer>
           </Stage>
         </Box>
       )}
 
       {!minimizado && (
-        <Box sx={{ position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize", zIndex: 10 }}
-          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setRedimensionando(true); resizeStartRef.current = { x: e.clientX, y: e.clientY, width: tamanho.width, height: tamanho.height }; }} />
+        <Box
+          sx={{ position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize", zIndex: 10 }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setRedimensionando(true);
+            resizeStartRef.current = { x: e.clientX, y: e.clientY, width: tamanho.width, height: tamanho.height };
+          }}
+        />
       )}
     </Paper>,
     document.body
   );
 }
 
+// ============================================================
+// TOKEN
+// ============================================================
 function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
   const [image] = useImage(token.src, "anonymous");
   const shapeRef = useRef();
   const trRef = useRef();
 
+  // 🟢 Agora depende de "image" também: religa o Transformer quando a imagem terminar de carregar
   useEffect(() => {
-    if (isSelected && trRef.current && shapeRef.current) {
-      trRef.current.nodes([shapeRef.current]);
-      trRef.current.getLayer().batchDraw();
-    }
-  }, [isSelected]);
+    if (!isSelected) return;
+    const tr = trRef.current;
+    const shape = shapeRef.current;
+    if (!tr || !shape) return;
+    tr.nodes([shape]);
+    tr.getLayer()?.batchDraw();
+  }, [isSelected, image]);
+
+  // 🟢 Seleciona no MOUSEDOWN (mais confiável que onClick para drag)
+  const handleMouseDown = (e) => {
+    if (e.evt.button !== 0) return;
+    e.cancelBubble = true; // impede o Stage de limpar a seleção
+    onSelect();
+  };
+
+  const handleTap = (e) => {
+    e.cancelBubble = true;
+    onSelect();
+  };
 
   if (!image) return null;
 
@@ -303,26 +409,44 @@ function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransfo
         y={token.y}
         width={token.width}
         height={token.height}
-        draggable={true}
-        onClick={() => onSelect()}
+        draggable
         ref={shapeRef}
+        onMouseDown={handleMouseDown}
+        onTap={handleTap}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
           if (!canResize) return;
           const node = shapeRef.current;
-          const newAttrs = { 
-            x: node.x(), 
-            y: node.y(), 
-            width: node.width() * node.scaleX(), 
-            height: node.height() * node.scaleY() 
+          if (!node) return;
+          const newAttrs = {
+            x: node.x(),
+            y: node.y(),
+            width: Math.max(20, node.width() * node.scaleX()),
+            height: Math.max(20, node.height() * node.scaleY()),
           };
           node.scaleX(1);
           node.scaleY(1);
           onTransformEnd?.(newAttrs);
         }}
       />
-      {isSelected && <Transformer ref={trRef} />}
+      {isSelected && (
+        <Transformer
+          ref={trRef}
+          rotateEnabled={false}
+          keepRatio={false}
+          anchorSize={10}
+          borderStroke="#00e0ff"
+          anchorStroke="#00e0ff"
+          anchorFill="#0f172a"
+          anchorCornerRadius={2}
+          enabledAnchors={canResize ? undefined : []}
+          boundBoxFunc={(oldBox, newBox) => {
+            if (newBox.width < 20 || newBox.height < 20) return oldBox;
+            return newBox;
+          }}
+        />
+      )}
     </>
   );
 }
