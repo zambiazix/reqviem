@@ -189,7 +189,10 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     });
   };
 
-  const handleSelectToken = useCallback((id) => setSelectedId(id), []);
+  const handleSelectToken = useCallback((id) => {
+  console.log("[BattleMap] handleSelectToken:", id);
+  setSelectedId(id);
+}, []);
 
   if (!visible) return null;
 
@@ -390,92 +393,87 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     document.body
   );
 }
-// ============================================================
-// TOKEN
-// ============================================================
 function Token({ token, isSelected, onSelect, onMoveDuring, onDragEnd, onTransformEnd, canResize }) {
-  const [image] = useImage(token.src, "anonymous");
-  const groupRef = useRef();
+  const [image, status] = useImage(token.src, "anonymous");
+  const shapeRef = useRef();
   const trRef = useRef();
 
-  // Religa o Transformer quando a seleção muda ou a imagem termina de carregar
+  // LOG: se a imagem carregou
+  useEffect(() => {
+    console.log("[Token]", token.id, "| status:", status, "| hasImage:", !!image, "| isSelected:", isSelected);
+  }, [status, image, isSelected, token.id]);
+
+  // Anexa o Transformer ao Rect quando selecionado
   useEffect(() => {
     if (!isSelected) return;
-    const tr = trRef.current;
-    const group = groupRef.current;
-    if (!tr || !group) return;
-    tr.nodes([group]);
-    tr.getLayer()?.batchDraw();
+    if (!trRef.current || !shapeRef.current) return;
+    trRef.current.nodes([shapeRef.current]);
+    trRef.current.getLayer()?.batchDraw();
   }, [isSelected, image]);
 
-  // Seleciona com botão esquerdo (ignora botão direito para pan)
-  const handleSelect = (e) => {
-    if (e.evt?.button === 2) return;
+  const handleMouseDown = (e) => {
+    console.log("[Token] MOUSEDOWN recebido no id:", token.id, "| button:", e.evt?.button);
     e.cancelBubble = true;
     onSelect();
   };
 
-  if (!image) return null;
+  if (!image) {
+    console.warn("[Token] imagem NÃO carregou. id:", token.id, "status:", status);
+    return null;
+  }
 
   return (
     <>
-      <Group
-        ref={groupRef}
+      {/* 🟢 RECT VERMELHO — se você VIR vermelho, o elemento tá clicável */}
+      <Rect
+        ref={shapeRef}
         x={token.x}
         y={token.y}
         width={token.width}
         height={token.height}
+        fill="rgba(255, 0, 0, 0.4)"
+        stroke="yellow"
+        strokeWidth={2}
         draggable
-        onMouseDown={handleSelect}
-        onTouchStart={handleSelect}
+        onMouseDown={handleMouseDown}
+        onTap={handleMouseDown}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
         onTransformEnd={() => {
           if (!canResize) return;
-          const node = groupRef.current;
+          const node = shapeRef.current;
           if (!node) return;
           const newAttrs = {
             x: node.x(),
             y: node.y(),
-            width: Math.max(20, token.width * node.scaleX()),
-            height: Math.max(20, token.height * node.scaleY()),
+            width: Math.max(20, node.width() * node.scaleX()),
+            height: Math.max(20, node.height() * node.scaleY()),
           };
           node.scaleX(1);
           node.scaleY(1);
           onTransformEnd?.(newAttrs);
         }}
-      >
-        {/* 🟢 Rect invisível: captura o clique em TODA a área do token */}
-        <Rect
-          width={token.width}
-          height={token.height}
-          fill="rgba(0,0,0,0.01)"
-        />
+      />
 
-        {/* 🟢 Imagem só visual, não captura clique (listening=false) */}
-        <KonvaImage
-          image={image}
-          width={token.width}
-          height={token.height}
-          listening={false}
-        />
-      </Group>
+      {/* Imagem por cima, sem capturar clique */}
+      <KonvaImage
+        image={image}
+        x={token.x}
+        y={token.y}
+        width={token.width}
+        height={token.height}
+        listening={false}
+      />
 
       {isSelected && (
         <Transformer
           ref={trRef}
           rotateEnabled={false}
           keepRatio={false}
-          anchorSize={10}
+          anchorSize={12}
           borderStroke="#00e0ff"
           anchorStroke="#00e0ff"
           anchorFill="#0f172a"
-          anchorCornerRadius={2}
-          enabledAnchors={canResize ? undefined : []}
-          boundBoxFunc={(oldBox, newBox) => {
-            if (newBox.width < 20 || newBox.height < 20) return oldBox;
-            return newBox;
-          }}
         />
       )}
     </>
