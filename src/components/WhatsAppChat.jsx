@@ -17,6 +17,7 @@ import { db } from "../firebaseConfig";
 import { collection, doc, onSnapshot, addDoc, serverTimestamp, query, orderBy, updateDoc, deleteDoc, setDoc, getDoc, limit, getDocs } from "firebase/firestore";
 
 const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
+const MESTRE_EMAIL = "mestre@reqviemrpg.com";
 
 const CORES_AURA = {
   "Titã": "#ff3b3b", "Alquimista": "#00e0ff", "Artesão": "#ffd700",
@@ -29,54 +30,54 @@ const LightboxImage = memo(({ src, zoom, setZoom }) => {
   const [dragging, setDragging] = useState(false);
   const [start, setStart] = useState({ x: 0, y: 0 });
 
-  const handleMouseDown = useCallback((e) => { 
-    e.preventDefault(); 
-    setDragging(true); 
-    setStart({ x: e.clientX - position.x, y: e.clientY - position.y }); 
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setDragging(true);
+    setStart({ x: e.clientX - position.x, y: e.clientY - position.y });
   }, [position]);
 
   useEffect(() => {
-    const handleMouseMove = (e) => { 
-      if (!dragging) return; 
-      setPosition({ x: e.clientX - start.x, y: e.clientY - start.y }); 
+    const handleMouseMove = (e) => {
+      if (!dragging) return;
+      setPosition({ x: e.clientX - start.x, y: e.clientY - start.y });
     };
     const handleMouseUp = () => setDragging(false);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
-    return () => { 
-      window.removeEventListener("mousemove", handleMouseMove); 
-      window.removeEventListener("mouseup", handleMouseUp); 
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [dragging, start]);
 
   return (
-    <img 
-      src={src} 
-      alt="ampliada" 
-      onClick={(e) => e.stopPropagation()} 
+    <img
+      src={src}
+      alt="ampliada"
+      onClick={(e) => e.stopPropagation()}
       onMouseDown={handleMouseDown}
-      onWheel={(e) => { 
-        e.preventDefault(); 
-        setZoom((z) => Math.min(Math.max(z + (e.deltaY > 0 ? -0.1 : 0.1), 0.5), 5)); 
+      onWheel={(e) => {
+        e.preventDefault();
+        setZoom((z) => Math.min(Math.max(z + (e.deltaY > 0 ? -0.1 : 0.1), 0.5), 5));
       }}
       loading="eager"
       decoding="async"
-      style={{ 
-        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`, 
-        transition: dragging ? "none" : "transform 0.2s ease", 
-        maxWidth: "90%", 
-        maxHeight: "90%", 
-        borderRadius: 10, 
-        cursor: dragging ? "grabbing" : "grab", 
-        userSelect: "none", 
-        touchAction: "none" 
-      }} 
+      style={{
+        transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+        transition: dragging ? "none" : "transform 0.2s ease",
+        maxWidth: "90%",
+        maxHeight: "90%",
+        borderRadius: 10,
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none"
+      }}
     />
   );
 });
 
 // 🟢 COMPONENTE DE MENSAGEM MEMOIZADO
-const MessageBubble = memo(({ 
+const MessageBubble = memo(({
   msg, index, ehMeu, ultimaLeitura, chatAberto, mensagens,
   fotoRemetente, nomeRemetente, getAuraCor, formatarHora,
   setLightboxImage, setZoom, setEditandoMsg, setTextoEdicao,
@@ -94,20 +95,20 @@ const MessageBubble = memo(({
           <Divider sx={{ flex: 1, borderColor: '#ef4444' }} />
         </Box>
       )}
-      
-      <Box sx={{ 
-        display: "flex", 
-        justifyContent: ehMeu ? "flex-end" : "flex-start", 
-        alignItems: "flex-end", 
-        gap: 1, 
-        position: 'relative', 
+
+      <Box sx={{
+        display: "flex",
+        justifyContent: ehMeu ? "flex-end" : "flex-start",
+        alignItems: "flex-end",
+        gap: 1,
+        position: 'relative',
         '&:hover .msg-actions': { opacity: 1 },
         contentVisibility: 'auto',
         containIntrinsicSize: 'auto 80px',
       }}>
         {!ehMeu && (
-          <Avatar 
-            src={fotoRemetente} 
+          <Avatar
+            src={fotoRemetente}
             sx={{ width: 26, height: 26, border: `1px solid ${getAuraCor(chatAberto)}`, cursor: 'pointer', flexShrink: 0 }}
             onClick={() => { if (fotoRemetente) { setLightboxImage(fotoRemetente); setZoom(1); } }}
           >
@@ -118,10 +119,10 @@ const MessageBubble = memo(({
           <Typography sx={{ color: '#64748b', fontSize: '0.55rem', mb: 0.2, textAlign: ehMeu ? 'right' : 'left' }}>
             {ehMeu ? 'Você' : nomeRemetente} • {formatarHora(msg.timestamp)}
           </Typography>
-          <Paper sx={{ 
-            p: 1.2, 
-            bgcolor: ehMeu ? '#1e3a5f' : '#1a1a2e', 
-            borderRadius: ehMeu ? '12px 12px 4px 12px' : '12px 12px 12px 4px', 
+          <Paper sx={{
+            p: 1.2,
+            bgcolor: ehMeu ? '#1e3a5f' : '#1a1a2e',
+            borderRadius: ehMeu ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
             border: ehMeu ? '1px solid #00e0ff44' : '1px solid #334155',
             wordBreak: 'break-word',
           }}>
@@ -136,12 +137,12 @@ const MessageBubble = memo(({
             ) : (
               <>
                 {msg.tipo === "imagem" && (
-                  <img 
-                    src={msg.conteudo} 
+                  <img
+                    src={msg.conteudo}
                     loading="lazy"
                     decoding="async"
                     style={{ maxWidth: 200, maxHeight: 200, borderRadius: 8, cursor: "pointer", display: 'block' }}
-                    onClick={() => { setLightboxImage(msg.conteudo); setZoom(1); }} 
+                    onClick={() => { setLightboxImage(msg.conteudo); setZoom(1); }}
                   />
                 )}
                 {msg.tipo === "imagem_grupo" && (
@@ -149,13 +150,13 @@ const MessageBubble = memo(({
                     {msg.conteudo && <Typography sx={{ whiteSpace: 'pre-line', fontSize: '0.8rem', color: '#fff', mb: 0.5 }}>{msg.conteudo}</Typography>}
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                       {(msg.imagens || []).map((img, i) => (
-                        <img 
-                          key={i} 
-                          src={img} 
+                        <img
+                          key={i}
+                          src={img}
                           loading="lazy"
                           decoding="async"
                           style={{ maxWidth: 100, maxHeight: 100, borderRadius: 6, cursor: "pointer" }}
-                          onClick={() => { setLightboxImage(img); setZoom(1); }} 
+                          onClick={() => { setLightboxImage(img); setZoom(1); }}
                         />
                       ))}
                     </Box>
@@ -175,24 +176,23 @@ const MessageBubble = memo(({
           </Paper>
         </Box>
         {ehMeu && (
-          <Avatar 
-            src={fotoRemetente} 
+          <Avatar
+            src={fotoRemetente}
             sx={{ width: 26, height: 26, border: `1px solid ${getAuraCor(userEmail)}`, cursor: 'pointer', flexShrink: 0 }}
             onClick={() => { if (fotoRemetente) { setLightboxImage(fotoRemetente); setZoom(1); } }}
           >
             {(userNick || userEmail)[0]?.toUpperCase()}
           </Avatar>
         )}
-        
-        {/* BOTÕES EDITAR/EXCLUIR */}
-        <Box className="msg-actions" sx={{ 
-          position: 'absolute', 
-          top: 0, 
-          right: ehMeu ? 40 : undefined, 
-          left: ehMeu ? undefined : 40, 
-          display: 'flex', 
-          gap: 0.2, 
-          opacity: 0, 
+
+        <Box className="msg-actions" sx={{
+          position: 'absolute',
+          top: 0,
+          right: ehMeu ? 40 : undefined,
+          left: ehMeu ? undefined : 40,
+          display: 'flex',
+          gap: 0.2,
+          opacity: 0,
           transition: 'opacity 0.2s',
           pointerEvents: 'none',
           '&:hover': { pointerEvents: 'auto' }
@@ -211,9 +211,9 @@ const MessageBubble = memo(({
 
 // 🟢 COMPONENTE PRINCIPAL OTIMIZADO
 function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSidebar, setNotificacoesSidebar }) {
-  const [posicao, setPosicao] = useState(() => ({ 
-    x: Math.max(0, window.innerWidth - 450), 
-    y: 100 
+  const [posicao, setPosicao] = useState(() => ({
+    x: Math.max(0, window.innerWidth - 450),
+    y: 100
   }));
   const [tamanho, setTamanho] = useState({ width: 400, height: 600 });
   const [minimizado, setMinimizado] = useState(false);
@@ -239,25 +239,58 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
   const chatRef = useRef(null);
   const divisoriaRef = useRef(null);
 
-  // 🟢 MEMOIZAR LISTAS
-  const pjList = useMemo(() => 
-    Object.entries(fichasMap || {}).filter(([email, f]) => (f.tipoFicha || "PJ") === "PJ" && email !== userEmail),
-  [fichasMap, userEmail]);
-  
-  const pmList = useMemo(() => 
-    Object.entries(fichasMap || {}).filter(([email, f]) => f.tipoFicha === "PM" && email !== userEmail),
+  // 🟢 IDENTIFICAR TIPO DE USUÁRIO
+  const isMaster = userEmail === MESTRE_EMAIL;
+  const isGuest = fichasMap?.[userEmail]?.isConvidado === true;
+
+  // 🟢 LISTA DE PJs (exclui convidados e o próprio)
+  const pjList = useMemo(() =>
+    Object.entries(fichasMap || {}).filter(([email, f]) =>
+      (f.tipoFicha || "PJ") === "PJ" &&
+      !f.isConvidado &&
+      email !== userEmail
+    ),
   [fichasMap, userEmail]);
 
+  // 🟢 LISTA DE PMs
+  const pmList = useMemo(() =>
+    Object.entries(fichasMap || {}).filter(([email, f]) =>
+      f.tipoFicha === "PM" && email !== userEmail
+    ),
+  [fichasMap, userEmail]);
+
+  // 🟢 LISTA DE CONVIDADOS (inclui o Mestre para os convidados verem)
+  const convidadoList = useMemo(() =>
+    Object.entries(fichasMap || {}).filter(([email, f]) =>
+      (f.isConvidado === true || email === MESTRE_EMAIL) &&
+      email !== userEmail
+    ),
+  [fichasMap, userEmail]);
+
+  // 🟢 VISIBILIDADE DAS ABAS
+  const showPjTab = !isGuest;
+  const showPmTab = !isGuest;
+  const showConvidadoTab = isMaster || isGuest;
+
+  // 🟢 AJUSTA ABA INICIAL CONFORME O TIPO DE USUÁRIO
+  useEffect(() => {
+    if (isGuest && abaAtiva !== "convidado") {
+      setAbaAtiva("convidado");
+    } else if (!isGuest && abaAtiva === "convidado" && !isMaster) {
+      setAbaAtiva("pj");
+    }
+  }, [isGuest, isMaster, abaAtiva]);
+
   // 🟢 MEMOIZAR FUNÇÕES
-  const getFotoPersonagem = useCallback((email) => 
+  const getFotoPersonagem = useCallback((email) =>
     fichasMap[email]?.imagemPersonagem || fichasMap[email]?.imagens?.[0] || "",
   [fichasMap]);
-  
-  const getNomePersonagem = useCallback((email) => 
+
+  const getNomePersonagem = useCallback((email) =>
     fichasMap[email]?.nome || email,
   [fichasMap]);
-  
-  const getAuraCor = useCallback((email) => 
+
+  const getAuraCor = useCallback((email) =>
     fichasMap[email]?.tipoAura ? CORES_AURA[fichasMap[email].tipoAura] : "#4caf50",
   [fichasMap]);
 
@@ -285,7 +318,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     const unsub = onSnapshot(q, (snap) => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setMensagens(msgs);
-      
+
       const ultimaLida = ultimaLeitura[chatAberto];
       const novas = msgs.filter(m => m.de !== userEmail && (!ultimaLida || m.id > ultimaLida));
       setNaoLidas(prev => ({ ...prev, [chatAberto]: novas.length }));
@@ -293,11 +326,11 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     return () => unsub();
   }, [chatAberto, userEmail, ultimaLeitura]);
 
-  // 🟢 ABRIR CHAT NA DIVISÓRIA (com requestAnimationFrame)
+  // 🟢 ABRIR CHAT NA DIVISÓRIA
   useEffect(() => {
     if (!chatAberto || mensagens.length === 0) return;
     const ultimaLida = ultimaLeitura[chatAberto];
-    
+
     requestAnimationFrame(() => {
       if (ultimaLida) {
         const index = mensagens.findIndex(m => m.id === ultimaLida);
@@ -312,15 +345,15 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     });
   }, [chatAberto, mensagens, ultimaLeitura]);
 
-  // 🟢 SCROLL LISTENER COM THROTTLE
+  // 🟢 SCROLL LISTENER
   useEffect(() => {
     const container = chatRef.current;
     if (!container) return;
     let scrollTimeout = null;
-    
+
     const handleScroll = () => {
       if (scrollTimeout) return;
-      
+
       scrollTimeout = setTimeout(() => {
         scrollTimeout = null;
         const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
@@ -338,7 +371,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
         }
       }, 100);
     };
-    
+
     container.addEventListener("scroll", handleScroll);
     return () => {
       container.removeEventListener("scroll", handleScroll);
@@ -356,37 +389,38 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
       }
     });
   }, [chatAberto, userEmail]);
-    // 🟢 VERIFICAR CONQUISTA "ALMA DA FESTA" (conversar com 5 pessoas)
+
+  // 🟢 VERIFICAR CONQUISTA "ALMA DA FESTA"
   useEffect(() => {
     if (!userEmail) return;
-    
+
     const verificarConversas = async () => {
       try {
         const leiturasRef = collection(db, "whatsapp_leituras");
         const snap = await getDocs(leiturasRef);
-        const conversas = snap.docs.filter(d => 
+        const conversas = snap.docs.filter(d =>
           d.id.startsWith(userEmail + "_") || d.id.endsWith("_" + userEmail)
         );
-        
+
         if (conversas.length >= 5) {
-          window.dispatchEvent(new CustomEvent('desbloquearConquista', { 
-            detail: { conquistaId: "popular" } 
+          window.dispatchEvent(new CustomEvent('desbloquearConquista', {
+            detail: { conquistaId: "popular" }
           }));
         }
       } catch (err) {
         console.error("Erro ao verificar conversas:", err);
       }
     };
-    
+
     verificarConversas();
   }, [userEmail, mensagens]);
 
-  // 🟢 OUVIR NOVAS MENSAGENS DE TODOS OS CHATS (OTIMIZADO)
+  // 🟢 OUVIR NOVAS MENSAGENS DE TODOS OS CHATS
   useEffect(() => {
     if (!userEmail) return;
     const unsubs = [];
-    const todosEmails = [...pjList, ...pmList].map(([email]) => email);
-    
+    const todosEmails = [...pjList, ...pmList, ...convidadoList].map(([email]) => email);
+
     todosEmails.forEach((email) => {
       const chatId = [userEmail, email].sort().join("_");
       const ref = collection(db, "whatsapp_chats", chatId, "mensagens");
@@ -402,11 +436,11 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
       });
       unsubs.push(unsub);
     });
-    
-    return () => unsubs.forEach(u => u());
-  }, [userEmail, chatAberto, pjList, pmList, setNotificacoesSidebar]);
 
-  // 🟢 UPLOAD DE IMAGEM OTIMIZADO
+    return () => unsubs.forEach(u => u());
+  }, [userEmail, chatAberto, pjList, pmList, convidadoList, setNotificacoesSidebar]);
+
+  // 🟢 UPLOAD DE IMAGEM
   const uploadImagem = useCallback(async (file) => {
     const fd = new FormData();
     fd.append("image", file);
@@ -426,7 +460,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
   const handleFileChange = useCallback(async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    
+
     setEnviandoImagem(true);
     try {
       const urls = await Promise.all(files.map(f => uploadImagem(f)));
@@ -438,13 +472,13 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     e.target.value = null;
   }, [uploadImagem]);
 
-  // 🟢 CTRL+V PARA COLAR IMAGEM (OTIMIZADO)
+  // 🟢 CTRL+V PARA COLAR IMAGEM
   useEffect(() => {
     const handlePaste = async (e) => {
       if (!chatAberto || enviandoImagem) return;
       const items = e.clipboardData?.items;
       if (!items) return;
-      
+
       const imagens = [];
       for (const item of items) {
         if (item.type.startsWith("image/")) {
@@ -452,7 +486,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
           if (file) imagens.push(file);
         }
       }
-      
+
       if (imagens.length > 0) {
         setEnviandoImagem(true);
         try {
@@ -464,15 +498,15 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
         }
       }
     };
-    
+
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, [chatAberto, enviandoImagem, uploadImagem]);
 
-  // 🟢 ENVIAR MENSAGEM (OTIMIZADO)
+  // 🟢 ENVIAR MENSAGEM
   const enviarMensagem = useCallback(async () => {
     if ((!textoMsg.trim() && filePreviews.length === 0) || !chatAberto || enviandoImagem) return;
-    
+
     const chatId = [userEmail, chatAberto].sort().join("_");
     const mensagemBase = {
       de: userEmail,
@@ -480,7 +514,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
       timestamp: serverTimestamp(),
       editada: false,
     };
-    
+
     try {
       if (filePreviews.length > 0) {
         await addDoc(collection(db, "whatsapp_chats", chatId, "mensagens"), {
@@ -511,17 +545,16 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
           conteudo: textoMsg.trim(),
         });
       }
-      
+
       setTextoMsg("");
       setFilePreviews([]);
-      
+
       requestAnimationFrame(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
       });
-            
-      // 🟢 DISPARAR CONQUISTA DE CONVERSAR
-      window.dispatchEvent(new CustomEvent('desbloquearConquista', { 
-        detail: { conquistaId: "primeiro_amigo" } 
+
+      window.dispatchEvent(new CustomEvent('desbloquearConquista', {
+        detail: { conquistaId: "primeiro_amigo" }
       }));
     } catch (err) {
       console.error("Erro ao enviar mensagem:", err);
@@ -547,22 +580,22 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     await deleteDoc(doc(db, "whatsapp_chats", chatId, "mensagens", msgId));
   }, [userEmail, chatAberto]);
 
-  // 🟢 ARRASTAR JANELA (OTIMIZADO COM RAF)
+  // 🟢 ARRASTAR JANELA
   useEffect(() => {
     if (!arrastando) return;
-    
+
     const handleMouseMove = (e) => {
       e.preventDefault();
       const novoX = Math.max(0, Math.min(window.innerWidth - 100, e.clientX - dragStartRef.current.x));
       const novoY = Math.max(0, Math.min(window.innerHeight - 48, e.clientY - dragStartRef.current.y));
-      
+
       requestAnimationFrame(() => {
         setPosicao({ x: novoX, y: novoY });
       });
     };
-    
+
     const handleMouseUp = () => setArrastando(false);
-    
+
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
     return () => {
@@ -571,22 +604,22 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     };
   }, [arrastando]);
 
-  // 🟢 REDIMENSIONAR JANELA (OTIMIZADO)
+  // 🟢 REDIMENSIONAR JANELA
   useEffect(() => {
     if (!redimensionando) return;
-    
+
     const handleMouseMove = (e) => {
       e.preventDefault();
       const novaWidth = Math.max(280, Math.min(800, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x)));
       const novaHeight = Math.max(300, Math.min(800, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y)));
-      
+
       requestAnimationFrame(() => {
         setTamanho({ width: novaWidth, height: novaHeight });
       });
     };
-    
+
     const handleMouseUp = () => setRedimensionando(false);
-    
+
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
     return () => {
@@ -595,51 +628,60 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     };
   }, [redimensionando]);
 
-  // 🟢 TOTAIS NÃO LIDAS (MEMOIZADO)
-  const totalNaoLidasPJ = useMemo(() => 
+  // 🟢 TOTAIS NÃO LIDAS
+  const totalNaoLidasPJ = useMemo(() =>
     pjList.reduce((s, [email]) => s + (naoLidas[email] || 0), 0),
   [pjList, naoLidas]);
-  
-  const totalNaoLidasPM = useMemo(() => 
+
+  const totalNaoLidasPM = useMemo(() =>
     pmList.reduce((s, [email]) => s + (naoLidas[email] || 0), 0),
   [pmList, naoLidas]);
 
+  const totalNaoLidasConvidados = useMemo(() =>
+    convidadoList.reduce((s, [email]) => s + (naoLidas[email] || 0), 0),
+  [convidadoList, naoLidas]);
+
+  // 🟢 LISTA DA ABA ATIVA
+  const listaAtiva = abaAtiva === "pj" ? pjList
+    : abaAtiva === "pm" ? pmList
+    : convidadoList;
+
   return createPortal(
-    <Paper elevation={10} sx={{ 
-      position: "fixed", 
-      left: posicao.x, 
-      top: posicao.y, 
-      width: minimizado ? 300 : tamanho.width, 
-      height: minimizado ? 48 : tamanho.height, 
-      bgcolor: "#0f172a", 
-      color: "#fff", 
-      borderRadius: 2, 
-      border: "1px solid #334155", 
-      zIndex: 99999, 
-      display: "flex", 
-      flexDirection: "column", 
-      overflow: "hidden", 
+    <Paper elevation={10} sx={{
+      position: "fixed",
+      left: posicao.x,
+      top: posicao.y,
+      width: minimizado ? 300 : tamanho.width,
+      height: minimizado ? 48 : tamanho.height,
+      bgcolor: "#0f172a",
+      color: "#fff",
+      borderRadius: 2,
+      border: "1px solid #334155",
+      zIndex: 99999,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
       boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
       userSelect: arrastando ? 'none' : 'auto',
       transition: minimizado ? 'width 0.3s ease, height 0.3s ease' : 'none',
     }}>
       {/* BARRA DE TÍTULO ARRASTÁVEL */}
-      <Box sx={{ 
-        display: "flex", 
-        alignItems: "center", 
-        justifyContent: "space-between", 
-        p: 1, 
-        bgcolor: "#1a1a2e", 
-        cursor: "grab", 
-        minHeight: 40, 
+      <Box sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        p: 1,
+        bgcolor: "#1a1a2e",
+        cursor: "grab",
+        minHeight: 40,
         borderBottom: "1px solid #334155",
         '&:active': { cursor: 'grabbing' },
       }}
-        onMouseDown={(e) => { 
-          if (e.target.closest('button') || e.target.closest('input')) return; 
-          e.preventDefault(); 
-          setArrastando(true); 
-          dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y }; 
+        onMouseDown={(e) => {
+          if (e.target.closest('button') || e.target.closest('input')) return;
+          e.preventDefault();
+          setArrastando(true);
+          dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y };
         }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, pointerEvents: 'none' }}>
           <span style={{ fontSize: '1.3rem' }}>💬</span>
@@ -663,59 +705,79 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
             <>
               {/* ABAS COM BADGE */}
               <Box sx={{ display: "flex", borderBottom: "1px solid #334155" }}>
-                <Button fullWidth onClick={() => setAbaAtiva("pj")} sx={{ 
-                  color: abaAtiva === "pj" ? "#4caf50" : "#94a3b8", 
-                  fontWeight: 'bold', 
-                  borderRadius: 0, 
-                  py: 1, 
-                  bgcolor: abaAtiva === "pj" ? "rgba(76,175,80,0.1)" : "transparent", 
-                  fontSize: '0.75rem', 
-                  position: 'relative' 
-                }}>
-                  🎮 PJ's ({pjList.length})
-                  {totalNaoLidasPJ > 0 && (
-                    <Badge badgeContent={totalNaoLidasPJ} color="error" sx={{ position: 'absolute', top: 6, right: 6 }} />
-                  )}
-                </Button>
-                <Button fullWidth onClick={() => setAbaAtiva("pm")} sx={{ 
-                  color: abaAtiva === "pm" ? "#ff9800" : "#94a3b8", 
-                  fontWeight: 'bold', 
-                  borderRadius: 0, 
-                  py: 1, 
-                  bgcolor: abaAtiva === "pm" ? "rgba(255,152,0,0.1)" : "transparent", 
-                  fontSize: '0.75rem', 
-                  position: 'relative' 
-                }}>
-                  👑 PM's ({pmList.length})
-                  {totalNaoLidasPM > 0 && (
-                    <Badge badgeContent={totalNaoLidasPM} color="error" sx={{ position: 'absolute', top: 6, right: 6 }} />
-                  )}
-                </Button>
+                {showPjTab && (
+                  <Button fullWidth onClick={() => setAbaAtiva("pj")} sx={{
+                    color: abaAtiva === "pj" ? "#4caf50" : "#94a3b8",
+                    fontWeight: 'bold',
+                    borderRadius: 0,
+                    py: 1,
+                    bgcolor: abaAtiva === "pj" ? "rgba(76,175,80,0.1)" : "transparent",
+                    fontSize: '0.75rem',
+                    position: 'relative'
+                  }}>
+                    🎮 PJ's ({pjList.length})
+                    {totalNaoLidasPJ > 0 && (
+                      <Badge badgeContent={totalNaoLidasPJ} color="error" sx={{ position: 'absolute', top: 6, right: 6 }} />
+                    )}
+                  </Button>
+                )}
+                {showPmTab && (
+                  <Button fullWidth onClick={() => setAbaAtiva("pm")} sx={{
+                    color: abaAtiva === "pm" ? "#ff9800" : "#94a3b8",
+                    fontWeight: 'bold',
+                    borderRadius: 0,
+                    py: 1,
+                    bgcolor: abaAtiva === "pm" ? "rgba(255,152,0,0.1)" : "transparent",
+                    fontSize: '0.75rem',
+                    position: 'relative'
+                  }}>
+                    👑 PM's ({pmList.length})
+                    {totalNaoLidasPM > 0 && (
+                      <Badge badgeContent={totalNaoLidasPM} color="error" sx={{ position: 'absolute', top: 6, right: 6 }} />
+                    )}
+                  </Button>
+                )}
+                {showConvidadoTab && (
+                  <Button fullWidth onClick={() => setAbaAtiva("convidado")} sx={{
+                    color: abaAtiva === "convidado" ? "#a855f7" : "#94a3b8",
+                    fontWeight: 'bold',
+                    borderRadius: 0,
+                    py: 1,
+                    bgcolor: abaAtiva === "convidado" ? "rgba(168,85,247,0.1)" : "transparent",
+                    fontSize: '0.75rem',
+                    position: 'relative'
+                  }}>
+                    🎭 Convidados ({convidadoList.length})
+                    {totalNaoLidasConvidados > 0 && (
+                      <Badge badgeContent={totalNaoLidasConvidados} color="error" sx={{ position: 'absolute', top: 6, right: 6 }} />
+                    )}
+                  </Button>
+                )}
               </Box>
 
-              <Box sx={{ 
-                flex: 1, 
-                overflowY: "auto", 
+              <Box sx={{
+                flex: 1,
+                overflowY: "auto",
                 WebkitOverflowScrolling: 'touch',
-                "&::-webkit-scrollbar": { width: "4px" }, 
-                "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.2)", borderRadius: "10px" } 
+                "&::-webkit-scrollbar": { width: "4px" },
+                "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.2)", borderRadius: "10px" }
               }}>
                 <List dense>
-                  {(abaAtiva === "pj" ? pjList : pmList).map(([email, ficha]) => {
+                  {listaAtiva.map(([email, ficha]) => {
                     const auraCor = getAuraCor(email);
                     const foto = getFotoPersonagem(email);
                     const temNaoLida = notificacoesLocais[email];
                     return (
-                      <ListItem key={email} onClick={() => { 
-                        setChatAberto(email); 
-                        setNotificacoesLocais(prev => ({ ...prev, [email]: false })); 
-                        if (setNotificacoesSidebar) setNotificacoesSidebar(prev => ({ ...prev, [email]: false })); 
+                      <ListItem key={email} onClick={() => {
+                        setChatAberto(email);
+                        setNotificacoesLocais(prev => ({ ...prev, [email]: false }));
+                        if (setNotificacoesSidebar) setNotificacoesSidebar(prev => ({ ...prev, [email]: false }));
                       }}
-                        sx={{ 
-                          cursor: "pointer", 
-                          "&:hover": { bgcolor: "rgba(0,224,255,0.05)" }, 
-                          borderLeft: `3px solid ${auraCor}`, 
-                          mb: 0.3, 
+                        sx={{
+                          cursor: "pointer",
+                          "&:hover": { bgcolor: "rgba(0,224,255,0.05)" },
+                          borderLeft: `3px solid ${auraCor}`,
+                          mb: 0.3,
                           borderRadius: 1,
                           contentVisibility: 'auto',
                           containIntrinsicSize: 'auto 50px',
@@ -728,15 +790,20 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
                             </Avatar>
                           </Badge>
                         </ListItemAvatar>
-                        <ListItemText 
+                        <ListItemText
                           primary={ficha?.nome || email}
-                          secondary={ficha?.tipoAura ? `✨ ${ficha.tipoAura}` : email}
+                          secondary={ficha?.isConvidado ? "🎭 Convidado" : (ficha?.tipoAura ? `✨ ${ficha.tipoAura}` : email)}
                           primaryTypographyProps={{ sx: { color: auraCor, fontWeight: 'bold', fontSize: '0.8rem' } }}
                           secondaryTypographyProps={{ sx: { color: '#64748b', fontSize: '0.65rem' } }}
                         />
                       </ListItem>
                     );
                   })}
+                  {listaAtiva.length === 0 && (
+                    <Typography sx={{ color: '#64748b', fontSize: '0.75rem', textAlign: 'center', py: 3 }}>
+                      Nenhum contato nesta aba.
+                    </Typography>
+                  )}
                 </List>
               </Box>
             </>
@@ -757,25 +824,25 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
                 </Box>
               </Box>
 
-              <Box ref={chatRef} sx={{ 
-                flex: 1, 
-                overflowY: "auto", 
-                p: 1.5, 
-                display: "flex", 
-                flexDirection: "column", 
-                gap: 0.5, 
-                bgcolor: "#0a0f1a", 
-                position: 'relative', 
+              <Box ref={chatRef} sx={{
+                flex: 1,
+                overflowY: "auto",
+                p: 1.5,
+                display: "flex",
+                flexDirection: "column",
+                gap: 0.5,
+                bgcolor: "#0a0f1a",
+                position: 'relative',
                 WebkitOverflowScrolling: 'touch',
                 transform: 'translateZ(0)',
-                "&::-webkit-scrollbar": { width: "4px" }, 
-                "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.2)", borderRadius: "10px" } 
+                "&::-webkit-scrollbar": { width: "4px" },
+                "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.2)", borderRadius: "10px" }
               }}>
                 {mensagens.map((msg, index) => {
                   const ehMeu = msg.de === userEmail;
                   const fotoRemetente = ehMeu ? getFotoPersonagem(userEmail) : getFotoPersonagem(chatAberto);
                   const nomeRemetente = ehMeu ? userNick || userEmail : getNomePersonagem(chatAberto);
-                  
+
                   return (
                     <MessageBubble
                       key={msg.id}
@@ -806,11 +873,10 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
                 <div ref={chatEndRef} />
               </Box>
 
-              {/* BOTÃO DESCER */}
               {showScrollButton && (
-                <Fab size="small" color="primary" onClick={() => { 
-                  chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
-                  setShowScrollButton(false); 
+                <Fab size="small" color="primary" onClick={() => {
+                  chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+                  setShowScrollButton(false);
                 }}
                   sx={{ position: 'absolute', bottom: 80, right: 16, zIndex: 10, width: 32, height: 32, minHeight: 32 }}>
                   <ArrowDownwardIcon sx={{ fontSize: 16 }} />
@@ -832,7 +898,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
                     ))}
                   </Box>
                 )}
-                
+
                 <Box sx={{ display: "flex", gap: 0.5, alignItems: 'flex-end' }}>
                   <IconButton component="label" size="small" sx={{ color: '#94a3b8' }} disabled={enviandoImagem}>
                     <ImageIcon fontSize="small" />
@@ -840,10 +906,10 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
                   </IconButton>
                   <TextField size="small" fullWidth placeholder="Mensagem... (Enter envia, Shift+Enter nova linha)" value={textoMsg}
                     onChange={(e) => setTextoMsg(e.target.value)}
-                    onKeyDown={(e) => { 
-                      if (e.key === "Enter" && !e.shiftKey) { 
-                        e.preventDefault(); 
-                        enviarMensagem(); 
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        enviarMensagem();
                       }
                     }}
                     multiline maxRows={4}
@@ -860,33 +926,33 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
       )}
 
       {!minimizado && (
-        <Box sx={{ 
-          position: "absolute", 
-          bottom: 0, 
-          right: 0, 
-          width: 16, 
-          height: 16, 
-          cursor: "nwse-resize", 
+        <Box sx={{
+          position: "absolute",
+          bottom: 0,
+          right: 0,
+          width: 16,
+          height: 16,
+          cursor: "nwse-resize",
           zIndex: 10,
           '&:hover': { bgcolor: 'rgba(0,224,255,0.2)' },
         }}
-          onMouseDown={(e) => { 
-            e.preventDefault(); 
-            e.stopPropagation(); 
-            setRedimensionando(true); 
-            resizeStartRef.current = { x: e.clientX, y: e.clientY, width: tamanho.width, height: tamanho.height }; 
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setRedimensionando(true);
+            resizeStartRef.current = { x: e.clientX, y: e.clientY, width: tamanho.width, height: tamanho.height };
           }} />
       )}
 
       {lightboxImage && (
-        <Box onClick={() => setLightboxImage(null)} sx={{ 
-          position: "fixed", 
-          inset: 0, 
-          bgcolor: "rgba(0,0,0,0.92)", 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: "center", 
-          zIndex: 999999 
+        <Box onClick={() => setLightboxImage(null)} sx={{
+          position: "fixed",
+          inset: 0,
+          bgcolor: "rgba(0,0,0,0.92)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 999999
         }}>
           <LightboxImage src={lightboxImage} zoom={zoom} setZoom={setZoom} />
         </Box>
