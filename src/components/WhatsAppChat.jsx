@@ -210,7 +210,8 @@ const MessageBubble = memo(({
 });
 
 // 🟢 COMPONENTE PRINCIPAL OTIMIZADO
-function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSidebar, setNotificacoesSidebar }) {
+function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, notificacoesSidebar, setNotificacoesSidebar }) {
+  // 🟢 ESTADOS INTERNOS
   const [posicao, setPosicao] = useState(() => ({
     x: Math.max(0, window.innerWidth - 450),
     y: 100
@@ -239,6 +240,34 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
   const chatRef = useRef(null);
   const divisoriaRef = useRef(null);
 
+  // 🟢 CARREGA FICHAS DIRETO DO FIRESTORE (não depende mais do pai)
+  const [fichasInterno, setFichasInterno] = useState({});
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, "fichas"),
+      (snap) => {
+        const map = {};
+        snap.docs.forEach((d) => { map[d.id] = d.data(); });
+        console.log("[Chat] Fichas carregadas do Firestore:", Object.keys(map).length);
+        setFichasInterno(map);
+      },
+      (error) => {
+        console.error("[Chat] Erro ao carregar fichas:", error);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  // 🟢 MERGE: usa o interno se o prop estiver vazio
+  const fichasMap = useMemo(() => {
+    const propKeys = Object.keys(fichasMapProp || {});
+    const internoKeys = Object.keys(fichasInterno || {});
+    if (internoKeys.length === 0 && propKeys.length === 0) return {};
+    // Se o interno tem dados, usa ele. Senão, cai pro prop.
+    return internoKeys.length > 0 ? fichasInterno : fichasMapProp;
+  }, [fichasMapProp, fichasInterno]);
+
   // 🟢 IDENTIFICAR TIPO DE USUÁRIO
   const isMaster = userEmail === MESTRE_EMAIL;
   const isGuest = fichasMap?.[userEmail]?.isConvidado === true;
@@ -259,7 +288,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap, onClose, notificacoesSid
     ),
   [fichasMap, userEmail]);
 
-  // 🟢 LISTA DE CONVIDADOS (inclui o Mestre para os convidados verem)
+  // 🟢 LISTA DE CONVIDADOS (inclui o Mestre)
   const convidadoList = useMemo(() =>
     Object.entries(fichasMap || {}).filter(([email, f]) =>
       (f.isConvidado === true || email === MESTRE_EMAIL) &&
