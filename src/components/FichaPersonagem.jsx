@@ -98,12 +98,12 @@ const nivel = hud?.xpMap?.[fichaId]?.level ?? 1;
 
 
       atributos: {
-        forca: 0,
-        destreza: 0,
-        agilidade: 0,
-        constituicao: 0,
-        inteligencia: 0,
-        vontade: 0,
+        forca: 1,
+        destreza: 1,
+        agilidade: 1,
+        constituicao: 1,
+        inteligencia: 1,
+        vontade: 1,
       },
 
       pericias: {
@@ -1064,10 +1064,19 @@ const unsub = onSnapshot(ref, (snap) => {
       }));
     };
 
+    // 🟢 Normaliza atributos: nunca abaixo de 1
+    const atributosBrutos = { ...modelo.atributos, ...(dados.atributos || {}) };
+    const atributosNormalizados = Object.fromEntries(
+      Object.entries(atributosBrutos).map(([k, v]) => {
+        const num = Number(v);
+        return [k, Number.isFinite(num) && num >= 1 ? num : 1];
+      })
+    );
+
     const combinado = {
       ...modelo,
       ...dados,
-      atributos: { ...modelo.atributos, ...(dados.atributos || {}) },
+      atributos: atributosNormalizados,
       pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
       habilidades: Array.isArray(dados.habilidades)
         ? dados.habilidades.map(h => {
@@ -3612,10 +3621,10 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       
       {/* Barra de nível */}
       <Box sx={{ position: 'relative', height: 24, display: 'flex', alignItems: 'center' }}>
-        <Slider
-          value={Math.min(valorAtual, 5)}
-          min={0}
-          max={5}
+<Slider
+  value={Math.min(valorAtual, 5)}
+  min={1}
+  max={5}
           step={1}
           onChange={(e, val) => {
             if (val < 1) return;

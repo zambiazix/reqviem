@@ -1436,11 +1436,11 @@ const confirmarPosChoque = async () => {
     let descricao = [];
     let custoTotalEnergia = 0;
     
-    if (acaoAtributo && fichaJogador?.atributos?.[acaoAtributo]) {
-      const valor = fichaJogador.atributos[acaoAtributo];
-      totalD10 += valor;
-      descricao.push(`Atributo: ${acaoAtributo} (${valor})`);
-    }
+if (acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] !== undefined) {
+  const valor = Math.max(1, Number(fichaJogador.atributos[acaoAtributo]) || 1);
+  totalD10 += valor;
+  descricao.push(`Atributo: ${acaoAtributo} (${valor})`);
+}
     
     if (acaoPericia && fichaJogador?.pericias?.[acaoPericia]) {
       const valor = fichaJogador.pericias[acaoPericia];
@@ -3557,12 +3557,16 @@ useEffect(() => {
       transformOrigin: { vertical: "top", horizontal: "left" },
     }}
   >
-    <MenuItem value="">Nenhum</MenuItem>
-    {fichaJogador?.atributos && Object.entries(fichaJogador.atributos).map(([k, v]) => (
-      <MenuItem key={k} value={k} disabled={v <= 0}>
-        {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
-      </MenuItem>
-    ))}
+<MenuItem value="">Nenhum</MenuItem>
+{fichaJogador?.atributos && Object.entries(fichaJogador.atributos).map(([k, v]) => {
+  // 🟢 Atributos nunca são 0. Se vier 0/undefined, trata como 1.
+  const valorSeguro = Math.max(1, Number(v) || 1);
+  return (
+    <MenuItem key={k} value={k} disabled={valorSeguro < 1}>
+      {k.charAt(0).toUpperCase() + k.slice(1)} ({valorSeguro})
+    </MenuItem>
+  );
+})}
   </Select>
 </FormControl>
 {/* Perícia */}
