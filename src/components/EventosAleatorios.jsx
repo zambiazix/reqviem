@@ -80,18 +80,29 @@ function EventosAleatorios({ isMaster, userNick, fichasMap, onClose, userEmail }
   const [novoAtivo, setNovoAtivo] = useState(true);
   const [novoEventoTexto, setNovoEventoTexto] = useState("");
 
-  useEffect(() => {
-    const ref = doc(db, "eventos_aleatorios", "lista");
-    const unsub = onSnapshot(ref, (snap) => {
+useEffect(() => {
+  const ref = doc(db, "eventos_aleatorios", "lista");
+  const unsub = onSnapshot(
+    ref,
+    (snap) => {
       if (snap.exists() && snap.data().eventos) {
         setEventos(snap.data().eventos);
       } else {
         setEventos(EVENTOS_PADRAO);
-        setDoc(ref, { eventos: EVENTOS_PADRAO });
+        // Só tenta criar se for mestre, e ignora erro se falhar
+        if (isMaster) {
+          setDoc(ref, { eventos: EVENTOS_PADRAO }).catch(() => {});
+        }
       }
-    });
-    return () => unsub();
-  }, []);
+    },
+    (error) => {
+      console.error("[Eventos] erro onSnapshot:", error);
+      // Fallback: pelo menos mostra os eventos padrão pra não travar
+      setEventos(EVENTOS_PADRAO);
+    }
+  );
+  return () => unsub();
+}, [isMaster]);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
