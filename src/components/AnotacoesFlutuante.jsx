@@ -32,14 +32,25 @@ function AnotacoesFlutuante({ userEmail, userNick, onClose }) {
 
   useEffect(() => {
     if (!userEmail) return;
-    const ref = doc(db, "anotacoes_sidebar", userEmail);
+    // 🟢 Agora lê da MESMA fonte que a ficha: fichas/{email}.anotacoes
+    const ref = doc(db, "fichas", userEmail);
     const unsub = onSnapshot(ref, (snap) => {
-      if (snap.exists()) {
-        const dados = snap.data();
-        if (dados.capitulos && Array.isArray(dados.capitulos)) {
-          setCapitulos(dados.capitulos);
-        } else if (dados.texto) {
-          setCapitulos([{ titulo: "Anotação 1", texto: dados.texto }]);
+      if (!snap.exists()) {
+        setCapitulos([]);
+        return;
+      }
+      const dados = snap.data();
+      if (dados.anotacoes) {
+        try {
+          const parsed = JSON.parse(dados.anotacoes);
+          if (Array.isArray(parsed)) {
+            setCapitulos(parsed);
+          } else {
+            setCapitulos([{ titulo: "Anotação", texto: dados.anotacoes || "" }]);
+          }
+        } catch {
+          // Compatibilidade com o formato antigo (texto puro)
+          setCapitulos([{ titulo: "Anotação", texto: dados.anotacoes || "" }]);
         }
       } else {
         setCapitulos([]);
@@ -60,7 +71,15 @@ function AnotacoesFlutuante({ userEmail, userNick, onClose }) {
   }, [arrastando, redimensionando]);
 
   const salvar = async (novosCapitulos) => {
-    await setDoc(doc(db, "anotacoes_sidebar", userEmail), { capitulos: novosCapitulos, atualizadoEm: new Date().toISOString() }, { merge: true });
+    // 🟢 Salva na MESMA fonte que a ficha: fichas/{email}.anotacoes (JSON)
+    await setDoc(
+      doc(db, "fichas", userEmail),
+      {
+        anotacoes: JSON.stringify(novosCapitulos),
+        atualizadoEm: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   };
 
   const novoCapitulo = () => {
