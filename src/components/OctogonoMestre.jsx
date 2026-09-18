@@ -18,6 +18,144 @@ const ASPECTOS = [
   { id: "geral", label: "Avaliação Geral", cor: "#00e0ff" },
 ];
 
+// 🟢 Função genérica de desenho (usada pelo octógono individual e pelo item de avaliação)
+const desenharOctogono = (canvas, notasObj) => {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const raioMax = Math.min(cx, cy) - 30;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, 0, w, h);
+
+  // Anéis
+  for (let nivel = 1; nivel <= 5; nivel++) {
+    const r = (raioMax / 5) * nivel;
+    ctx.beginPath();
+    for (let i = 0; i <= 8; i++) {
+      const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+      const x = cx + r * Math.cos(ang);
+      const y = cy + r * Math.sin(ang);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = "rgba(255,255,255,0.1)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Linhas radiais
+  for (let i = 0; i < 8; i++) {
+    const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + raioMax * Math.cos(ang), cy + raioMax * Math.sin(ang));
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Área
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const valor = notasObj[ASPECTOS[i].id] || 0;
+    const r = (raioMax / 5) * valor;
+    const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+    const x = cx + r * Math.cos(ang);
+    const y = cy + r * Math.sin(ang);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "rgba(168, 85, 247, 0.3)";
+  ctx.fill();
+  ctx.strokeStyle = "#a855f7";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Pontos + labels
+  for (let i = 0; i < 8; i++) {
+    const valor = notasObj[ASPECTOS[i].id] || 0;
+    const r = (raioMax / 5) * valor;
+    const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+    const x = cx + r * Math.cos(ang);
+    const y = cy + r * Math.sin(ang);
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#a855f7";
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    const labelX = cx + (raioMax + 25) * Math.cos(ang);
+    const labelY = cy + (raioMax + 25) * Math.sin(ang) + 4;
+    ctx.fillText(ASPECTOS[i].label, labelX, labelY);
+  }
+};
+
+// 🟢 Calcula a média de UMA avaliação
+const calcularMediaAvaliacao = (notas) => {
+  if (!notas) return 0;
+  const soma = ASPECTOS.reduce((acc, a) => acc + (notas[a.id] || 0), 0);
+  return soma / ASPECTOS.length;
+};
+
+// 🟢 Subcomponente: desenha um octógono por avaliação + a média dela
+function AvaliacaoItem({ avaliacao }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    desenharOctogono(canvasRef.current, avaliacao.notas || {});
+  }, [avaliacao]);
+
+  const media = calcularMediaAvaliacao(avaliacao.notas);
+
+  return (
+    <Paper sx={{ p: 1.5, mb: 1.5, bgcolor: "#1a1a2e", border: "1px solid #334155", borderRadius: 2 }}>
+      {/* Cabeçalho da avaliação */}
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+        <Typography variant="body2" sx={{ color: "#fff", fontWeight: "bold" }}>
+          {avaliacao.jogadorNome} → Mestre: {avaliacao.chave}
+        </Typography>
+        <Typography variant="caption" sx={{ color: "#a855f7", fontWeight: "bold" }}>
+          {avaliacao.data ? new Date(avaliacao.data).toLocaleDateString("pt-BR") : ""}
+        </Typography>
+      </Box>
+
+      {/* Octógono da avaliação */}
+      <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
+        <canvas
+          ref={canvasRef}
+          width={300}
+          height={300}
+          style={{ maxWidth: "100%", maxHeight: 280 }}
+        />
+      </Box>
+
+      {/* Média desta avaliação */}
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 1, p: 1, bgcolor: "rgba(168,85,247,0.1)", borderRadius: 1, border: "1px solid #a855f744", mb: 1 }}>
+        <Typography variant="caption" sx={{ color: "#a855f7", fontWeight: "bold" }}>
+          📊 MÉDIA DESTA AVALIAÇÃO:
+        </Typography>
+        <Typography variant="body1" sx={{ color: "#fff", fontWeight: "bold" }}>
+          {media.toFixed(2)} / 5
+        </Typography>
+      </Box>
+
+      {/* Notas individuais */}
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+        {ASPECTOS.map(a => (
+          <Typography key={a.id} variant="caption" sx={{ color: a.cor, fontSize: "0.65rem" }}>
+            {a.label}: {avaliacao.notas?.[a.id] || 0}/5
+          </Typography>
+        ))}
+      </Box>
+    </Paper>
+  );
+}
+
 function OctogonoMestre({ isMaster, userEmail, userNick, onClose }) {
   const [posicao, setPosicao] = useState({ x: 350, y: 100 });
   const [tamanho, setTamanho] = useState({ width: 600, height: 550 });
@@ -31,7 +169,6 @@ function OctogonoMestre({ isMaster, userEmail, userNick, onClose }) {
   const [todasAvaliacoes, setTodasAvaliacoes] = useState([]);
   const [vendoAvaliacoes, setVendoAvaliacoes] = useState(false);
   const canvasRef = useRef(null);
-  const canvasMediaRef = useRef(null);
 
   useEffect(() => {
     const ref = doc(db, "octogono_mestre", "avaliacoes");
@@ -52,125 +189,17 @@ function OctogonoMestre({ isMaster, userEmail, userNick, onClose }) {
     return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
   }, [arrastando, redimensionando]);
 
-  // 🟢 Função genérica de desenho (usada pro octógono individual E pro da média)
-  const desenharOctogonoGenerico = useCallback((canvas, notasObj, corPreenchimento = "rgba(168, 85, 247, 0.3)", corLinha = "#a855f7") => {
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const w = canvas.width;
-    const h = canvas.height;
-    const cx = w / 2;
-    const cy = h / 2;
-    const raioMax = Math.min(cx, cy) - 30;
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(0, 0, w, h);
-
-    // Anéis de nível
-    for (let nivel = 1; nivel <= 5; nivel++) {
-      const r = (raioMax / 5) * nivel;
-      ctx.beginPath();
-      for (let i = 0; i <= 8; i++) {
-        const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
-        const x = cx + r * Math.cos(ang);
-        const y = cy + r * Math.sin(ang);
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = "rgba(255,255,255,0.1)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-
-    // Linhas radiais
-    for (let i = 0; i < 8; i++) {
-      const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + raioMax * Math.cos(ang), cy + raioMax * Math.sin(ang));
-      ctx.strokeStyle = "rgba(255,255,255,0.15)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-
-    // Área preenchida
-    ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const valor = notasObj[ASPECTOS[i].id] || 0;
-      const r = (raioMax / 5) * valor;
-      const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
-      const x = cx + r * Math.cos(ang);
-      const y = cy + r * Math.sin(ang);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.fillStyle = corPreenchimento;
-    ctx.fill();
-    ctx.strokeStyle = corLinha;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Pontos + labels
-    for (let i = 0; i < 8; i++) {
-      const valor = notasObj[ASPECTOS[i].id] || 0;
-      const r = (raioMax / 5) * valor;
-      const ang = (Math.PI * 2 * i) / 8 - Math.PI / 2;
-      const x = cx + r * Math.cos(ang);
-      const y = cy + r * Math.sin(ang);
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = corLinha;
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.font = "10px sans-serif";
-      ctx.textAlign = "center";
-      const labelX = cx + (raioMax + 25) * Math.cos(ang);
-      const labelY = cy + (raioMax + 25) * Math.sin(ang) + 4;
-      ctx.fillText(ASPECTOS[i].label, labelX, labelY);
-    }
-  }, []);
-
-  // 🟢 Redesenha o octógono individual quando `notas` muda
+  // 🟢 Redesenha o octógono individual (da tela de edição)
   useEffect(() => {
     if (!vendoAvaliacoes) {
-      desenharOctogonoGenerico(canvasRef.current, notas);
+      desenharOctogono(canvasRef.current, notas);
     }
-  }, [notas, vendoAvaliacoes, desenharOctogonoGenerico]);
+  }, [notas, vendoAvaliacoes]);
 
-  // 🟢 Filtra avaliações (mestre vê todas, jogador vê só as dele)
   const avaliacoesFiltradas = useMemo(
     () => todasAvaliacoes.filter(a => isMaster || a.jogador === userEmail),
     [todasAvaliacoes, isMaster, userEmail]
   );
-
-  // 🟢 Calcula média por aspecto
-  const medias = useMemo(() => {
-    if (avaliacoesFiltradas.length === 0) return null;
-    const m = {};
-    ASPECTOS.forEach(a => {
-      const soma = avaliacoesFiltradas.reduce((acc, av) => acc + (av.notas?.[a.id] || 0), 0);
-      m[a.id] = soma / avaliacoesFiltradas.length;
-    });
-    return m;
-  }, [avaliacoesFiltradas]);
-
-  // 🟢 Média geral (média das médias)
-  const mediaGeral = useMemo(() => {
-    if (!medias) return 0;
-    const soma = ASPECTOS.reduce((acc, a) => acc + medias[a.id], 0);
-    return soma / ASPECTOS.length;
-  }, [medias]);
-
-  // 🟢 Redesenha o octógono da média quando entra em "Ver Todas"
-  useEffect(() => {
-    if (vendoAvaliacoes && medias && canvasMediaRef.current) {
-      desenharOctogonoGenerico(
-        canvasMediaRef.current,
-        medias,
-        "rgba(168, 85, 247, 0.4)",
-        "#a855f7"
-      );
-    }
-  }, [vendoAvaliacoes, medias, desenharOctogonoGenerico]);
 
   const salvarAvaliacao = async () => {
     const chave = nomeMestre.trim() || "sem_nome";
@@ -199,47 +228,14 @@ function OctogonoMestre({ isMaster, userEmail, userNick, onClose }) {
                 📋 Todas as Avaliações ({avaliacoesFiltradas.length})
               </Typography>
 
-              {/* 🟢 OCTÓGONO DA MÉDIA + MÉDIAS POR ASPECTO */}
-              {medias && (
-                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 2, p: 1.5, bgcolor: "#1a1a2e", borderRadius: 2, border: "1px solid #a855f744" }}>
-                  <Typography variant="caption" sx={{ color: "#a855f7", fontWeight: "bold", mb: 1 }}>
-                    📊 MÉDIA GERAL: <span style={{ color: "#fff", fontSize: "1.1rem" }}>{mediaGeral.toFixed(2)} / 5</span>
-                  </Typography>
-
-                  <canvas
-                    ref={canvasMediaRef}
-                    width={400}
-                    height={400}
-                    style={{ maxWidth: "100%", maxHeight: 350 }}
-                  />
-
-                  {/* Médias por aspecto */}
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 0.3, mt: 1, width: "100%" }}>
-                    {ASPECTOS.map(a => (
-                      <Box key={a.id} sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", px: 1, py: 0.3, borderRadius: 1, '&:hover': { bgcolor: 'rgba(168,85,247,0.08)' } }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7 }}>
-                          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: a.cor }} />
-                          <Typography variant="caption" sx={{ color: a.cor, fontSize: "0.7rem" }}>{a.label}</Typography>
-                        </Box>
-                        <Typography variant="caption" sx={{ color: "#fff", fontWeight: "bold", fontSize: "0.75rem" }}>
-                          {medias[a.id].toFixed(2)} / 5
-                        </Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                </Box>
-              )}
-
-              {/* Lista de avaliações individuais */}
+              {/* 🟢 UM OCTÓGONO POR AVALIAÇÃO */}
               {avaliacoesFiltradas.map((av, idx) => (
-                <Paper key={idx} sx={{ p: 1, mb: 0.5, bgcolor: "#1a1a2e", border: "1px solid #334155" }}>
-                  <Typography variant="caption" sx={{ color: "#fff", fontWeight: "bold" }}>{av.jogadorNome} → Mestre: {av.chave}</Typography>
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
-                    {ASPECTOS.map(a => <Typography key={a.id} variant="caption" sx={{ color: a.cor }}>{a.label}: {av.notas[a.id]}/5</Typography>)}
-                  </Box>
-                </Paper>
+                <AvaliacaoItem key={idx} avaliacao={av} />
               ))}
-              {avaliacoesFiltradas.length === 0 && <Typography sx={{ color: "#64748b" }}>Nenhuma avaliação.</Typography>}
+
+              {avaliacoesFiltradas.length === 0 && (
+                <Typography sx={{ color: "#64748b" }}>Nenhuma avaliação.</Typography>
+              )}
             </Box>
           ) : (
             <>
