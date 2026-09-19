@@ -4,43 +4,40 @@ import { createPortal } from "react-dom";
 import {
   Box, Paper, Typography, IconButton, Button, Dialog,
   DialogTitle, DialogContent, DialogActions, TextField,
-  LinearProgress, Chip, Avatar, Badge, Tooltip, Divider,
-  Grid, Card, CardContent, FormControl, InputLabel, Select, MenuItem,
-  CircularProgress, Fade, Zoom
+  LinearProgress, Chip, Grid, Card, CardContent,
+  FormControl, InputLabel, Select, MenuItem,
+  CircularProgress, Zoom,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import MinimizeIcon from "@mui/icons-material/Minimize";
 import SecurityIcon from "@mui/icons-material/Security";
 import ShieldIcon from "@mui/icons-material/Shield";
 import ComputerIcon from "@mui/icons-material/Computer";
 import CasinoIcon from "@mui/icons-material/Casino";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
-import WarningIcon from "@mui/icons-material/Warning";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
 import LockIcon from "@mui/icons-material/Lock";
 import LockOpenIcon from "@mui/icons-material/LockOpen";
-import PersonIcon from "@mui/icons-material/Person";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import { db } from "../firebaseConfig";
-import { 
-  doc, getDoc, setDoc, onSnapshot, collection, 
-  addDoc, serverTimestamp, updateDoc, deleteDoc, query, where, getDocs 
+import {
+  doc, getDoc, setDoc, onSnapshot, collection,
+  addDoc, serverTimestamp, updateDoc,
 } from "firebase/firestore";
 import { keyframes } from "@mui/material/styles";
 
-// ==================== ANIMAÇÕES ====================
 const pulseRed = keyframes`
   0% { box-shadow: 0 0 5px #ef4444; }
   50% { box-shadow: 0 0 20px #ef4444, 0 0 40px #ef444488; }
   100% { box-shadow: 0 0 5px #ef4444; }
 `;
-
 const pulseGreen = keyframes`
   0% { box-shadow: 0 0 5px #10b981; }
   50% { box-shadow: 0 0 20px #10b981, 0 0 40px #10b98188; }
   100% { box-shadow: 0 0 5px #10b981; }
 `;
-
 const glitchEffect = keyframes`
   0% { transform: translate(0); }
   20% { transform: translate(-2px, 2px); }
@@ -50,47 +47,79 @@ const glitchEffect = keyframes`
   100% { transform: translate(0); }
 `;
 
-const matrixRain = keyframes`
-  0% { opacity: 0; transform: translateY(-100%); }
-  50% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(100vh); }
-`;
+const calcularTempoTurno = (progresso) => {
+  if (progresso >= 90) return 2;
+  if (progresso >= 80) return 3;
+  if (progresso >= 60) return 5;
+  return 10;
+};
 
-// ==================== COMPONENTE PRINCIPAL ====================
-function HackeamentoGame({ 
-  atacanteEmail, 
-  atacanteNome, 
-  alvoEmail, 
-  alvoNome,
-  fichasMap,
-  onClose,
-  userEmail,
-  isMaster 
+const nomeItem = (i) => (typeof i === "string" ? i : i?.nome || "item");
+
+// ==================== TEMAS ====================
+const TEMA_ATACANTE = {
+  corPrincipal: "#10b981",
+  corSecundaria: "#ef4444",
+  corFundo: "#0d1f0d",
+  corBorda: "#10b981",
+  gradiente: "linear-gradient(180deg, #0a1f0d 0%, #0a0a0a 50%, #0a1f0d 100%)",
+  icone: <SecurityIcon sx={{ fontSize: 32 }} />,
+  titulo: "💻 INVADINDO",
+  subtitulo: (atacante, alvo) => `Você é o ATACANTE · Alvo: ${alvo}`,
+  textoAcao: "🎲 Rolar D10 (ATAQUE)",
+};
+
+const TEMA_DEFENSOR = {
+  corPrincipal: "#3b82f6",
+  corSecundaria: "#06b6d4",
+  corFundo: "#0a1828",
+  corBorda: "#3b82f6",
+  gradiente: "linear-gradient(180deg, #0a1428 0%, #0a0a0a 50%, #0a1428 100%)",
+  icone: <ShieldIcon sx={{ fontSize: 32 }} />,
+  titulo: "🛡️ SENDO INVADIDO",
+  subtitulo: (atacante, alvo) => `Você é o DEFENSOR · Invasor: ${atacante}`,
+  textoAcao: "🎲 Rolar D10 (DEFESA)",
+};
+
+function HackeamentoGame({
+  atacanteEmail, atacanteNome, alvoEmail, alvoNome,
+  fichasMap, onClose, onMinimize, userEmail, isMaster,
 }) {
-  // ===== ESTADOS DO JOGO =====
+  const gameId = `${atacanteEmail}_${alvoEmail}`;
+  const isAtacante = userEmail === atacanteEmail;
+  const isAlvo = userEmail === alvoEmail;
+  const tema = isAtacante ? TEMA_ATACANTE : TEMA_DEFENSOR;
+
   const [progresso, setProgresso] = useState(0);
   const [rodada, setRodada] = useState(0);
-  const [turno, setTurno] = useState("atacante"); // "atacante" ou "defensor"
+  const [turno, setTurno] = useState("atacante");
+  const [dadoAtacante, setDadoAtacante] = useState(null);
+  const [dadoDefensor, setDadoDefensor] = useState(null);
+  const [totalAtacante, setTotalAtacante] = useState(null);
+  const [totalDefensor, setTotalDefensor] = useState(null);
+  const [nivelInvasao, setNivelInvasao] = useState(0);
+  const [derrotasConsecutivas, setDerrotasConsecutivas] = useState(0);
+  const [perdeu, setPerdeu] = useState(false);
+  const [ganhou, setGanhou] = useState(false);
+  const [historicoTurnos, setHistoricoTurnos] = useState([]);
+  const [statusJogo, setStatusJogo] = useState("aguardando_aceite");
+  const [ultimaRodadaResumo, setUltimaRodadaResumo] = useState(null);
+  const [timestampTurno, setTimestampTurno] = useState(null);
+
   const [jogandoDado, setJogandoDado] = useState(false);
   const [resultadoDado, setResultadoDado] = useState(null);
-  const [detalhesTurno, setDetalhesTurno] = useState(null);
-  const [historicoTurnos, setHistoricoTurnos] = useState([]);
-  const [nivelInvasao, setNivelInvasao] = useState(0); // 0, 1, 2, 3
-  const [perdeu, setPerdeu] = useState(false);
-  const [derrotasConsecutivas, setDerrotasConsecutivas] = useState(0);
-  
-  // ===== ESTADOS DE DADOS =====
+  const [segundosRestantes, setSegundosRestantes] = useState(10);
+
   const [fichaAtacante, setFichaAtacante] = useState(null);
   const [fichaAlvo, setFichaAlvo] = useState(null);
-  const [inteligenciaAtacante, setInteligenciaAtacante] = useState(1);
-  const [conhecimentoAtacante, setConhecimentoAtacante] = useState(0);
-  const [inteligenciaAlvo, setInteligenciaAlvo] = useState(1);
-  const [conhecimentoAlvo, setConhecimentoAlvo] = useState(0);
-  
-  // ===== ESTADOS DE MODAIS =====
+  const [intAtacante, setIntAtacante] = useState(1);
+  const [conAtacante, setConAtacante] = useState(0);
+  const [intAlvo, setIntAlvo] = useState(1);
+  const [conAlvo, setConAlvo] = useState(0);
+
   const [modalFichaAlvo, setModalFichaAlvo] = useState(false);
   const [modalTransferencia, setModalTransferencia] = useState(false);
-  const [tipoTransferencia, setTipoTransferencia] = useState(""); // "titulos", "imoveis", "inventario", "carteira"
+  const [tipoTransferencia, setTipoTransferencia] = useState("");
   const [itensAlvo, setItensAlvo] = useState([]);
   const [itensSelecionados, setItensSelecionados] = useState([]);
   const [carteiraAlvo, setCarteiraAlvo] = useState({});
@@ -99,837 +128,634 @@ function HackeamentoGame({
   const [carteiraSelecionada, setCarteiraSelecionada] = useState("");
   const [titulosAlvo, setTitulosAlvo] = useState([]);
   const [imoveisAlvo, setImoveisAlvo] = useState([]);
-  
-  // ===== ESTADOS DE NOTIFICAÇÃO =====
-  const [notificacaoEnviada, setNotificacaoEnviada] = useState(false);
-  const [mensagemChatEnviada, setMensagemChatEnviada] = useState(false);
 
-  // ===== REFS =====
-  const gameRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const timeoutDisparouRef = useRef(false);
+  const notificouInicioRef = useRef(false);
+
+  // ===== MENSAGEM DE SISTEMA =====
+  const mensagemSistema = useCallback(async (texto) => {
+    try {
+      await addDoc(collection(db, "chat"), {
+        userNick: "SISTEMA", userEmail: "sistema@reqviemrpg.com",
+        type: "text", text: texto, timestamp: serverTimestamp(),
+      });
+    } catch (e) { console.error("[Hack] chat principal:", e); }
+    const chatId = [atacanteEmail, alvoEmail].sort().join("_");
+    try {
+      await addDoc(collection(db, "socialChats", chatId, "mensagens"), {
+        de: "sistema", para: chatId, tipo: "sistema",
+        texto: texto, timestamp: serverTimestamp(),
+      });
+    } catch (e) { console.error("[Hack] socialChat:", e); }
+  }, [atacanteEmail, alvoEmail]);
 
   // ===== CARREGAR FICHAS =====
   useEffect(() => {
-    const carregarFichas = async () => {
+    (async () => {
       try {
-        // Carregar ficha do atacante
-        const refAtacante = doc(db, "fichas", atacanteEmail);
-        const snapAtacante = await getDoc(refAtacante);
-        if (snapAtacante.exists()) {
-          const dados = snapAtacante.data();
-          setFichaAtacante(dados);
-          setInteligenciaAtacante(dados.atributos?.inteligencia || 1);
-          setConhecimentoAtacante(dados.pericias?.conhecimento || 0);
-          setCarteiraAtacante(dados.carteiras || {});
+        const sA = await getDoc(doc(db, "fichas", atacanteEmail));
+        if (sA.exists()) {
+          const d = sA.data();
+          setFichaAtacante(d);
+          setIntAtacante(d.atributos?.inteligencia || 1);
+          setConAtacante(d.pericias?.conhecimento || 0);
+          setCarteiraAtacante(d.carteiras || {});
         }
-
-        // Carregar ficha do alvo
-        const refAlvo = doc(db, "fichas", alvoEmail);
-        const snapAlvo = await getDoc(refAlvo);
-        if (snapAlvo.exists()) {
-          const dados = snapAlvo.data();
-          setFichaAlvo(dados);
-          setInteligenciaAlvo(dados.atributos?.inteligencia || 1);
-          setConhecimentoAlvo(dados.pericias?.conhecimento || 0);
-          setCarteiraAlvo(dados.carteiras || {});
- const acoesObj = dados.acoes || {};
-const acoesArray = Object.entries(acoesObj).map(([id, data]) => ({ id, ...data }));
-setTitulosAlvo(acoesArray);
-          setImoveisAlvo(dados.imoveis || []);
-          setItensAlvo([
-            ...(dados.equipamentos || []),
-            ...(dados.vestes || []),
-            ...(dados.diversos || []),
-          ]);
+        const sB = await getDoc(doc(db, "fichas", alvoEmail));
+        if (sB.exists()) {
+          const d = sB.data();
+          setFichaAlvo(d);
+          setIntAlvo(d.atributos?.inteligencia || 1);
+          setConAlvo(d.pericias?.conhecimento || 0);
+          setCarteiraAlvo(d.carteiras || {});
+          setTitulosAlvo(Object.entries(d.acoes || {}).map(([id, v]) => ({ id, ...v })));
+          setImoveisAlvo(d.imoveis || []);
+          setItensAlvo([...(d.equipamentos || []), ...(d.vestes || []), ...(d.diversos || [])]);
         }
-      } catch (error) {
-        console.error("Erro ao carregar fichas:", error);
-      }
-    };
-
-    carregarFichas();
+      } catch (e) { console.error("[Hack] Fichas:", e); }
+    })();
   }, [atacanteEmail, alvoEmail]);
 
+  // ===== CRIAR JOGO =====
+  useEffect(() => {
+    if (!isAtacante) return;
+    (async () => {
+      const ref = doc(db, "hackeamento_games", gameId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          atacanteEmail, alvoEmail, atacanteNome, alvoNome,
+          progresso: 0, rodada: 0, turno: "atacante",
+          dadoAtacante: null, dadoDefensor: null,
+          totalAtacante: null, totalDefensor: null,
+          nivelInvasao: 0, derrotasConsecutivas: 0,
+          perdeu: false, ganhou: false, historicoTurnos: [],
+          statusJogo: "aguardando_aceite",
+          timestampTurno: Date.now(),
+          criadoEm: serverTimestamp(),
+        });
+      }
+    })();
+  }, [gameId, isAtacante, atacanteEmail, alvoEmail, atacanteNome, alvoNome]);
+
+  // ===== OUVIR ESTADO =====
+  useEffect(() => {
+    const ref = doc(db, "hackeamento_games", gameId);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      setProgresso(d.progresso || 0);
+      setRodada(d.rodada || 0);
+      setTurno(d.turno || "atacante");
+      setDadoAtacante(d.dadoAtacante ?? null);
+      setDadoDefensor(d.dadoDefensor ?? null);
+      setTotalAtacante(d.totalAtacante ?? null);
+      setTotalDefensor(d.totalDefensor ?? null);
+      setNivelInvasao(d.nivelInvasao || 0);
+      setDerrotasConsecutivas(d.derrotasConsecutivas || 0);
+      setPerdeu(d.perdeu || false);
+      setGanhou(d.ganhou || false);
+      setHistoricoTurnos(d.historicoTurnos || []);
+      setStatusJogo(d.statusJogo || "ativo");
+      setTimestampTurno(d.timestampTurno || null);
+      setUltimaRodadaResumo(d.ultimaRodadaResumo || null);
+    });
+    return () => unsub();
+  }, [gameId]);
+
+  // ===== INÍCIO (notifica 1x) =====
+  useEffect(() => {
+    if (!isAtacante || notificouInicioRef.current) return;
+    if (statusJogo === "aguardando_aceite" && progresso === 0 && rodada === 0) {
+      notificouInicioRef.current = true;
+      mensagemSistema(`🚨 INVASÃO INICIADA: ${atacanteNome} está tentando hackear ${alvoNome}!`);
+    }
+  }, [isAtacante, statusJogo, progresso, rodada, atacanteNome, alvoNome, mensagemSistema]);
+
+  // ===== ALVO ACEITA =====
+  useEffect(() => {
+    if (!isAlvo || statusJogo !== "aguardando_aceite") return;
+    (async () => {
+      try {
+        await updateDoc(doc(db, "hackeamento_games", gameId), {
+          statusJogo: "ativo", turno: "atacante", timestampTurno: Date.now(),
+        });
+      } catch (e) { console.error(e); }
+    })();
+  }, [isAlvo, statusJogo, gameId]);
+
+  // ===== NOTIFICAÇÕES =====
+  const notificarNivelInvasao = useCallback(async (nivel) => {
+    const niveis = {
+      1: "🔓 Nível 1: Acesso à ficha",
+      2: "🔓🔓 Nível 2: Acesso a títulos e imóveis",
+      3: "🔓🔓🔓 Nível 3: Acesso ao inventário e carteira",
+    };
+    try {
+      await addDoc(collection(db, "socialNotificacoes"), {
+        para: alvoEmail, de: atacanteEmail, tipo: "hackeamento",
+        texto: `⚠️ ${atacanteNome} atingiu o ${niveis[nivel]}!`,
+        nome: atacanteNome, lida: false, timestamp: serverTimestamp(),
+      });
+    } catch (e) { console.error(e); }
+    await mensagemSistema(`⚠️ ${atacanteNome} desbloqueou ${niveis[nivel]} na invasão contra ${alvoNome}!`);
+  }, [atacanteEmail, alvoEmail, atacanteNome, alvoNome, mensagemSistema]);
+
+  const notificarFracasso = useCallback(async () => {
+    const codigo = localStorage.getItem(`rede_codigo_pessoal_${atacanteEmail}`) || "?";
+    try {
+      await addDoc(collection(db, "socialNotificacoes"), {
+        para: alvoEmail, de: atacanteEmail, tipo: "hackeamento_fracasso",
+        texto: `🛡️ Invasão repelida! Código do invasor: ${codigo}`,
+        nome: atacanteNome, lida: false, timestamp: serverTimestamp(),
+      });
+    } catch (e) { console.error(e); }
+    await mensagemSistema(`🛡️ DEFESA BEM-SUCEDIDA: ${alvoNome} repeliu a invasão de ${atacanteNome}! Código do invasor exposto: ${codigo}`);
+  }, [atacanteEmail, alvoEmail, atacanteNome, alvoNome, mensagemSistema]);
+
+  const notificarVitoria = useCallback(async () => {
+    try {
+      await addDoc(collection(db, "socialNotificacoes"), {
+        para: alvoEmail, de: atacanteEmail, tipo: "hackeamento_vitoria",
+        texto: `💀 Você foi hackeado por ${atacanteNome}!`,
+        nome: atacanteNome, lida: false, timestamp: serverTimestamp(),
+      });
+    } catch (e) { console.error(e); }
+    await mensagemSistema(`💀 INVASÃO CONCLUÍDA: ${atacanteNome} hackeou ${alvoNome} com sucesso!`);
+  }, [atacanteEmail, alvoEmail, atacanteNome, alvoNome, mensagemSistema]);
+
+  // ===== TIMEOUT =====
+  const handleTimeout = useCallback(async () => {
+    if (timeoutDisparouRef.current) return;
+    timeoutDisparouRef.current = true;
+    setTimeout(() => { timeoutDisparouRef.current = false; }, 2500);
+
+    const souEuDoTurno = (turno === "atacante" && isAtacante) || (turno === "defensor" && isAlvo);
+    if (!souEuDoTurno) return;
+
+    const ref = doc(db, "hackeamento_games", gameId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const d = snap.data();
+    if (d.timestampTurno !== timestampTurno) return;
+
+    if (turno === "atacante") {
+      const novoProg = Math.max(0, (d.progresso || 0) - 10);
+      const novasDerrotas = (d.derrotasConsecutivas || 0) + 1;
+      const resumo = {
+        rodada: (d.rodada || 0) + 1, tipo: "timeout_atacante", progressoNovo: novoProg,
+        mensagem: `⏰ ${atacanteNome} não jogou a tempo! -10%`, timestamp: Date.now(),
+      };
+      const perdeuJogo = novasDerrotas >= 2 && novoProg === 0;
+      await updateDoc(ref, {
+        progresso: novoProg, derrotasConsecutivas: novasDerrotas, rodada: (d.rodada || 0) + 1,
+        turno: "defensor", dadoAtacante: null, totalAtacante: null,
+        ultimaRodadaResumo: resumo,
+        historicoTurnos: [resumo, ...(d.historicoTurnos || [])].slice(0, 30),
+        timestampTurno: Date.now(), perdeu: perdeuJogo,
+      });
+      await mensagemSistema(`⏰ TIMEOUT: ${atacanteNome} não jogou a tempo contra ${alvoNome}! Progresso caiu para ${novoProg}%.`);
+      if (perdeuJogo) await notificarFracasso();
+    } else {
+      const novoProg = Math.min(100, (d.progresso || 0) + 10);
+      const novoNivel = novoProg >= 100 ? 3 : novoProg >= 80 ? 2 : novoProg >= 60 ? 1 : 0;
+      const resumo = {
+        rodada: (d.rodada || 0) + 1, tipo: "timeout_defensor", progressoNovo: novoProg,
+        mensagem: `⏰ ${alvoNome} não jogou a tempo! +10%`, timestamp: Date.now(),
+      };
+      const ganhouJogo = novoProg >= 100;
+      await updateDoc(ref, {
+        progresso: novoProg, rodada: (d.rodada || 0) + 1, turno: "atacante",
+        nivelInvasao: Math.max(d.nivelInvasao || 0, novoNivel),
+        dadoDefensor: null, totalDefensor: null,
+        ultimaRodadaResumo: resumo,
+        historicoTurnos: [resumo, ...(d.historicoTurnos || [])].slice(0, 30),
+        timestampTurno: Date.now(), ganhou: ganhouJogo, derrotasConsecutivas: 0,
+      });
+      await mensagemSistema(`⏰ TIMEOUT: ${alvoNome} não defendeu a tempo! ${atacanteNome} ganhou +10% (progresso: ${novoProg}%).`);
+      if (novoNivel > (d.nivelInvasao || 0)) await notificarNivelInvasao(novoNivel);
+      if (ganhouJogo) await notificarVitoria();
+    }
+  }, [turno, isAtacante, isAlvo, timestampTurno, gameId, atacanteNome, alvoNome, mensagemSistema, notificarFracasso, notificarNivelInvasao, notificarVitoria]);
+
+  // ===== TIMER =====
+  const tempoTurno = calcularTempoTurno(progresso);
+
+  useEffect(() => {
+    if (statusJogo !== "ativo" || perdeu || ganhou || !timestampTurno) return;
+    const duracaoMs = tempoTurno * 1000;
+    const tick = () => {
+      const decorrido = Date.now() - timestampTurno;
+      const restante = Math.max(0, Math.ceil((duracaoMs - decorrido) / 1000));
+      setSegundosRestantes(restante);
+      if (restante <= 0) {
+        if (timeoutRef.current) clearInterval(timeoutRef.current);
+        handleTimeout();
+      }
+    };
+    tick();
+    timeoutRef.current = setInterval(tick, 250);
+    return () => clearInterval(timeoutRef.current);
+  }, [timestampTurno, statusJogo, tempoTurno, perdeu, ganhou, handleTimeout]);
+
   // ===== ROLAR DADO =====
-  const rolarDado = useCallback(async () => {
-    if (jogandoDado) return;
-    
+  const rolarDado = async () => {
+    if (jogandoDado || perdeu || ganhou) return;
+    const minhaVez = (turno === "atacante" && isAtacante) || (turno === "defensor" && isAlvo);
+    if (!minhaVez) return;
+
     setJogandoDado(true);
     setResultadoDado(null);
-    
-    // Animação de rolagem
     const interval = setInterval(() => {
       setResultadoDado(Math.floor(Math.random() * 10) + 1);
-    }, 100);
-    
+    }, 80);
+
     setTimeout(async () => {
       clearInterval(interval);
-      
       const dado = Math.floor(Math.random() * 10) + 1;
       setResultadoDado(dado);
-      
-      // Cálculo do resultado
-      const bonusAtacante = inteligenciaAtacante + conhecimentoAtacante;
-      const bonusDefesa = inteligenciaAlvo + conhecimentoAlvo;
-      
-      const totalAtacante = dado + bonusAtacante;
-      const dadoDefesa = Math.floor(Math.random() * 10) + 1;
-      const totalDefesa = dadoDefesa + bonusDefesa;
-      
-      const sucesso = totalAtacante > totalDefesa;
-      
-      const detalhes = {
-        rodada: rodada + 1,
-        dadoAtacante: dado,
-        bonusAtacante,
-        totalAtacante,
-        dadoDefesa,
-        bonusDefesa,
-        totalDefesa,
-        sucesso,
-        timestamp: new Date().toISOString(),
-      };
-      
-      setDetalhesTurno(detalhes);
-      setHistoricoTurnos(prev => [detalhes, ...prev]);
-      
-      if (sucesso) {
-        // Aumenta progresso em 10%
-        const novoProgresso = Math.min(progresso + 10, 100);
-        setProgresso(novoProgresso);
-        setDerrotasConsecutivas(0);
-        
-        // Verificar níveis de invasão
-        if (novoProgresso >= 100 && nivelInvasao < 3) {
-          setNivelInvasao(3);
-          notificarNivelInvasao(3);
-        } else if (novoProgresso >= 80 && nivelInvasao < 2) {
-          setNivelInvasao(2);
-          notificarNivelInvasao(2);
-        } else if (novoProgresso >= 60 && nivelInvasao < 1) {
-          setNivelInvasao(1);
-          notificarNivelInvasao(1);
-        }
+
+      const ref = doc(db, "hackeamento_games", gameId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) { setJogandoDado(false); return; }
+      const d = snap.data();
+
+      if (turno === "atacante") {
+        const total = dado + intAtacante + conAtacante;
+        await updateDoc(ref, {
+          dadoAtacante: dado, totalAtacante: total,
+          turno: "defensor", timestampTurno: Date.now(),
+        });
+        await mensagemSistema(`🎲 ${atacanteNome} rolou no ataque: dado ${dado} + INT ${intAtacante} + CON ${conAtacante} = ${total}. Aguardando defesa de ${alvoNome}...`);
       } else {
-        // Diminui progresso em 10%
-        const novoProgresso = Math.max(progresso - 10, 0);
-        setProgresso(novoProgresso);
-        
-        const novasDerrotas = derrotasConsecutivas + 1;
-        setDerrotasConsecutivas(novasDerrotas);
-        
-        // Verificar falha crítica (2 derrotas consecutivas com progresso 0)
-        if (novasDerrotas >= 2 && novoProgresso === 0) {
-          setPerdeu(true);
-          notificarFracasso();
-        }
+        const totalD = dado + intAlvo + conAlvo;
+        const totalA = d.totalAtacante || 0;
+        const atacanteVence = totalA > totalD;
+        const novoProg = atacanteVence ? Math.min(100, (d.progresso || 0) + 10) : Math.max(0, (d.progresso || 0) - 10);
+        const novasDerrotas = atacanteVence ? 0 : (d.derrotasConsecutivas || 0) + 1;
+        const resumo = {
+          rodada: (d.rodada || 0) + 1,
+          dadoAtacante: d.dadoAtacante, totalAtacante: totalA,
+          dadoDefensor: dado, totalDefensor: totalD,
+          atacanteVence, progressoNovo: novoProg,
+          mensagem: atacanteVence
+            ? `💻 ${atacanteNome} venceu (${totalA} vs ${totalD})! +10%`
+            : `🛡️ ${alvoNome} defendeu (${totalA} vs ${totalD})! -10%`,
+          timestamp: Date.now(),
+        };
+        const novoNivel = novoProg >= 100 ? 3 : novoProg >= 80 ? 2 : novoProg >= 60 ? 1 : 0;
+        const ganhouJogo = novoProg >= 100;
+        const perdeuJogo = !atacanteVence && novasDerrotas >= 2 && novoProg === 0;
+
+        await updateDoc(ref, {
+          dadoDefensor: dado, totalDefensor: totalD, progresso: novoProg,
+          rodada: (d.rodada || 0) + 1, turno: "atacante",
+          nivelInvasao: atacanteVence ? Math.max(d.nivelInvasao || 0, novoNivel) : (d.nivelInvasao || 0),
+          derrotasConsecutivas: novasDerrotas,
+          ultimaRodadaResumo: resumo,
+          historicoTurnos: [resumo, ...(d.historicoTurnos || [])].slice(0, 30),
+          timestampTurno: Date.now(), ganhou: ganhouJogo, perdeu: perdeuJogo,
+        });
+
+        await mensagemSistema(`⚔️ RODADA ${(d.rodada || 0) + 1} — ${atacanteNome}: 🎲${d.dadoAtacante} + ${intAtacante + conAtacante} = ${totalA} | ${alvoNome}: 🎲${dado} + ${intAlvo + conAlvo} = ${totalD} — ${atacanteVence ? `✅ ATACANTE VENCE! Progresso: ${novoProg}%` : `❌ DEFENSOR VENCE! Progresso: ${novoProg}%`}`);
+
+        if (atacanteVence && novoNivel > (d.nivelInvasao || 0)) await notificarNivelInvasao(novoNivel);
+        if (ganhouJogo) await notificarVitoria();
+        if (perdeuJogo) await notificarFracasso();
       }
-      
-      setRodada(prev => prev + 1);
       setJogandoDado(false);
-      
-      // Enviar notificação para o chat
-      enviarNotificacaoChat(detalhes);
-      
-      // Salvar estado do jogo
-      salvarEstadoJogo();
-    }, 1500);
-  }, [progresso, rodada, inteligenciaAtacante, conhecimentoAtacante, inteligenciaAlvo, conhecimentoAlvo, derrotasConsecutivas, nivelInvasao]);
-
-const notificarNivelInvasao = async (nivel) => {
-  const niveis = {
-    1: "🔓 Nível 1: Acesso à ficha do alvo",
-    2: "🔓🔓 Nível 2: Acesso a títulos e imóveis",
-    3: "🔓🔓🔓 Nível 3: Acesso ao inventário e carteira",
-  };
-  
-  // Notificação para o alvo
-  try {
-    await addDoc(collection(db, "socialNotificacoes"), {
-      para: alvoEmail,
-      de: atacanteEmail,
-      tipo: "hackeamento",
-      texto: `⚠️ ALERTA DE INVASÃO! ${atacanteNome} atingiu o ${niveis[nivel]}!`,
-      nome: atacanteNome,
-      lida: false,
-      timestamp: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Erro ao notificar:", error);
-  }
-  
-  // Mensagem no chat principal
-  await enviarParaChatPrincipal(`🚨 ALERTA DE HACKEAMENTO: ${atacanteNome} atingiu o ${niveis[nivel]} contra ${alvoNome}!`);
-};
-
-  // ===== NOTIFICAR FRACASSO =====
-const notificarFracasso = async () => {
-  const codigo = localStorage.getItem(`rede_codigo_pessoal_${atacanteEmail}`) || "DESCONHECIDO";
-  
-  try {
-    await addDoc(collection(db, "socialNotificacoes"), {
-      para: alvoEmail,
-      de: atacanteEmail,
-      tipo: "hackeamento_fracasso",
-      texto: `🛡️ Tentativa de invasão fracassou! Código do invasor: ${codigo}`,
-      nome: atacanteNome,
-      lida: false,
-      timestamp: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Erro ao notificar fracasso:", error);
-  }
-  
-  await enviarParaChatPrincipal(`🛡️ DEFESA BEM-SUCEDIDA: ${alvoNome} repeliu a invasão de ${atacanteNome}! Código do invasor exposto: ${codigo}`);
-};
-
-const enviarNotificacaoChat = async (detalhes) => {
-  const mensagem = detalhes.sucesso 
-    ? `💻 [HACKEAMENTO] ${atacanteNome} avançou na invasão de ${alvoNome}! (${detalhes.totalAtacante} vs ${detalhes.totalDefesa})`
-    : `🛡️ [HACKEAMENTO] ${alvoNome} se defendeu de ${atacanteNome}! (${detalhes.totalAtacante} vs ${detalhes.totalDefesa})`;
-  
-  // Enviar para o chat do SocialBar
-  const chatId = [atacanteEmail, alvoEmail].sort().join("_");
-  try {
-    await addDoc(collection(db, "socialChats", chatId, "mensagens"), {
-      de: "sistema",
-      para: chatId,
-      tipo: "sistema",
-      texto: mensagem,
-      timestamp: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Erro ao enviar para socialChat:", error);
-  }
-  
-  // Enviar para o chat principal
-  await enviarParaChatPrincipal(mensagem);
-};
- // ===== ENVIAR PARA CHAT PRINCIPAL =====
-const enviarParaChatPrincipal = async (texto) => {
-  try {
-    await addDoc(collection(db, "chat"), {
-      userNick: "SISTEMA",
-      userEmail: "sistema@reqviemrpg.com",
-      type: "text",
-      text: texto,
-      timestamp: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Erro ao enviar para chat principal:", error);
-  }
-};
-
-// ===== ENVIAR MENSAGEM PARA O CHAT =====
-const enviarMensagemChat = async (texto) => {
-  // Enviar para o chat do SocialBar
-  const chatId = [atacanteEmail, alvoEmail].sort().join("_");
-  try {
-    await addDoc(collection(db, "socialChats", chatId, "mensagens"), {
-      de: "sistema",
-      para: chatId,
-      tipo: "sistema",
-      texto,
-      timestamp: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error("Erro ao enviar para socialChat:", error);
-  }
-  
-  // Enviar para o chat principal
-  await enviarParaChatPrincipal(texto);
-};
-
-  // ===== SALVAR ESTADO DO JOGO =====
-  const salvarEstadoJogo = async () => {
-    try {
-      const gameRef = doc(db, "hackeamento_games", `${atacanteEmail}_${alvoEmail}`);
-      await setDoc(gameRef, {
-        atacanteEmail,
-        alvoEmail,
-        progresso,
-        rodada,
-        nivelInvasao,
-        derrotasConsecutivas,
-        perdeu,
-        historicoTurnos,
-        ultimaAtualizacao: serverTimestamp(),
-      }, { merge: true });
-    } catch (error) {
-      console.error("Erro ao salvar jogo:", error);
-    }
+    }, 1200);
   };
 
-  // ===== TRANSFERIR ITENS =====
+  // ===== TRANSFERÊNCIAS =====
   const transferirItens = async () => {
-    if (itensSelecionados.length === 0) {
-      alert("Selecione pelo menos um item para transferir!");
-      return;
-    }
-
+    if (!itensSelecionados.length) return;
     try {
-      const refAlvo = doc(db, "fichas", alvoEmail);
-      const refAtacante = doc(db, "fichas", atacanteEmail);
-      
-      const snapAlvo = await getDoc(refAlvo);
-      const snapAtacante = await getDoc(refAtacante);
-      
-      if (!snapAlvo.exists() || !snapAtacante.exists()) {
-        alert("Erro ao carregar fichas!");
-        return;
-      }
-
-      const dadosAlvo = snapAlvo.data();
-      const dadosAtacante = snapAtacante.data();
-
-      // Remover itens do alvo
-      const novosEquipamentos = (dadosAlvo.equipamentos || []).filter(item => !itensSelecionados.includes(item));
-      const novasVestes = (dadosAlvo.vestes || []).filter(item => !itensSelecionados.includes(item));
-      const novosDiversos = (dadosAlvo.diversos || []).filter(item => !itensSelecionados.includes(item));
-
-      // Adicionar itens ao atacante
-      const novosEquipamentosAtacante = [...(dadosAtacante.equipamentos || []), ...itensSelecionados.filter(item => dadosAlvo.equipamentos?.includes(item))];
-      const novasVestesAtacante = [...(dadosAtacante.vestes || []), ...itensSelecionados.filter(item => dadosAlvo.vestes?.includes(item))];
-      const novosDiversosAtacante = [...(dadosAtacante.diversos || []), ...itensSelecionados.filter(item => dadosAlvo.diversos?.includes(item))];
-
-      // Atualizar alvo
-      await updateDoc(refAlvo, {
-        equipamentos: novosEquipamentos,
-        vestes: novasVestes,
-        diversos: novosDiversos,
+      const rA = doc(db, "fichas", alvoEmail);
+      const rB = doc(db, "fichas", atacanteEmail);
+      const sA = await getDoc(rA); const sB = await getDoc(rB);
+      if (!sA.exists() || !sB.exists()) return;
+      const dA = sA.data(); const dB = sB.data();
+      const novosEq = (dA.equipamentos || []).filter(i => !itensSelecionados.includes(i));
+      const novasVe = (dA.vestes || []).filter(i => !itensSelecionados.includes(i));
+      const novosDi = (dA.diversos || []).filter(i => !itensSelecionados.includes(i));
+      await updateDoc(rA, { equipamentos: novosEq, vestes: novasVe, diversos: novosDi });
+      await updateDoc(rB, {
+        equipamentos: [...(dB.equipamentos || []), ...itensSelecionados.filter(i => dA.equipamentos?.includes(i))],
+        vestes: [...(dB.vestes || []), ...itensSelecionados.filter(i => dA.vestes?.includes(i))],
+        diversos: [...(dB.diversos || []), ...itensSelecionados.filter(i => dA.diversos?.includes(i))],
       });
-
-      // Atualizar atacante
-      await updateDoc(refAtacante, {
-        equipamentos: novosEquipamentosAtacante,
-        vestes: novasVestesAtacante,
-        diversos: novosDiversosAtacante,
-      });
-
-      alert(`✅ ${itensSelecionados.length} itens transferidos com sucesso!`);
+      const lista = itensSelecionados.map(nomeItem).join(", ");
+      await mensagemSistema(`🎒 HACKEAMENTO: ${atacanteNome} roubou ${itensSelecionados.length} item(ns) de ${alvoNome}: ${lista}`);
       setModalTransferencia(false);
       setItensSelecionados([]);
-      
-      enviarMensagemChat(`💰 HACKEAMENTO: ${atacanteNome} transferiu ${itensSelecionados.length} itens do inventário de ${alvoNome}!`);
-    } catch (error) {
-      console.error("Erro ao transferir itens:", error);
-      alert("Erro ao transferir itens!");
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // ===== TRANSFERIR CARTEIRA =====
   const transferirCarteira = async () => {
-    if (!carteiraSelecionada || quantidadeTransferencia <= 0) {
-      alert("Selecione uma carteira e defina a quantidade!");
-      return;
-    }
-
+    if (!carteiraSelecionada || quantidadeTransferencia <= 0) return;
     try {
-      const refAlvo = doc(db, "fichas", alvoEmail);
-      const refAtacante = doc(db, "fichas", atacanteEmail);
-      
-      const snapAlvo = await getDoc(refAlvo);
-      const snapAtacante = await getDoc(refAtacante);
-      
-      if (!snapAlvo.exists() || !snapAtacante.exists()) {
-        alert("Erro ao carregar fichas!");
-        return;
-      }
-
-const dadosAlvo = snapAlvo.data();
-const dadosAtacante = snapAtacante.data();
-
-// Converter array do Firestore para objeto (FichaPersonagem salva como array)
-const carteirasAlvoArray = dadosAlvo.carteiras || [];
-const carteirasAlvo = Array.isArray(carteirasAlvoArray) 
-  ? carteirasAlvoArray.reduce((acc, c) => ({ ...acc, [c.nome]: c.valor || 0 }), {})
-  : carteirasAlvoArray;
-
-const carteirasAtacanteArray = dadosAtacante.carteiras || [];
-const carteirasAtacante = Array.isArray(carteirasAtacanteArray)
-  ? carteirasAtacanteArray.reduce((acc, c) => ({ ...acc, [c.nome]: c.valor || 0 }), {})
-  : carteirasAtacanteArray;
-
-const saldoDisponivel = carteirasAlvo[carteiraSelecionada] || 0;
-      
-      if (quantidadeTransferencia > saldoDisponivel) {
-        alert("Saldo insuficiente!");
-        return;
-      }
-
-      // Atualizar carteiras
-      const novasCarteirasAlvo = {
-        ...carteirasAlvo,
-        [carteiraSelecionada]: saldoDisponivel - quantidadeTransferencia,
-      };
-
-      const novasCarteirasAtacante = {
-        ...carteirasAtacante,
-        [carteiraSelecionada]: (carteirasAtacante[carteiraSelecionada] || 0) + quantidadeTransferencia,
-      };
-
-// Converter objeto de volta para array antes de salvar
-const novasCarteirasAlvoArray = Object.entries(novasCarteirasAlvo).map(([nome, valor]) => ({ nome, valor }));
-const novasCarteirasAtacanteArray = Object.entries(novasCarteirasAtacante).map(([nome, valor]) => ({ nome, valor }));
-
-await updateDoc(refAlvo, { carteiras: novasCarteirasAlvoArray });
-await updateDoc(refAtacante, { carteiras: novasCarteirasAtacanteArray });
-
-      alert(`✅ 💰 ${quantidadeTransferencia.toFixed(2)} transferidos com sucesso!`);
+      const rA = doc(db, "fichas", alvoEmail);
+      const rB = doc(db, "fichas", atacanteEmail);
+      const sA = await getDoc(rA); const sB = await getDoc(rB);
+      if (!sA.exists() || !sB.exists()) return;
+      const cAarr = sA.data().carteiras || [];
+      const cBarr = sB.data().carteiras || [];
+      const cA = Array.isArray(cAarr) ? cAarr.reduce((a, c) => ({ ...a, [c.nome]: c.valor || 0 }), {}) : cAarr;
+      const cB = Array.isArray(cBarr) ? cBarr.reduce((a, c) => ({ ...a, [c.nome]: c.valor || 0 }), {}) : cBarr;
+      if ((cA[carteiraSelecionada] || 0) < quantidadeTransferencia) return;
+      const novaA = { ...cA, [carteiraSelecionada]: cA[carteiraSelecionada] - quantidadeTransferencia };
+      const novaB = { ...cB, [carteiraSelecionada]: (cB[carteiraSelecionada] || 0) + quantidadeTransferencia };
+      await updateDoc(rA, { carteiras: Object.entries(novaA).map(([nome, valor]) => ({ nome, valor })) });
+      await updateDoc(rB, { carteiras: Object.entries(novaB).map(([nome, valor]) => ({ nome, valor })) });
+      await mensagemSistema(`💵 HACKEAMENTO: ${atacanteNome} roubou 💰 ${quantidadeTransferencia.toFixed(2)} da carteira "${carteiraSelecionada}" de ${alvoNome}!`);
       setModalTransferencia(false);
       setQuantidadeTransferencia(0);
       setCarteiraSelecionada("");
-      
-      enviarMensagemChat(`💵 HACKEAMENTO: ${atacanteNome} transferiu 💰 ${quantidadeTransferencia.toFixed(2)} da carteira de ${alvoNome}!`);
-    } catch (error) {
-      console.error("Erro ao transferir carteira:", error);
-      alert("Erro ao transferir carteira!");
-    }
+    } catch (e) { console.error(e); }
   };
-// ===== TRANSFERIR TÍTULOS (AÇÕES) =====
-const transferirTitulos = async (tituloIndex) => {
-  try {
-    const refAlvo = doc(db, "fichas", alvoEmail);
-    const refAtacante = doc(db, "fichas", atacanteEmail);
-    
-    const snapAlvo = await getDoc(refAlvo);
-    const snapAtacante = await getDoc(refAtacante);
-    
-    if (!snapAlvo.exists() || !snapAtacante.exists()) {
-      alert("Erro ao carregar fichas!");
-      return;
-    }
 
-    const dadosAlvo = snapAlvo.data();
-    const dadosAtacante = snapAtacante.data();
-
-    // Converter ações de objeto para array para manipular por índice
-    const acoesAlvoObj = dadosAlvo.acoes || {};
-    const acoesArray = Object.entries(acoesAlvoObj).map(([id, data]) => ({ id, ...data }));
-    
-    if (tituloIndex >= acoesArray.length) {
-      alert("Título não encontrado!");
-      return;
-    }
-    
-    const acaoTransferida = acoesArray[tituloIndex];
-    
-    // Remover do alvo
-    acoesArray.splice(tituloIndex, 1);
-    const novasAcoesAlvo = {};
-    acoesArray.forEach(a => { 
-      const { id, ...resto } = a;
-      novasAcoesAlvo[id] = resto;
-    });
-    
-    // Adicionar ao atacante
-    const acoesAtacante = { ...(dadosAtacante.acoes || {}) };
-    const { id: acaoId, ...dadosAcao } = acaoTransferida;
-    acoesAtacante[acaoId] = dadosAcao;
-    
-    // Salvar no Firestore
-    await updateDoc(refAlvo, { acoes: novasAcoesAlvo });
-    await updateDoc(refAtacante, { acoes: acoesAtacante });
-
-    // Atualizar estado local
-    setTitulosAlvo(acoesArray);
-    
-    const nomeAcao = dadosAcao.nome || acaoId;
-    alert(`✅ Título "${nomeAcao}" transferido com sucesso!`);
-    
-    enviarMensagemChat(`📜 HACKEAMENTO: ${atacanteNome} transferiu o título "${nomeAcao}" de ${alvoNome}!`);
-        // 🟢 CONQUISTA: Hacker
-    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'hacker' } }));
-  } catch (error) {
-    console.error("Erro ao transferir título:", error);
-    alert("Erro ao transferir título!");
-  }
-};
-
-  // ===== TRANSFERIR IMÓVEIS =====
-  const transferirImoveis = async (imovelIndex) => {
+  const transferirTitulos = async (idx) => {
     try {
-      const refAlvo = doc(db, "fichas", alvoEmail);
-      const refAtacante = doc(db, "fichas", atacanteEmail);
-      
-      const snapAlvo = await getDoc(refAlvo);
-      const snapAtacante = await getDoc(refAtacante);
-      
-      if (!snapAlvo.exists() || !snapAtacante.exists()) {
-        alert("Erro ao carregar fichas!");
-        return;
-      }
+      const rA = doc(db, "fichas", alvoEmail);
+      const rB = doc(db, "fichas", atacanteEmail);
+      const sA = await getDoc(rA); const sB = await getDoc(rB);
+      if (!sA.exists() || !sB.exists()) return;
+      const dA = sA.data(); const dB = sB.data();
+      const arr = Object.entries(dA.acoes || {}).map(([id, v]) => ({ id, ...v }));
+      if (idx >= arr.length) return;
+      const transferida = arr[idx];
+      arr.splice(idx, 1);
+      const novasA = {}; arr.forEach(a => { const { id, ...r } = a; novasA[id] = r; });
+      const novasB = { ...(dB.acoes || {}), [transferida.id]: (() => { const { id, ...r } = transferida; return r; })() };
+      await updateDoc(rA, { acoes: novasA });
+      await updateDoc(rB, { acoes: novasB });
+      setTitulosAlvo(arr);
+      const nome = transferida.nome || transferida.id;
+      await mensagemSistema(`📜 HACKEAMENTO: ${atacanteNome} roubou o título "${nome}" de ${alvoNome}!`);
+      window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'hacker' } }));
+    } catch (e) { console.error(e); }
+  };
 
-      const dadosAlvo = snapAlvo.data();
-      const dadosAtacante = snapAtacante.data();
+  const transferirImoveis = async (idx) => {
+    try {
+      const rA = doc(db, "fichas", alvoEmail);
+      const rB = doc(db, "fichas", atacanteEmail);
+      const sA = await getDoc(rA); const sB = await getDoc(rB);
+      if (!sA.exists() || !sB.exists()) return;
+      const dA = sA.data(); const dB = sB.data();
+      const arr = [...(dA.imoveis || [])];
+      if (idx >= arr.length) return;
+      const im = arr[idx];
+      arr.splice(idx, 1);
+      await updateDoc(rA, { imoveis: arr });
+      await updateDoc(rB, { imoveis: [...(dB.imoveis || []), im] });
+      setImoveisAlvo(arr);
+      const nome = im.nome || im.endereco || "imóvel sem nome";
+      await mensagemSistema(`🏠 HACKEAMENTO: ${atacanteNome} roubou o imóvel "${nome}" de ${alvoNome}!`);
+    } catch (e) { console.error(e); }
+  };
 
-      const imoveisAlvo = [...(dadosAlvo.imoveis || [])];
-      const imovel = imoveisAlvo[imovelIndex];
-      
-      if (!imovel) {
-        alert("Imóvel não encontrado!");
-        return;
-      }
-
-      // Remover imóvel do alvo
-      imoveisAlvo.splice(imovelIndex, 1);
-      
-      // Adicionar imóvel ao atacante
-      const imoveisAtacante = [...(dadosAtacante.imoveis || []), imovel];
-
-      await updateDoc(refAlvo, { imoveis: imoveisAlvo });
-      await updateDoc(refAtacante, { imoveis: imoveisAtacante });
-
-      // Atualizar estado local
-      setImoveisAlvo(imoveisAlvo);
-      
-      alert(`✅ Imóvel "${imovel.nome || imovel.endereco}" transferido com sucesso!`);
-      
-      enviarMensagemChat(`🏠 HACKEAMENTO: ${atacanteNome} transferiu o imóvel "${imovel.nome || imovel.endereco}" de ${alvoNome}!`);
-    } catch (error) {
-      console.error("Erro ao transferir imóvel:", error);
-      alert("Erro ao transferir imóvel!");
+  // ===== FECHAR / MINIMIZAR =====
+  const handleClose = async () => {
+    if (perdeu || ganhou) {
+      try {
+        await updateDoc(doc(db, "hackeamento_games", gameId), { statusJogo: "finalizado" });
+      } catch (e) {}
+      onClose?.();
+    } else {
+      onMinimize?.();
     }
   };
 
-  // ===== RENDER =====
+  const minhaVez =
+    statusJogo === "ativo" && !perdeu && !ganhou &&
+    ((turno === "atacante" && isAtacante) || (turno === "defensor" && isAlvo));
+
   return createPortal(
     <Box
-      ref={gameRef}
       sx={{
-        position: "fixed",
-        inset: 0,
-        bgcolor: "rgba(0,0,0,0.95)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 99999,
-        fontFamily: "'Courier New', monospace",
+        position: "fixed", inset: 0, bgcolor: "rgba(0,0,0,0.95)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 99999, fontFamily: "'Courier New', monospace",
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      onClick={(e) => { if (e.target === e.currentTarget && (perdeu || ganhou)) handleClose(); }}
     >
       <Paper
         elevation={24}
         sx={{
-          width: "90vw",
-          maxWidth: 800,
-          maxHeight: "90vh",
-          bgcolor: "#0a0a0a",
-          border: "2px solid #10b981",
-          borderRadius: 2,
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: "0 0 50px rgba(16,185,129,0.3)",
+          width: "90vw", maxWidth: 800, maxHeight: "90vh",
+          bgcolor: "#0a0a0a", border: `2px solid ${tema.corBorda}`,
+          borderRadius: 2, overflow: "hidden", display: "flex", flexDirection: "column",
+          boxShadow: `0 0 50px ${tema.corPrincipal}55`,
+          background: tema.gradiente,
           animation: `${glitchEffect} 0.3s ease-in-out`,
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <Box
-          sx={{
-            p: 2,
-            bgcolor: "#0d1f0d",
-            borderBottom: "1px solid #10b98144",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
+        <Box sx={{
+          p: 2, bgcolor: tema.corFundo,
+          borderBottom: `1px solid ${tema.corPrincipal}66`,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <SecurityIcon sx={{ color: "#10b981", fontSize: 30 }} />
+            <Box sx={{ color: tema.corPrincipal }}>{tema.icone}</Box>
             <Box>
-              <Typography variant="h6" sx={{ color: "#10b981", fontWeight: "bold" }}>
-                💻 HACKEAMENTO.exe
+              <Typography variant="h6" sx={{ color: tema.corPrincipal, fontWeight: "bold" }}>
+                {tema.titulo}
               </Typography>
-              <Typography variant="caption" sx={{ color: "#0f5" }}>
-                {atacanteNome} vs {alvoNome}
+              <Typography variant="caption" sx={{ color: tema.corSecundaria }}>
+                {tema.subtitulo(atacanteNome, alvoNome)}
               </Typography>
             </Box>
           </Box>
-          <IconButton onClick={onClose} sx={{ color: "#10b981" }}>
-            <CloseIcon />
-          </IconButton>
+          <Box sx={{ display: "flex", gap: 0.5 }}>
+            {!perdeu && !ganhou && (
+              <IconButton onClick={onMinimize} sx={{ color: tema.corPrincipal }} title="Minimizar">
+                <MinimizeIcon />
+              </IconButton>
+            )}
+            <IconButton onClick={handleClose} sx={{ color: perdeu || ganhou ? "#ef4444" : tema.corPrincipal }} title={perdeu || ganhou ? "Fechar" : "Minimizar"}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
         </Box>
 
         {/* Conteúdo */}
         <Box sx={{ flex: 1, overflowY: "auto", p: 3 }}>
-          {/* Info dos jogadores */}
+          {statusJogo === "aguardando_aceite" && (
+            <Paper sx={{ p: 2, mb: 2, bgcolor: `${tema.corPrincipal}22`, border: `1px solid ${tema.corPrincipal}`, textAlign: "center" }}>
+              <Typography sx={{ color: tema.corPrincipal }}>
+                {isAtacante ? "⏳ Aguardando alvo aceitar a invasão..." : "🎯 Invasão em andamento"}
+              </Typography>
+            </Paper>
+          )}
+
+          {statusJogo === "ativo" && !perdeu && !ganhou && (
+            <Box sx={{ mb: 2, textAlign: "center" }}>
+              <Chip
+                icon={<AccessTimeIcon />}
+                label={`${segundosRestantes}s — ${minhaVez ? "SUA VEZ" : `Vez de ${turno === "atacante" ? atacanteNome : alvoNome}`}`}
+                sx={{
+                  bgcolor: minhaVez ? (segundosRestantes <= 3 ? "#ef444422" : `${tema.corPrincipal}22`) : "#1a1a2e",
+                  color: minhaVez ? (segundosRestantes <= 3 ? "#ef4444" : tema.corPrincipal) : "#64748b",
+                  fontSize: "0.9rem", fontWeight: "bold", height: 32, px: 2,
+                }}
+              />
+            </Box>
+          )}
+
           <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid item xs={6}>
-              <Card sx={{ bgcolor: "#0d1f0d", border: "1px solid #10b98144" }}>
+              <Card sx={{ bgcolor: isAtacante ? tema.corFundo : "#0d1f0d", border: `1px solid ${isAtacante ? tema.corPrincipal : "#10b981"}44` }}>
                 <CardContent>
-                  <Typography variant="subtitle2" sx={{ color: "#10b981", mb: 1 }}>
-                    🖥️ INVASOR
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: "#fff", fontWeight: "bold" }}>
-                    {atacanteNome}
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 2, mt: 1 }}>
-                    <Chip 
-                      icon={<ComputerIcon />}
-                      label={`INT: ${inteligenciaAtacante}`}
-                      size="small"
-                      sx={{ bgcolor: "#10b98122", color: "#10b981" }}
-                    />
-                    <Chip 
-                      icon={<ComputerIcon />}
-                      label={`CON: ${conhecimentoAtacante}`}
-                      size="small"
-                      sx={{ bgcolor: "#10b98122", color: "#10b981" }}
-                    />
+                  <Typography variant="subtitle2" sx={{ color: "#10b981", mb: 1 }}>🖥️ INVASOR</Typography>
+                  <Typography variant="body1" sx={{ color: "#fff", fontWeight: "bold" }}>{atacanteNome}{isAtacante && " (Você)"}</Typography>
+                  <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                    <Chip icon={<ComputerIcon />} label={`INT ${intAtacante}`} size="small" sx={{ bgcolor: "#10b98122", color: "#10b981" }} />
+                    <Chip icon={<ComputerIcon />} label={`CON ${conAtacante}`} size="small" sx={{ bgcolor: "#10b98122", color: "#10b981" }} />
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
             <Grid item xs={6}>
-              <Card sx={{ bgcolor: "#0d1f0d", border: "1px solid #ef444444" }}>
+              <Card sx={{ bgcolor: isAlvo ? tema.corFundo : "#0d1f0d", border: `1px solid ${isAlvo ? tema.corPrincipal : "#3b82f6"}44` }}>
                 <CardContent>
-                  <Typography variant="subtitle2" sx={{ color: "#ef4444", mb: 1 }}>
-                    🛡️ DEFENSOR
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: "#fff", fontWeight: "bold" }}>
-                    {alvoNome}
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 2, mt: 1 }}>
-                    <Chip 
-                      icon={<ShieldIcon />}
-                      label={`INT: ${inteligenciaAlvo}`}
-                      size="small"
-                      sx={{ bgcolor: "#ef444422", color: "#ef4444" }}
-                    />
-                    <Chip 
-                      icon={<ShieldIcon />}
-                      label={`CON: ${conhecimentoAlvo}`}
-                      size="small"
-                      sx={{ bgcolor: "#ef444422", color: "#ef4444" }}
-                    />
+                  <Typography variant="subtitle2" sx={{ color: "#3b82f6", mb: 1 }}>🛡️ DEFENSOR</Typography>
+                  <Typography variant="body1" sx={{ color: "#fff", fontWeight: "bold" }}>{alvoNome}{isAlvo && " (Você)"}</Typography>
+                  <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                    <Chip icon={<ShieldIcon />} label={`INT ${intAlvo}`} size="small" sx={{ bgcolor: "#3b82f622", color: "#3b82f6" }} />
+                    <Chip icon={<ShieldIcon />} label={`CON ${conAlvo}`} size="small" sx={{ bgcolor: "#3b82f622", color: "#3b82f6" }} />
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
           </Grid>
 
-          {/* Barra de Progresso */}
           <Box sx={{ mb: 3 }}>
             <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
-              <Typography variant="caption" sx={{ color: "#10b981" }}>
-                Progresso da Invasão: {progresso}%
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#0f5" }}>
-                Rodada: {rodada}
-              </Typography>
+              <Typography variant="caption" sx={{ color: tema.corPrincipal }}>Progresso: {progresso}%</Typography>
+              <Typography variant="caption" sx={{ color: tema.corSecundaria }}>Rodada: {rodada}</Typography>
             </Box>
-            <LinearProgress
-              variant="determinate"
-              value={progresso}
-              sx={{
-                height: 20,
-                borderRadius: 2,
-                bgcolor: "#0d1f0d",
-                '& .MuiLinearProgress-bar': {
-                  bgcolor: 
-                    progresso >= 80 ? "#ef4444" :
-                    progresso >= 60 ? "#fbbf24" :
-                    "#10b981",
-                  animation: progresso >= 80 ? `${pulseRed} 1s infinite` :
-                            progresso >= 60 ? `${pulseGreen} 1s infinite` :
-                            "none",
-                },
-              }}
-            />
-            {/* Marcadores de nível */}
+            <LinearProgress variant="determinate" value={progresso} sx={{
+              height: 20, borderRadius: 2, bgcolor: "#0d1f0d",
+              '& .MuiLinearProgress-bar': {
+                bgcolor: progresso >= 80 ? "#ef4444" : progresso >= 60 ? "#fbbf24" : tema.corPrincipal,
+              },
+            }} />
             <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.5, px: 1 }}>
-              <Chip 
-                label="Nível 1 (60%)"
-                size="small"
-                sx={{ 
-                  bgcolor: progresso >= 60 ? "#fbbf24" : "#333",
-                  color: progresso >= 60 ? "#000" : "#666",
-                  fontSize: "0.6rem",
-                }}
-                icon={progresso >= 60 ? <LockOpenIcon /> : <LockIcon />}
-              />
-              <Chip 
-                label="Nível 2 (80%)"
-                size="small"
-                sx={{ 
-                  bgcolor: progresso >= 80 ? "#fbbf24" : "#333",
-                  color: progresso >= 80 ? "#000" : "#666",
-                  fontSize: "0.6rem",
-                }}
-                icon={progresso >= 80 ? <LockOpenIcon /> : <LockIcon />}
-              />
-              <Chip 
-                label="Nível 3 (100%)"
-                size="small"
-                sx={{ 
-                  bgcolor: progresso >= 100 ? "#ef4444" : "#333",
-                  color: progresso >= 100 ? "#fff" : "#666",
-                  fontSize: "0.6rem",
-                }}
-                icon={progresso >= 100 ? <LockOpenIcon /> : <LockIcon />}
-              />
+              <Chip label="Nv 1 (60%)" size="small" icon={progresso >= 60 ? <LockOpenIcon /> : <LockIcon />}
+                sx={{ bgcolor: progresso >= 60 ? "#fbbf24" : "#333", color: progresso >= 60 ? "#000" : "#666", fontSize: "0.6rem" }} />
+              <Chip label="Nv 2 (80%)" size="small" icon={progresso >= 80 ? <LockOpenIcon /> : <LockIcon />}
+                sx={{ bgcolor: progresso >= 80 ? "#fbbf24" : "#333", color: progresso >= 80 ? "#000" : "#666", fontSize: "0.6rem" }} />
+              <Chip label="Nv 3 (100%)" size="small" icon={progresso >= 100 ? <LockOpenIcon /> : <LockIcon />}
+                sx={{ bgcolor: progresso >= 100 ? "#ef4444" : "#333", color: progresso >= 100 ? "#fff" : "#666", fontSize: "0.6rem" }} />
             </Box>
           </Box>
 
-          {/* Resultado do Dado */}
-          {resultadoDado && (
-            <Zoom in={!!resultadoDado}>
-              <Paper sx={{ p: 3, mb: 3, bgcolor: "#0d1f0d", border: "1px solid #10b98144", textAlign: "center" }}>
-                <Typography variant="h2" sx={{ 
-                  color: detalhesTurno?.sucesso ? "#10b981" : "#ef4444",
-                  fontFamily: "'Courier New', monospace",
-                  textShadow: detalhesTurno?.sucesso ? "0 0 20px #10b981" : "0 0 20px #ef4444",
-                }}>
-                  🎲 {resultadoDado}
-                </Typography>
-                {detalhesTurno && (
-                  <Box sx={{ mt: 1 }}>
-                    <Typography variant="caption" sx={{ color: "#0f5", display: "block" }}>
-                      Atacante: {detalhesTurno.dadoAtacante} + {detalhesTurno.bonusAtacante} = {detalhesTurno.totalAtacante}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: "#ef4444", display: "block" }}>
-                      Defensor: {detalhesTurno.dadoDefesa} + {detalhesTurno.bonusDefesa} = {detalhesTurno.totalDefesa}
-                    </Typography>
-                    <Chip
-                      icon={detalhesTurno.sucesso ? <CheckCircleIcon /> : <CancelIcon />}
-                      label={detalhesTurno.sucesso ? "SUCESSO! +10%" : "FRACASSO! -10%"}
-                      sx={{
-                        mt: 1,
-                        bgcolor: detalhesTurno.sucesso ? "#10b98122" : "#ef444422",
-                        color: detalhesTurno.sucesso ? "#10b981" : "#ef4444",
-                      }}
-                    />
-                  </Box>
-                )}
-              </Paper>
-            </Zoom>
+          {(dadoAtacante || dadoDefensor) && (
+            <Paper sx={{ p: 2, mb: 3, bgcolor: tema.corFundo, border: `1px solid ${tema.corPrincipal}44`, textAlign: "center" }}>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" sx={{ color: "#10b981" }}>Atacante</Typography>
+                  <Typography variant="h4" sx={{ color: dadoAtacante ? "#10b981" : "#333" }}>🎲 {dadoAtacante ?? "—"}</Typography>
+                  {totalAtacante != null && <Typography variant="caption" sx={{ color: "#10b981" }}>Total: {totalAtacante}</Typography>}
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" sx={{ color: "#3b82f6" }}>Defensor</Typography>
+                  <Typography variant="h4" sx={{ color: dadoDefensor ? "#3b82f6" : "#333" }}>🎲 {dadoDefensor ?? "—"}</Typography>
+                  {totalDefensor != null && <Typography variant="caption" sx={{ color: "#3b82f6" }}>Total: {totalDefensor}</Typography>}
+                </Grid>
+              </Grid>
+              {ultimaRodadaResumo && (
+                <Chip
+                  icon={ultimaRodadaResumo.atacanteVence ? <CheckCircleIcon /> : <CancelIcon />}
+                  label={ultimaRodadaResumo.mensagem}
+                  sx={{
+                    mt: 2,
+                    bgcolor: ultimaRodadaResumo.atacanteVence ? "#10b98122" : "#3b82f622",
+                    color: ultimaRodadaResumo.atacanteVence ? "#10b981" : "#3b82f6",
+                  }}
+                />
+              )}
+            </Paper>
           )}
 
-          {/* Botão de Rolar Dado */}
-          <Box sx={{ textAlign: "center", mb: 3 }}>
-            <Button
-              variant="contained"
-              onClick={rolarDado}
-              disabled={jogandoDado || perdeu}
-              startIcon={jogandoDado ? <CircularProgress size={20} /> : <CasinoIcon />}
-              sx={{
-                bgcolor: "#10b981",
-                color: "#000",
-                fontWeight: "bold",
-                fontSize: "1.2rem",
-                px: 4,
-                py: 1.5,
-                "&:hover": { bgcolor: "#0d9488" },
-                "&:disabled": { bgcolor: "#333", color: "#666" },
-                animation: !jogandoDado ? `${pulseGreen} 2s infinite` : "none",
-              }}
-            >
-              {jogandoDado ? "Rolando..." : "🎲 Rolar D10"}
-            </Button>
-          </Box>
-
-          {/* Botões de Invasão (Níveis) */}
-          <Box sx={{ display: "flex", gap: 1, justifyContent: "center", mb: 3, flexWrap: "wrap" }}>
-            <Button
-              variant="contained"
-              disabled={nivelInvasao < 1}
-              onClick={() => setModalFichaAlvo(true)}
-              startIcon={<VisibilityIcon />}
-              sx={{
-                bgcolor: nivelInvasao >= 1 ? "#fbbf24" : "#333",
-                color: nivelInvasao >= 1 ? "#000" : "#666",
-                "&:hover": { bgcolor: "#eab308" },
-              }}
-            >
-              Invasão Nível 1: Ver Ficha
-            </Button>
-            <Button
-              variant="contained"
-              disabled={nivelInvasao < 2}
-              onClick={() => {
-                setTipoTransferencia("titulos");
-                setModalTransferencia(true);
-              }}
-              startIcon={<SwapHorizIcon />}
-              sx={{
-                bgcolor: nivelInvasao >= 2 ? "#fbbf24" : "#333",
-                color: nivelInvasao >= 2 ? "#000" : "#666",
-                "&:hover": { bgcolor: "#eab308" },
-              }}
-            >
-              Invasão Nível 2: Títulos e Imóveis
-            </Button>
-            <Button
-              variant="contained"
-              disabled={nivelInvasao < 3}
-              onClick={() => {
-                setTipoTransferencia("inventario");
-                setModalTransferencia(true);
-              }}
-              startIcon={<SwapHorizIcon />}
-              sx={{
-                bgcolor: nivelInvasao >= 3 ? "#ef4444" : "#333",
-                color: nivelInvasao >= 3 ? "#fff" : "#666",
-                "&:hover": { bgcolor: "#dc2626" },
-                animation: nivelInvasao >= 3 ? `${pulseRed} 1s infinite` : "none",
-              }}
-            >
-              Invasão Nível 3: Inventário e Carteira
-            </Button>
-          </Box>
-
-          {/* Falha */}
-          {perdeu && (
-            <Paper sx={{ p: 2, bgcolor: "#ef444422", border: "1px solid #ef4444", textAlign: "center", mb: 3 }}>
-              <Typography variant="h6" sx={{ color: "#ef4444" }}>
-                🛡️ INVASÃO FRACASSOU!
-              </Typography>
-              <Typography variant="body2" sx={{ color: "#fca5a5" }}>
-                O código do invasor foi exposto: <strong>{localStorage.getItem(`rede_codigo_pessoal_${atacanteEmail}`) || "DESCONHECIDO"}</strong>
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#fca5a5", display: "block", mt: 1 }}>
-                O alvo foi notificado sobre a tentativa de invasão.
-              </Typography>
+          {statusJogo === "ativo" && !perdeu && !ganhou && (
+            <Box sx={{ textAlign: "center", mb: 3 }}>
               <Button
-                variant="contained"
-                onClick={onClose}
-                sx={{ mt: 2, bgcolor: "#ef4444", "&:hover": { bgcolor: "#dc2626" } }}
+                variant="contained" onClick={rolarDado}
+                disabled={!minhaVez || jogandoDado}
+                startIcon={jogandoDado ? <CircularProgress size={20} /> : <CasinoIcon />}
+                sx={{
+                  bgcolor: minhaVez ? tema.corPrincipal : "#333",
+                  color: minhaVez ? (isAtacante ? "#000" : "#fff") : "#666",
+                  fontWeight: "bold", fontSize: "1.2rem", px: 4, py: 1.5,
+                  "&:hover": { bgcolor: minhaVez ? tema.corPrincipal + "cc" : "#333" },
+                  "&:disabled": { bgcolor: "#333", color: "#666" },
+                  animation: minhaVez && !jogandoDado ? `${isAtacante ? pulseGreen : pulseRed} 2s infinite` : "none",
+                }}
               >
+                {jogandoDado ? "Rolando..." :
+                 !minhaVez ? `Aguarde ${turno === "atacante" ? atacanteNome : alvoNome}...` :
+                 `${tema.textoAcao} · ${segundosRestantes}s`}
+              </Button>
+            </Box>
+          )}
+
+          {isAtacante && statusJogo === "ativo" && !perdeu && !ganhou && (
+            <Box sx={{ display: "flex", gap: 1, justifyContent: "center", mb: 3, flexWrap: "wrap" }}>
+              <Button variant="contained" disabled={nivelInvasao < 1} onClick={() => setModalFichaAlvo(true)}
+                startIcon={<VisibilityIcon />}
+                sx={{ bgcolor: nivelInvasao >= 1 ? "#fbbf24" : "#333", color: nivelInvasao >= 1 ? "#000" : "#666" }}>
+                Nv 1: Ver Ficha
+              </Button>
+              <Button variant="contained" disabled={nivelInvasao < 2}
+                onClick={() => { setTipoTransferencia("titulos"); setModalTransferencia(true); }}
+                startIcon={<SwapHorizIcon />}
+                sx={{ bgcolor: nivelInvasao >= 2 ? "#fbbf24" : "#333", color: nivelInvasao >= 2 ? "#000" : "#666" }}>
+                Nv 2: Títulos/Imóveis
+              </Button>
+              <Button variant="contained" disabled={nivelInvasao < 3}
+                onClick={() => { setTipoTransferencia("inventario"); setModalTransferencia(true); }}
+                startIcon={<SwapHorizIcon />}
+                sx={{ bgcolor: nivelInvasao >= 3 ? "#ef4444" : "#333", color: nivelInvasao >= 3 ? "#fff" : "#666" }}>
+                Nv 3: Inventário/Carteira
+              </Button>
+            </Box>
+          )}
+
+          {(perdeu || ganhou) && (
+            <Paper sx={{
+              p: 3, textAlign: "center",
+              bgcolor: (isAtacante && ganhou) || (isAlvo && perdeu) ? "#10b98122" : "#3b82f622",
+              border: `2px solid ${(isAtacante && ganhou) || (isAlvo && perdeu) ? "#10b981" : "#3b82f6"}`,
+            }}>
+              <Typography variant="h5" sx={{ color: (isAtacante && ganhou) || (isAlvo && perdeu) ? "#10b981" : "#3b82f6", fontWeight: "bold" }}>
+                {(isAtacante && ganhou) ? "💀 INVASÃO BEM-SUCEDIDA!" : (isAlvo && ganhou) ? "🛡️ VOCÊ REPELIU A INVASÃO!" : (isAtacante && perdeu) ? "🛡️ SUA INVASÃO FRACASSOU!" : "💀 VOCÊ FOI HACKEADO!"}
+              </Typography>
+              <Typography variant="body2" sx={{ color: "#fff", mt: 1 }}>
+                {(isAtacante && ganhou) || (isAlvo && ganhou)
+                  ? `${atacanteNome} invadiu ${alvoNome}!`
+                  : `${alvoNome} repeliu a invasão de ${atacanteNome}!`}
+              </Typography>
+              <Button variant="contained" onClick={handleClose} sx={{ mt: 2, bgcolor: "#ef4444" }}>
                 Fechar
               </Button>
             </Paper>
           )}
 
-          {/* Histórico de Turnos */}
           {historicoTurnos.length > 0 && (
-            <Box>
-              <Typography variant="subtitle2" sx={{ color: "#10b981", mb: 1 }}>
-                📜 Histórico de Rodadas
-              </Typography>
-              <Box sx={{ maxHeight: 200, overflowY: "auto" }}>
-                {historicoTurnos.map((turno, index) => (
-                  <Paper key={index} sx={{ p: 1, mb: 0.5, bgcolor: "#0d1f0d", border: "1px solid #10b98122" }}>
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <Typography variant="caption" sx={{ color: "#0f5" }}>
-                        Rodada {turno.rodada}
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label={turno.sucesso ? "✅ +10%" : "❌ -10%"}
-                        sx={{
-                          bgcolor: turno.sucesso ? "#10b98122" : "#ef444422",
-                          color: turno.sucesso ? "#10b981" : "#ef4444",
-                          fontSize: "0.6rem",
-                          height: 16,
-                        }}
-                      />
-                      <Typography variant="caption" sx={{ color: "#666" }}>
-                        {turno.totalAtacante} vs {turno.totalDefesa}
-                      </Typography>
-                    </Box>
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle2" sx={{ color: tema.corPrincipal, mb: 1 }}>📜 Histórico</Typography>
+              <Box sx={{ maxHeight: 180, overflowY: "auto" }}>
+                {historicoTurnos.map((t, i) => (
+                  <Paper key={i} sx={{ p: 1, mb: 0.5, bgcolor: tema.corFundo, border: `1px solid ${tema.corPrincipal}22` }}>
+                    <Typography variant="caption" sx={{ color: t.atacanteVence || t.tipo === "timeout_defensor" ? "#10b981" : "#3b82f6" }}>
+                      {t.mensagem || `R${t.rodada} — ${t.totalAtacante ?? "?"} vs ${t.totalDefensor ?? "?"}`}
+                    </Typography>
                   </Paper>
                 ))}
               </Box>
@@ -938,305 +764,109 @@ const transferirTitulos = async (tituloIndex) => {
         </Box>
       </Paper>
 
-      {/* Modal de Ficha do Alvo */}
-      <Dialog
-        open={modalFichaAlvo}
-        onClose={() => setModalFichaAlvo(false)}
-        maxWidth="md"
-        fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: "#0f172a",
-            border: "2px solid #fbbf24",
-            borderRadius: 2,
-            maxHeight: "80vh",
-          }
-        }}
-      >
-        <DialogTitle sx={{ color: "#fbbf24", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          🔓 Ficha de {alvoNome} (Nível 1)
-          <IconButton onClick={() => setModalFichaAlvo(false)} sx={{ color: "#94a3b8" }}>
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent sx={{ maxHeight: "60vh", overflowY: "auto" }}>
+      {/* Modal Ficha */}
+      <Dialog open={modalFichaAlvo} onClose={() => setModalFichaAlvo(false)} maxWidth="md" fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "2px solid #fbbf24" } }}>
+        <DialogTitle sx={{ color: "#fbbf24" }}>🔓 Ficha de {alvoNome}</DialogTitle>
+        <DialogContent>
           {fichaAlvo ? (
             <Box sx={{ color: "#fff" }}>
-              <Typography variant="h6" sx={{ color: "#fbbf24", mb: 2 }}>
-                {fichaAlvo.nome || alvoNome}
-              </Typography>
-              
+              <Typography variant="h6" sx={{ color: "#fbbf24", mb: 2 }}>{fichaAlvo.nome || alvoNome}</Typography>
               <Grid container spacing={2}>
                 <Grid item xs={6}>
                   <Typography variant="subtitle2" sx={{ color: "#94a3b8" }}>Atributos</Typography>
-                  {fichaAlvo.atributos && Object.entries(fichaAlvo.atributos).map(([nome, valor]) => (
-                    <Typography key={nome} variant="body2" sx={{ color: "#fff" }}>
-                      {nome}: {valor}
-                    </Typography>
+                  {fichaAlvo.atributos && Object.entries(fichaAlvo.atributos).map(([k, v]) => (
+                    <Typography key={k} variant="body2">{k}: {v}</Typography>
                   ))}
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="subtitle2" sx={{ color: "#94a3b8" }}>Perícias</Typography>
-                  {fichaAlvo.pericias && Object.entries(fichaAlvo.pericias).map(([nome, valor]) => (
-                    <Typography key={nome} variant="body2" sx={{ color: "#fff" }}>
-                      {nome}: {valor}
-                    </Typography>
-                  ))}
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="subtitle2" sx={{ color: "#94a3b8" }}>Status</Typography>
-                  <Typography variant="body2" sx={{ color: "#fff" }}>
-                    Vida: {fichaAlvo.pontosVida || 0}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: "#fff" }}>
-                    Energia: {fichaAlvo.pontosEnergia || 0}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: "#fff" }}>
-                    Armadura: {fichaAlvo.armadura || 0}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="subtitle2" sx={{ color: "#94a3b8" }}>Equipamentos</Typography>
-                  {fichaAlvo.equipamentos?.map((item, i) => (
-                    <Typography key={i} variant="body2" sx={{ color: "#fff" }}>
-                      • {item.nome || item}
-                    </Typography>
+                  {fichaAlvo.pericias && Object.entries(fichaAlvo.pericias).map(([k, v]) => (
+                    <Typography key={k} variant="body2">{k}: {v}</Typography>
                   ))}
                 </Grid>
               </Grid>
             </Box>
-          ) : (
-            <Typography sx={{ color: "#94a3b8" }}>Carregando ficha...</Typography>
-          )}
+          ) : <Typography sx={{ color: "#94a3b8" }}>Carregando...</Typography>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setModalFichaAlvo(false)} sx={{ color: "#94a3b8" }}>
-            Fechar
-          </Button>
+          <Button onClick={() => setModalFichaAlvo(false)} sx={{ color: "#94a3b8" }}>Fechar</Button>
         </DialogActions>
       </Dialog>
 
-      {/* Modal de Transferência */}
-      <Dialog
-        open={modalTransferencia}
-        onClose={() => setModalTransferencia(false)}
-        maxWidth="md"
-        fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: "#0f172a",
-            border: tipoTransferencia === "inventario" || tipoTransferencia === "carteira" ? "2px solid #ef4444" : "2px solid #fbbf24",
-            borderRadius: 2,
-          }
-        }}
-      >
-        <DialogTitle sx={{ 
-          color: tipoTransferencia === "inventario" || tipoTransferencia === "carteira" ? "#ef4444" : "#fbbf24",
-          display: "flex", 
-          justifyContent: "space-between", 
-          alignItems: "center" 
-        }}>
-          {tipoTransferencia === "titulos" && "📜 Transferir Títulos (Nível 2)"}
-          {tipoTransferencia === "imoveis" && "🏠 Transferir Imóveis (Nível 2)"}
-          {tipoTransferencia === "inventario" && "🎒 Transferir Itens (Nível 3)"}
-          {tipoTransferencia === "carteira" && "💰 Transferir Dinheiro (Nível 3)"}
-          <Box>
-            {tipoTransferencia !== "carteira" && (
-              <Button 
-                size="small" 
-                onClick={() => {
-                  if (tipoTransferencia === "inventario") setTipoTransferencia("carteira");
-                  else setTipoTransferencia("inventario");
-                }}
-                sx={{ mr: 1, color: "#94a3b8", fontSize: "0.7rem" }}
-              >
-                Alternar para {tipoTransferencia === "inventario" ? "Carteira" : "Inventário"}
-              </Button>
-            )}
-            <IconButton onClick={() => setModalTransferencia(false)} sx={{ color: "#94a3b8" }}>
-              <CloseIcon />
-            </IconButton>
-          </Box>
+      {/* Modal Transferência */}
+      <Dialog open={modalTransferencia} onClose={() => setModalTransferencia(false)} maxWidth="md" fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "2px solid #fbbf24" } }}>
+        <DialogTitle sx={{ color: "#fbbf24" }}>
+          {tipoTransferencia === "titulos" && "📜 Transferir Títulos"}
+          {tipoTransferencia === "imoveis" && "🏠 Transferir Imóveis"}
+          {tipoTransferencia === "inventario" && "🎒 Transferir Itens"}
+          {tipoTransferencia === "carteira" && "💰 Transferir Dinheiro"}
         </DialogTitle>
         <DialogContent>
-          {/* Títulos */}
           {tipoTransferencia === "titulos" && (
-            <Box>
-              <Typography variant="body2" sx={{ color: "#94a3b8", mb: 2 }}>
-                Selecione um título para transferir para você:
-              </Typography>
-              {titulosAlvo.length === 0 ? (
-                <Typography sx={{ color: "#64748b", textAlign: "center", py: 4 }}>
-                  Nenhum título disponível
-                </Typography>
-              ) : (
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-{titulosAlvo.map((acao, index) => (
-  <Paper key={index} sx={{ p: 1.5, bgcolor: "#1a1a2e", border: "1px solid #fbbf2444" }}>
-    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <Box>
-        <Typography variant="body2" sx={{ color: "#fff", fontWeight: "bold" }}>
-          {acao.id || `Ação #${index + 1}`}
-        </Typography>
-        <Typography variant="caption" sx={{ color: "#fbbf24" }}>
-          Qtd: {acao.quantidade || 1} • Preço Médio: 💰 {(acao.precoMedio || 0).toFixed(2)}
-        </Typography>
-      </Box>
-      <Button
-        size="small"
-        variant="contained"
-        onClick={() => transferirTitulos(index)}
-        sx={{ bgcolor: "#fbbf24", color: "#000", "&:hover": { bgcolor: "#eab308" } }}
-      >
-        Transferir
-      </Button>
-    </Box>
-  </Paper>
-))}
+            titulosAlvo.length === 0 ? <Typography sx={{ color: "#64748b" }}>Nada disponível</Typography> :
+            titulosAlvo.map((a, i) => (
+              <Paper key={i} sx={{ p: 1.5, mb: 1, bgcolor: "#1a1a2e", border: "1px solid #fbbf2444" }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <Typography variant="body2" sx={{ color: "#fff" }}>{a.nome || a.id}</Typography>
+                  <Button size="small" variant="contained" onClick={() => transferirTitulos(i)}
+                    sx={{ bgcolor: "#fbbf24", color: "#000" }}>Transferir</Button>
                 </Box>
-              )}
-            </Box>
+              </Paper>
+            ))
           )}
-
-          {/* Imóveis */}
           {tipoTransferencia === "imoveis" && (
-            <Box>
-              <Typography variant="body2" sx={{ color: "#94a3b8", mb: 2 }}>
-                Selecione um imóvel para transferir para você:
-              </Typography>
-              {imoveisAlvo.length === 0 ? (
-                <Typography sx={{ color: "#64748b", textAlign: "center", py: 4 }}>
-                  Nenhum imóvel disponível
-                </Typography>
-              ) : (
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  {imoveisAlvo.map((imovel, index) => (
-                    <Paper key={index} sx={{ p: 1.5, bgcolor: "#1a1a2e", border: "1px solid #3b82f644" }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <Box>
-                          <Typography variant="body2" sx={{ color: "#fff", fontWeight: "bold" }}>
-                            {imovel.nome || imovel.endereco || `Imóvel #${index + 1}`}
-                          </Typography>
-                          {imovel.valor && (
-                            <Typography variant="caption" sx={{ color: "#3b82f6" }}>
-                              Valor: 💰 {imovel.valor}
-                            </Typography>
-                          )}
-                        </Box>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          onClick={() => transferirImoveis(index)}
-                          sx={{ bgcolor: "#3b82f6", color: "#fff", "&:hover": { bgcolor: "#2563eb" } }}
-                        >
-                          Transferir
-                        </Button>
-                      </Box>
-                    </Paper>
-                  ))}
+            imoveisAlvo.length === 0 ? <Typography sx={{ color: "#64748b" }}>Nada disponível</Typography> :
+            imoveisAlvo.map((im, i) => (
+              <Paper key={i} sx={{ p: 1.5, mb: 1, bgcolor: "#1a1a2e", border: "1px solid #3b82f644" }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <Typography variant="body2" sx={{ color: "#fff" }}>{im.nome || im.endereco || `Imóvel ${i + 1}`}</Typography>
+                  <Button size="small" variant="contained" onClick={() => transferirImoveis(i)}
+                    sx={{ bgcolor: "#3b82f6" }}>Transferir</Button>
                 </Box>
-              )}
-            </Box>
+              </Paper>
+            ))
           )}
-
-          {/* Inventário */}
           {tipoTransferencia === "inventario" && (
-            <Box>
-              <Typography variant="body2" sx={{ color: "#94a3b8", mb: 2 }}>
-                Selecione itens para transferir para você:
-              </Typography>
-              {itensAlvo.length === 0 ? (
-                <Typography sx={{ color: "#64748b", textAlign: "center", py: 4 }}>
-                  Nenhum item disponível
-                </Typography>
-              ) : (
-                <>
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 2 }}>
-                    {itensAlvo.map((item, index) => (
-                      <Paper 
-                        key={index} 
-                        sx={{ 
-                          p: 1.5, 
-                          bgcolor: itensSelecionados.includes(item) ? "#ef444422" : "#1a1a2e",
-                          border: itensSelecionados.includes(item) ? "2px solid #ef4444" : "1px solid #ef444444",
-                          cursor: "pointer",
-                        }}
-                        onClick={() => {
-                          if (itensSelecionados.includes(item)) {
-                            setItensSelecionados(prev => prev.filter(i => i !== item));
-                          } else {
-                            setItensSelecionados(prev => [...prev, item]);
-                          }
-                        }}
-                      >
-                        <Typography variant="body2" sx={{ color: "#fff" }}>
-                          {typeof item === "string" ? item : item.nome || `Item #${index + 1}`}
-                        </Typography>
-                      </Paper>
-                    ))}
-                  </Box>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    onClick={transferirItens}
-                    disabled={itensSelecionados.length === 0}
-                    sx={{ bgcolor: "#ef4444", "&:hover": { bgcolor: "#dc2626" } }}
-                  >
-                    Transferir {itensSelecionados.length} Itens Selecionados
-                  </Button>
-                </>
-              )}
-            </Box>
+            <>
+              {itensAlvo.map((item, i) => (
+                <Paper key={i}
+                  onClick={() => {
+                    if (itensSelecionados.includes(item)) setItensSelecionados(p => p.filter(x => x !== item));
+                    else setItensSelecionados(p => [...p, item]);
+                  }}
+                  sx={{
+                    p: 1.5, mb: 1, cursor: "pointer",
+                    bgcolor: itensSelecionados.includes(item) ? "#ef444422" : "#1a1a2e",
+                    border: itensSelecionados.includes(item) ? "2px solid #ef4444" : "1px solid #334155",
+                  }}>
+                  <Typography variant="body2" sx={{ color: "#fff" }}>{nomeItem(item)}</Typography>
+                </Paper>
+              ))}
+              <Button fullWidth variant="contained" onClick={transferirItens}
+                disabled={!itensSelecionados.length} sx={{ bgcolor: "#ef4444", mt: 2 }}>
+                Transferir {itensSelecionados.length}
+              </Button>
+            </>
           )}
-
-          {/* Carteira */}
           {tipoTransferencia === "carteira" && (
-            <Box>
-              <Typography variant="body2" sx={{ color: "#94a3b8", mb: 2 }}>
-                Transfira dinheiro da carteira do alvo:
-              </Typography>
-              
+            <>
               <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-                <InputLabel sx={{ color: "#94a3b8" }}>Carteira do Alvo</InputLabel>
-                <Select
-                  value={carteiraSelecionada}
-                  onChange={(e) => setCarteiraSelecionada(e.target.value)}
-                  sx={{ color: "#fff", bgcolor: "#1a1a2e" }}
-                >
+                <InputLabel sx={{ color: "#94a3b8" }}>Carteira</InputLabel>
+                <Select value={carteiraSelecionada} onChange={(e) => setCarteiraSelecionada(e.target.value)}
+                  sx={{ color: "#fff", bgcolor: "#1a1a2e" }}>
                   {Object.entries(carteiraAlvo).map(([nome, valor]) => (
-                    <MenuItem key={nome} value={nome}>
-                      {nome}: 💰 {typeof valor === "number" ? valor.toFixed(2) : "0.00"}
-                    </MenuItem>
+                    <MenuItem key={nome} value={nome}>{nome}: 💰 {typeof valor === "number" ? valor.toFixed(2) : "0"}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
-
-              <TextField
-                fullWidth
-                type="number"
-                label="Quantidade"
-                value={quantidadeTransferencia}
+              <TextField fullWidth type="number" label="Quantidade" value={quantidadeTransferencia}
                 onChange={(e) => setQuantidadeTransferencia(parseFloat(e.target.value) || 0)}
-                InputProps={{ sx: { color: "#fff" } }}
-                InputLabelProps={{ sx: { color: "#94a3b8" } }}
-                sx={{ mb: 2, "& .MuiOutlinedInput-root": { "& fieldset": { borderColor: "#ef444444" } } }}
-              />
-
-              {carteiraSelecionada && (
-                <Typography variant="caption" sx={{ color: "#ef4444", display: "block", mb: 2 }}>
-                  Saldo disponível: 💰 {(carteiraAlvo[carteiraSelecionada] || 0).toFixed(2)}
-                </Typography>
-              )}
-
-              <Button
-                fullWidth
-                variant="contained"
-                onClick={transferirCarteira}
-                sx={{ bgcolor: "#ef4444", "&:hover": { bgcolor: "#dc2626" } }}
-              >
-                Transferir 💰 {quantidadeTransferencia.toFixed(2)}
-              </Button>
-            </Box>
+                InputProps={{ sx: { color: "#fff" } }} InputLabelProps={{ sx: { color: "#94a3b8" } }} />
+              <Button fullWidth variant="contained" onClick={transferirCarteira}
+                sx={{ bgcolor: "#ef4444", mt: 2 }}>Transferir 💰 {quantidadeTransferencia}</Button>
+            </>
           )}
         </DialogContent>
       </Dialog>
