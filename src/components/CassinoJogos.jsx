@@ -92,6 +92,19 @@ const formatarTempoRestante = (ms) => {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 
+// ============ BÔNUS DE STREAK (até 10 vitórias seguidas) ============
+const streakBonus = (s) => {
+  if (s >= 10) return { mult: 2.00, label: "x2.0" };
+  if (s >= 9)  return { mult: 1.90, label: "x1.9" };
+  if (s >= 8)  return { mult: 1.70, label: "x1.7" };
+  if (s >= 7)  return { mult: 1.50, label: "x1.5" };
+  if (s >= 6)  return { mult: 1.40, label: "x1.4" };
+  if (s >= 5)  return { mult: 1.30, label: "x1.3" };
+  if (s >= 4)  return { mult: 1.20, label: "x1.2" };
+  if (s >= 3)  return { mult: 1.15, label: "x1.15" };
+  return { mult: 1.00, label: "" };
+};
+
 function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
   // ============ JANELA ============
   const [posicao, setPosicao] = useState({ x: 100, y: 40 });
@@ -465,40 +478,50 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
       }
 
       const linhasGanhadoras = [];
-      let premioTotal = 0;
+      let premioBase = 0;
 
       for (const linha of PAYLINES) {
         const [a, b, c] = linha;
         if (grid[a] === grid[b] && grid[b] === grid[c]) {
           const info = SIMBOLOS.find((s) => s.emoji === grid[a]);
           if (info) {
-            premioTotal += apostaTigrinho * info.mult;
+            premioBase += apostaTigrinho * info.mult;
             linhasGanhadoras.push(linha);
           }
         }
       }
 
-      if (premioTotal > 0) {
-        await creditarSaldo(premioTotal);
-        setLinhasVencedoras(linhasGanhadoras);
+      if (premioBase > 0) {
+        // 🟢 NOVO STREAK (incrementa antes de calcular o bônus)
         const novoStreak = streak + 1;
+        const bonus = streakBonus(novoStreak);
+        const premioFinal = Math.floor(premioBase * bonus.mult);
+
+        await creditarSaldo(premioFinal);
+        setLinhasVencedoras(linhasGanhadoras);
         setStreak(novoStreak);
         if (novoStreak > melhorStreak) setMelhorStreak(novoStreak);
 
-        let msg = `🎰 ${userNick} ganhou 💰 ${premioTotal} no Tigrinho! 🎉`;
+        let msg = `🎰 ${userNick} ganhou 💰 ${premioFinal} no Tigrinho! 🎉`;
+        if (bonus.mult > 1) {
+          msg += ` 🔥 STREAK x${novoStreak} (bônus ${bonus.label})!`;
+        }
         if (novoStreak >= 3) {
-          msg += ` 🔥 STREAK x${novoStreak}!`;
           setMostrarStreak(true);
           setTimeout(() => setMostrarStreak(false), 2500);
         }
 
+        const detalheBonus = bonus.mult > 1
+          ? ` (base 💰 ${premioBase} + bônus ${bonus.label})`
+          : "";
+
         setResultadoTigrinho({
           tipo: "vitoria",
-          premio: premioTotal,
-          mensagem: `🎉 Você ganhou 💰 ${premioTotal}!${novoStreak >= 3 ? ` 🔥 STREAK x${novoStreak}` : ""}`,
+          premio: premioFinal,
+          mensagem: `🎉 Você ganhou 💰 ${premioFinal}!${detalheBonus}${novoStreak >= 3 ? ` 🔥 STREAK x${novoStreak}` : ""}`,
         });
         await enviarMensagemChat(msg, "vitoria");
-        await atualizarRanking("tigrinho", apostaTigrinho, premioTotal);
+        await atualizarRanking("tigrinho", apostaTigrinho, premioFinal);
       } else {
         setStreak(0);
         setResultadoTigrinho({
@@ -528,7 +551,8 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
   };
 
   const iniciarCorrida = async () => {
-    if (corrida?.rodando) return;
+    // 🟢 BLOQUEIA enquanto a corrida anterior ainda está na tela (3s de reset)
+    if (corrida) return;
     if (cavaloEscolhido === null) return alert("Escolha um cavalo!");
     if (apostaCorrida <= 0) return alert("Aposta inválida!");
     if (saldo < apostaCorrida) return alert("Saldo insuficiente!");
@@ -606,7 +630,6 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
     const cavaloApostado = CAVALOS[ref.cavaloEscolhido];
 
     if (ref.cavaloEscolhido === vencedorId) {
-      const premio = Math.floor(apostaCorrida * cavaloVencedor.id === 0 ? apostaCorrida : apostaCorrida);
       // Payout: aposta * odd
       const oddVencedor = oddsAtuais.find((c) => c.id === vencedorId)?.odd || 2;
       const premioReal = Math.floor(apostaCorrida * oddVencedor);
@@ -632,6 +655,7 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
       await atualizarRanking("corrida", apostaCorrida, 0);
     }
 
+    // 🟢 RESET dos cavalos após 3 segundos (o botão fica travado até lá)
     setTimeout(() => {
       corridaRef.current = null;
       setCorrida(null);
@@ -1021,7 +1045,7 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
                           key={c.id}
                           label={`${c.emoji} ${c.nome} · ${c.odd}x${c.id === 2 ? " 🔥" : c.id === 5 ? " ⭐" : ""}`}
                           onClick={() => setCavaloEscolhido(c.id)}
-                          disabled={!!corrida?.rodando}
+                          disabled={!!corrida}
                           sx={{
                             bgcolor: cavaloEscolhido === c.id ? c.cor : "#1a0f00",
                             color: cavaloEscolhido === c.id ? "#fff" : c.cor,
@@ -1043,7 +1067,7 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
                       size="small" type="number" label="Aposta"
                       value={apostaCorrida}
                       onChange={(e) => setApostaCorrida(Math.max(1, Number(e.target.value) || 1))}
-                      disabled={!!corrida?.rodando}
+                      disabled={!!corrida}
                       InputProps={{ style: { color: "#eab308", fontSize: "0.85rem" } }}
                       InputLabelProps={{ style: { color: "#a16207" } }}
                       sx={{
@@ -1058,7 +1082,7 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
                     <Button
                       variant="contained"
                       onClick={iniciarCorrida}
-                      disabled={!!corrida?.rodando || cavaloEscolhido === null}
+                      disabled={!!corrida || cavaloEscolhido === null}
                       startIcon={<SportsScoreIcon />} fullWidth
                       sx={{
                         bgcolor: "#22c55e", color: "#fff",
@@ -1068,11 +1092,15 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
                         "&:disabled": { bgcolor: "#1a3a1a", color: "#5a8a5a" },
                       }}
                     >
-                      {corrida?.rodando ? "🏇 CORRENDO..." : "🏇 APOSTAR!"}
+                      {corrida?.rodando
+                        ? "🏇 CORRENDO..."
+                        : corrida
+                        ? "🏇 RESETANDO..."
+                        : "🏇 APOSTAR!"}
                     </Button>
                   </Box>
 
-                  {resultadoCorrida && !corrida?.rodando && (
+                  {resultadoCorrida && !corrida && (
                     <Paper
                       sx={{
                         p: 1.5, width: "100%", maxWidth: 400,
@@ -1188,10 +1216,22 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
                       {streak}
                     </Typography>
                   </Box>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <Box sx={{ display: "flex", justifyContent: "space-between", mb: 0.3, fontSize: "0.65rem" }}>
                     <Typography sx={{ color: "#ddd", fontSize: "0.65rem" }}>Melhor</Typography>
                     <Typography sx={{ color: "#22c55e", fontWeight: "bold", fontSize: "0.7rem" }}>
                       {melhorStreak}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", mt: 0.5, pt: 0.5, borderTop: "1px solid #eab30822" }}>
+                    <Typography sx={{ color: "#ddd", fontSize: "0.65rem" }}>Bônus atual</Typography>
+                    <Typography sx={{ color: streak >= 3 ? "#facc15" : "#665500", fontWeight: "bold", fontSize: "0.7rem" }}>
+                      {streakBonus(streak).label || "—"}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", mt: 0.3 }}>
+                    <Typography sx={{ color: "#ddd", fontSize: "0.65rem" }}>Próx. bônus</Typography>
+                    <Typography sx={{ color: "#a16207", fontWeight: "bold", fontSize: "0.65rem" }}>
+                      {streakBonus(streak + 1).label || "—"}
                     </Typography>
                   </Box>
                 </Box>
