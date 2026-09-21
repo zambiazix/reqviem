@@ -54,6 +54,7 @@ const matrixStyles = {
   colorSecondary: "#0f5",
   colorDim: "#0a3",
 };
+
 // ==================== IMAGEM PADRÃO PARA NOTÍCIAS ====================
 const IMAGEM_NOTICIA_PADRAO = `data:image/svg+xml,${encodeURIComponent(`
   <svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">
@@ -224,7 +225,7 @@ const TEMPLATES_NOTICIAS = [
     
   },
   { 
-    titulo: "🛡️ EXÉRCITO PRIVADO HOLLOW É MOBILIZADO EM FERG­LACIUS",
+    titulo: "🛡️ EXÉRCITO PRIVADO HOLLOW É MOBILIZADO EM FERGL­ACIUS",
     subtitulo: "Imagens de satélite mostram o movimento de tropas da Corporação Hollow na fronteira com Ferglacius, dias após a expulsão da expedição de mineração. A corporação afirma que as tropas são para 'proteção de ativos', mas analistas temem uma escalada do conflito.",
     categoria: "⚔️ Militar",
     
@@ -238,6 +239,29 @@ const TEMPLATES_NOTICIAS = [
     
   },
 ];
+
+// ==================== ROTAÇÃO E DATAS (RPG) ====================
+const MAX_NOTICIAS_ATIVAS = 40;   // soft cap — quando bate 40, a mais antiga cai
+const MAX_NOTICIAS_HARD = 50;     // hard cap — nunca passa disso
+const MAX_HISTORICO = 100;        // histórico em memória
+const INTERVALO_NOTICIA_MS = 5 * 60 * 1000; // 5 minutos exatos
+
+// Lê a data do mundo RPG definida pelo FloatingHUD
+const getDataRPG = () => {
+  try {
+    return localStorage.getItem("reqviem_world_date") || "Verão — 1/1/879";
+  } catch { return "Verão — 1/1/879"; }
+};
+
+const getAnoRPG = () => {
+  try {
+    return localStorage.getItem("reqviem_world_year") || "879 D.C.";
+  } catch { return "879 D.C."; }
+};
+
+// ID único sem expor data real
+const gerarIdNoticia = () =>
+  `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 // ==================== COMPONENTE PRINCIPAL ====================
 function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) {
@@ -266,7 +290,6 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
   // ===== NOTÍCIAS =====
   const [ultimaNoticia, setUltimaNoticia] = useState(null);
   const [noticiaAberta, setNoticiaAberta] = useState(null);
-    // 🟢 NOVO: Notícias com timestamp e histórico
   const [noticiasHistoricas, setNoticiasHistoricas] = useState([]);
   const [abaNoticias, setAbaNoticias] = useState("ativas"); // "ativas" | "historico"
   const [empresasBolsa, setEmpresasBolsa] = useState([]);
@@ -297,109 +320,109 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
   const [arrastandoSub, setArrastandoSub] = useState(false);
   const [redimensionandoSub, setRedimensionandoSub] = useState(false);
   // ===== ESTADOS PARA COMPRA CLANDESTINA E SERVIÇOS =====
-const [itemSelecionado, setItemSelecionado] = useState(null);
-const [precoItem, setPrecoItem] = useState(0);
-const [modalCompraClandestina, setModalCompraClandestina] = useState(false);
-const [modalCompraServicos, setModalCompraServicos] = useState(false);
-const [carteiraSelecionadaCompra, setCarteiraSelecionadaCompra] = useState("");
-const [carteiraJogadorCompra, setCarteiraJogadorCompra] = useState({});
-const [emailParaCarteiraCompra, setEmailParaCarteiraCompra] = useState(userEmail);
-// Adicione os estados:
-const [hackeamentoAberto, setHackeamentoAberto] = useState(false);
-const [hackeamentoAlvo, setHackeamentoAlvo] = useState(null);
-// ===== OUVIR EMAIL SELECIONADO NO CHAT =====
-useEffect(() => {
-  const handleEmailSelecionado = (event) => {
-    const email = event.detail;
-    if (email) {
-      console.log('📧 Email selecionado no Chat:', email);
-      setEmailParaCarteiraCompra(email);
-    }
-  };
-  window.addEventListener('jogadorSelecionadoChat', handleEmailSelecionado);
-  return () => window.removeEventListener('jogadorSelecionadoChat', handleEmailSelecionado);
-}, []);
-const [totalCarteira, setTotalCarteira] = useState(0);
-const [historicoAcessos, setHistoricoAcessos] = useState([]);
+  const [itemSelecionado, setItemSelecionado] = useState(null);
+  const [precoItem, setPrecoItem] = useState(0);
+  const [modalCompraClandestina, setModalCompraClandestina] = useState(false);
+  const [modalCompraServicos, setModalCompraServicos] = useState(false);
+  const [carteiraSelecionadaCompra, setCarteiraSelecionadaCompra] = useState("");
+  const [carteiraJogadorCompra, setCarteiraJogadorCompra] = useState({});
+  const [emailParaCarteiraCompra, setEmailParaCarteiraCompra] = useState(userEmail);
+  // Adicione os estados:
+  const [hackeamentoAberto, setHackeamentoAberto] = useState(false);
+  const [hackeamentoAlvo, setHackeamentoAlvo] = useState(null);
+  // ===== OUVIR EMAIL SELECIONADO NO CHAT =====
+  useEffect(() => {
+    const handleEmailSelecionado = (event) => {
+      const email = event.detail;
+      if (email) {
+        console.log('📧 Email selecionado no Chat:', email);
+        setEmailParaCarteiraCompra(email);
+      }
+    };
+    window.addEventListener('jogadorSelecionadoChat', handleEmailSelecionado);
+    return () => window.removeEventListener('jogadorSelecionadoChat', handleEmailSelecionado);
+  }, []);
+  const [totalCarteira, setTotalCarteira] = useState(0);
+  const [historicoAcessos, setHistoricoAcessos] = useState([]);
   const dragSubRef = useRef({ x: 0, y: 0 });
   const resizeSubRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
-// Substitua o useEffect do código pessoal por:
-useEffect(() => {
-  const gerarCodigo = () => {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let codigo = "";
-    for (let i = 0; i < 8; i++) {
-      codigo += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return codigo;
-  };
-  
-  const chaveCodigo = `rede_codigo_pessoal_${userEmail || 'anonimo'}`;
-  const codigoSalvo = localStorage.getItem(chaveCodigo);
-  if (codigoSalvo) {
-    setCodigoPessoal(codigoSalvo);
-  } else {
-    const novoCodigo = gerarCodigo();
-    localStorage.setItem(chaveCodigo, novoCodigo);
-    setCodigoPessoal(novoCodigo);
-  }
-}, [userEmail]);
-
-// ===== CARREGAR CARTEIRA PARA COMPRAS =====
-useEffect(() => {
-  const emailAtual = emailParaCarteiraCompra || userEmail;
-  console.log('🔍 Carregando carteira para:', emailAtual, '| userEmail:', userEmail, '| emailParaCarteiraCompra:', emailParaCarteiraCompra);
-  
-  if (!emailAtual) {
-    setCarteiraJogadorCompra({});
-    setTotalCarteira(0);
-    return;
-  }
-  const fichaRef = doc(db, "fichas", emailAtual);
-  const unsub = onSnapshot(fichaRef, (snap) => {
-    if (snap.exists()) {
-      const dados = snap.data();
-      console.log('📊 Dados da ficha:', dados);
-      const carteiras = dados.carteiras || {};
-      const carteirasObj = Array.isArray(carteiras)
-        ? carteiras.reduce((acc, item) => ({ ...acc, [item.nome || 'default']: item.valor || 0 }), {})
-        : carteiras;
-      console.log('💳 Carteiras carregadas:', carteirasObj);
-      setCarteiraJogadorCompra(carteirasObj);
-      const total = Object.values(carteirasObj).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
-      setTotalCarteira(total);
-    } else {
-      console.log('⚠️ Ficha não encontrada para:', emailAtual);
-      setCarteiraJogadorCompra({});
-      setTotalCarteira(0);
-    }
-  });
-  return () => unsub();
-}, [emailParaCarteiraCompra, userEmail]);
-
-// ===== HISTÓRICO DE ACESSOS =====
-useEffect(() => {
-  const salvarAcesso = () => {
-    if (!subsistemaAberto) return;
-    const app = apps.find(a => a.id === subsistemaAberto);
-    if (!app) return;
-    
-    const dataJogo = "Hoje";
-    
-    const novoAcesso = {
-      id: Date.now(),
-      appId: app.id,
-      titulo: app.titulo,
-      data: dataJogo,
-      timestamp: new Date().toISOString(),
+  // Substitua o useEffect do código pessoal por:
+  useEffect(() => {
+    const gerarCodigo = () => {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let codigo = "";
+      for (let i = 0; i < 8; i++) {
+        codigo += chars[Math.floor(Math.random() * chars.length)];
+      }
+      return codigo;
     };
     
-    setHistoricoAcessos(prev => [novoAcesso, ...prev.slice(0, 49)]);
-  };
-  
-  salvarAcesso();
-}, [subsistemaAberto]);
+    const chaveCodigo = `rede_codigo_pessoal_${userEmail || 'anonimo'}`;
+    const codigoSalvo = localStorage.getItem(chaveCodigo);
+    if (codigoSalvo) {
+      setCodigoPessoal(codigoSalvo);
+    } else {
+      const novoCodigo = gerarCodigo();
+      localStorage.setItem(chaveCodigo, novoCodigo);
+      setCodigoPessoal(novoCodigo);
+    }
+  }, [userEmail]);
+
+  // ===== CARREGAR CARTEIRA PARA COMPRAS =====
+  useEffect(() => {
+    const emailAtual = emailParaCarteiraCompra || userEmail;
+    console.log('🔍 Carregando carteira para:', emailAtual, '| userEmail:', userEmail, '| emailParaCarteiraCompra:', emailParaCarteiraCompra);
+    
+    if (!emailAtual) {
+      setCarteiraJogadorCompra({});
+      setTotalCarteira(0);
+      return;
+    }
+    const fichaRef = doc(db, "fichas", emailAtual);
+    const unsub = onSnapshot(fichaRef, (snap) => {
+      if (snap.exists()) {
+        const dados = snap.data();
+        console.log('📊 Dados da ficha:', dados);
+        const carteiras = dados.carteiras || {};
+        const carteirasObj = Array.isArray(carteiras)
+          ? carteiras.reduce((acc, item) => ({ ...acc, [item.nome || 'default']: item.valor || 0 }), {})
+          : carteiras;
+        console.log('💳 Carteiras carregadas:', carteirasObj);
+        setCarteiraJogadorCompra(carteirasObj);
+        const total = Object.values(carteirasObj).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+        setTotalCarteira(total);
+      } else {
+        console.log('⚠️ Ficha não encontrada para:', emailAtual);
+        setCarteiraJogadorCompra({});
+        setTotalCarteira(0);
+      }
+    });
+    return () => unsub();
+  }, [emailParaCarteiraCompra, userEmail]);
+
+  // ===== HISTÓRICO DE ACESSOS =====
+  useEffect(() => {
+    const salvarAcesso = () => {
+      if (!subsistemaAberto) return;
+      const app = apps.find(a => a.id === subsistemaAberto);
+      if (!app) return;
+      
+      const dataJogo = getDataRPG();
+      
+      const novoAcesso = {
+        id: Date.now(),
+        appId: app.id,
+        titulo: app.titulo,
+        data: dataJogo,
+        timestamp: new Date().toISOString(),
+      };
+      
+      setHistoricoAcessos(prev => [novoAcesso, ...prev.slice(0, 49)]);
+    };
+    
+    salvarAcesso();
+  }, [subsistemaAberto]);
 
   // ===== LATÊNCIA OSCILANTE =====
   useEffect(() => {
@@ -489,170 +512,178 @@ useEffect(() => {
       apps: a || apps 
     });
   };
-// ===== GERAR NOTÍCIA PROCEDURAL =====
-const gerarNoticia = (dadosPersonalizados = null) => {
-  const agora = Date.now();
-  
-  // Se veio dados personalizados do modal, usa eles
-  if (dadosPersonalizados) {
-    const novaNoticia = {
-      id: agora,
-      titulo: dadosPersonalizados.titulo,
-      subtitulo: dadosPersonalizados.subtitulo,
-      categoria: dadosPersonalizados.categoria,
-      timestamp: agora,
-      empresasAfetadas: dadosPersonalizados.empresasAfetadas || [],
-      variacaoPercentual: dadosPersonalizados.variacaoPercentual || 0,
-      afetarImoveis: dadosPersonalizados.afetarImoveis || false,
-      cidadeAlvo: dadosPersonalizados.cidadeAlvo || "",
-      variacaoImoveis: dadosPersonalizados.variacaoImoveis || 0,
-      imagem: `data:image/svg+xml,${encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">
-          <rect width="400" height="200" fill="#0a0a0a"/>
-          <rect x="10" y="10" width="380" height="180" rx="8" fill="#0d1f0d" stroke="#10b981" stroke-width="2"/>
-          <text x="200" y="80" text-anchor="middle" fill="#10b981" font-family="Courier New, monospace" font-size="14" font-weight="bold">⬡ NOTÍCIA</text>
-          <text x="200" y="110" text-anchor="middle" fill="#0f5" font-family="Courier New, monospace" font-size="12">RÉQUIEM</text>
-          <text x="200" y="140" text-anchor="middle" fill="#0a3" font-family="Courier New, monospace" font-size="12">REDE NEURAL</text>
-        </svg>
-      `)}`
-    };
-    
-    setNoticias(prev => [novaNoticia, ...prev]);
-    aplicarEfeitosNoticia(novaNoticia);
-    salvarDados([novaNoticia, ...noticias]);
-    return novaNoticia;
-  }
-  
-  // Notícia procedural aleatória
-  const prefixosTempo = ["Na noite de ontem", "Esta manhã", "Há poucas horas", "Durante a madrugada", "No final da tarde de ontem"];
-  const tempo = prefixosTempo[Math.floor(Math.random() * prefixosTempo.length)];
-  
-  const empresasAleatorias = empresasBolsa.length > 0 
-    ? [empresasBolsa[Math.floor(Math.random() * empresasBolsa.length)]]
-    : [];
-  
-  const variacao = Math.floor(Math.random() * 30) + 1; // 1-30%
-  const positiva = Math.random() > 0.5;
-  const direcao = positiva ? "subiram" : "caíram";
-  const sinal = positiva ? "+" : "-";
-  
-  const titulo = `${tempo}, ${empresasAleatorias[0]?.nome || "o mercado"} surpreendeu investidores`;
-  const subtitulo = `${tempo}, as ações da ${empresasAleatorias[0]?.nome || "empresa"} ${direcao} ${variacao}% após rumores de mudanças no setor de ${empresasAleatorias[0]?.setor || "tecnologia"}. Analistas da Rede Neural apontam que o movimento pode continuar nos próximos dias. Investidores estão atentos às próximas movimentações do mercado.`;
-  
-  const novaNoticia = {
-    id: agora,
-    titulo,
-    subtitulo,
-    categoria: "📊 Economia",
-    timestamp: agora,
-    empresasAfetadas: empresasAleatorias.map(e => e.id),
-    variacaoPercentual: positiva ? variacao : -variacao,
-    afetarImoveis: false,
-    cidadeAlvo: "",
-    variacaoImoveis: 0,
-    imagem: `data:image/svg+xml,${encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">
-        <rect width="400" height="200" fill="#0a0a0a"/>
-        <rect x="10" y="10" width="380" height="180" rx="8" fill="#0d1f0d" stroke="#10b981" stroke-width="2"/>
-        <text x="200" y="80" text-anchor="middle" fill="#10b981" font-family="Courier New, monospace" font-size="14" font-weight="bold">⬡ NOTÍCIA</text>
-        <text x="200" y="110" text-anchor="middle" fill="#0f5" font-family="Courier New, monospace" font-size="12">RÉQUIEM</text>
-        <text x="200" y="140" text-anchor="middle" fill="#0a3" font-family="Courier New, monospace" font-size="12">REDE NEURAL</text>
-      </svg>
-    `)}`
-  };
-  
-  setNoticias(prev => [novaNoticia, ...prev]);
-  aplicarEfeitosNoticia(novaNoticia);
-  salvarDados([novaNoticia, ...noticias]);
-  return novaNoticia;
-};
 
-// ===== APLICAR EFEITOS DA NOTÍCIA NA BOLSA E IMÓVEIS =====
-const aplicarEfeitosNoticia = async (noticia) => {
-  // Efeitos na Bolsa
-  if (noticia.empresasAfetadas && noticia.empresasAfetadas.length > 0 && noticia.variacaoPercentual !== 0) {
-    const bolsaRef = doc(db, "bolsa_valores", "dados");
-    const bolsaSnap = await getDoc(bolsaRef);
-    if (bolsaSnap.exists()) {
-      const dados = bolsaSnap.data();
-      const empresasAtualizadas = (dados.empresas || []).map(emp => {
-        if (noticia.empresasAfetadas.includes(emp.id)) {
-          const variacaoDecimal = noticia.variacaoPercentual / 100;
-          const novoPreco = Math.max(0.01, emp.preco * (1 + variacaoDecimal));
-          return {
-            ...emp,
-            preco: Math.round(novoPreco * 100) / 100,
-            variacao: noticia.variacaoPercentual,
-          };
-        }
-        return emp;
-      });
-      await setDoc(bolsaRef, { empresas: empresasAtualizadas }, { merge: true });
+  // ===== PUBLICAR NOTÍCIA COM ROTAÇÃO =====
+  const publicarNoticia = (novaNoticia) => {
+    const listaAtual = Array.isArray(noticias) ? noticias : [];
+    let listaFinal = [novaNoticia, ...listaAtual];
+    let excedentes = [];
+
+    if (listaFinal.length > MAX_NOTICIAS_ATIVAS) {
+      excedentes = listaFinal.slice(MAX_NOTICIAS_ATIVAS);
+      listaFinal = listaFinal.slice(0, MAX_NOTICIAS_ATIVAS);
     }
-  }
-  
-  // Efeitos nos Imóveis
-  if (noticia.afetarImoveis && noticia.cidadeAlvo && noticia.variacaoImoveis !== 0) {
-    const imoveisRef = doc(db, "imoveis", "dados");
-    const imoveisSnap = await getDoc(imoveisRef);
-    if (imoveisSnap.exists()) {
-      const dados = imoveisSnap.data();
-      const imoveisAtualizados = (dados.imoveis || []).map(imv => {
-        if (imv.cidade === noticia.cidadeAlvo) {
-          const variacaoDecimal = noticia.variacaoImoveis / 100;
-          return {
-            ...imv,
-            precoVenda: Math.round(imv.precoVenda * (1 + variacaoDecimal)),
-            precoAluguel: Math.round(imv.precoAluguel * (1 + variacaoDecimal)),
-          };
-        }
-        return imv;
-      });
-      await setDoc(imoveisRef, { imoveis: imoveisAtualizados }, { merge: true });
+
+    setNoticias(listaFinal);
+
+    if (excedentes.length > 0) {
+      setNoticiasHistoricas((hist) =>
+        [...excedentes, ...hist].slice(0, MAX_HISTORICO)
+      );
     }
-  }
-};
-  // ===== NOTÍCIAS AUTOMÁTICAS (intervalo variável 5-30 minutos) =====
+
+    salvarDados(listaFinal);
+    return listaFinal;
+  };
+
+  // ===== GERAR NOTÍCIA (LORE + PROCEDURAL) =====
+  const gerarNoticia = (dadosPersonalizados = null) => {
+    const id = gerarIdNoticia();
+    const dataRPG = getDataRPG();
+
+    // ---------- CASO 1: Notícia personalizada do Mestre ----------
+    if (dadosPersonalizados) {
+      const novaNoticia = {
+        id,
+        titulo: dadosPersonalizados.titulo,
+        subtitulo: dadosPersonalizados.subtitulo,
+        categoria: dadosPersonalizados.categoria,
+        dataRPG,
+        timestamp: Date.now(),
+        empresasAfetadas: dadosPersonalizados.empresasAfetadas || [],
+        variacaoPercentual: dadosPersonalizados.variacaoPercentual || 0,
+        afetarImoveis: dadosPersonalizados.afetarImoveis || false,
+        cidadeAlvo: dadosPersonalizados.cidadeAlvo || "",
+        variacaoImoveis: dadosPersonalizados.variacaoImoveis || 0,
+        imagem: IMAGEM_NOTICIA_PADRAO,
+      };
+      publicarNoticia(novaNoticia);
+      aplicarEfeitosNoticia(novaNoticia);
+      return novaNoticia;
+    }
+
+    // ---------- CASO 2: 60% lore / 40% economia ----------
+    const usarTemplate =
+      TEMPLATES_NOTICIAS.length > 0 && Math.random() < 0.6;
+
+    let novaNoticia;
+
+    if (usarTemplate) {
+      const template =
+        TEMPLATES_NOTICIAS[Math.floor(Math.random() * TEMPLATES_NOTICIAS.length)];
+      const prefixos = ["", "URGENTE: ", "ÚLTIMA HORA: ", "EXCLUSIVO: ", "ATUALIZAÇÃO: "];
+      const prefixo = prefixos[Math.floor(Math.random() * prefixos.length)];
+
+      novaNoticia = {
+        id,
+        titulo: `${prefixo}${template.titulo}`,
+        subtitulo: template.subtitulo,
+        categoria: template.categoria,
+        dataRPG,
+        timestamp: Date.now(),
+        empresasAfetadas: [],
+        variacaoPercentual: 0,
+        afetarImoveis: false,
+        cidadeAlvo: "",
+        variacaoImoveis: 0,
+        imagem: IMAGEM_NOTICIA_PADRAO,
+      };
+    } else {
+      // Procedural econômica
+      const prefixosTempo = [
+        "Na noite de ontem",
+        "Esta manhã",
+        "Há poucas horas",
+        "Durante a madrugada",
+        "No final da tarde de ontem",
+      ];
+      const tempo = prefixosTempo[Math.floor(Math.random() * prefixosTempo.length)];
+
+      const empresaSorteada =
+        empresasBolsa.length > 0
+          ? empresasBolsa[Math.floor(Math.random() * empresasBolsa.length)]
+          : null;
+
+      const variacao = Math.floor(Math.random() * 30) + 1;
+      const positiva = Math.random() > 0.5;
+      const direcao = positiva ? "subiram" : "caíram";
+      const nomeEmp = empresaSorteada?.nome || "os mercados";
+      const setor = empresaSorteada?.setor || "tecnologia";
+
+      novaNoticia = {
+        id,
+        titulo: `${tempo}, ${nomeEmp} surpreendeu investidores`,
+        subtitulo: `${tempo}, as ações da ${nomeEmp} ${direcao} ${variacao}% após rumores de mudanças no setor de ${setor}. Analistas da Rede Neural apontam que o movimento pode continuar nos próximos dias em ${getAnoRPG()}.`,
+        categoria: "📊 Economia",
+        dataRPG,
+        timestamp: Date.now(),
+        empresasAfetadas: empresaSorteada ? [empresaSorteada.id] : [],
+        variacaoPercentual: positiva ? variacao : -variacao,
+        afetarImoveis: false,
+        cidadeAlvo: "",
+        variacaoImoveis: 0,
+        imagem: IMAGEM_NOTICIA_PADRAO,
+      };
+    }
+
+    publicarNoticia(novaNoticia);
+    aplicarEfeitosNoticia(novaNoticia);
+    return novaNoticia;
+  };
+
+  // ===== APLICAR EFEITOS DA NOTÍCIA NA BOLSA E IMÓVEIS =====
+  const aplicarEfeitosNoticia = async (noticia) => {
+    // Efeitos na Bolsa
+    if (noticia.empresasAfetadas && noticia.empresasAfetadas.length > 0 && noticia.variacaoPercentual !== 0) {
+      const bolsaRef = doc(db, "bolsa_valores", "dados");
+      const bolsaSnap = await getDoc(bolsaRef);
+      if (bolsaSnap.exists()) {
+        const dados = bolsaSnap.data();
+        const empresasAtualizadas = (dados.empresas || []).map(emp => {
+          if (noticia.empresasAfetadas.includes(emp.id)) {
+            const variacaoDecimal = noticia.variacaoPercentual / 100;
+            const novoPreco = Math.max(0.01, emp.preco * (1 + variacaoDecimal));
+            return {
+              ...emp,
+              preco: Math.round(novoPreco * 100) / 100,
+              variacao: noticia.variacaoPercentual,
+            };
+          }
+          return emp;
+        });
+        await setDoc(bolsaRef, { empresas: empresasAtualizadas }, { merge: true });
+      }
+    }
+    
+    // Efeitos nos Imóveis
+    if (noticia.afetarImoveis && noticia.cidadeAlvo && noticia.variacaoImoveis !== 0) {
+      const imoveisRef = doc(db, "imoveis", "dados");
+      const imoveisSnap = await getDoc(imoveisRef);
+      if (imoveisSnap.exists()) {
+        const dados = imoveisSnap.data();
+        const imoveisAtualizados = (dados.imoveis || []).map(imv => {
+          if (imv.cidade === noticia.cidadeAlvo) {
+            const variacaoDecimal = noticia.variacaoImoveis / 100;
+            return {
+              ...imv,
+              precoVenda: Math.round(imv.precoVenda * (1 + variacaoDecimal)),
+              precoAluguel: Math.round(imv.precoAluguel * (1 + variacaoDecimal)),
+            };
+          }
+          return imv;
+        });
+        await setDoc(imoveisRef, { imoveis: imoveisAtualizados }, { merge: true });
+      }
+    }
+  };
+
+  // ===== NOTÍCIAS AUTOMÁTICAS — 5 minutos =====
   useEffect(() => {
-    let timeoutId = null;
-    
-    const agendarProximaNoticia = () => {
-      // Intervalo aleatório entre 5 e 30 minutos (300000ms a 1800000ms)
-      const intervalo = 300000 + Math.random() * 1500000;
-      
-      timeoutId = setTimeout(() => {
-        gerarNoticia();
-        agendarProximaNoticia();
-      }, intervalo);
-    };
-    
-    agendarProximaNoticia();
-    
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
+    const timeoutId = setTimeout(() => {
+      gerarNoticia();
+    }, INTERVALO_NOTICIA_MS);
+    return () => clearTimeout(timeoutId);
   }, [noticias]);
-  // 🟢 LIMPAR NOTÍCIAS EXPIRADAS (mover para histórico após 2h)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const agora = Date.now();
-      const duasHoras = 2 * 60 * 60 * 1000;
-      
-      setNoticias(prev => {
-        const ativas = prev.filter(n => !n.timestamp || (agora - n.timestamp) < duasHoras);
-        const expiradas = prev.filter(n => n.timestamp && (agora - n.timestamp) >= duasHoras);
-        
-        if (expiradas.length > 0) {
-          setNoticiasHistoricas(hist => [...expiradas, ...hist].slice(0, 100));
-          salvarDados(ativas);
-        }
-        
-        return ativas;
-      });
-    }, 60000); // Verifica a cada 1 minuto
-    
-    return () => clearInterval(interval);
-  }, []);
 
   // ===== EVENTOS DE ARRASTAR/REDIMENSIONAR =====
   useEffect(() => {
@@ -727,11 +758,14 @@ const aplicarEfeitosNoticia = async (noticia) => {
                     )}
                     <Box sx={{ display: "flex", gap: 1.5 }}>
                       <Box sx={{ width: 120, height: 80, flexShrink: 0, borderRadius: 1, overflow: 'hidden', bgcolor: '#0a0a0a' }}>
-                        <img src={n.imagem || `https://picsum.photos/seed/${i}/400/200`} alt={n.titulo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={n.imagem || IMAGEM_NOTICIA_PADRAO} alt={n.titulo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </Box>
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="caption" sx={{ color: matrixStyles.colorPrimary, fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
                           {n.titulo}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: "#0a3", display: "block", fontFamily: "'Courier New', monospace", fontSize: "0.55rem", mb: 0.3 }}>
+                          📅 {n.dataRPG || getDataRPG()}
                         </Typography>
                         <Typography variant="caption" sx={{ color: matrixStyles.colorSecondary, display: "block", fontFamily: "'Courier New', monospace" }}>
                           {n.subtitulo?.substring(0, 120)}...
@@ -764,9 +798,9 @@ const aplicarEfeitosNoticia = async (noticia) => {
                     <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
                       📰 {n.titulo}
                     </Typography>
-<Typography variant="caption" sx={{ color: '#64748b', display: "block", fontFamily: "'Courier New', monospace", fontSize: '0.65rem' }}>
-  Publicada anteriormente
-</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', display: "block", fontFamily: "'Courier New', monospace", fontSize: '0.65rem' }}>
+                      📅 {n.dataRPG || getDataRPG()} • Publicada anteriormente
+                    </Typography>
                   </Paper>
                 ))}
                 {noticiasHistoricas.length === 0 && (
@@ -783,7 +817,7 @@ const aplicarEfeitosNoticia = async (noticia) => {
                   sx={{ bgcolor: matrixStyles.colorPrimary, color: '#000', fontWeight: 'bold' }}>
                   + Nova Notícia
                 </Button>
-                <Button size="small" variant="contained" onClick={gerarNoticia} sx={{ bgcolor: '#1976d2', color: '#fff', fontWeight: 'bold' }}>
+                <Button size="small" variant="contained" onClick={() => gerarNoticia()} sx={{ bgcolor: '#1976d2', color: '#fff', fontWeight: 'bold' }}>
                   🎲 Gerar Aleatória
                 </Button>
               </Box>
@@ -792,350 +826,350 @@ const aplicarEfeitosNoticia = async (noticia) => {
         );
         break;
         // No case "hackeamento" do renderSubsistema:
-case "hackeamento":
-  conteudo = (
-    <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>
-      <Typography variant="h6" sx={{ color: "#ef4444", mb: 2, fontFamily: "'Courier New', monospace" }}>
-        💻 SISTEMA_DE_INVASAO.exe
-      </Typography>
-      <Typography variant="caption" sx={{ color: "#666", display: "block", mb: 2 }}>
-        Selecione um alvo para iniciar a invasão:
-      </Typography>
-      
-      {/* Campo para código do alvo */}
-      <TextField
-        fullWidth
-        size="small"
-        placeholder="Digite o código do alvo..."
-        value={hackeamentoAlvo?.codigo || ""}
-        onChange={(e) => setHackeamentoAlvo({ codigo: e.target.value })}
-        InputProps={{ sx: { color: "#fff", fontFamily: "'Courier New', monospace" } }}
-        sx={{ mb: 2, "& .MuiOutlinedInput-root": { "& fieldset": { borderColor: "#ef444444" } } }}
-      />
-      
-      {/* Lista de jogadores com seus códigos (visível apenas para o mestre) */}
-      {isMaster && (
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="caption" sx={{ color: "#fbbf24", mb: 1, display: "block" }}>
-            🔍 CÓDIGOS DOS JOGADORES (Modo Mestre):
-          </Typography>
-          {Object.entries(fichasMap).map(([email, data]) => {
-            const codigo = localStorage.getItem(`rede_codigo_pessoal_${email}`);
-            return (
-              <Paper key={email} sx={{ p: 1, mb: 0.5, bgcolor: "#0d1f0d", border: "1px solid #10b98144" }}>
-                <Typography variant="caption" sx={{ color: "#0f5" }}>
-                  {data.nome || email}: <strong>{codigo || "N/A"}</strong>
+      case "hackeamento":
+        conteudo = (
+          <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>
+            <Typography variant="h6" sx={{ color: "#ef4444", mb: 2, fontFamily: "'Courier New', monospace" }}>
+              💻 SISTEMA_DE_INVASAO.exe
+            </Typography>
+            <Typography variant="caption" sx={{ color: "#666", display: "block", mb: 2 }}>
+              Selecione um alvo para iniciar a invasão:
+            </Typography>
+            
+            {/* Campo para código do alvo */}
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Digite o código do alvo..."
+              value={hackeamentoAlvo?.codigo || ""}
+              onChange={(e) => setHackeamentoAlvo({ codigo: e.target.value })}
+              InputProps={{ sx: { color: "#fff", fontFamily: "'Courier New', monospace" } }}
+              sx={{ mb: 2, "& .MuiOutlinedInput-root": { "& fieldset": { borderColor: "#ef444444" } } }}
+            />
+            
+            {/* Lista de jogadores com seus códigos (visível apenas para o mestre) */}
+            {isMaster && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" sx={{ color: "#fbbf24", mb: 1, display: "block" }}>
+                  🔍 CÓDIGOS DOS JOGADORES (Modo Mestre):
                 </Typography>
-              </Paper>
-            );
-          })}
-        </Box>
-      )}
-      
-      <Button
-        fullWidth
-        variant="contained"
-        onClick={() => {
-          if (!hackeamentoAlvo?.codigo) {
-            alert("Digite o código do alvo!");
-            return;
-          }
-          
-          // Procurar jogador pelo código
-          const codigoAlvo = hackeamentoAlvo.codigo.toUpperCase();
-          let emailEncontrado = null;
-          let nomeEncontrado = null;
-          
-          Object.entries(fichasMap).forEach(([email, data]) => {
-            const codigo = localStorage.getItem(`rede_codigo_pessoal_${email}`);
-            if (codigo && codigo.toUpperCase() === codigoAlvo) {
-              emailEncontrado = email;
-              nomeEncontrado = data.nome || email;
-            }
-          });
-          
-          // Fallback: procurar no localStorage
-          if (!emailEncontrado) {
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (key.startsWith('rede_codigo_pessoal_')) {
-                const email = key.replace('rede_codigo_pessoal_', '');
-                const codigo = localStorage.getItem(key);
-                if (codigo && codigo.toUpperCase() === codigoAlvo) {
-                  emailEncontrado = email;
-                  nomeEncontrado = fichasMap[email]?.nome || email;
-                  break;
+                {Object.entries(fichasMap).map(([email, data]) => {
+                  const codigo = localStorage.getItem(`rede_codigo_pessoal_${email}`);
+                  return (
+                    <Paper key={email} sx={{ p: 1, mb: 0.5, bgcolor: "#0d1f0d", border: "1px solid #10b98144" }}>
+                      <Typography variant="caption" sx={{ color: "#0f5" }}>
+                        {data.nome || email}: <strong>{codigo || "N/A"}</strong>
+                      </Typography>
+                    </Paper>
+                  );
+                })}
+              </Box>
+            )}
+            
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => {
+                if (!hackeamentoAlvo?.codigo) {
+                  alert("Digite o código do alvo!");
+                  return;
                 }
-              }
-            }
-          }
-          
-          if (!emailEncontrado) {
-            alert("Código não encontrado! Verifique o código e tente novamente.");
-            return;
-          }
-          
-          if (emailEncontrado === userEmail) {
-            alert("Você não pode hackear a si mesmo!");
-            return;
-          }
-          
-          setHackeamentoAlvo({
-            ...hackeamentoAlvo,
-            email: emailEncontrado,
-            nome: nomeEncontrado,
-          });
-          
-          setHackeamentoAberto(true);
-        }}
-        sx={{ bgcolor: "#ef4444", color: "#fff", fontWeight: "bold", "&:hover": { bgcolor: "#dc2626" } }}
-      >
-        🎯 INICIAR INVASÃO
-      </Button>
-      
-      <Typography variant="caption" sx={{ color: "#ef4444", display: "block", mt: 2, textAlign: "center" }}>
-        ⚠️ ATENÇÃO: Invasões são ilegais e podem resultar em retaliação!
-      </Typography>
-    </Box>
-  );
-  break;
+                
+                // Procurar jogador pelo código
+                const codigoAlvo = hackeamentoAlvo.codigo.toUpperCase();
+                let emailEncontrado = null;
+                let nomeEncontrado = null;
+                
+                Object.entries(fichasMap).forEach(([email, data]) => {
+                  const codigo = localStorage.getItem(`rede_codigo_pessoal_${email}`);
+                  if (codigo && codigo.toUpperCase() === codigoAlvo) {
+                    emailEncontrado = email;
+                    nomeEncontrado = data.nome || email;
+                  }
+                });
+                
+                // Fallback: procurar no localStorage
+                if (!emailEncontrado) {
+                  for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith('rede_codigo_pessoal_')) {
+                      const email = key.replace('rede_codigo_pessoal_', '');
+                      const codigo = localStorage.getItem(key);
+                      if (codigo && codigo.toUpperCase() === codigoAlvo) {
+                        emailEncontrado = email;
+                        nomeEncontrado = fichasMap[email]?.nome || email;
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                if (!emailEncontrado) {
+                  alert("Código não encontrado! Verifique o código e tente novamente.");
+                  return;
+                }
+                
+                if (emailEncontrado === userEmail) {
+                  alert("Você não pode hackear a si mesmo!");
+                  return;
+                }
+                
+                setHackeamentoAlvo({
+                  ...hackeamentoAlvo,
+                  email: emailEncontrado,
+                  nome: nomeEncontrado,
+                });
+                
+                setHackeamentoAberto(true);
+              }}
+              sx={{ bgcolor: "#ef4444", color: "#fff", fontWeight: "bold", "&:hover": { bgcolor: "#dc2626" } }}
+            >
+              🎯 INICIAR INVASÃO
+            </Button>
+            
+            <Typography variant="caption" sx={{ color: "#ef4444", display: "block", mt: 2, textAlign: "center" }}>
+              ⚠️ ATENÇÃO: Invasões são ilegais e podem resultar em retaliação!
+            </Typography>
+          </Box>
+        );
+        break;
         
-case "clandestina":
-  conteudo = (
-    <Box sx={{ p: 2, overflowY: "auto", flex: 1, bgcolor: "#0a0a0a" }}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-        <Typography variant="h6" sx={{ color: "#ef4444", fontFamily: "'Courier New', monospace", textShadow: "0 0 20px #ef4444" }}>
-          🌑 DEEP_WEEP.exe
-        </Typography>
-        <Chip 
-          label={`💰 ${totalCarteira.toFixed(2)}`}
-          size="small"
-          sx={{ bgcolor: "#fbbf2422", color: "#fbbf24", fontSize: "0.6rem", height: 20 }}
-        />
-      </Box>
-      <Typography variant="caption" sx={{ color: "#666", display: "block", mb: 2, fontFamily: "'Courier New', monospace" }}>
-        ⚠️ ACESSO RESTRITO - USO SOB PRÓPRIA RESPONSABILIDADE ⚠️
-      </Typography>
-      
-      {/* Lista de itens clandestinos */}
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        {[
-          { 
-            id: "armas", 
-            titulo: "🔫 Arsenal Ilegal", 
-            desc: "Armamentos não rastreáveis, munição especial, explosivos artesanais. Qualidade militar sem registro.",
-            preco: "500-5.000 💰",
-            detalhes: "Fornecedor: 'O Mercador' • Entrega em 24h • Local: Porto Negro"
-          },
-          { 
-            id: "drogas", 
-            titulo: "💊 Substâncias Controladas", 
-            desc: "Estimulantes sintéticos, alucinógenos de alta pureza, calmantes ilegais. Efeitos intensos e duradouros.",
-            preco: "200-2.000 💰",
-            detalhes: "Fornecedor: 'Doutor Sombra' • Pureza garantida • Entrega discreta"
-          },
-          { 
-            id: "documentos", 
-            titulo: "🆔 Identidades Falsas", 
-            desc: "Passaportes, credenciais corporativas, identidades oficiais. Incluem verificação biométrica falsa.",
-            preco: "1.000-10.000 💰",
-            detalhes: "Fornecedor: 'O Artesão' • 3 níveis de autenticidade • Entrega em 48h"
-          },
-          { 
-            id: "dados", 
-            titulo: "💻 Dados Roubados", 
-            desc: "Informações confidenciais, segredos corporativos, planos militares, listas de clientes de alto perfil.",
-            preco: "5.000-50.000 💰",
-            detalhes: "Fornecedor: 'Espectro' • Dados verificados • Atualização diária"
-          },
-          { 
-            id: "acesso", 
-            titulo: "🔑 Chaves de Acesso Ilegal", 
-            desc: "Códigos de segurança, chaves criptográficas, acessos a sistemas restritos e instalações seguras.",
-            preco: "2.000-20.000 💰",
-            detalhes: "Fornecedor: 'Porteiro' • Acesso garantido • Suporte técnico incluído"
-          },
-          { 
-            id: "biohacking", 
-            titulo: "🧬 Modificações Genéticas", 
-            desc: "Aprimoramentos ilegais, edição genética, implantes não regulamentados. Risco alto, recompensa maior.",
-            preco: "10.000-100.000 💰",
-            detalhes: "Fornecedor: 'O Biomante' • Procedimentos clandestinos • Garantia limitada"
-          },
-          { 
-            id: "info", 
-            titulo: "🔍 Informações Privilegiadas", 
-            desc: "Segredos de estado, escândalos políticos, localizações de alvos, rotas de contrabando.",
-            preco: "3.000-30.000 💰",
-            detalhes: "Fornecedor: 'Olho de Vidro' • Informação verificada • Atualização em tempo real"
-          },
-        ].map((item) => {
-          const [min, max] = item.preco.replace('💰', '').trim().split('-').map(v => parseFloat(v.replace(/\D/g, '')) || 0);
-          const precoReal = min + Math.random() * (max - min);
-          
-          return (
-            <Paper key={item.id} sx={{ p: 1.5, bgcolor: "#0d0d0d", border: "1px solid #ef444433", '&:hover': { borderColor: "#ef444488" } }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 1 }}>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="body2" sx={{ color: "#ef4444", fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
-                    {item.titulo}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: "#888", display: "block", fontFamily: "'Courier New', monospace" }}>
-                    {item.desc}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: "#666", display: "block", fontFamily: "'Courier New', monospace", mt: 0.5 }}>
-                    {item.detalhes}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5 }}>
-                  <Typography variant="caption" sx={{ color: "#fbbf24", fontFamily: "'Courier New', monospace", fontWeight: "bold" }}>
-                    💰 {precoReal.toFixed(2)}
-                  </Typography>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => {
-                      // Abrir modal de compra
-                      setItemSelecionado(item);
-                      setPrecoItem(precoReal);
-                      setModalCompraClandestina(true);
-                    }}
-                    sx={{ bgcolor: "#ef4444", '&:hover': { bgcolor: "#dc2626" }, fontSize: "0.6rem" }}
-                  >
-                    Adquirir
-                  </Button>
-                </Box>
-              </Box>
-            </Paper>
-          );
-        })}
-      </Box>
-    </Box>
-  );
-  break;
+      case "clandestina":
+        conteudo = (
+          <Box sx={{ p: 2, overflowY: "auto", flex: 1, bgcolor: "#0a0a0a" }}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+              <Typography variant="h6" sx={{ color: "#ef4444", fontFamily: "'Courier New', monospace", textShadow: "0 0 20px #ef4444" }}>
+                🌑 DEEP_WEEP.exe
+              </Typography>
+              <Chip 
+                label={`💰 ${totalCarteira.toFixed(2)}`}
+                size="small"
+                sx={{ bgcolor: "#fbbf2422", color: "#fbbf24", fontSize: "0.6rem", height: 20 }}
+              />
+            </Box>
+            <Typography variant="caption" sx={{ color: "#666", display: "block", mb: 2, fontFamily: "'Courier New', monospace" }}>
+              ⚠️ ACESSO RESTRITO - USO SOB PRÓPRIA RESPONSABILIDADE ⚠️
+            </Typography>
+            
+            {/* Lista de itens clandestinos */}
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {[
+                { 
+                  id: "armas", 
+                  titulo: "🔫 Arsenal Ilegal", 
+                  desc: "Armamentos não rastreáveis, munição especial, explosivos artesanais. Qualidade militar sem registro.",
+                  preco: "500-5.000 💰",
+                  detalhes: "Fornecedor: 'O Mercador' • Entrega em 24h • Local: Porto Negro"
+                },
+                { 
+                  id: "drogas", 
+                  titulo: "💊 Substâncias Controladas", 
+                  desc: "Estimulantes sintéticos, alucinógenos de alta pureza, calmantes ilegais. Efeitos intensos e duradouros.",
+                  preco: "200-2.000 💰",
+                  detalhes: "Fornecedor: 'Doutor Sombra' • Pureza garantida • Entrega discreta"
+                },
+                { 
+                  id: "documentos", 
+                  titulo: "🆔 Identidades Falsas", 
+                  desc: "Passaportes, credenciais corporativas, identidades oficiais. Incluem verificação biométrica falsa.",
+                  preco: "1.000-10.000 💰",
+                  detalhes: "Fornecedor: 'O Artesão' • 3 níveis de autenticidade • Entrega em 48h"
+                },
+                { 
+                  id: "dados", 
+                  titulo: "💻 Dados Roubados", 
+                  desc: "Informações confidenciais, segredos corporativos, planos militares, listas de clientes de alto perfil.",
+                  preco: "5.000-50.000 💰",
+                  detalhes: "Fornecedor: 'Espectro' • Dados verificados • Atualização diária"
+                },
+                { 
+                  id: "acesso", 
+                  titulo: "🔑 Chaves de Acesso Ilegal", 
+                  desc: "Códigos de segurança, chaves criptográficas, acessos a sistemas restritos e instalações seguras.",
+                  preco: "2.000-20.000 💰",
+                  detalhes: "Fornecedor: 'Porteiro' • Acesso garantido • Suporte técnico incluído"
+                },
+                { 
+                  id: "biohacking", 
+                  titulo: "🧬 Modificações Genéticas", 
+                  desc: "Aprimoramentos ilegais, edição genética, implantes não regulamentados. Risco alto, recompensa maior.",
+                  preco: "10.000-100.000 💰",
+                  detalhes: "Fornecedor: 'O Biomante' • Procedimentos clandestinos • Garantia limitada"
+                },
+                { 
+                  id: "info", 
+                  titulo: "🔍 Informações Privilegiadas", 
+                  desc: "Segredos de estado, escândalos políticos, localizações de alvos, rotas de contrabando.",
+                  preco: "3.000-30.000 💰",
+                  detalhes: "Fornecedor: 'Olho de Vidro' • Informação verificada • Atualização em tempo real"
+                },
+              ].map((item) => {
+                const [min, max] = item.preco.replace('💰', '').trim().split('-').map(v => parseFloat(v.replace(/\D/g, '')) || 0);
+                const precoReal = min + Math.random() * (max - min);
+                
+                return (
+                  <Paper key={item.id} sx={{ p: 1.5, bgcolor: "#0d0d0d", border: "1px solid #ef444433", '&:hover': { borderColor: "#ef444488" } }}>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 1 }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="body2" sx={{ color: "#ef4444", fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
+                          {item.titulo}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: "#888", display: "block", fontFamily: "'Courier New', monospace" }}>
+                          {item.desc}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: "#666", display: "block", fontFamily: "'Courier New', monospace", mt: 0.5 }}>
+                          {item.detalhes}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5 }}>
+                        <Typography variant="caption" sx={{ color: "#fbbf24", fontFamily: "'Courier New', monospace", fontWeight: "bold" }}>
+                          💰 {precoReal.toFixed(2)}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() => {
+                            // Abrir modal de compra
+                            setItemSelecionado(item);
+                            setPrecoItem(precoReal);
+                            setModalCompraClandestina(true);
+                          }}
+                          sx={{ bgcolor: "#ef4444", '&:hover': { bgcolor: "#dc2626" }, fontSize: "0.6rem" }}
+                        >
+                          Adquirir
+                        </Button>
+                      </Box>
+                    </Box>
+                  </Paper>
+                );
+              })}
+            </Box>
+          </Box>
+        );
+        break;
         
-case "servicos":
-  conteudo = (
-    <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-        <Typography variant="h6" sx={{ color: matrixStyles.colorPrimary, fontFamily: "'Courier New', monospace" }}>
-          ⭐ SERVICOS_PREMIUM.exe
-        </Typography>
-        <Chip 
-          label={`💰 ${totalCarteira.toFixed(2)}`}
-          size="small"
-          sx={{ bgcolor: "#fbbf2422", color: "#fbbf24", fontSize: "0.6rem", height: 20 }}
-        />
-      </Box>
-      <Typography variant="caption" sx={{ color: matrixStyles.colorDim, display: "block", mb: 2, fontFamily: "'Courier New', monospace" }}>
-        Para clientes selecionados - Elite & Luxo
-      </Typography>
-      
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        {[
-          { 
-            id: "seguranca", 
-            titulo: "🛡️ Segurança Privada de Elite", 
-            desc: "Proteção pessoal 24/7, escolta armada, segurança de eventos VIP, análise de ameaças.",
-            preco: "A partir de 10.000 💰",
-            detalhes: "Equipe: Ex-Caçadores Auranos • Armamento de ponta • Discrição garantida"
-          },
-          { 
-            id: "eventos", 
-            titulo: "🎭 Organização de Eventos de Luxo", 
-            desc: "Festas exclusivas, galas, leilões privados, casamentos de elite. Experiência impecável.",
-            preco: "A partir de 25.000 💰",
-            detalhes: "Equipe: Especialistas em eventos • Localizações secretas • Catering gourmet"
-          },
-          { 
-            id: "transporte", 
-            titulo: "🚁 Transporte de Luxo", 
-            desc: "Frotas de veículos blindados, helicópteros executivos, iates particulares, aeronaves.",
-            preco: "A partir de 5.000 💰",
-            detalhes: "Frota: Veículos premium • Pilotos experientes • Rotas personalizadas"
-          },
-          { 
-            id: "consultoria", 
-            titulo: "🏛️ Consultoria Política Estratégica", 
-            desc: "Assessoria para figuras públicas, lobby, relações governamentais, gestão de crises.",
-            preco: "Sob consulta",
-            detalhes: "Equipe: Ex-assessores senatoriais • Rede de contatos • Resultados garantidos"
-          },
-          { 
-            id: "inteligencia", 
-            titulo: "💼 Inteligência Competitiva", 
-            desc: "Análise de mercado, inteligência competitiva, due diligence, investigações corporativas.",
-            preco: "A partir de 15.000 💰",
-            detalhes: "Equipe: Especialistas em dados • Análise aprofundada • Relatórios confidenciais"
-          },
-          { 
-            id: "arte", 
-            titulo: "🎨 Curadoria de Arte e Antiguidades", 
-            desc: "Arte rara, antiguidades, coleções exclusivas, restauração, avaliação, aquisição.",
-            preco: "Sob consulta",
-            detalhes: "Curadores especializados • Peças únicas • Autenticidade garantida"
-          },
-        ].map((item) => {
-          const precoMin = item.preco.includes('Sob consulta') ? 0 : parseFloat(item.preco.replace(/[^\d.]/g, ''));
-          const precoReal = precoMin > 0 ? precoMin + Math.random() * precoMin * 2 : 0;
-          
-          return (
-            <Paper key={item.id} sx={{ p: 1.5, bgcolor: matrixStyles.cardBg, border: matrixStyles.borderGlow }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 1 }}>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="body2" sx={{ color: matrixStyles.colorPrimary, fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
-                    {item.titulo}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: matrixStyles.colorSecondary, display: "block", fontFamily: "'Courier New', monospace" }}>
-                    {item.desc}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: "#666", display: "block", fontFamily: "'Courier New', monospace", mt: 0.5 }}>
-                    {item.detalhes}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5 }}>
-                  <Typography variant="caption" sx={{ color: "#fbbf24", fontFamily: "'Courier New', monospace", fontWeight: "bold" }}>
-                    {item.preco}
-                  </Typography>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => {
-                      setItemSelecionado(item);
-                      setPrecoItem(precoReal);
-                      setModalCompraServicos(true);
-                    }}
-                    sx={{ bgcolor: matrixStyles.colorPrimary, '&:hover': { bgcolor: "#0d9488" }, fontSize: "0.6rem" }}
-                  >
-                    Contratar
-                  </Button>
-                </Box>
-              </Box>
-            </Paper>
-          );
-        })}
-      </Box>
-    </Box>
-  );
-  break;
+      case "servicos":
+        conteudo = (
+          <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+              <Typography variant="h6" sx={{ color: matrixStyles.colorPrimary, fontFamily: "'Courier New', monospace" }}>
+                ⭐ SERVICOS_PREMIUM.exe
+              </Typography>
+              <Chip 
+                label={`💰 ${totalCarteira.toFixed(2)}`}
+                size="small"
+                sx={{ bgcolor: "#fbbf2422", color: "#fbbf24", fontSize: "0.6rem", height: 20 }}
+              />
+            </Box>
+            <Typography variant="caption" sx={{ color: matrixStyles.colorDim, display: "block", mb: 2, fontFamily: "'Courier New', monospace" }}>
+              Para clientes selecionados - Elite & Luxo
+            </Typography>
+            
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {[
+                { 
+                  id: "seguranca", 
+                  titulo: "🛡️ Segurança Privada de Elite", 
+                  desc: "Proteção pessoal 24/7, escolta armada, segurança de eventos VIP, análise de ameaças.",
+                  preco: "A partir de 10.000 💰",
+                  detalhes: "Equipe: Ex-Caçadores Auranos • Armamento de ponta • Discrição garantida"
+                },
+                { 
+                  id: "eventos", 
+                  titulo: "🎭 Organização de Eventos de Luxo", 
+                  desc: "Festas exclusivas, galas, leilões privados, casamentos de elite. Experiência impecável.",
+                  preco: "A partir de 25.000 💰",
+                  detalhes: "Equipe: Especialistas em eventos • Localizações secretas • Catering gourmet"
+                },
+                { 
+                  id: "transporte", 
+                  titulo: "🚁 Transporte de Luxo", 
+                  desc: "Frotas de veículos blindados, helicópteros executivos, iates particulares, aeronaves.",
+                  preco: "A partir de 5.000 💰",
+                  detalhes: "Frota: Veículos premium • Pilotos experientes • Rotas personalizadas"
+                },
+                { 
+                  id: "consultoria", 
+                  titulo: "🏛️ Consultoria Política Estratégica", 
+                  desc: "Assessoria para figuras públicas, lobby, relações governamentais, gestão de crises.",
+                  preco: "Sob consulta",
+                  detalhes: "Equipe: Ex-assessores senatoriais • Rede de contatos • Resultados garantidos"
+                },
+                { 
+                  id: "inteligencia", 
+                  titulo: "💼 Inteligência Competitiva", 
+                  desc: "Análise de mercado, inteligência competitiva, due diligence, investigações corporativas.",
+                  preco: "A partir de 15.000 💰",
+                  detalhes: "Equipe: Especialistas em dados • Análise aprofundada • Relatórios confidenciais"
+                },
+                { 
+                  id: "arte", 
+                  titulo: "🎨 Curadoria de Arte e Antiguidades", 
+                  desc: "Arte rara, antiguidades, coleções exclusivas, restauração, avaliação, aquisição.",
+                  preco: "Sob consulta",
+                  detalhes: "Curadores especializados • Peças únicas • Autenticidade garantida"
+                },
+              ].map((item) => {
+                const precoMin = item.preco.includes('Sob consulta') ? 0 : parseFloat(item.preco.replace(/[^\d.]/g, ''));
+                const precoReal = precoMin > 0 ? precoMin + Math.random() * precoMin * 2 : 0;
+                
+                return (
+                  <Paper key={item.id} sx={{ p: 1.5, bgcolor: matrixStyles.cardBg, border: matrixStyles.borderGlow }}>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 1 }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="body2" sx={{ color: matrixStyles.colorPrimary, fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
+                          {item.titulo}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: matrixStyles.colorSecondary, display: "block", fontFamily: "'Courier New', monospace" }}>
+                          {item.desc}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: "#666", display: "block", fontFamily: "'Courier New', monospace", mt: 0.5 }}>
+                          {item.detalhes}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5 }}>
+                        <Typography variant="caption" sx={{ color: "#fbbf24", fontFamily: "'Courier New', monospace", fontWeight: "bold" }}>
+                          {item.preco}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() => {
+                            setItemSelecionado(item);
+                            setPrecoItem(precoReal);
+                            setModalCompraServicos(true);
+                          }}
+                          sx={{ bgcolor: matrixStyles.colorPrimary, '&:hover': { bgcolor: "#0d9488" }, fontSize: "0.6rem" }}
+                        >
+                          Contratar
+                        </Button>
+                      </Box>
+                    </Box>
+                  </Paper>
+                );
+              })}
+            </Box>
+          </Box>
+        );
+        break;
         
-        case "imoveis":
-  conteudo = (
-    <ImoveisHUD 
-      userEmail={userEmail} 
-      onClose={() => setSubsistemaAberto(null)} 
-      fichasMap={fichasMap}
-      isMaster={isMaster}
-    />
-  );
-  break;
+      case "imoveis":
+        conteudo = (
+          <ImoveisHUD 
+            userEmail={userEmail} 
+            onClose={() => setSubsistemaAberto(null)} 
+            fichasMap={fichasMap}
+            isMaster={isMaster}
+          />
+        );
+        break;
 
-case "bolsa":
-  // Fecha a Rede e abre a Bolsa separadamente
-  setSubsistemaAberto(null);
-  window.dispatchEvent(new CustomEvent('abrirBolsaValores'));
-  conteudo = null;
-  break;
+      case "bolsa":
+        // Fecha a Rede e abre a Bolsa separadamente
+        setSubsistemaAberto(null);
+        window.dispatchEvent(new CustomEvent('abrirBolsaValores'));
+        conteudo = null;
+        break;
         
       default:
         conteudo = (
@@ -1233,99 +1267,101 @@ case "bolsa":
       </Paper>
     );
   };
-// ===== APAGAR NOTÍCIA =====
-const apagarNoticia = (id) => {
-  if (!window.confirm("Apagar esta notícia?")) return;
-  const novas = noticias.filter(n => n.id !== id);
-  setNoticias(novas);
-  salvarDados(novas);
-};
 
-// ===== APAGAR TODAS AS NOTÍCIAS =====
-const apagarTodasNoticias = () => {
-  if (!window.confirm("⚠️ Apagar TODAS as notícias? Esta ação não pode ser desfeita!")) return;
-  setNoticias([]);
-  salvarDados([]);
-  setUltimaNoticia(null);
-};
-// ===== MODAL DA NOTÍCIA =====
-const renderNoticiaModal = () => {
-  if (!noticiaAberta) return null;
-  
-  return (
-    <Dialog
-      open={!!noticiaAberta}
-      onClose={() => setNoticiaAberta(null)}
-      maxWidth="md"
-      fullWidth
-      PaperProps={{
-        sx: {
-          bgcolor: "#0f172a",
-          border: "2px solid #10b981",
-          borderRadius: 2,
-          boxShadow: "0 0 30px rgba(16,185,129,0.3)",
-        }
-      }}
-    >
-      <DialogTitle sx={{ color: matrixStyles.colorPrimary, borderBottom: '1px solid #10b98133', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 'bold', fontFamily: "'Courier New', monospace" }}>
-            {noticiaAberta.titulo}
+  // ===== APAGAR NOTÍCIA =====
+  const apagarNoticia = (id) => {
+    if (!window.confirm("Apagar esta notícia?")) return;
+    const novas = noticias.filter(n => n.id !== id);
+    setNoticias(novas);
+    salvarDados(novas);
+  };
+
+  // ===== APAGAR TODAS AS NOTÍCIAS =====
+  const apagarTodasNoticias = () => {
+    if (!window.confirm("⚠️ Apagar TODAS as notícias? Esta ação não pode ser desfeita!")) return;
+    setNoticias([]);
+    salvarDados([]);
+    setUltimaNoticia(null);
+  };
+
+  // ===== MODAL DA NOTÍCIA =====
+  const renderNoticiaModal = () => {
+    if (!noticiaAberta) return null;
+    
+    return (
+      <Dialog
+        open={!!noticiaAberta}
+        onClose={() => setNoticiaAberta(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "2px solid #10b981",
+            borderRadius: 2,
+            boxShadow: "0 0 30px rgba(16,185,129,0.3)",
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: matrixStyles.colorPrimary, borderBottom: '1px solid #10b98133', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', fontFamily: "'Courier New', monospace" }}>
+              {noticiaAberta.titulo}
+            </Typography>
+            <Typography variant="caption" sx={{ color: matrixStyles.colorDim, fontFamily: "'Courier New', monospace" }}>
+              📅 {noticiaAberta.dataRPG || getDataRPG()} • {noticiaAberta.categoria}
+            </Typography>
+          </Box>
+          <IconButton onClick={() => setNoticiaAberta(null)} sx={{ color: '#94a3b8' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 3 }}>
+          {/* Imagem da notícia */}
+          <Box sx={{ width: '100%', maxHeight: 300, overflow: 'hidden', borderRadius: 2, mb: 3, bgcolor: '#0a0a0a' }}>
+            <img 
+              src={noticiaAberta.imagem || IMAGEM_NOTICIA_PADRAO} 
+              alt="Notícia"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          </Box>
+          
+          <Typography variant="h5" sx={{ color: '#fff', fontWeight: 'bold', mb: 2, fontFamily: "'Courier New', monospace" }}>
+            {noticiaAberta.titulo.replace(/^[^\s]+\s/, '')}
           </Typography>
-          <Typography variant="caption" sx={{ color: matrixStyles.colorDim, fontFamily: "'Courier New', monospace" }}>
-            {noticiaAberta.data} • {noticiaAberta.categoria}
+          
+          <Typography variant="body1" sx={{ color: '#94a3b8', mb: 2, lineHeight: 1.8 }}>
+            {noticiaAberta.subtitulo}
           </Typography>
-        </Box>
-        <IconButton onClick={() => setNoticiaAberta(null)} sx={{ color: '#94a3b8' }}>
-          <CloseIcon />
-        </IconButton>
-      </DialogTitle>
-      <DialogContent sx={{ p: 3 }}>
-        {/* Imagem da notícia */}
-        <Box sx={{ width: '100%', maxHeight: 300, overflow: 'hidden', borderRadius: 2, mb: 3, bgcolor: '#0a0a0a' }}>
-          <img 
-            src={noticiaAberta.imagem} 
-            alt="Notícia"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        </Box>
-        
-        <Typography variant="h5" sx={{ color: '#fff', fontWeight: 'bold', mb: 2, fontFamily: "'Courier New', monospace" }}>
-          {noticiaAberta.titulo.replace(/^[^\s]+\s/, '')}
-        </Typography>
-        
-        <Typography variant="body1" sx={{ color: '#94a3b8', mb: 2, lineHeight: 1.8 }}>
-          {noticiaAberta.subtitulo}
-        </Typography>
-        
-        <Typography variant="body2" sx={{ color: '#64748b', lineHeight: 1.8 }}>
-          {noticiaAberta.categoria.includes("Emergência") || noticiaAberta.categoria.includes("⚠️") ? (
-            <>
-              ⚠️ <strong style={{ color: '#ef4444' }}>ALERTA DE EMERGÊNCIA</strong><br/>
-              Esta notícia contém informações urgentes. As autoridades recomendam cautela e seguimento das orientações oficiais. A Rede Neural continuará monitorando a situação e fornecerá atualizações conforme disponíveis.
-            </>
-          ) : (
-            <>
-              📰 Esta notícia foi fornecida pela <strong style={{ color: matrixStyles.colorPrimary }}>Rede Neural</strong>, o principal veículo de informação do mundo de Réquiem.
-              Nossa equipe de jornalistas e correspondentes cobre os acontecimentos mais importantes do Império Aurano e de todas as nações.
-              Fique ligado para mais atualizações sobre este e outros acontecimentos.
-            </>
-          )}
-        </Typography>
-        
-        <Divider sx={{ my: 2, borderColor: '#334155' }} />
-<Typography variant="caption" sx={{ color: '#64748b' }}>
-  📡 Fonte: Rede Neural
-</Typography>
-      </DialogContent>
-      <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
-        <Button onClick={() => setNoticiaAberta(null)} sx={{ color: '#94a3b8' }}>
-          Fechar
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-};
+          
+          <Typography variant="body2" sx={{ color: '#64748b', lineHeight: 1.8 }}>
+            {noticiaAberta.categoria.includes("Emergência") || noticiaAberta.categoria.includes("⚠️") ? (
+              <>
+                ⚠️ <strong style={{ color: '#ef4444' }}>ALERTA DE EMERGÊNCIA</strong><br/>
+                Esta notícia contém informações urgentes. As autoridades recomendam cautela e seguimento das orientações oficiais. A Rede Neural continuará monitorando a situação e fornecerá atualizações conforme disponíveis.
+              </>
+            ) : (
+              <>
+                📰 Esta notícia foi fornecida pela <strong style={{ color: matrixStyles.colorPrimary }}>Rede Neural</strong>, o principal veículo de informação do mundo de Réquiem.
+                Nossa equipe de jornalistas e correspondentes cobre os acontecimentos mais importantes do Império Aurano e de todas as nações.
+                Fique ligado para mais atualizações sobre este e outros acontecimentos.
+              </>
+            )}
+          </Typography>
+          
+          <Divider sx={{ my: 2, borderColor: '#334155' }} />
+          <Typography variant="caption" sx={{ color: '#64748b' }}>
+            📡 Fonte: Rede Neural
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+          <Button onClick={() => setNoticiaAberta(null)} sx={{ color: '#94a3b8' }}>
+            Fechar
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
 
   // ===== RENDER PRINCIPAL =====
   return createPortal(
@@ -1417,17 +1453,17 @@ const renderNoticiaModal = () => {
         {/* Conteúdo */}
         {!minimizado && (
           <Box sx={{ flex: 1, display: "flex", flexDirection: "column", p: 1.5, gap: 1, overflowY: "auto", "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "#10b98144", borderRadius: "10px" } }}>
-{/* Abas */}
-<Box sx={{ display: "flex", gap: 0.5, borderBottom: "1px solid #10b98133", pb: 1, flexWrap: "wrap" }}>
-  <Button size="small" onClick={() => setAbaAtiva("principal")}
-    sx={{ color: abaAtiva === "principal" ? "#10b981" : "#0f5", fontSize: "0.65rem", fontFamily: "'Courier New', monospace", bgcolor: abaAtiva === "principal" ? "#10b98122" : "transparent", '&:hover': { bgcolor: "#10b98111" } }}>
-    [Principal]
-  </Button>
-  <Button size="small" onClick={() => setAbaAtiva("historico")}
-    sx={{ color: abaAtiva === "historico" ? "#10b981" : "#0f5", fontSize: "0.65rem", fontFamily: "'Courier New', monospace", bgcolor: abaAtiva === "historico" ? "#10b98122" : "transparent", '&:hover': { bgcolor: "#10b98111" } }}>
-    [Histórico]
-  </Button>
-</Box>
+            {/* Abas */}
+            <Box sx={{ display: "flex", gap: 0.5, borderBottom: "1px solid #10b98133", pb: 1, flexWrap: "wrap" }}>
+              <Button size="small" onClick={() => setAbaAtiva("principal")}
+                sx={{ color: abaAtiva === "principal" ? "#10b981" : "#0f5", fontSize: "0.65rem", fontFamily: "'Courier New', monospace", bgcolor: abaAtiva === "principal" ? "#10b98122" : "transparent", '&:hover': { bgcolor: "#10b98111" } }}>
+                [Principal]
+              </Button>
+              <Button size="small" onClick={() => setAbaAtiva("historico")}
+                sx={{ color: abaAtiva === "historico" ? "#10b981" : "#0f5", fontSize: "0.65rem", fontFamily: "'Courier New', monospace", bgcolor: abaAtiva === "historico" ? "#10b98122" : "transparent", '&:hover': { bgcolor: "#10b98111" } }}>
+                [Histórico]
+              </Button>
+            </Box>
 
             {/* Aba Principal - APPS */}
             {abaAtiva === "principal" && (
@@ -1474,45 +1510,45 @@ const renderNoticiaModal = () => {
                   ))}
                 </Grid>
               </Box>
-              
             )}
-                {/* 🟢 ABA HISTÓRICO */}
-    {abaAtiva === "historico" && (
-      <Box sx={{ py: 2 }}>
-        <Typography variant="h6" sx={{ color: matrixStyles.colorPrimary, mb: 2, fontFamily: "'Courier New', monospace" }}>
-          📜 HISTÓRICO DE NAVEGAÇÃO
-        </Typography>
-        {historicoAcessos.length === 0 ? (
-          <Typography sx={{ color: '#64748b', textAlign: 'center', py: 4 }}>
-            Nenhum acesso registrado ainda.
-          </Typography>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            {historicoAcessos.map((item) => (
-              <Paper key={item.id} sx={{ p: 1, bgcolor: matrixStyles.cardBg, border: matrixStyles.borderGlow }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Box>
-                    <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
-                      {item.titulo || item.descricao}
-                    </Typography>
-                    {item.tipo && (
-                      <Chip 
-                        label={item.tipo === 'transacao_clandestina' ? '🔴 Clandestino' : '⭐ Serviço'}
-                        size="small"
-                        sx={{ ml: 1, bgcolor: item.tipo === 'transacao_clandestina' ? '#ef444422' : '#10b98122', color: item.tipo === 'transacao_clandestina' ? '#ef4444' : '#10b981', fontSize: '0.5rem', height: 16 }}
-                      />
-                    )}
-                  </Box>
-                  <Typography variant="caption" sx={{ color: matrixStyles.colorDim }}>
-                    {item.data}
+            
+            {/* 🟢 ABA HISTÓRICO */}
+            {abaAtiva === "historico" && (
+              <Box sx={{ py: 2 }}>
+                <Typography variant="h6" sx={{ color: matrixStyles.colorPrimary, mb: 2, fontFamily: "'Courier New', monospace" }}>
+                  📜 HISTÓRICO DE NAVEGAÇÃO
+                </Typography>
+                {historicoAcessos.length === 0 ? (
+                  <Typography sx={{ color: '#64748b', textAlign: 'center', py: 4 }}>
+                    Nenhum acesso registrado ainda.
                   </Typography>
-                </Box>
-              </Paper>
-            ))}
-          </Box>
-        )}
-      </Box>
-    )}
+                ) : (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    {historicoAcessos.map((item) => (
+                      <Paper key={item.id} sx={{ p: 1, bgcolor: matrixStyles.cardBg, border: matrixStyles.borderGlow }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                              {item.titulo || item.descricao}
+                            </Typography>
+                            {item.tipo && (
+                              <Chip 
+                                label={item.tipo === 'transacao_clandestina' ? '🔴 Clandestino' : '⭐ Serviço'}
+                                size="small"
+                                sx={{ ml: 1, bgcolor: item.tipo === 'transacao_clandestina' ? '#ef444422' : '#10b98122', color: item.tipo === 'transacao_clandestina' ? '#ef4444' : '#10b981', fontSize: '0.5rem', height: 16 }}
+                              />
+                            )}
+                          </Box>
+                          <Typography variant="caption" sx={{ color: matrixStyles.colorDim }}>
+                            {item.data}
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            )}
           </Box>
         )}
 
@@ -1548,7 +1584,8 @@ const renderNoticiaModal = () => {
       
       {/* Modal da Notícia */}
       {renderNoticiaModal()}
-            {/* 🟢 HACKEAMENTO GAME */}
+      
+      {/* 🟢 HACKEAMENTO GAME */}
       {hackeamentoAberto && hackeamentoAlvo?.email && (
         <HackeamentoGame
           atacanteEmail={userEmail}
@@ -1564,7 +1601,8 @@ const renderNoticiaModal = () => {
           isMaster={isMaster}
         />
       )}
-            {/* 🟢 MODAL DE CRIAÇÃO/EDIÇÃO DE NOTÍCIA */}
+      
+      {/* 🟢 MODAL DE CRIAÇÃO/EDIÇÃO DE NOTÍCIA */}
       <Dialog open={modalNoticiaOpen} onClose={() => setModalNoticiaOpen(false)} maxWidth="md" fullWidth
         PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #10b981", borderRadius: 2 } }}>
         <DialogTitle sx={{ color: '#10b981', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1650,6 +1688,7 @@ const renderNoticiaModal = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      
       {/* 🟢 MODAL DE COMPRA CLANDESTINA */}
       <Dialog open={modalCompraClandestina} onClose={() => setModalCompraClandestina(false)} maxWidth="sm" fullWidth
         PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}>
@@ -1725,7 +1764,7 @@ const renderNoticiaModal = () => {
                 
                 alert(`✅ Transação realizada!\n💰 ${valor.toFixed(2)} debitado.\n📝 Um contato será enviado em breve.`);
                 
-                const dataJogo = "Hoje";
+                const dataJogo = getDataRPG();
                 setHistoricoAcessos(prev => [{
                   id: Date.now(),
                   tipo: "transacao_clandestina",
@@ -1822,7 +1861,7 @@ const renderNoticiaModal = () => {
                 
                 alert(`✅ Serviço contratado!\n💰 ${valor.toFixed(2)} debitado.\n📝 Entraremos em contato em breve.`);
                 
-                const dataJogo = "Hoje";
+                const dataJogo = getDataRPG();
                 setHistoricoAcessos(prev => [{
                   id: Date.now(),
                   tipo: "transacao_servico",
