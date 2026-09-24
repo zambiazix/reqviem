@@ -1075,6 +1075,15 @@ const unsub = onSnapshot(ref, (snap) => {
         return [k, Number.isFinite(num) && num >= 1 ? num : 1];
       })
     );
+    // 🟢 MIGRAÇÃO: se algum atributo no Firestore está < 1, corrige e salva de volta
+const temAtributoInvalido = Object.values(dados.atributos || {}).some(v => {
+  const num = Number(v);
+  return !Number.isFinite(num) || num < 1;
+});
+if (temAtributoInvalido) {
+  console.log("🔧 Corrigindo atributos inválidos no Firestore...");
+  setDoc(ref, { atributos: atributosNormalizados }, { merge: true }).catch(() => {});
+}
 
     const combinado = {
       ...modelo,
@@ -1791,9 +1800,9 @@ const abrirModalDado = (item, tipo) => {
     const ref = doc(db, "fichas", fichaId);
     const toSave = {
       ...ficha,
-      atributos: Object.fromEntries(
-        Object.entries(ficha.atributos || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
-      ),
+atributos: Object.fromEntries(
+  Object.entries(ficha.atributos || {}).map(([k, v]) => [k, Math.max(1, Math.min(Number(v || 1), 5))])
+),
       pericias: Object.fromEntries(
         Object.entries(ficha.pericias || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
       ),

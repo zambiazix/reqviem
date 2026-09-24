@@ -628,13 +628,22 @@ useEffect(() => {
   
   const fichaRef = doc(db, "fichas", emailParaBuscar);
   
-  const unsub = onSnapshot(fichaRef, (snap) => {
-    if (snap.exists()) {
-      const dados = snap.data();
-      setFichaJogador(dados);
-      setEnergiaAtual(dados.pontosEnergia || 0);
-    }
-  });
+const unsub = onSnapshot(fichaRef, (snap) => {
+  if (snap.exists()) {
+    const dados = snap.data();
+    // 🟢 NORMALIZA atributos para >= 1 (fichas antigas podem ter 0)
+    const atributosNorm = dados.atributos
+      ? Object.fromEntries(
+          Object.entries(dados.atributos).map(([k, v]) => {
+            const num = Number(v);
+            return [k, Number.isFinite(num) && num >= 1 ? num : 1];
+          })
+        )
+      : {};
+    setFichaJogador({ ...dados, atributos: atributosNorm });
+    setEnergiaAtual(dados.pontosEnergia || 0);
+  }
+});
   
   return () => unsub();
 }, [userEmail, jogadorSelecionadoEmail]);
@@ -1817,12 +1826,12 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
           const nomeAlvo = ehOutro ? (fichasMap[emailAlvo]?.nome || emailAlvo) : nomePersonagem;
           
           if (acaoConsumivelTipo === "PV") {
-            const pvMax = 100 + ((fichaAlvo.atributos?.constituicao || 0) + (fichaAlvo.pericias?.sobrevivencia || 0)) * 10;
+            const pvMax = 100 + (Math.max(1, Number(fichaAlvo.atributos?.constituicao) || 1) + Math.max(0, Number(fichaAlvo.pericias?.sobrevivencia) || 0)) * 10;
             const novoPV = Math.min(pvMax, (fichaAlvo.pontosVida || 0) + valorReal);
             atualizacoes.pontosVida = novoPV;
             msgEfeito = `❤️ +${valorReal} PV → ${nomeAlvo} (${fichaAlvo.pontosVida || 0} → ${novoPV})`;
           } else if (acaoConsumivelTipo === "PE") {
-            const peMax = 10 + ((fichaAlvo.atributos?.vontade || 0) + (fichaAlvo.pericias?.aura || 0)) * 5;
+            const peMax = 10 + (Math.max(1, Number(fichaAlvo.atributos?.vontade) || 1) + Math.max(0, Number(fichaAlvo.pericias?.aura) || 0)) * 5;
             const novoPE = Math.min(peMax, (fichaAlvo.pontosEnergia || 0) + valorReal);
             atualizacoes.pontosEnergia = novoPE;
             msgEfeito = `⚡ +${valorReal} PE → ${nomeAlvo} (${fichaAlvo.pontosEnergia || 0} → ${novoPE})`;
