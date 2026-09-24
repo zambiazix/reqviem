@@ -884,6 +884,77 @@ const ORIGENS = [
 useEffect(() => {
   fichaRef.current = ficha;
 }, [ficha]);
+// 🟢 MIGRAÇÃO GLOBAL: corrige atributos < 1 em TODAS as fichas (roda só como Mestre, 1x)
+useEffect(() => {
+  if (!isMestre) return;
+  
+  const CHAVE_MIGRACAO = "atributos_migrados_v1";
+  if (localStorage.getItem(CHAVE_MIGRACAO) === "ok") {
+    console.log("✅ Migração de atributos já foi executada.");
+    return;
+  }
+  
+  const migrarTodasFichas = async () => {
+    console.log("🔧 Iniciando migração GLOBAL de atributos...");
+    try {
+      const snap = await getDocs(collection(db, "fichas"));
+      let corrigidas = 0;
+      let totalFichas = 0;
+      const nomesCorrigidos = [];
+      
+      const ATRIBUTOS_OBRIGATORIOS = [
+        "forca", "destreza", "agilidade",
+        "constituicao", "inteligencia", "vontade"
+      ];
+      
+      for (const d of snap.docs) {
+        totalFichas++;
+        const dados = d.data();
+        const atribs = dados.atributos || {};
+        const novos = {};
+        let precisa = false;
+        
+        // 1. Corrige valores existentes < 1
+        for (const [k, v] of Object.entries(atribs)) {
+          const num = Number(v);
+          if (!Number.isFinite(num) || num < 1) {
+            novos[k] = 1;
+            precisa = true;
+          }
+        }
+        
+        // 2. Garante que TODOS os atributos existem
+        for (const k of ATRIBUTOS_OBRIGATORIOS) {
+          if (atribs[k] === undefined || atribs[k] === null) {
+            novos[k] = 1;
+            precisa = true;
+          }
+        }
+        
+        if (precisa) {
+          await updateDoc(doc(db, "fichas", d.id), {
+            atributos: { ...atribs, ...novos }
+          });
+          console.log(`✅ Corrigida: ${dados.nome || d.id}`, novos);
+          nomesCorrigidos.push(dados.nome || d.id);
+          corrigidas++;
+        }
+      }
+      
+      console.log(`🎉 Migração concluída! ${corrigidas}/${totalFichas} fichas corrigidas.`);
+      if (corrigidas > 0) {
+        console.log("Fichas corrigidas:", nomesCorrigidos);
+      }
+      
+      localStorage.setItem(CHAVE_MIGRACAO, "ok");
+    } catch (err) {
+      console.error("❌ Erro na migração global:", err);
+      console.error("Verifique as regras do Firestore para 'fichas'.");
+    }
+  };
+  
+  migrarTodasFichas();
+}, [isMestre]);
 // 🟢 Event listeners para arrastar e redimensionar anotações (IGUAL COMMERCEHUD)
 useEffect(() => {
   const handleMouseMove = (e) => {
