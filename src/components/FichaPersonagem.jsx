@@ -3715,24 +3715,41 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
     </Paper>
 
     {/* ATRIBUTOS e PERÍCIAS continuam aqui embaixo, sem alteração */}
-            <Box mt={2}>
-  <Box
-    display="flex"
-    justifyContent="space-between"
-    alignItems="center"
-    sx={{
-      borderBottom: "2px solid #a855f7",
-      pb: 1,
-      mb: 1,
-    }}
-  >
-<Typography component="div" sx={{ fontWeight: "bold", color: '#a855f7', fontSize: '1.1rem',  }}>
-  💠 {LABELS.atributosTitulo}
-</Typography>
-
-<Typography sx={{ fontWeight: "bold", color: "#a855f7" }}>
-  Pontos de Atributo: {pontosAtributoRestantes}
-</Typography>
+            <Box mt={2} sx={{
+  p: 2,
+  background: 'linear-gradient(180deg, rgba(168,85,247,0.18) 0%, rgba(168,85,247,0.02) 100%)',
+  border: '1px solid #a855f766',
+  borderRadius: 3,
+  boxShadow: '0 0 25px rgba(168,85,247,0.2)',
+}}>
+  <Box sx={{
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    mb: 2,
+    pb: 1.5,
+    borderBottom: '1px solid #a855f733',
+  }}>
+    <Typography sx={{
+      fontWeight: 900,
+      fontSize: '1.15rem',
+      letterSpacing: 1,
+      background: 'linear-gradient(90deg, #a855f7, #e9d5ff)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+    }}>
+      💠 ATRIBUTOS
+    </Typography>
+    <Chip
+      label={`P.A: ${pontosAtributoRestantes}`}
+      size="small"
+      sx={{
+        bgcolor: pontosAtributoRestantes > 0 ? '#a855f722' : '#ef444422',
+        color: pontosAtributoRestantes > 0 ? '#e9d5ff' : '#ef4444',
+        fontWeight: 'bold',
+        border: `1px solid ${pontosAtributoRestantes > 0 ? '#a855f766' : '#ef444466'}`,
+      }}
+    />
   </Box>
  {Object.entries(ficha.atributos).map(([k, v]) => {
   const valorAtual = Number(v || 1);
@@ -3799,14 +3816,13 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   max={5}
   step={1}
   marks={[
-    { value: 1, label: '1' },
-    { value: 2, label: '2' },
-    { value: 3, label: '3' },
-    { value: 4, label: '4' },
-    { value: 5, label: '5' },
+    { value: 1 },
+    { value: 2 },
+    { value: 3 },
+    { value: 4 },
+    { value: 5 },
   ]}
   onChange={(e, val) => {
-    // 🔒 NUNCA permite ir abaixo de 1 — volta pra 1 na hora
     if (val < 1) { setSubCampo("atributos", k, 1); return; }
     const atual = Number(v || 1);
     const diferenca = val - Math.min(atual, 5);
@@ -3825,7 +3841,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   }}
   valueLabelDisplay="auto"
   sx={{
-    '& .MuiSlider-thumb': { 
+    '& .MuiSlider-thumb': {
       display: temNivel6 ? 'none' : 'block',
       bgcolor: corAtributo,
       border: `2px solid ${corAtributo}`,
@@ -3836,20 +3852,15 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       boxShadow: temNivel6 ? '0 0 10px #ffd700' : `0 0 6px ${corAtributo}44`,
     },
     '& .MuiSlider-rail': { background: `${corAtributo}44` },
-    // 🟢 MARKS — mostra 1..5 embaixo do slider
     '& .MuiSlider-mark': {
-      bgcolor: `${corAtributo}66`,
-      height: 6,
+      bgcolor: `${corAtributo}cc`,
+      height: 12,
       width: 2,
+      borderRadius: 1,
+      opacity: 1,
     },
-    '& .MuiSlider-markLabel': {
-      color: '#94a3b8',
-      fontSize: '0.65rem',
-      fontWeight: 700,
-      mt: 0.5,
-    },
-    '& .MuiSlider-markLabelActive': {
-      color: corAtributo,
+    '& .MuiSlider-markActive': {
+      bgcolor: corAtributo,
     },
   }}
 />
@@ -3897,24 +3908,41 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
 })}
             </Box>
 
-             <Box mt={2}>
-  <Box
-    display="flex"
-    justifyContent="space-between"
-    alignItems="center"
-    sx={{
-      borderBottom: "2px solid #c0c0c0",
-      pb: 1,
-      mb: 1,
-    }}
-  >
-    <Typography component="div" sx={{ fontWeight: "bold", color: '#c0c0c0', fontSize: '1.1rem' }}>
-      📖 {LABELS.periciasTitulo}
+<Box mt={2} sx={{
+  p: 2,
+  background: 'linear-gradient(180deg, rgba(192,192,192,0.15) 0%, rgba(192,192,192,0.02) 100%)',
+  border: '1px solid #c0c0c066',
+  borderRadius: 3,
+  boxShadow: '0 0 25px rgba(192,192,192,0.1)',
+}}>
+  <Box sx={{
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    mb: 2,
+    pb: 1.5,
+    borderBottom: '1px solid #c0c0c033',
+  }}>
+    <Typography sx={{
+      fontWeight: 900,
+      fontSize: '1.15rem',
+      letterSpacing: 1,
+      background: 'linear-gradient(90deg, #c0c0c0, #ffffff)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+    }}>
+      📖 PERÍCIAS
     </Typography>
-
-<Typography sx={{ fontWeight: "bold", color: "#c0c0c0" }}>
-  Pontos de Perícia: {pontosPericiaRestantes}
-</Typography>
+    <Chip
+      label={`P.P: ${pontosPericiaRestantes}`}
+      size="small"
+      sx={{
+        bgcolor: pontosPericiaRestantes > 0 ? '#c0c0c022' : '#ef444422',
+        color: pontosPericiaRestantes > 0 ? '#e5e5e5' : '#ef4444',
+        fontWeight: 'bold',
+        border: `1px solid ${pontosPericiaRestantes > 0 ? '#c0c0c066' : '#ef444466'}`,
+      }}
+    />
   </Box>
               {Object.entries(ficha.pericias).map(([k, v]) => {
   const valorAtual = Number(v || 0);
@@ -3951,11 +3979,19 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
         <span style={{ marginRight: 6 }}>{emojiPericia}</span>
         {LABEL_MAP[k] || k}
       </Typography>
-      <Slider
+<Slider
   value={valorAtual}
   min={0}
   max={5}
   step={1}
+  marks={[
+    { value: 0 },
+    { value: 1 },
+    { value: 2 },
+    { value: 3 },
+    { value: 4 },
+    { value: 5 },
+  ]}
   disabled={
     defeitosSelecionados.some(d => {
       const info = DEFEITOS_DISPONIVEIS.find(def => def.nome === d);
@@ -3963,30 +3999,40 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
     }) || (pontosPericiaRestantes <= 0 && Number(v || 0) === 0)
   }
   onChange={(e, val) => {
-  const atual = Number(v || 0);
-  const diferenca = val - atual;
-  if (diferenca < 0) {
-    if (!isMestre && !ficha?.permitirRedistribuirPontos) return;
-  }
-  if (diferenca > 0 && pontosPericiaRestantes < diferenca) return;
-  setSubCampo("pericias", k, val);
-}}
+    const atual = Number(v || 0);
+    const diferenca = val - atual;
+    if (diferenca < 0) {
+      if (!isMestre && !ficha?.permitirRedistribuirPontos) return;
+    }
+    if (diferenca > 0 && pontosPericiaRestantes < diferenca) return;
+    setSubCampo("pericias", k, val);
+  }}
   valueLabelDisplay="auto"
-sx={{
-  '& .MuiSlider-track': {
-    background: corPericia,
-    boxShadow: `0 0 6px ${corPericia}44`,
-  },
-  '& .MuiSlider-rail': { background: `${corPericia}44` },
-  '& .MuiSlider-thumb': { 
-    bgcolor: corPericia,
-    border: `2px solid ${corPericia}`,
-    boxShadow: `0 0 8px ${corPericia}`,
-    '&:hover': { boxShadow: `0 0 0 8px ${corPericia}33` },
-    '&.Mui-active': { boxShadow: `0 0 0 14px ${corPericia}33` },
-    '&.Mui-disabled': { bgcolor: `${corPericia}88`, border: `2px solid ${corPericia}44` }
-  },
-}}
+  sx={{
+    '& .MuiSlider-track': {
+      background: corPericia,
+      boxShadow: `0 0 6px ${corPericia}44`,
+    },
+    '& .MuiSlider-rail': { background: `${corPericia}44` },
+    '& .MuiSlider-thumb': {
+      bgcolor: corPericia,
+      border: `2px solid ${corPericia}`,
+      boxShadow: `0 0 8px ${corPericia}`,
+      '&:hover': { boxShadow: `0 0 0 8px ${corPericia}33` },
+      '&.Mui-active': { boxShadow: `0 0 0 14px ${corPericia}33` },
+      '&.Mui-disabled': { bgcolor: `${corPericia}88`, border: `2px solid ${corPericia}44` }
+    },
+    '& .MuiSlider-mark': {
+      bgcolor: `${corPericia}cc`,
+      height: 12,
+      width: 2,
+      borderRadius: 1,
+      opacity: 1,
+    },
+    '& .MuiSlider-markActive': {
+      bgcolor: corPericia,
+    },
+  }}
 />
       <Box sx={{ position: 'relative', mt: 0.3 }}>
         <LinearProgress 
@@ -4024,36 +4070,40 @@ sx={{
 })}
             </Box>
             {/* 🟢 NOVA SEÇÃO DE HABILIDADES - BOTÃO QUE ABRE MODAL */}
-<Box mt={2}>
-  <Box
-    display="flex"
-    justifyContent="space-between"
-    alignItems="center"
-    sx={{
-      borderBottom: `2px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
-      pb: 1,
-      mb: 1,
-    }}
-  >
-    <Typography component="div" sx={{ fontWeight: "bold" }}>
-      {LABELS.habilidadesTitulo}
+<Box mt={2} sx={{
+  p: 2,
+  background: `linear-gradient(180deg, ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}20 0%, ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}03 100%)`,
+  border: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}66`,
+  borderRadius: 3,
+  boxShadow: `0 0 25px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}33`,
+}}>
+  <Box sx={{
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    mb: 1.5,
+  }}>
+    <Typography sx={{
+      fontWeight: 900,
+      fontSize: '1.15rem',
+      letterSpacing: 1,
+      background: `linear-gradient(90deg, ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}, #ffffff)`,
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+    }}>
+      ⚡ HABILIDADES AURANAS
     </Typography>
-
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       {!isMestre && (
-        <Typography
-          sx={{
-            fontWeight: "bold",
-            color: CORES_AURA[ficha.tipoAura] || "#00e0ff",
-            textDecoration: "underline",
-            textShadow: `0 0 6px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
-            fontSize: 16,
-          }}
-        >
+        <Typography sx={{
+          fontWeight: 'bold',
+          color: CORES_AURA[ficha.tipoAura] || "#00e0ff",
+          textShadow: `0 0 6px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
+          fontSize: 14,
+        }}>
           ✨ {ficha.tipoAura || "—"}
         </Typography>
       )}
-      
       {isMestre && (
         <TextField
           select
@@ -4061,11 +4111,7 @@ sx={{
           value={ficha.tipoAura || ""}
           onChange={(e) => setCampo("tipoAura", e.target.value)}
           SelectProps={{ native: true }}
-          sx={{
-            minWidth: 160,
-            bgcolor: "#021319",
-            borderRadius: 1,
-          }}
+          sx={{ minWidth: 160, bgcolor: "#021319", borderRadius: 1 }}
         >
           <option value=""></option>
           {TIPOS_AURA.map((t) => (
@@ -4075,80 +4121,100 @@ sx={{
       )}
     </Box>
   </Box>
-
-  {/* Botão para abrir modal de habilidades */}
+<Button
+  variant="contained"
+  fullWidth
+  onClick={() => setModalHabilidadesOpen(true)}
+  sx={{
+    background: `linear-gradient(135deg, ${CORES_AURA[ficha.tipoAura] || "#00e0ff"} 0%, ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}aa 100%)`,
+    color: '#000',
+    fontWeight: 900,
+    py: 1.8,
+    fontSize: '1rem',
+    borderRadius: 2,
+    letterSpacing: 0.5,
+    textShadow: '0 1px 2px rgba(255,255,255,0.3)',
+    boxShadow: `0 0 20px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}55`,
+    border: `2px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}`,
+    '&:hover': {
+      background: `linear-gradient(135deg, ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}dd 0%, ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}88 100%)`,
+      boxShadow: `0 0 30px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}88`,
+      transform: 'scale(1.01)',
+    },
+    transition: 'all 0.2s',
+  }}
+>
+  ⚡ ABRIR HABILIDADES · {ficha.habilidades?.length || 0}/{limiteHabilidades}
+</Button>
+</Box>
+<Box mt={2} sx={{
+  p: 1.5,
+  background: 'linear-gradient(180deg, rgba(139,69,19,0.18) 0%, rgba(139,69,19,0.02) 100%)',
+  border: '1px solid #8B451366',
+  borderRadius: 3,
+  boxShadow: '0 0 25px rgba(139,69,19,0.2)',
+}}>
   <Button
-    variant="contained"
+    variant="outlined"
+    startIcon={<AddIcon />}
     fullWidth
-    onClick={() => setModalHabilidadesOpen(true)}
-    sx={{
-      bgcolor: CORES_AURA[ficha.tipoAura] || "#00e0ff",
-      color: '#000',
-      fontWeight: 'bold',
-      py: 1.5,
-      fontSize: '1.1rem',
-      '&:hover': {
-        bgcolor: CORES_AURA[ficha.tipoAura] 
-          ? `${CORES_AURA[ficha.tipoAura]}dd` 
-          : '#00bcd4'
-      }
+    onClick={() => setModalComprarInventarioOpen(true)}
+    sx={{ 
+      color: '#4caf50', 
+      borderColor: '#4caf50',
+      mb: 1.5
     }}
   >
-    ⚡ HABILIDADES AURANAS ({ficha.habilidades?.length || 0}/{limiteHabilidades})
+    + Comprar Inventário Secundário
   </Button>
-</Box>
-{/* 🟢 BOTÃO COMPRAR INVENTÁRIO (todos veem) */}
-  <Box mt={2}>
+  <Box sx={{ display: 'flex', gap: 1.5 }}>
     <Button
-      variant="outlined"
-      startIcon={<AddIcon />}
-      fullWidth
-      onClick={() => setModalComprarInventarioOpen(true)}
-      sx={{ 
-        color: '#4caf50', 
-        borderColor: '#4caf50',
-        mb: 1
+      variant="contained"
+      startIcon={<span style={{ fontSize: '1.2rem' }}>🎒</span>}
+      onClick={() => setModalInventarioOpen(true)}
+      sx={{
+        flex: 1,
+        background: 'linear-gradient(135deg, #8B4513 0%, #654321 100%)',
+        color: '#fff',
+        py: 1.5,
+        fontSize: '0.95rem',
+        fontWeight: 'bold',
+        borderRadius: 2,
+        border: '1px solid #8B451366',
+        boxShadow: '0 0 15px rgba(139,69,19,0.3)',
+        '&:hover': {
+          background: 'linear-gradient(135deg, #a0522d 0%, #8B4513 100%)',
+          boxShadow: '0 0 25px rgba(139,69,19,0.5)',
+        },
+        transition: 'all 0.2s',
       }}
     >
-      + Comprar Inventário Secundário
+      INVENTÁRIO ({pesoAtual}/{pesoMaximo})
+    </Button>
+    <Button
+      variant="contained"
+      startIcon={<span style={{ fontSize: '1.2rem' }}>💰</span>}
+      onClick={() => setModalDinheiroOpen(true)}
+      sx={{
+        flex: 1,
+        background: 'linear-gradient(135deg, #22c55e 0%, #15803d 100%)',
+        color: '#fff',
+        py: 1.5,
+        fontSize: '0.95rem',
+        fontWeight: 'bold',
+        borderRadius: 2,
+        border: '1px solid #22c55e66',
+        boxShadow: '0 0 15px rgba(34,197,94,0.3)',
+        '&:hover': {
+          background: 'linear-gradient(135deg, #16a34a 0%, #166534 100%)',
+          boxShadow: '0 0 25px rgba(34,197,94,0.5)',
+        },
+        transition: 'all 0.2s',
+      }}
+    >
+      CARTEIRA
     </Button>
   </Box>
-
-{/* 🟢 INVENTÁRIO PRINCIPAL + DINHEIRO */}
-<Box mt={2} sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
-  <Button
-    variant="contained"
-    startIcon={<span>🎒</span>}
-    onClick={() => setModalInventarioOpen(true)}
-    sx={{ 
-      bgcolor: '#8B4513', 
-      '&:hover': { bgcolor: '#654321' }, 
-      px: 4, 
-      py: 1,
-      fontSize: '1.1rem',
-      fontWeight: 'bold',
-      flex: 1
-    }}
-  >
-    INVENTÁRIO PRINCIPAL ({pesoAtual}/{pesoMaximo})
-  </Button>
-  <Button
-    variant="contained"
-    startIcon={<span>💰</span>}
-    onClick={() => setModalDinheiroOpen(true)}
-    sx={{ 
-      bgcolor: '#2e7d32', 
-      '&:hover': { bgcolor: '#1b5e20' }, 
-      px: 4, 
-      py: 1,
-      fontSize: '1.1rem',
-      fontWeight: 'bold',
-      flex: 1
-    }}
-  >
-    DINHEIRO
-  </Button>
-</Box>
 
 {/* 🟢 INVENTÁRIOS SECUNDÁRIOS */}
 {inventariosSecundarios.map((inv, idx) => (
@@ -4217,72 +4283,109 @@ sx={{
     )}
   </Box>
 ))}
-{/* Anotações e Background - Botões */}
-<Box mt={2} sx={{ display: 'flex', gap: 2 }}>
+</Box>
+{/* Background — botão único */}
+<Box mt={2}>
   <Button 
     variant="outlined" 
-    startIcon={<span>📝</span>}
-        onClick={() => {
-      setAnotacoesFlutuante(true);
-      setAnotacoesMinimizada(false);
-    }}
-    sx={{ color: '#fff', borderColor: '#ff9800', flex: 1 }}
-  >
-    Anotações ({anotacoesSalvos.length})
-  </Button>
-  <Button 
-    variant="outlined" 
-    startIcon={<span>📖</span>}
+    fullWidth
+    startIcon={<span style={{ fontSize: '1.2rem' }}>📖</span>}
     onClick={() => setModalBackgroundOpen(true)}
-    sx={{ color: '#fff', borderColor: '#9c27b0', flex: 1 }}
+    sx={{
+      color: '#e9d5ff',
+      borderColor: '#9c27b0',
+      py: 1.2,
+      fontWeight: 'bold',
+      background: 'linear-gradient(135deg, rgba(156,39,176,0.15), rgba(156,39,176,0.05))',
+      borderWidth: 2,
+      '&:hover': {
+        borderColor: '#a855f7',
+        background: 'linear-gradient(135deg, rgba(156,39,176,0.25), rgba(156,39,176,0.1))',
+        boxShadow: '0 0 20px rgba(156,39,176,0.3)',
+      },
+    }}
   >
-    Background
+    📖 BACKGROUND & HISTÓRIA {ficha.backgroundTipo ? `· ${ficha.backgroundTipo}` : ''}
   </Button>
 </Box>
             {/* Botões Galeria e Salvar */}
-<Box mt={2} sx={{ display: "flex", justifyContent: "space-between", gap: 1, flexWrap: 'wrap' }}>
+<Box mt={2} sx={{
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 1,
+  flexWrap: 'wrap',
+  p: 1.5,
+  background: 'linear-gradient(180deg, rgba(0,224,255,0.12) 0%, rgba(0,224,255,0.02) 100%)',
+  border: '1px solid #00e0ff44',
+  borderRadius: 3,
+  boxShadow: '0 0 20px rgba(0,224,255,0.15)',
+}}>
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-  <Button variant="outlined" startIcon={<span>🖼️</span>} onClick={() => setModalGaleriaOpen(true)}>Galeria</Button>
-  <Button variant="outlined" startIcon={<span>💾</span>} onClick={handleBackup}>Backup</Button>
+  <Tooltip title="Galeria de Imagens" arrow>
+    <Button
+      variant="outlined"
+      onClick={() => setModalGaleriaOpen(true)}
+      sx={{ minWidth: 'auto', p: 1, fontSize: '1.2rem', borderColor: '#9c27b088', color: '#9c27b0', '&:hover': { borderColor: '#9c27b0', bgcolor: '#9c27b011' } }}
+    >
+      🖼️
+    </Button>
+  </Tooltip>
 
-  {/* 🟢 TRAVA do Restaurar — apenas Mestre vê o botão de cadeado */}
+  <Tooltip title="Fazer Backup (baixar JSON da ficha)" arrow>
+    <Button
+      variant="outlined"
+      onClick={handleBackup}
+      sx={{ minWidth: 'auto', p: 1, fontSize: '1.2rem', borderColor: '#22c55e88', color: '#22c55e', '&:hover': { borderColor: '#22c55e', bgcolor: '#22c55e11' } }}
+    >
+      💾
+    </Button>
+  </Tooltip>
+
+  {/* 🟢 TRAVA do Restaurar — apenas Mestre vê o cadeado */}
   {isMestre && (
-    <Tooltip title={restauracaoLiberada ? "Bloquear restauração para o jogador" : "Liberar restauração para o jogador"}>
-      <IconButton
-        size="small"
+    <Tooltip title={restauracaoLiberada ? "Bloquear restauração para o jogador" : "Liberar restauração para o jogador"} arrow>
+      <Button
         onClick={async () => {
           const novoValor = !restauracaoLiberada;
           setRestauracaoLiberada(novoValor);
           await setDoc(doc(db, "fichas", fichaId), { restauracaoLiberada: novoValor }, { merge: true });
         }}
+        variant="outlined"
         sx={{
-          border: `1px solid ${restauracaoLiberada ? '#4caf50' : '#ef4444'}66`,
-          borderRadius: 2,
+          minWidth: 'auto', p: 1, fontSize: '1.2rem',
+          borderColor: restauracaoLiberada ? '#4caf5088' : '#ef444488',
           color: restauracaoLiberada ? '#4caf50' : '#ef4444',
-          px: 1, height: 36,
-          '&:hover': { bgcolor: restauracaoLiberada ? '#4caf5022' : '#ef444422' },
+          '&:hover': {
+            borderColor: restauracaoLiberada ? '#4caf50' : '#ef4444',
+            bgcolor: restauracaoLiberada ? '#4caf5011' : '#ef444411',
+          },
         }}
       >
-        <span style={{ fontSize: '1.1rem' }}>{restauracaoLiberada ? '🔓' : '🔒'}</span>
-      </IconButton>
+        {restauracaoLiberada ? '🔓' : '🔒'}
+      </Button>
     </Tooltip>
   )}
 
   {/* 🟢 Botão Restaurar — só aparece/ativa se Mestre liberou (ou se for o próprio Mestre) */}
   {isMestre || restauracaoLiberada ? (
-    <Button variant="outlined" startIcon={<span>📂</span>} onClick={handleRestore}>
-      Restaurar
-    </Button>
+    <Tooltip title="Restaurar a partir de arquivo JSON" arrow>
+      <Button
+        variant="outlined"
+        onClick={handleRestore}
+        sx={{ minWidth: 'auto', p: 1, fontSize: '1.2rem', borderColor: '#ff980088', color: '#ff9800', '&:hover': { borderColor: '#ff9800', bgcolor: '#ff980011' } }}
+      >
+        📂
+      </Button>
+    </Tooltip>
   ) : (
-    <Tooltip title="🔒 Restauração bloqueada pelo Mestre">
+    <Tooltip title="🔒 Restauração bloqueada pelo Mestre" arrow>
       <span>
         <Button
           variant="outlined"
-          startIcon={<span>🔒</span>}
           disabled
-          sx={{ color: '#64748b', borderColor: '#334155' }}
+          sx={{ minWidth: 'auto', p: 1, fontSize: '1.2rem', color: '#64748b', borderColor: '#334155' }}
         >
-          Restaurar
+          🔒
         </Button>
       </span>
     </Tooltip>
@@ -4303,9 +4406,22 @@ sx={{
       flexDirection: "column",
       alignItems: "center",
       gap: 1,
+      background: 'linear-gradient(180deg, rgba(156,39,176,0.15) 0%, rgba(156,39,176,0.02) 100%)',
+      border: '1px solid #9c27b066',
+      borderRadius: 3,
+      boxShadow: '0 0 25px rgba(156,39,176,0.2)',
     }}
   >
-    <Typography component="div">Personagem</Typography>
+    <Typography component="div" sx={{
+      fontWeight: 900,
+      fontSize: '1rem',
+      letterSpacing: 1,
+      background: 'linear-gradient(90deg, #9c27b0, #e9d5ff)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+    }}>
+      ⚜ PERSONAGEM
+    </Typography>
 
     {/* IMAGEM PRINCIPAL */}
     {ficha.imagens?.length > 0 ? (
