@@ -374,6 +374,37 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
     });
   }, [chatAberto, mensagens, ultimaLeitura]);
 
+  // 🟢 REF PARA MENSAGENS (evita dependência circular)
+  const mensagensRef = useRef([]);
+  useEffect(() => {
+    mensagensRef.current = mensagens;
+  }, [mensagens]);
+
+  // 🟢 MARCAR COMO LIDA — atualiza estado local E salva no Firestore
+  const marcarComoLida = useCallback(async (chatEmail, ultimoId = null) => {
+    if (!chatEmail || !userEmail) return;
+
+    const lista = mensagensRef.current;
+    const idParaSalvar = ultimoId || lista[lista.length - 1]?.id;
+    if (!idParaSalvar) return;
+
+    setUltimaLeitura(prev => ({ ...prev, [chatEmail]: idParaSalvar }));
+    setNaoLidas(prev => ({ ...prev, [chatEmail]: 0 }));
+    setNotificacoesLocais(prev => ({ ...prev, [chatEmail]: false }));
+    if (setNotificacoesSidebar) {
+      setNotificacoesSidebar(prev => ({ ...prev, [chatEmail]: false }));
+    }
+
+    try {
+      await setDoc(doc(db, "whatsapp_leituras", `${userEmail}_${chatEmail}`), {
+        ultimaLida: idParaSalvar,
+        atualizadoEm: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error("[Chat] Erro ao salvar última leitura:", err);
+    }
+  }, [userEmail, setNotificacoesSidebar]);
+
   // 🟢 SCROLL LISTENER
   useEffect(() => {
     const container = chatRef.current;
@@ -388,12 +419,8 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
         const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
         if (distance < 80) {
           setShowScrollButton(false);
-          if (chatAberto && mensagens.length > 0) {
-            const ultima = mensagens[mensagens.length - 1];
-            setUltimaLeitura(prev => ({ ...prev, [chatAberto]: ultima.id }));
-            setNaoLidas(prev => ({ ...prev, [chatAberto]: 0 }));
-            setNotificacoesLocais(prev => ({ ...prev, [chatAberto]: false }));
-            if (setNotificacoesSidebar) setNotificacoesSidebar(prev => ({ ...prev, [chatAberto]: false }));
+          if (chatAberto) {
+            marcarComoLida(chatAberto);
           }
         } else {
           setShowScrollButton(true);
@@ -406,7 +433,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
       container.removeEventListener("scroll", handleScroll);
       if (scrollTimeout) clearTimeout(scrollTimeout);
     };
-  }, [chatAberto, mensagens, setNotificacoesSidebar]);
+  }, [chatAberto, marcarComoLida]);
 
   // 🟢 CARREGAR ÚLTIMA LEITURA
   useEffect(() => {
@@ -418,6 +445,26 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
       }
     });
   }, [chatAberto, userEmail]);
+
+  // 🟢 MARCAR COMO LIDA AO ABRIR O CHAT
+  useEffect(() => {
+    if (!chatAberto || !userEmail || mensagens.length === 0) return;
+
+    const ultima = mensagens[mensagens.length - 1];
+    if (!ultima || ultima.de === userEmail) return;
+    if (ultimaLeitura[chatAberto] === ultima.id) return;
+
+    const timer = setTimeout(() => {
+      const container = chatRef.current;
+      if (!container) return;
+      const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distance < 150) {
+        marcarComoLida(chatAberto, ultima.id);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [chatAberto, mensagens, ultimaLeitura, userEmail, marcarComoLida]);
 
   // 🟢 VERIFICAR CONQUISTA "ALMA DA FESTA"
   useEffect(() => {

@@ -39,9 +39,10 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import CasinoIcon from "@mui/icons-material/Casino";
 import BolsaValores from "./BolsaValores";
 import { db } from "../firebaseConfig";
-import { doc, setDoc, onSnapshot, getDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, getDoc, collection } from "firebase/firestore";
 import ImoveisHUD from "./ImoveisHUD";
 import HackeamentoGame from "./HackeamentoGame";
+import RedesClandestinas from "./RedesClandestinas";
 
 // ==================== ESTILOS MATRIX ====================
 const matrixStyles = {
@@ -308,6 +309,7 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
   
   // ===== CÓDIGO PESSOAL =====
   const [codigoPessoal, setCodigoPessoal] = useState("");
+  const [codigosJogadores, setCodigosJogadores] = useState({});
   
   // ===== LATÊNCIA OSCILANTE =====
   const [latencia, setLatencia] = useState("12");
@@ -349,6 +351,8 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
 
   // Substitua o useEffect do código pessoal por:
   useEffect(() => {
+    if (!userEmail) return;
+
     const gerarCodigo = () => {
       const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
       let codigo = "";
@@ -357,17 +361,41 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
       }
       return codigo;
     };
-    
-    const chaveCodigo = `rede_codigo_pessoal_${userEmail || 'anonimo'}`;
-    const codigoSalvo = localStorage.getItem(chaveCodigo);
-    if (codigoSalvo) {
-      setCodigoPessoal(codigoSalvo);
-    } else {
-      const novoCodigo = gerarCodigo();
-      localStorage.setItem(chaveCodigo, novoCodigo);
-      setCodigoPessoal(novoCodigo);
+
+    const chaveCodigo = `rede_codigo_pessoal_${userEmail}`;
+    let codigoFinal = localStorage.getItem(chaveCodigo);
+
+    if (!codigoFinal) {
+      codigoFinal = gerarCodigo();
+      localStorage.setItem(chaveCodigo, codigoFinal);
     }
+
+    setCodigoPessoal(codigoFinal);
+
+    setDoc(doc(db, "rede_codigos", userEmail), {
+      codigo: codigoFinal,
+      email: userEmail,
+      nome: fichasMap[userEmail]?.nome || userEmail,
+      atualizadoEm: new Date().toISOString(),
+    }, { merge: true }).catch((e) => console.error("Erro ao salvar código:", e));
   }, [userEmail]);
+
+  useEffect(() => {
+    if (!userEmail || !codigoPessoal) return;
+    setDoc(doc(db, "rede_codigos", userEmail), {
+      nome: fichasMap[userEmail]?.nome || userEmail,
+    }, { merge: true }).catch(() => {});
+  }, [userEmail, codigoPessoal, fichasMap]);
+
+  useEffect(() => {
+    const col = collection(db, "rede_codigos");
+    const unsub = onSnapshot(col, (snap) => {
+      const map = {};
+      snap.forEach((d) => { map[d.id] = d.data(); });
+      setCodigosJogadores(map);
+    }, (err) => console.error("Erro ao ouvir códigos:", err));
+    return () => unsub();
+  }, []);
 
   // ===== CARREGAR CARTEIRA PARA COMPRAS =====
   useEffect(() => {
@@ -853,16 +881,18 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
                 <Typography variant="caption" sx={{ color: "#fbbf24", mb: 1, display: "block" }}>
                   🔍 CÓDIGOS DOS JOGADORES (Modo Mestre):
                 </Typography>
-                {Object.entries(fichasMap).map(([email, data]) => {
-                  const codigo = localStorage.getItem(`rede_codigo_pessoal_${email}`);
-                  return (
-                    <Paper key={email} sx={{ p: 1, mb: 0.5, bgcolor: "#0d1f0d", border: "1px solid #10b98144" }}>
-                      <Typography variant="caption" sx={{ color: "#0f5" }}>
-                        {data.nome || email}: <strong>{codigo || "N/A"}</strong>
-                      </Typography>
-                    </Paper>
-                  );
-                })}
+                {Object.entries(codigosJogadores).length === 0 && (
+                  <Typography variant="caption" sx={{ color: "#666", display: "block", p: 1 }}>
+                    Nenhum código registrado ainda. Peça para os jogadores abrirem a Rede uma vez.
+                  </Typography>
+                )}
+                {Object.entries(codigosJogadores).map(([email, data]) => (
+                  <Paper key={email} sx={{ p: 1, mb: 0.5, bgcolor: "#0d1f0d", border: "1px solid #10b98144" }}>
+                    <Typography variant="caption" sx={{ color: "#0f5" }}>
+                      {data.nome || fichasMap[email]?.nome || email}: <strong>{data.codigo || "N/A"}</strong>
+                    </Typography>
+                  </Paper>
+                ))}
               </Box>
             )}
             
@@ -876,28 +906,26 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
                 }
                 
                 // Procurar jogador pelo código
-                const codigoAlvo = hackeamentoAlvo.codigo.toUpperCase();
+                const codigoAlvo = hackeamentoAlvo.codigo.toUpperCase().trim();
                 let emailEncontrado = null;
                 let nomeEncontrado = null;
                 
-                Object.entries(fichasMap).forEach(([email, data]) => {
-                  const codigo = localStorage.getItem(`rede_codigo_pessoal_${email}`);
-                  if (codigo && codigo.toUpperCase() === codigoAlvo) {
+                Object.entries(codigosJogadores).forEach(([email, data]) => {
+                  if (data.codigo && data.codigo.toUpperCase().trim() === codigoAlvo) {
                     emailEncontrado = email;
-                    nomeEncontrado = data.nome || email;
+                    nomeEncontrado = data.nome || fichasMap[email]?.nome || email;
                   }
                 });
                 
-                // Fallback: procurar no localStorage
                 if (!emailEncontrado) {
                   for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (key.startsWith('rede_codigo_pessoal_')) {
                       const email = key.replace('rede_codigo_pessoal_', '');
                       const codigo = localStorage.getItem(key);
-                      if (codigo && codigo.toUpperCase() === codigoAlvo) {
+                      if (codigo && codigo.toUpperCase().trim() === codigoAlvo) {
                         emailEncontrado = email;
-                        nomeEncontrado = fichasMap[email]?.nome || email;
+                        nomeEncontrado = codigosJogadores[email]?.nome || fichasMap[email]?.nome || email;
                         break;
                       }
                     }
@@ -933,121 +961,15 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
           </Box>
         );
         break;
-        
       case "clandestina":
         conteudo = (
-          <Box sx={{ p: 2, overflowY: "auto", flex: 1, bgcolor: "#0a0a0a" }}>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-              <Typography variant="h6" sx={{ color: "#ef4444", fontFamily: "'Courier New', monospace", textShadow: "0 0 20px #ef4444" }}>
-                🌑 DEEP_WEEP.exe
-              </Typography>
-              <Chip 
-                label={`💰 ${totalCarteira.toFixed(2)}`}
-                size="small"
-                sx={{ bgcolor: "#fbbf2422", color: "#fbbf24", fontSize: "0.6rem", height: 20 }}
-              />
-            </Box>
-            <Typography variant="caption" sx={{ color: "#666", display: "block", mb: 2, fontFamily: "'Courier New', monospace" }}>
-              ⚠️ ACESSO RESTRITO - USO SOB PRÓPRIA RESPONSABILIDADE ⚠️
-            </Typography>
-            
-            {/* Lista de itens clandestinos */}
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              {[
-                { 
-                  id: "armas", 
-                  titulo: "🔫 Arsenal Ilegal", 
-                  desc: "Armamentos não rastreáveis, munição especial, explosivos artesanais. Qualidade militar sem registro.",
-                  preco: "500-5.000 💰",
-                  detalhes: "Fornecedor: 'O Mercador' • Entrega em 24h • Local: Porto Negro"
-                },
-                { 
-                  id: "drogas", 
-                  titulo: "💊 Substâncias Controladas", 
-                  desc: "Estimulantes sintéticos, alucinógenos de alta pureza, calmantes ilegais. Efeitos intensos e duradouros.",
-                  preco: "200-2.000 💰",
-                  detalhes: "Fornecedor: 'Doutor Sombra' • Pureza garantida • Entrega discreta"
-                },
-                { 
-                  id: "documentos", 
-                  titulo: "🆔 Identidades Falsas", 
-                  desc: "Passaportes, credenciais corporativas, identidades oficiais. Incluem verificação biométrica falsa.",
-                  preco: "1.000-10.000 💰",
-                  detalhes: "Fornecedor: 'O Artesão' • 3 níveis de autenticidade • Entrega em 48h"
-                },
-                { 
-                  id: "dados", 
-                  titulo: "💻 Dados Roubados", 
-                  desc: "Informações confidenciais, segredos corporativos, planos militares, listas de clientes de alto perfil.",
-                  preco: "5.000-50.000 💰",
-                  detalhes: "Fornecedor: 'Espectro' • Dados verificados • Atualização diária"
-                },
-                { 
-                  id: "acesso", 
-                  titulo: "🔑 Chaves de Acesso Ilegal", 
-                  desc: "Códigos de segurança, chaves criptográficas, acessos a sistemas restritos e instalações seguras.",
-                  preco: "2.000-20.000 💰",
-                  detalhes: "Fornecedor: 'Porteiro' • Acesso garantido • Suporte técnico incluído"
-                },
-                { 
-                  id: "biohacking", 
-                  titulo: "🧬 Modificações Genéticas", 
-                  desc: "Aprimoramentos ilegais, edição genética, implantes não regulamentados. Risco alto, recompensa maior.",
-                  preco: "10.000-100.000 💰",
-                  detalhes: "Fornecedor: 'O Biomante' • Procedimentos clandestinos • Garantia limitada"
-                },
-                { 
-                  id: "info", 
-                  titulo: "🔍 Informações Privilegiadas", 
-                  desc: "Segredos de estado, escândalos políticos, localizações de alvos, rotas de contrabando.",
-                  preco: "3.000-30.000 💰",
-                  detalhes: "Fornecedor: 'Olho de Vidro' • Informação verificada • Atualização em tempo real"
-                },
-              ].map((item) => {
-                const [min, max] = item.preco.replace('💰', '').trim().split('-').map(v => parseFloat(v.replace(/\D/g, '')) || 0);
-                const precoReal = min + Math.random() * (max - min);
-                
-                return (
-                  <Paper key={item.id} sx={{ p: 1.5, bgcolor: "#0d0d0d", border: "1px solid #ef444433", '&:hover': { borderColor: "#ef444488" } }}>
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 1 }}>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body2" sx={{ color: "#ef4444", fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
-                          {item.titulo}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: "#888", display: "block", fontFamily: "'Courier New', monospace" }}>
-                          {item.desc}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: "#666", display: "block", fontFamily: "'Courier New', monospace", mt: 0.5 }}>
-                          {item.detalhes}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5 }}>
-                        <Typography variant="caption" sx={{ color: "#fbbf24", fontFamily: "'Courier New', monospace", fontWeight: "bold" }}>
-                          💰 {precoReal.toFixed(2)}
-                        </Typography>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          onClick={() => {
-                            // Abrir modal de compra
-                            setItemSelecionado(item);
-                            setPrecoItem(precoReal);
-                            setModalCompraClandestina(true);
-                          }}
-                          sx={{ bgcolor: "#ef4444", '&:hover': { bgcolor: "#dc2626" }, fontSize: "0.6rem" }}
-                        >
-                          Adquirir
-                        </Button>
-                      </Box>
-                    </Box>
-                  </Paper>
-                );
-              })}
-            </Box>
-          </Box>
+          <RedesClandestinas
+            userEmail={userEmail}
+            fichasMap={fichasMap}
+            isMaster={isMaster}
+          />
         );
         break;
-        
       case "servicos":
         conteudo = (
           <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>

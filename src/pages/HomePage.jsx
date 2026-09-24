@@ -243,6 +243,12 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
   const [xpMap, setXpMap] = useState({});
     const [modalContasOpen, setModalContasOpen] = useState(false);
   const [contasUsuarios, setContasUsuarios] = useState([]);
+    const [modalAlterarSenhaOpen, setModalAlterarSenhaOpen] = useState(false);
+  const [contaEditandoSenha, setContaEditandoSenha] = useState(null);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState("");
+  const [alterandoSenha, setAlterandoSenha] = useState(false);
+  const [senhaVisivel, setSenhaVisivel] = useState({});
   // 🟢 CARREGAR CONTAS DE USUÁRIOS
   const carregarContasUsuarios = async () => {
     try {
@@ -255,8 +261,6 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
       alert("Erro ao carregar contas.");
     }
   };
-
-  // 🟢 ALTERAR CONVIDADO PARA JOGADOR
   const alterarStatusConta = async (email, isConvidado) => {
     try {
       await setDoc(doc(db, "contas_usuarios", email), { isConvidado: !isConvidado }, { merge: true });
@@ -268,6 +272,65 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
     } catch (err) {
       console.error("Erro ao alterar status:", err);
       alert("Erro ao alterar status.");
+    }
+  };
+
+  const abrirModalAlterarSenha = (conta) => {
+    setContaEditandoSenha(conta);
+    setNovaSenha("");
+    setConfirmarNovaSenha("");
+    setModalAlterarSenhaOpen(true);
+  };
+
+  const salvarNovaSenha = async () => {
+    if (!contaEditandoSenha) return;
+    if (novaSenha.length < 6) {
+      alert("A senha precisa ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (novaSenha !== confirmarNovaSenha) {
+      alert("As senhas não coincidem.");
+      return;
+    }
+
+    setAlterandoSenha(true);
+    try {
+      const apiBase = window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://reqviem.onrender.com";
+
+      const response = await fetch(`${apiBase}/api/admin/update-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: contaEditandoSenha.email,
+          novaSenha,
+          mestreEmail: user?.email,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erro ao alterar senha");
+      }
+
+      await setDoc(doc(db, "contas_usuarios", contaEditandoSenha.email), {
+        senha: novaSenha,
+      }, { merge: true });
+
+      setContasUsuarios(prev => prev.map(c =>
+        c.email === contaEditandoSenha.email ? { ...c, senha: novaSenha } : c
+      ));
+
+      alert(`✅ Senha de ${contaEditandoSenha.email} alterada com sucesso!`);
+      setModalAlterarSenhaOpen(false);
+      setContaEditandoSenha(null);
+    } catch (err) {
+      console.error("Erro ao alterar senha:", err);
+      alert("Erro ao alterar senha: " + err.message);
+    } finally {
+      setAlterandoSenha(false);
     }
   };
   // 🟢 CARREGAR XP MAP
@@ -791,38 +854,65 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
             </Typography>
           ) : (
             contasUsuarios.map(conta => (
-              <Paper key={conta.id} sx={{ p: 2, mb: 1, bgcolor: '#0f172a', border: '1px solid #334155' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-                  <Box>
-                    <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>
+              <Paper key={conta.id} sx={{ p: 2, mb: 1, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
+                  <Box sx={{ flex: 1, minWidth: 200 }}>
+                    <Typography sx={{ color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>
                       📧 {conta.email}
                     </Typography>
-                    <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem' }}>
-                      🔑 Senha: {conta.senha}
-                    </Typography>
-                    <Typography sx={{ 
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                      <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                        🔑 Senha: {senhaVisivel[conta.email] ? conta.senha : "••••••••"}
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => setSenhaVisivel(prev => ({ ...prev, [conta.email]: !prev[conta.email] }))}
+                        sx={{ color: '#94a3b8', p: 0.3 }}
+                      >
+                        <span style={{ fontSize: '0.9rem' }}>
+                          {senhaVisivel[conta.email] ? '🙈' : '👁️'}
+                        </span>
+                      </IconButton>
+                    </Box>
+                    <Typography sx={{
                       color: conta.isConvidado ? '#ff9800' : '#4caf50',
-                      fontSize: '0.8rem',
-                      fontWeight: 'bold'
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      mt: 0.5,
                     }}>
                       {conta.isConvidado ? '🎭 Convidado' : '🎮 Jogador'}
                       {conta.nomeConvidado && ` - ${conta.nomeConvidado}`}
                     </Typography>
                   </Box>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => alterarStatusConta(conta.email, conta.isConvidado)}
-                    sx={{ 
-                      bgcolor: conta.isConvidado ? '#4caf50' : '#ff9800',
-                      '&:hover': { 
-                        bgcolor: conta.isConvidado ? '#388e3c' : '#f57c00' 
-                      },
-                      fontSize: '0.7rem'
-                    }}
-                  >
-                    {conta.isConvidado ? '🎮 Tornar Jogador' : '🎭 Tornar Convidado'}
-                  </Button>
+
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => abrirModalAlterarSenha(conta)}
+                      sx={{
+                        bgcolor: '#1976d2',
+                        '&:hover': { bgcolor: '#115293' },
+                        fontSize: '0.7rem',
+                        minWidth: 130,
+                      }}
+                    >
+                      🔐 Alterar Senha
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => alterarStatusConta(conta.email, conta.isConvidado)}
+                      sx={{
+                        bgcolor: conta.isConvidado ? '#4caf50' : '#ff9800',
+                        '&:hover': { bgcolor: conta.isConvidado ? '#388e3c' : '#f57c00' },
+                        fontSize: '0.7rem',
+                        minWidth: 130,
+                      }}
+                    >
+                      {conta.isConvidado ? '🎮 Tornar Jogador' : '🎭 Tornar Convidado'}
+                    </Button>
+                  </Box>
                 </Box>
               </Paper>
             ))
@@ -832,6 +922,77 @@ export default function HomePage({ user, role, fichasList, selectedFichaEmail, s
           <Button onClick={() => setModalContasOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
         </DialogActions>
       </Dialog>
+      {/* 🟢 MODAL ALTERAR SENHA */}
+      <Dialog
+        open={modalAlterarSenhaOpen}
+        onClose={() => setModalAlterarSenhaOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#0f172a', border: '1px solid #1976d2', borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          🔐 Alterar Senha
+          <IconButton onClick={() => setModalAlterarSenhaOpen(false)} sx={{ color: '#94a3b8' }} size="small">
+            <ClearIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#1a1a2e', color: '#fff', pt: 2 }}>
+          {contaEditandoSenha && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography sx={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                Alterando senha de:
+              </Typography>
+              <Typography sx={{ color: '#00e0ff', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                {contaEditandoSenha.email}
+              </Typography>
+
+              <TextField
+                label="Nova Senha"
+                type="password"
+                fullWidth
+                size="small"
+                value={novaSenha}
+                onChange={(e) => setNovaSenha(e.target.value)}
+                helperText="Mínimo 6 caracteres"
+                FormHelperTextProps={{ sx: { color: '#64748b' } }}
+                sx={{
+                  '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#334155' } },
+                  '& .MuiInputLabel-root': { color: '#94a3b8' },
+                  '& .MuiInputBase-input': { color: '#fff' },
+                }}
+              />
+
+              <TextField
+                label="Confirmar Nova Senha"
+                type="password"
+                fullWidth
+                size="small"
+                value={confirmarNovaSenha}
+                onChange={(e) => setConfirmarNovaSenha(e.target.value)}
+                sx={{
+                  '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#334155' } },
+                  '& .MuiInputLabel-root': { color: '#94a3b8' },
+                  '& .MuiInputBase-input': { color: '#fff' },
+                }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#1a1a2e', borderTop: '1px solid #334155', p: 2 }}>
+          <Button onClick={() => setModalAlterarSenhaOpen(false)} sx={{ color: '#94a3b8' }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={salvarNovaSenha}
+            disabled={alterandoSenha}
+            sx={{ bgcolor: '#1976d2', '&:hover': { bgcolor: '#115293' } }}
+          >
+            {alterandoSenha ? 'Alterando...' : 'Confirmar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {lightboxImage && (
         <Box onClick={() => setLightboxImage(null)} sx={{ position: "fixed", inset: 0, bgcolor: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999999 }}>
           <LightboxImage src={lightboxImage} zoom={zoom} setZoom={setZoom} />

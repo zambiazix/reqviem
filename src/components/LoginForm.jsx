@@ -28,13 +28,13 @@ import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import CloseIcon from "@mui/icons-material/Close";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import LockResetIcon from "@mui/icons-material/LockReset";
 
 const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   
-  // Estados para o modal de cadastro
   const [modalOpen, setModalOpen] = useState(false);
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerSenha, setRegisterSenha] = useState("");
@@ -45,16 +45,22 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   
-  // 🟢 NOVO: Estado para convidado e nome
   const [isConvidado, setIsConvidado] = useState(false);
   const [nomeConvidado, setNomeConvidado] = useState("");
+
+  // 🟢 ESTADOS PARA RECUPERAR SENHA
+  const [modalRecuperarOpen, setModalRecuperarOpen] = useState(false);
+  const [recuperarUsuario, setRecuperarUsuario] = useState("");
+  const [recuperarErro, setRecuperarErro] = useState("");
+  const [recuperarLoading, setRecuperarLoading] = useState(false);
+  const [senhaRecuperada, setSenhaRecuperada] = useState(null);
+  const [mostrarSenhaRecuperada, setMostrarSenhaRecuperada] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     setErro("");
     
-    // 🟢 Garante que o email tem o domínio correto
     const emailCompleto = email.includes('@') ? email : `${email}@reqviemrpg.com`;
     
     try {
@@ -67,13 +73,11 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
   };
 
   const handleRegister = async () => {
-    // Validações
     if (!registerEmail || !registerSenha || !registerConfirmSenha) {
       setRegisterErro("Todos os campos são obrigatórios");
       return;
     }
 
-    // 🟢 Garante que o email termina com @reqviemrpg.com
     const emailLimpo = registerEmail.split('@')[0].trim();
     if (!emailLimpo) {
       setRegisterErro("Digite um nome de usuário válido");
@@ -92,7 +96,6 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
       return;
     }
     
-    // 🟢 Validação do nome para convidado
     if (isConvidado && !nomeConvidado.trim()) {
       setRegisterErro("Digite seu nome de convidado");
       return;
@@ -102,10 +105,8 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
     setLoading(true);
 
     try {
-      // Criar conta no Firebase Auth
       await createUserWithEmailAndPassword(auth, emailCompleto, registerSenha);
       
-      // 🟢 Salvar dados da conta no Firestore
       await setDoc(doc(db, "contas_usuarios", emailCompleto), {
         email: emailCompleto,
         senha: registerSenha,
@@ -114,7 +115,6 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
         criadoEm: new Date().toISOString(),
       });
       
-      // 🟢 Criar ficha básica
       const fichaInicial = {
         nome: isConvidado ? nomeConvidado.trim() : emailLimpo,
         tipoFicha: "PJ",
@@ -194,6 +194,56 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
     setNomeConvidado("");
   };
 
+  // 🟢 RECUPERAR SENHA
+  const handleRecuperarSenha = async () => {
+    if (!recuperarUsuario.trim()) {
+      setRecuperarErro("Digite seu usuário.");
+      return;
+    }
+
+    setRecuperarErro("");
+    setRecuperarLoading(true);
+    setSenhaRecuperada(null);
+
+    try {
+      const apiBase = window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://reqviem.onrender.com";
+
+      const response = await fetch(`${apiBase}/api/auth/recover-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: recuperarUsuario.trim() }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Usuário não encontrado.");
+      }
+
+      setSenhaRecuperada({
+        username: data.username,
+        senha: data.senha,
+        isConvidado: data.isConvidado,
+      });
+      setMostrarSenhaRecuperada(false);
+    } catch (err) {
+      console.error("Erro ao recuperar senha:", err);
+      setRecuperarErro(err.message);
+    } finally {
+      setRecuperarLoading(false);
+    }
+  };
+
+  const fecharModalRecuperar = () => {
+    setModalRecuperarOpen(false);
+    setRecuperarUsuario("");
+    setRecuperarErro("");
+    setSenhaRecuperada(null);
+    setMostrarSenhaRecuperada(false);
+  };
+
   return (
     <>
       <Paper 
@@ -241,7 +291,6 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
               size="small" 
               value={email} 
               onChange={(e) => {
-                // Remove @reqviemrpg.com se o usuário digitar
                 const valor = e.target.value.replace('@reqviemrpg.com', '');
                 setEmail(valor);
               }} 
@@ -312,6 +361,25 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
                 Criar Conta
               </Button>
             </Box>
+
+            <Button
+              fullWidth
+              size="small"
+              onClick={() => setModalRecuperarOpen(true)}
+              startIcon={<LockResetIcon />}
+              sx={{
+                mt: 1.5,
+                color: '#94a3b8',
+                fontSize: '0.75rem',
+                textTransform: 'none',
+                '&:hover': {
+                  color: '#00e0ff',
+                  bgcolor: 'rgba(0,224,255,0.05)'
+                }
+              }}
+            >
+              Esqueci minha senha
+            </Button>
           </form>
         </Box>
       </Paper>
@@ -379,7 +447,6 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
                 </Alert>
               )}
               
-              {/* 🟢 CHECKBOX CONVIDADO */}
               <FormControlLabel
                 control={
                   <Checkbox
@@ -395,7 +462,6 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
                 }
               />
               
-              {/* 🟢 CAMPO NOME PARA CONVIDADO */}
               {isConvidado && (
                 <TextField
                   label="Seu Nome"
@@ -420,7 +486,6 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
                 fullWidth
                 value={registerEmail}
                 onChange={(e) => {
-                  // Remove @reqviemrpg.com se o usuário digitar
                   const valor = e.target.value.replace('@reqviemrpg.com', '');
                   setRegisterEmail(valor);
                 }}
@@ -537,6 +602,143 @@ const LoginForm = memo(function LoginForm({ onLogin, onRegister }) {
             </Button>
           </DialogActions>
         )}
+      </Dialog>
+
+      {/* 🟢 Modal de Recuperar Senha */}
+      <Dialog
+        open={modalRecuperarOpen}
+        onClose={fecharModalRecuperar}
+        maxWidth="xs"
+        fullWidth
+        TransitionComponent={Zoom}
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "1px solid #00e0ff44",
+            borderRadius: 2
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          color: "#00e0ff",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          borderBottom: "1px solid #1e293b"
+        }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <LockResetIcon sx={{ color: "#00e0ff" }} />
+            <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+              Recuperar Senha
+            </Typography>
+          </Box>
+          <IconButton onClick={fecharModalRecuperar} sx={{ color: "#94a3b8" }} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 3 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {!senhaRecuperada ? (
+              <>
+                <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+                  Digite seu nome de usuário para recuperar a senha.
+                </Typography>
+
+                {recuperarErro && (
+                  <Alert severity="error">{recuperarErro}</Alert>
+                )}
+
+                <TextField
+                  label="Usuário"
+                  fullWidth
+                  size="small"
+                  value={recuperarUsuario}
+                  onChange={(e) => {
+                    const valor = e.target.value.replace('@reqviemrpg.com', '');
+                    setRecuperarUsuario(valor);
+                  }}
+                  placeholder="seu_nome"
+                  disabled={recuperarLoading}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleRecuperarSenha();
+                  }}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Typography sx={{ color: '#64748b', fontSize: '0.8rem' }}>
+                          @reqviemrpg.com
+                        </Typography>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      '& fieldset': { borderColor: '#334155' },
+                      '&:hover fieldset': { borderColor: '#00e0ff' },
+                      '&.Mui-focused fieldset': { borderColor: '#00e0ff' },
+                    },
+                    '& .MuiInputLabel-root': { color: '#94a3b8' },
+                    '& .MuiInputBase-input': { color: '#fff' }
+                  }}
+                  autoFocus
+                />
+              </>
+            ) : (
+              <>
+                <Alert severity="success" sx={{ bgcolor: '#0d2818', color: '#4caf50' }}>
+                  ✅ Usuário encontrado!
+                </Alert>
+
+                <Box sx={{ p: 2, bgcolor: '#0a0f1a', borderRadius: 1, border: '1px solid #00e0ff44' }}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                    Usuário:
+                  </Typography>
+                  <Typography sx={{ color: '#00e0ff', fontWeight: 'bold', mb: 1.5 }}>
+                    {senhaRecuperada.username}
+                    {senhaRecuperada.isConvidado && ' 🎭'}
+                  </Typography>
+
+                  <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                    Sua senha:
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography sx={{ color: '#fff', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1rem' }}>
+                      {mostrarSenhaRecuperada ? senhaRecuperada.senha : '••••••••'}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      onClick={() => setMostrarSenhaRecuperada(!mostrarSenhaRecuperada)}
+                      sx={{ color: '#94a3b8' }}
+                    >
+                      {mostrarSenhaRecuperada ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                    </IconButton>
+                  </Box>
+                </Box>
+
+                <Typography variant="caption" sx={{ color: '#fbbf24', textAlign: 'center' }}>
+                  ⚠️ Anote sua senha. Se esquecer novamente, é só voltar aqui.
+                </Typography>
+              </>
+            )}
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, borderTop: "1px solid #1e293b" }}>
+          <Button onClick={fecharModalRecuperar} sx={{ color: "#94a3b8" }}>
+            Fechar
+          </Button>
+          {!senhaRecuperada && (
+            <Button
+              variant="contained"
+              onClick={handleRecuperarSenha}
+              disabled={recuperarLoading}
+              sx={{ bgcolor: "#00e0ff", color: '#000', '&:hover': { bgcolor: '#00b8d4' } }}
+            >
+              {recuperarLoading ? "Buscando..." : "Recuperar"}
+            </Button>
+          )}
+        </DialogActions>
       </Dialog>
     </>
   );
