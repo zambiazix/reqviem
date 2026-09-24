@@ -3794,42 +3794,65 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       {/* Barra de nível */}
       <Box sx={{ position: 'relative', height: 24, display: 'flex', alignItems: 'center' }}>
 <Slider
-  value={Math.min(valorAtual, 5)}
-  min={1}
+  value={Math.max(1, Math.min(valorAtual, 5))}
+  min={0}
   max={5}
-          step={1}
-          onChange={(e, val) => {
-            if (val < 1) return;
-            const atual = Number(v || 1);
-            const diferenca = val - Math.min(atual, 5);
-            if (diferenca < 0) {
-              if (!isMestre && !ficha?.permitirRedistribuirPontos) return;
-              if (temNivel6) { setSubCampo("atributos", k, 5); return; }
-            }
-            if (diferenca > 0) {
-              let custo = 0;
-              for (let i = Math.min(atual, 5) + 1; i <= val; i++) { custo += (i - 1); }
-              if (pontosAtributoRestantes < custo) return;
-              setSubCampo("atributos", k, val);
-              return;
-            }
-            setSubCampo("atributos", k, val);
-          }}
-          valueLabelDisplay="auto"
-          sx={{
-            '& .MuiSlider-thumb': { 
-              display: temNivel6 ? 'none' : 'block',
-              bgcolor: corAtributo,
-              border: `2px solid ${corAtributo}`,
-              boxShadow: `0 0 8px ${corAtributo}`,
-            },
-            '& .MuiSlider-track': {
-              background: temNivel6 ? 'linear-gradient(90deg, #ffd700, #ffaa00)' : corAtributo,
-              boxShadow: temNivel6 ? '0 0 10px #ffd700' : `0 0 6px ${corAtributo}44`,
-            },
-            '& .MuiSlider-rail': { background: `${corAtributo}44` },
-          }}
-        />
+  step={1}
+  marks={[
+    { value: 1, label: '1' },
+    { value: 2, label: '2' },
+    { value: 3, label: '3' },
+    { value: 4, label: '4' },
+    { value: 5, label: '5' },
+  ]}
+  onChange={(e, val) => {
+    // 🔒 NUNCA permite ir abaixo de 1 — volta pra 1 na hora
+    if (val < 1) { setSubCampo("atributos", k, 1); return; }
+    const atual = Number(v || 1);
+    const diferenca = val - Math.min(atual, 5);
+    if (diferenca < 0) {
+      if (!isMestre && !ficha?.permitirRedistribuirPontos) return;
+      if (temNivel6) { setSubCampo("atributos", k, 5); return; }
+    }
+    if (diferenca > 0) {
+      let custo = 0;
+      for (let i = Math.min(atual, 5) + 1; i <= val; i++) { custo += (i - 1); }
+      if (pontosAtributoRestantes < custo) return;
+      setSubCampo("atributos", k, val);
+      return;
+    }
+    setSubCampo("atributos", k, val);
+  }}
+  valueLabelDisplay="auto"
+  sx={{
+    '& .MuiSlider-thumb': { 
+      display: temNivel6 ? 'none' : 'block',
+      bgcolor: corAtributo,
+      border: `2px solid ${corAtributo}`,
+      boxShadow: `0 0 8px ${corAtributo}`,
+    },
+    '& .MuiSlider-track': {
+      background: temNivel6 ? 'linear-gradient(90deg, #ffd700, #ffaa00)' : corAtributo,
+      boxShadow: temNivel6 ? '0 0 10px #ffd700' : `0 0 6px ${corAtributo}44`,
+    },
+    '& .MuiSlider-rail': { background: `${corAtributo}44` },
+    // 🟢 MARKS — mostra 1..5 embaixo do slider
+    '& .MuiSlider-mark': {
+      bgcolor: `${corAtributo}66`,
+      height: 6,
+      width: 2,
+    },
+    '& .MuiSlider-markLabel': {
+      color: '#94a3b8',
+      fontSize: '0.65rem',
+      fontWeight: 700,
+      mt: 0.5,
+    },
+    '& .MuiSlider-markLabelActive': {
+      color: corAtributo,
+    },
+  }}
+/>
         {temNivel6 && (
           <Typography sx={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', color: '#ffd700', fontWeight: 'bold', fontSize: '1.2rem', textShadow: '0 0 10px #ffd700' }}>
             ★
