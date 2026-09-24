@@ -1,27 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Box,
-  Paper,
-  Typography,
-  IconButton,
-  Button,
-  TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Grid,
-  Chip,
-  Divider,
-  Card,
-  CardContent,
-  CardActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Badge,
-  Tooltip,
+  Box, Paper, Typography, IconButton, Button, TextField, Dialog, DialogTitle,
+  DialogContent, DialogActions, Grid, Chip, Divider, Card, CardContent, CardActions,
+  FormControl, InputLabel, Select, MenuItem, Badge, Tooltip,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
@@ -34,6 +15,10 @@ import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import SellIcon from "@mui/icons-material/Sell";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import KeyIcon from "@mui/icons-material/VpnKey";
+import CancelIcon from "@mui/icons-material/Cancel";
+import ReceiptIcon from "@mui/icons-material/Receipt";
+import AutorenewIcon from "@mui/icons-material/Autorenew";
 import { db } from "../firebaseConfig";
 import { doc, getDoc, setDoc, onSnapshot, updateDoc } from "firebase/firestore";
 
@@ -56,8 +41,37 @@ const getDataRPG = () => {
   }
 };
 
+// Parse "Verão — 12/2/879" → { estacao, dia, mes, ano, raw }
+const parseDataRPG = () => {
+  try {
+    const raw = getDataRPG();
+    const match = raw.match(/^(.+?)\s*[—\-–]\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)/);
+    if (match) {
+      return {
+        estacao: (match[1] || "Verão").trim(),
+        dia: parseInt(match[2], 10) || 1,
+        mes: parseInt(match[3], 10) || 1,
+        ano: parseInt(match[4], 10) || 879,
+        raw,
+      };
+    }
+    return { estacao: "Verão", dia: 1, mes: 1, ano: 879, raw };
+  } catch {
+    return { estacao: "Verão", dia: 1, mes: 1, ano: 879, raw: "" };
+  }
+};
+
+// Chave única do mês RPG — usada pra saber se já cobrou esse mês
+const getChaveMesRPG = () => {
+  const d = parseDataRPG();
+  return `${d.ano}-${String(d.mes).padStart(2, "0")}`;
+};
+
 const gerarIdImovel = () =>
   `imv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+const gerarIdImposto = () =>
+  `ipt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 // ==================== CONFIGURAÇÕES DO MERCADO ====================
 const MAX_IMOVEIS = 50;
@@ -65,9 +79,15 @@ const INTERVALO_GERACAO_MS = 10 * 60 * 1000; // 10 minutos
 const INTERVALO_DESCONTO_MS = 24 * 60 * 60 * 1000; // 24h
 const DESCONTO_MIN = 0.15; // 15%
 const DESCONTO_MAX = 0.25; // 25%
-const CHANCE_VENDA_AUTO = 0.0004; // 0.04% por propriedade por minuto (~35% em 24h)
-const IDADE_MINIMA_VENDA_MS = 60 * 60 * 1000; // 1h — só vende após 1h no mercado
-const TICK_MS = 60 * 1000; // 1 minuto
+const CHANCE_VENDA_AUTO = 0.0004;
+const IDADE_MINIMA_VENDA_MS = 60 * 60 * 1000;
+const TICK_MS = 60 * 1000;
+
+// ==================== CONFIGURAÇÕES DE VENDA/FLUTUAÇÃO ====================
+const INTERVALO_FLUTUACAO_MS = 10 * 60 * 1000; // 10 min
+const FLUTUACAO_MIN = -0.30; // -30%
+const FLUTUACAO_MAX = 0.30;  // +30%
+const CORRETAGEM = 0.15;     // 15% na venda
 
 // ==================== IMÓVEIS INICIAIS ====================
 const IMOVEIS_INICIAIS = [
@@ -86,6 +106,7 @@ const IMOVEIS_INICIAIS = [
     precoOriginal: 850000,
     precoAluguel: 3500,
     disponivel: true,
+    disponivelAluguel: true,
     imagem: "",
     dono: null,
     dataCompra: null,
@@ -110,6 +131,7 @@ const IMOVEIS_INICIAIS = [
     precoOriginal: 320000,
     precoAluguel: 1500,
     disponivel: true,
+    disponivelAluguel: true,
     imagem: "",
     dono: null,
     dataCompra: null,
@@ -134,6 +156,7 @@ const IMOVEIS_INICIAIS = [
     precoOriginal: 210000,
     precoAluguel: 900,
     disponivel: true,
+    disponivelAluguel: true,
     imagem: "",
     dono: null,
     dataCompra: null,
@@ -158,6 +181,7 @@ const IMOVEIS_INICIAIS = [
     precoOriginal: 450000,
     precoAluguel: 2200,
     disponivel: true,
+    disponivelAluguel: true,
     imagem: "",
     dono: null,
     dataCompra: null,
@@ -169,10 +193,56 @@ const IMOVEIS_INICIAIS = [
   },
 ];
 
+// ==================== IMPOSTOS INICIAIS ====================
+const IMPOSTOS_INICIAIS = [
+  {
+    id: "ipt_predial",
+    nome: "IPTU Predial",
+    tipoImovel: "Casa",
+    pais: "todos",
+    cidade: "",
+    percentual: 1.2,
+    valorFixo: 0,
+    descricao: "Imposto Predial e Territorial Urbano sobre casas.",
+    editavel: true,
+  },
+  {
+    id: "ipt_apto",
+    nome: "IPTU Residencial",
+    tipoImovel: "Apartamento",
+    pais: "todos",
+    cidade: "",
+    percentual: 1.0,
+    valorFixo: 0,
+    descricao: "Imposto sobre apartamentos residenciais.",
+    editavel: true,
+  },
+  {
+    id: "ipt_comercial",
+    nome: "IPTU Comercial",
+    tipoImovel: "Comercial",
+    pais: "todos",
+    cidade: "",
+    percentual: 2.0,
+    valorFixo: 0,
+    descricao: "Imposto sobre imóveis comerciais.",
+    editavel: true,
+  },
+  {
+    id: "ipt_geral",
+    nome: "Imposto Imperial Geral",
+    tipoImovel: "todos",
+    pais: "todos",
+    cidade: "",
+    percentual: 0.3,
+    valorFixo: 0,
+    descricao: "Imposto básico aplicado a todos os imóveis.",
+    editavel: true,
+  },
+];
+
 // ==================== LOCAIS PERMITIDOS ====================
-// Apenas Império Aurano (todas as cidades) + Capitais de outras nações
 const LOCAIS_PERMITIDOS = [
-  // ===== IMPÉRIO AURANO =====
   { cidade: "Auraxia", pais: "Império Aurano" },
   { cidade: "Laxeado", pais: "Império Aurano" },
   { cidade: "Sideris", pais: "Império Aurano" },
@@ -198,7 +268,6 @@ const LOCAIS_PERMITIDOS = [
   { cidade: "Anelo", pais: "Império Aurano" },
   { cidade: "Chamusca", pais: "Império Aurano" },
   { cidade: "Ruptura", pais: "Império Aurano" },
-  // ===== CAPITAIS ESTRANGEIRAS =====
   { cidade: "Praxys", pais: "Kratória" },
   { cidade: "Misty", pais: "Arcádia" },
   { cidade: "Vaura", pais: "Vaurana" },
@@ -256,7 +325,6 @@ const getEmojiPorTipo = (tipo) => {
   }
 };
 
-// Redimensiona imagem para caber no Firestore (máx 400px, JPEG 70%)
 const processarImagemUpload = (file, maxWidth = 400) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -283,12 +351,10 @@ const processarImagemUpload = (file, maxWidth = 400) => {
   });
 };
 
-// Gera um imóvel aleatório baseado no lore
 const gerarImovelAleatorio = () => {
   const local = LOCAIS_PERMITIDOS[Math.floor(Math.random() * LOCAIS_PERMITIDOS.length)];
   const tipoInfo = TIPOS_GERACAO[Math.floor(Math.random() * TIPOS_GERACAO.length)];
 
-  // Variação de preço (-40% a +60%)
   const variacaoPreco = 0.6 + Math.random() * 1.0;
   const precoVenda = Math.round((tipoInfo.precoBase * variacaoPreco) / 1000) * 1000;
 
@@ -329,6 +395,7 @@ const gerarImovelAleatorio = () => {
     precoOriginal: precoVenda,
     precoAluguel: Math.round(precoVenda * 0.005),
     disponivel: true,
+    disponivelAluguel: true,
     imagem: "",
     dono: null,
     dataCompra: null,
@@ -340,6 +407,47 @@ const gerarImovelAleatorio = () => {
   };
 };
 
+const gerarImpostoAleatorio = () => {
+  const tipos = ["Casa", "Apartamento", "Comercial", "Cobertura", "Loft", "Fazenda", "Castelo", "Terreno", "todos"];
+  const paises = ["todos", "Império Aurano", "Kratória", "Arcádia", "Parax", "Varosia"];
+  const tipoImovel = tipos[Math.floor(Math.random() * tipos.length)];
+  const pais = paises[Math.floor(Math.random() * paises.length)];
+  const cidades = pais === "todos" ? [""] : [...LOCAIS_PERMITIDOS.filter(l => l.pais === pais).map(l => l.cidade), ""];
+  const cidade = cidades[Math.floor(Math.random() * cidades.length)] || "";
+
+  const prefixos = ["Taxa", "Imposto", "Tributo", "Cota", "Tarifa"];
+  const nomes = ["Predial", "Residencial", "Comercial", "de Manutenção", "Imperial", "Real", "Municipal", "Distrital"];
+  const nome = `${prefixos[Math.floor(Math.random() * prefixos.length)]} ${nomes[Math.floor(Math.random() * nomes.length)]}`;
+
+  return {
+    id: gerarIdImposto(),
+    nome,
+    tipoImovel,
+    pais,
+    cidade,
+    percentual: Math.round((0.2 + Math.random() * 2.5) * 10) / 10,
+    valorFixo: Math.random() < 0.5 ? 0 : Math.round(Math.random() * 500),
+    descricao: `Tributo gerado automaticamente (${tipoImovel} em ${pais}${cidade ? ` - ${cidade}` : ""}).`,
+    editavel: true,
+  };
+};
+
+// Calcula o valor total de imposto de um imóvel
+const calcularImpostoImovel = (imovel, impostos) => {
+  if (!imovel || !Array.isArray(impostos)) return 0;
+  const base = imovel.valorMercado || imovel.valorCompra || imovel.precoVenda || 0;
+  let total = 0;
+  for (const i of impostos) {
+    const matchTipo = !i.tipoImovel || i.tipoImovel === "todos" || i.tipoImovel === imovel.tipo;
+    const matchPais = !i.pais || i.pais === "todos" || i.pais === imovel.pais;
+    const matchCidade = !i.cidade || i.cidade === imovel.cidade;
+    if (matchTipo && matchPais && matchCidade) {
+      total += base * ((i.percentual || 0) / 100) + (i.valorFixo || 0);
+    }
+  }
+  return Math.round(total * 100) / 100;
+};
+
 // ==================== COMPONENTE PRINCIPAL ====================
 function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
   // ===== ESTADOS DA JANELA =====
@@ -348,6 +456,10 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
   // ===== ESTADOS DOS IMÓVEIS =====
   const [imoveis, setImoveis] = useState(IMOVEIS_INICIAIS);
   const [imoveisJogador, setImoveisJogador] = useState([]);
+  const [imoveisAlugados, setImoveisAlugados] = useState([]);
+  const [impostos, setImpostos] = useState(IMPOSTOS_INICIAIS);
+  const [historicoPagamentos, setHistoricoPagamentos] = useState([]);
+  const [ultimaCobrancaRPG, setUltimaCobrancaRPG] = useState("");
   const [abaAtiva, setAbaAtiva] = useState("comprar");
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos");
@@ -355,7 +467,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
   const [filtroPais, setFiltroPais] = useState("todos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
 
-  // ===== ESTADOS DE EDIÇÃO =====
+  // ===== ESTADOS DE EDIÇÃO (IMÓVEIS) =====
   const [modoEdicao, setModoEdicao] = useState(false);
   const [imovelEditando, setImovelEditando] = useState(null);
   const [modalEdicaoOpen, setModalEdicaoOpen] = useState(false);
@@ -370,25 +482,54 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
     banheiros: 1,
     precoVenda: 100000,
     precoAluguel: 500,
+    disponivelAluguel: true,
     imagem: "",
   });
 
-  // ===== ESTADOS DE COMPRA/VENDA =====
+  // ===== ESTADOS DE EDIÇÃO (IMPOSTOS) =====
+  const [impostoEditando, setImpostoEditando] = useState(null);
+  const [modalImpostoOpen, setModalImpostoOpen] = useState(false);
+  const [novoImposto, setNovoImposto] = useState({
+    nome: "",
+    tipoImovel: "todos",
+    pais: "todos",
+    cidade: "",
+    percentual: 0.5,
+    valorFixo: 0,
+    descricao: "",
+    editavel: true,
+  });
+
+  // ===== ESTADOS DE COMPRA/VENDA/ALUGUEL =====
   const [imovelSelecionado, setImovelSelecionado] = useState(null);
   const [modalCompraOpen, setModalCompraOpen] = useState(false);
   const [modalVendaOpen, setModalVendaOpen] = useState(false);
+  const [modalAluguelOpen, setModalAluguelOpen] = useState(false);
+  const [modalCancelarAluguelOpen, setModalCancelarAluguelOpen] = useState(false);
   const [carteiraSelecionada, setCarteiraSelecionada] = useState("");
   const [carteiraJogador, setCarteiraJogador] = useState({});
   const [emailParaCarteira, setEmailParaCarteira] = useState(userEmail);
   const [loading, setLoading] = useState(false);
 
-  // Ref para acessar imóveis dentro dos intervalos sem recriar
-  const imoveisRef = useRef(imoveis);
-  useEffect(() => {
-    imoveisRef.current = imoveis;
-  }, [imoveis]);
+  // 🟢 GUARDA O FORMATO ORIGINAL DAS CARTEIRAS ("array" ou "object")
+  const carteirasFormatoRef = useRef("array");
 
-  // ===== CARREGAR DADOS DO FIRESTORE =====
+  // Refs para acessar dados dentro dos intervalos
+  const imoveisRef = useRef(imoveis);
+  const imoveisJogadorRef = useRef(imoveisJogador);
+  const imoveisAlugadosRef = useRef(imoveisAlugados);
+  const impostosRef = useRef(impostos);
+  const ultimaCobrancaRef = useRef(ultimaCobrancaRPG);
+  const historicoRef = useRef(historicoPagamentos);
+
+  useEffect(() => { imoveisRef.current = imoveis; }, [imoveis]);
+  useEffect(() => { imoveisJogadorRef.current = imoveisJogador; }, [imoveisJogador]);
+  useEffect(() => { imoveisAlugadosRef.current = imoveisAlugados; }, [imoveisAlugados]);
+  useEffect(() => { impostosRef.current = impostos; }, [impostos]);
+  useEffect(() => { ultimaCobrancaRef.current = ultimaCobrancaRPG; }, [ultimaCobrancaRPG]);
+  useEffect(() => { historicoRef.current = historicoPagamentos; }, [historicoPagamentos]);
+
+  // ===== CARREGAR IMÓVEIS DO FIRESTORE =====
   useEffect(() => {
     const ref = doc(db, "imoveis", "dados");
     const unsub = onSnapshot(ref, (snap) => {
@@ -400,7 +541,8 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
             if (
               imv.precoOriginal === undefined ||
               imv.geradoEm === undefined ||
-              imv.descontoAtivo === undefined
+              imv.descontoAtivo === undefined ||
+              imv.disponivelAluguel === undefined
             ) {
               precisaSalvar = true;
               return {
@@ -409,6 +551,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                 geradoEm: imv.geradoEm ?? Date.now(),
                 descontoAtivo: imv.descontoAtivo ?? false,
                 descontoPercent: imv.descontoPercent ?? 0,
+                disponivelAluguel: imv.disponivelAluguel ?? true,
                 emoji: imv.emoji || getEmojiPorTipo(imv.tipo),
               };
             }
@@ -416,12 +559,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
           });
           setImoveis(normalized);
           if (precisaSalvar) {
-            // Persiste a normalização uma única vez
-            setDoc(
-              doc(db, "imoveis", "dados"),
-              { imoveis: normalized },
-              { merge: true }
-            ).catch(() => {});
+            setDoc(doc(db, "imoveis", "dados"), { imoveis: normalized }, { merge: true }).catch(() => {});
           }
         }
       }
@@ -429,7 +567,27 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
     return () => unsub();
   }, []);
 
-  // ===== CARREGAR CARTEIRA DO JOGADOR =====
+  // ===== CARREGAR IMPOSTOS DO FIRESTORE =====
+  useEffect(() => {
+    const ref = doc(db, "imoveis_impostos", "dados");
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        const dados = snap.data();
+        if (Array.isArray(dados.impostos)) {
+          setImpostos(dados.impostos);
+        } else {
+          // Primeira vez: inicializa com os padrões
+          setDoc(doc(db, "imoveis_impostos", "dados"), { impostos: IMPOSTOS_INICIAIS }, { merge: true }).catch(() => {});
+        }
+      } else {
+        // Doc não existe, cria com os padrões
+        setDoc(doc(db, "imoveis_impostos", "dados"), { impostos: IMPOSTOS_INICIAIS }, { merge: true }).catch(() => {});
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // ===== CARREGAR FICHA DO JOGADOR =====
   useEffect(() => {
     const emailAtual = emailParaCarteira || userEmail;
     if (!emailAtual) {
@@ -440,6 +598,10 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
     const unsub = onSnapshot(fichaRef, (snap) => {
       if (snap.exists()) {
         const dados = snap.data();
+
+        // 🟢 DETECTA O FORMATO ORIGINAL E GUARDA NA REF
+        carteirasFormatoRef.current = Array.isArray(dados.carteiras) ? "array" : "object";
+
         const carteiras = dados.carteiras || {};
         const carteirasObj = Array.isArray(carteiras)
           ? carteiras.reduce(
@@ -449,8 +611,10 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
           : carteiras;
         setCarteiraJogador(carteirasObj);
 
-        const imoveisDoJogador = dados.imoveis || [];
-        setImoveisJogador(imoveisDoJogador);
+        setImoveisJogador(dados.imoveis || []);
+        setImoveisAlugados(dados.imoveisAlugados || []);
+        setHistoricoPagamentos(dados.historicoPagamentos || []);
+        setUltimaCobrancaRPG(dados.ultimaCobrancaRPG || "");
       }
     });
     return () => unsub();
@@ -460,40 +624,62 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
   useEffect(() => {
     const handleEmailSelecionado = (event) => {
       const email = event.detail;
-      if (email) {
-        setEmailParaCarteira(email);
-      }
+      if (email) setEmailParaCarteira(email);
     };
     window.addEventListener("jogadorSelecionadoChat", handleEmailSelecionado);
     return () => window.removeEventListener("jogadorSelecionadoChat", handleEmailSelecionado);
   }, []);
 
-  // ===== SALVAR DADOS =====
+  // ===== SALVAR IMÓVEIS NO MERCADO =====
   const salvarDados = async (novosImoveis) => {
     await setDoc(
       doc(db, "imoveis", "dados"),
-      {
-        imoveis: novosImoveis || imoveis,
-      },
+      { imoveis: novosImoveis || imoveis },
       { merge: true }
     );
   };
 
-  // ===== SALVAR CARTEIRA DO JOGADOR =====
-  const salvarCarteiraJogador = async (novasCarteiras, novosImoveis) => {
+  // ===== SALVAR IMPOSTOS =====
+  const salvarImpostos = async (novosImpostos) => {
+    await setDoc(
+      doc(db, "imoveis_impostos", "dados"),
+      { impostos: novosImpostos || impostos },
+      { merge: true }
+    );
+  };
+
+  // ===== SALVAR DADOS DO JOGADOR (preservando formato original das carteiras) =====
+  const salvarDadosJogador = async ({
+    novasCarteirasFlat,
+    novosImoveis,
+    novosImoveisAlugados,
+    novoHistorico,
+    novaUltimaCobranca,
+  } = {}) => {
     const fichaRef = doc(db, "fichas", emailParaCarteira || userEmail);
     const atualizacao = {};
-    if (novasCarteiras) atualizacao.carteiras = novasCarteiras;
-    if (novosImoveis) atualizacao.imoveis = novosImoveis;
+    if (novasCarteirasFlat) {
+      if (carteirasFormatoRef.current === "array") {
+        atualizacao.carteiras = Object.entries(novasCarteirasFlat).map(([nome, valor]) => ({
+          nome,
+          valor,
+        }));
+      } else {
+        atualizacao.carteiras = novasCarteirasFlat;
+      }
+    }
+    if (novosImoveis !== undefined) atualizacao.imoveis = novosImoveis;
+    if (novosImoveisAlugados !== undefined) atualizacao.imoveisAlugados = novosImoveisAlugados;
+    if (novoHistorico !== undefined) atualizacao.historicoPagamentos = novoHistorico;
+    if (novaUltimaCobranca !== undefined) atualizacao.ultimaCobrancaRPG = novaUltimaCobranca;
     await setDoc(fichaRef, atualizacao, { merge: true });
   };
 
-  // ==================== TICK DO MERCADO (a cada 1 min) ====================
-  // Responsável por:
-  //  1. Atualizar descontos (ciclo 24h)
-  //  2. Simular vendas/aluguéis automáticos
-  //  3. Repor imóveis vendidos
-  //  4. Enforçar o limite de MAX_IMOVEIS
+  // ============ TICK DO MERCADO (a cada 1 min) ============
+  // 1. Atualiza descontos (ciclo 24h)
+  // 2. Simula vendas/aluguéis automáticos
+  // 3. Repõe imóveis vendidos
+  // 4. Enforça o limite de MAX_IMOVEIS
   useEffect(() => {
     const tick = async () => {
       const lista = imoveisRef.current;
@@ -502,18 +688,15 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
       const now = Date.now();
       let changed = false;
 
-      // ----- PASSO 1: ATUALIZAR DESCONTOS -----
+      // ----- PASSO 1: DESCONTOS -----
       let atualizados = lista.map((imv) => {
-        // Propriedades do jogador não sofrem desconto
         if (imv.dono) return imv;
-
         const original = imv.precoOriginal ?? imv.precoVenda;
         const geradoEm = imv.geradoEm ?? now;
         const elapsed = now - geradoEm;
         const cycles = Math.floor(elapsed / INTERVALO_DESCONTO_MS);
         const shouldDiscount = cycles % 2 === 1;
 
-        // Inicializa campos faltantes
         if (
           imv.precoOriginal === undefined ||
           imv.geradoEm === undefined ||
@@ -526,14 +709,13 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
             geradoEm,
             descontoAtivo: false,
             descontoPercent: 0,
+            disponivelAluguel: imv.disponivelAluguel ?? true,
             emoji: imv.emoji || getEmojiPorTipo(imv.tipo),
           };
         }
 
-        // Aplicar desconto
         if (shouldDiscount && !imv.descontoAtivo) {
-          const descPct =
-            DESCONTO_MIN + Math.random() * (DESCONTO_MAX - DESCONTO_MIN);
+          const descPct = DESCONTO_MIN + Math.random() * (DESCONTO_MAX - DESCONTO_MIN);
           changed = true;
           return {
             ...imv,
@@ -543,7 +725,6 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
           };
         }
 
-        // Remover desconto (volta ao normal)
         if (!shouldDiscount && imv.descontoAtivo) {
           changed = true;
           return {
@@ -557,48 +738,36 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         return imv;
       });
 
-      // ----- PASSO 2: SIMULAR VENDAS/ALUGUÉIS AUTOMÁTICOS -----
+      // ----- PASSO 2: VENDAS/ALUGUÉIS AUTOMÁTICOS -----
       const vendidos = [];
       atualizados = atualizados.filter((imv) => {
-        if (imv.dono) return true; // mantém propriedades de jogadores
+        if (imv.dono) return true;
         const idade = now - (imv.geradoEm || now);
-        if (idade < IDADE_MINIMA_VENDA_MS) return true; // muito novo, deixa quieto
-
+        if (idade < IDADE_MINIMA_VENDA_MS) return true;
         if (Math.random() < CHANCE_VENDA_AUTO) {
           vendidos.push(imv);
-          return false; // remove do mercado (foi "vendido/alugado")
+          return false;
         }
         return true;
       });
 
-      if (vendidos.length > 0) {
-        changed = true;
-        console.log(
-          `🏘️ Mercado: ${vendidos.length} imóvel(is) vendido(s)/alugado(s) automaticamente.`
-        );
-      }
+      if (vendidos.length > 0) changed = true;
 
-      // ----- PASSO 3: REPOR VENDIDOS COM NOVOS ALEATÓRIOS -----
-      vendidos.forEach(() => {
-        atualizados.push(gerarImovelAleatorio());
-      });
+      // ----- PASSO 3: REPOR -----
+      vendidos.forEach(() => atualizados.push(gerarImovelAleatorio()));
 
-      // ----- PASSO 4: ENFORÇAR LIMITE MÁXIMO -----
+      // ----- PASSO 4: LIMITE -----
       const disponiveis = atualizados.filter((i) => !i.dono);
       if (disponiveis.length > MAX_IMOVEIS) {
         const disponiveisOrdenados = [...disponiveis].sort(
           (a, b) => (a.geradoEm || 0) - (b.geradoEm || 0)
         );
-        const paraRemover = disponiveisOrdenados.slice(
-          0,
-          disponiveis.length - MAX_IMOVEIS
-        );
+        const paraRemover = disponiveisOrdenados.slice(0, disponiveis.length - MAX_IMOVEIS);
         const idsRemover = new Set(paraRemover.map((i) => i.id));
         atualizados = atualizados.filter((i) => !idsRemover.has(i.id));
         changed = true;
       }
 
-      // ----- PERSISTE SE MUDOU ALGO -----
       if (changed) {
         setImoveis(atualizados);
         try {
@@ -610,13 +779,155 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
     };
 
     const intervalId = setInterval(tick, TICK_MS);
-    // Roda uma vez logo de cara para normalizar/atualizar
     tick();
-
     return () => clearInterval(intervalId);
   }, []);
 
-  // ==================== GERAÇÃO AUTOMÁTICA (a cada 10 min) ====================
+  // ============ TICK DE FLUTUAÇÃO DE PREÇO DAS PROPRIEDADES DO JOGADOR ============
+  // A cada 10 min, atualiza valorMercado das propriedades do jogador (±30% em relação
+  // ao valor de compra)
+  useEffect(() => {
+    const tick = async () => {
+      const imoveisProp = imoveisJogadorRef.current;
+      if (!Array.isArray(imoveisProp) || imoveisProp.length === 0) return;
+
+      const now = Date.now();
+      let changed = false;
+
+      const atualizados = imoveisProp.map((imv) => {
+        const ultima = imv.ultimaFlutuacao || 0;
+        if (now - ultima < INTERVALO_FLUTUACAO_MS) return imv;
+        const base = imv.valorCompra || imv.precoVenda || 0;
+        if (base <= 0) return imv;
+        const fator = 1 + (FLUTUACAO_MIN + Math.random() * (FLUTUACAO_MAX - FLUTUACAO_MIN));
+        const novoValor = Math.round(base * fator * 100) / 100;
+        changed = true;
+        return {
+          ...imv,
+          valorMercado: novoValor,
+          ultimaFlutuacao: now,
+        };
+      });
+
+      if (changed) {
+        setImoveisJogador(atualizados);
+        try {
+          await salvarDadosJogador({ novosImoveis: atualizados });
+        } catch (e) {
+          console.error("Erro ao salvar flutuação:", e);
+        }
+      }
+    };
+
+    const intervalId = setInterval(tick, TICK_MS);
+    tick();
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // ============ TICK DE COBRANÇA (ALUGUEL + IMPOSTO) ============
+  // Quando muda o mês RPG (ano-mes diferente do último registrado), cobra:
+  //  - Aluguel de imóveis alugados
+  //  - Impostos dos imóveis comprados
+  useEffect(() => {
+    const tick = async () => {
+      const emailAtual = emailParaCarteira || userEmail;
+      if (!emailAtual) return;
+
+      const chaveAtual = getChaveMesRPG();
+      const chaveAnterior = ultimaCobrancaRef.current || "";
+
+      if (chaveAtual === chaveAnterior) return; // já cobrou esse mês
+
+      // Se nunca cobrou, apenas registra o marco (não cobra retroativo)
+      if (!chaveAnterior) {
+        try {
+          await salvarDadosJogador({ novaUltimaCobranca: chaveAtual });
+          setUltimaCobrancaRPG(chaveAtual);
+        } catch (e) {
+          console.error("Erro ao registrar primeira cobrança:", e);
+        }
+        return;
+      }
+
+      // Aqui: mudou o mês → cobrar
+      const alugados = imoveisAlugadosRef.current || [];
+      const comprados = imoveisJogadorRef.current || [];
+      const regrasImposto = impostosRef.current || [];
+
+      // Calcula totais
+      const detalhes = [];
+      let totalAluguel = 0;
+      let totalImposto = 0;
+
+      for (const a of alugados) {
+        const v = a.precoAluguel || 0;
+        totalAluguel += v;
+        detalhes.push({ tipo: "aluguel", imovelId: a.id, nome: a.nome, valor: v });
+      }
+      for (const c of comprados) {
+        const v = calcularImpostoImovel(c, regrasImposto);
+        if (v > 0) {
+          totalImposto += v;
+          detalhes.push({ tipo: "imposto", imovelId: c.id, nome: c.nome, valor: v });
+        }
+      }
+      const total = Math.round((totalAluguel + totalImposto) * 100) / 100;
+
+      // Debita das carteiras (na ordem)
+      const carteirasFlat = { ...(carteiraJogador || {}) };
+      let restante = total;
+      let debited = false;
+      for (const k of Object.keys(carteirasFlat)) {
+        if (restante <= 0) break;
+        const v = carteirasFlat[k] || 0;
+        if (v >= restante) {
+          carteirasFlat[k] = v - restante;
+          restante = 0;
+          debited = true;
+        } else {
+          restante -= v;
+          carteirasFlat[k] = 0;
+        }
+      }
+      const totalCobrado = debited ? total : (total - restante);
+
+      const historico = [
+        ...(historicoRef.current || []),
+        {
+          chave: chaveAtual,
+          dataRPG: getDataRPG(),
+          total: Math.round(totalCobrado * 100) / 100,
+          totalAluguel: Math.round(totalAluguel * 100) / 100,
+          totalImposto: Math.round(totalImposto * 100) / 100,
+          detalhes,
+          pagoEm: new Date().toISOString(),
+          insuficiente: !debited && restante > 0,
+        },
+      ];
+      // Mantém só os 50 últimos
+      while (historico.length > 50) historico.shift();
+
+      try {
+        await salvarDadosJogador({
+          novasCarteirasFlat: carteirasFlat,
+          novoHistorico: historico,
+          novaUltimaCobranca: chaveAtual,
+        });
+        setCarteiraJogador(carteirasFlat);
+        setHistoricoPagamentos(historico);
+        setUltimaCobrancaRPG(chaveAtual);
+        console.log(`💰 Cobrança ${chaveAtual}: aluguel=${totalAluguel}, imposto=${totalImposto}, total=${total}`);
+      } catch (e) {
+        console.error("Erro na cobrança:", e);
+      }
+    };
+
+    const intervalId = setInterval(tick, TICK_MS);
+    tick();
+    return () => clearInterval(intervalId);
+  }, [emailParaCarteira, userEmail]);
+
+  // ==================== GERAÇÃO AUTOMÁTICA (10 min) ====================
   useEffect(() => {
     const timeoutId = setTimeout(async () => {
       const lista = imoveisRef.current;
@@ -624,7 +935,6 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
       const novoImovel = gerarImovelAleatorio();
       novos.push(novoImovel);
 
-      // Se ultrapassar limite, remove o mais antigo disponível
       const disponiveis = novos.filter((i) => !i.dono);
       if (disponiveis.length > MAX_IMOVEIS) {
         const maisAntigo = [...disponiveis].sort(
@@ -636,7 +946,6 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
       setImoveis(novos);
       try {
         await salvarDados(novos);
-        console.log("🏘️ Novo imóvel gerado:", novoImovel.nome, "-", novoImovel.cidade);
       } catch (e) {
         console.error("Erro ao gerar imóvel:", e);
       }
@@ -676,6 +985,8 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         dataCompra: new Date().toISOString(),
         status: "ocupado",
         valorCompra: valorTotal,
+        valorMercado: valorTotal,
+        ultimaFlutuacao: Date.now(),
         descontoAtivo: false,
         descontoPercent: 0,
       };
@@ -687,7 +998,10 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
       const imoveisDisponiveis = imoveis.filter((i) => i.id !== imovelSelecionado.id);
       setImoveis(imoveisDisponiveis);
 
-      await salvarCarteiraJogador(novasCarteiras, novosImoveisJogador);
+      await salvarDadosJogador({
+        novasCarteirasFlat: novasCarteiras,
+        novosImoveis: novosImoveisJogador,
+      });
       await salvarDados(imoveisDisponiveis);
 
       setCarteiraJogador(novasCarteiras);
@@ -708,7 +1022,12 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
   const venderImovel = async () => {
     if (!imovelSelecionado) return;
 
-    const valorVenda = Math.round(imovelSelecionado.valorCompra * 0.85);
+    const valorMercado =
+      imovelSelecionado.valorMercado ||
+      imovelSelecionado.valorCompra ||
+      imovelSelecionado.precoVenda ||
+      0;
+    const valorVenda = Math.round(valorMercado * (1 - CORRETAGEM) * 100) / 100;
     const carteiraPadrao = Object.keys(carteiraJogador)[0] || "Bolso";
 
     setLoading(true);
@@ -716,8 +1035,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
     try {
       const novasCarteiras = {
         ...carteiraJogador,
-        [carteiraPadrao]:
-          (carteiraJogador[carteiraPadrao] || 0) + valorVenda,
+        [carteiraPadrao]: (carteiraJogador[carteiraPadrao] || 0) + valorVenda,
       };
 
       const novosImoveisJogador = imoveisJogador.filter(
@@ -731,28 +1049,132 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         dataCompra: null,
         status: "disponivel",
         disponivel: true,
-        geradoEm: Date.now(), // reinicia ciclo de desconto
-        precoOriginal: imovelSelecionado.precoOriginal ?? imovelSelecionado.precoVenda,
+        disponivelAluguel: true,
+        geradoEm: Date.now(),
+        precoOriginal: valorMercado,
+        precoVenda: valorMercado,
         descontoAtivo: false,
         descontoPercent: 0,
       };
       delete imovelParaMercado.valorCompra;
+      delete imovelParaMercado.valorMercado;
+      delete imovelParaMercado.ultimaFlutuacao;
 
       const imoveisDisponiveis = [...imoveis, imovelParaMercado];
       setImoveis(imoveisDisponiveis);
 
-      await salvarCarteiraJogador(novasCarteiras, novosImoveisJogador);
+      await salvarDadosJogador({
+        novasCarteirasFlat: novasCarteiras,
+        novosImoveis: novosImoveisJogador,
+      });
       await salvarDados(imoveisDisponiveis);
 
       setCarteiraJogador(novasCarteiras);
       alert(
-        `✅ Venda realizada!\n${imovelSelecionado.nome} por ${valorVenda.toFixed(2)} 💰`
+        `✅ Venda realizada!\n${imovelSelecionado.nome} por ${valorVenda.toFixed(2)} 💰\n(corretagem de ${CORRETAGEM * 100}% já descontada)`
       );
       setModalVendaOpen(false);
       setImovelSelecionado(null);
     } catch (error) {
       console.error("Erro na venda:", error);
       alert("Erro ao realizar venda.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ===== ALUGAR IMÓVEL =====
+  const alugarImovel = async () => {
+    if (!imovelSelecionado || !carteiraSelecionada) {
+      alert("Selecione um imóvel e uma carteira!");
+      return;
+    }
+    const primeiroAluguel = imovelSelecionado.precoAluguel || 0;
+    const carteiraAtual = carteiraJogador[carteiraSelecionada] || 0;
+    if (carteiraAtual < primeiroAluguel) {
+      alert(`Saldo insuficiente! Você precisa de ${primeiroAluguel.toFixed(2)} 💰`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const novasCarteiras = {
+        ...carteiraJogador,
+        [carteiraSelecionada]: carteiraAtual - primeiroAluguel,
+      };
+
+      const imovelAlugado = {
+        ...imovelSelecionado,
+        alugadoPor: emailParaCarteira || userEmail,
+        dataInicioAluguel: new Date().toISOString(),
+        dataInicioRPG: getDataRPG(),
+        proximoVencimento: getDataRPG(),
+        valorAluguelMensal: primeiroAluguel,
+      };
+
+      const novosAlugados = [...imoveisAlugados, imovelAlugado];
+      setImoveisAlugados(novosAlugados);
+
+      const imoveisDisponiveis = imoveis.filter((i) => i.id !== imovelSelecionado.id);
+      setImoveis(imoveisDisponiveis);
+
+      await salvarDadosJogador({
+        novasCarteirasFlat: novasCarteiras,
+        novosImoveisAlugados: novosAlugados,
+      });
+      await salvarDados(imoveisDisponiveis);
+
+      setCarteiraJogador(novasCarteiras);
+      alert(
+        `🔑 Aluguel realizado!\n${imovelSelecionado.nome} — 1º mês pago (${primeiroAluguel.toFixed(2)} 💰)\nPróxima cobrança: dia 1 do próximo mês RPG.`
+      );
+      setModalAluguelOpen(false);
+      setImovelSelecionado(null);
+    } catch (error) {
+      console.error("Erro no aluguel:", error);
+      alert("Erro ao realizar aluguel.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ===== CANCELAR ALUGUEL =====
+  const cancelarAluguel = async () => {
+    if (!imovelSelecionado) return;
+    setLoading(true);
+    try {
+      const novosAlugados = imoveisAlugados.filter((i) => i.id !== imovelSelecionado.id);
+      setImoveisAlugados(novosAlugados);
+
+      // Devolve o imóvel ao mercado
+      const imovelParaMercado = {
+        ...imovelSelecionado,
+        alugadoPor: null,
+        dataInicioAluguel: null,
+        dataInicioRPG: null,
+        proximoVencimento: null,
+        valorAluguelMensal: null,
+        dono: null,
+        dataCompra: null,
+        status: "disponivel",
+        disponivel: true,
+        disponivelAluguel: true,
+        geradoEm: Date.now(),
+        descontoAtivo: false,
+        descontoPercent: 0,
+      };
+      const imoveisDisponiveis = [...imoveis, imovelParaMercado];
+      setImoveis(imoveisDisponiveis);
+
+      await salvarDadosJogador({ novosImoveisAlugados: novosAlugados });
+      await salvarDados(imoveisDisponiveis);
+
+      alert(`❌ Aluguel cancelado: ${imovelSelecionado.nome}`);
+      setModalCancelarAluguelOpen(false);
+      setImovelSelecionado(null);
+    } catch (error) {
+      console.error("Erro ao cancelar aluguel:", error);
+      alert("Erro ao cancelar aluguel.");
     } finally {
       setLoading(false);
     }
@@ -812,6 +1234,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
       banheiros: 1,
       precoVenda: 100000,
       precoAluguel: 500,
+      disponivelAluguel: true,
       imagem: "",
     });
   };
@@ -821,6 +1244,51 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
     const novosImoveis = imoveis.filter((i) => i.id !== id);
     setImoveis(novosImoveis);
     await salvarDados(novosImoveis);
+  };
+
+  // ===== CRUD DE IMPOSTOS (MESTRE) =====
+  const salvarImposto = async () => {
+    if (!novoImposto.nome.trim()) {
+      alert("Preencha o nome do imposto!");
+      return;
+    }
+    let novosImpostos;
+    if (impostoEditando) {
+      novosImpostos = impostos.map((i) =>
+        i.id === impostoEditando.id ? { ...novoImposto, id: i.id } : i
+      );
+    } else {
+      novosImpostos = [...impostos, { ...novoImposto, id: gerarIdImposto() }];
+    }
+    setImpostos(novosImpostos);
+    await salvarImpostos(novosImpostos);
+    setModalImpostoOpen(false);
+    setImpostoEditando(null);
+    setNovoImposto({
+      nome: "",
+      tipoImovel: "todos",
+      pais: "todos",
+      cidade: "",
+      percentual: 0.5,
+      valorFixo: 0,
+      descricao: "",
+      editavel: true,
+    });
+  };
+
+  const deletarImposto = async (id) => {
+    if (!window.confirm("Remover este imposto?")) return;
+    const novos = impostos.filter((i) => i.id !== id);
+    setImpostos(novos);
+    await salvarImpostos(novos);
+  };
+
+  const gerarImpostoAuto = async () => {
+    const novo = gerarImpostoAleatorio();
+    const novos = [...impostos, novo];
+    setImpostos(novos);
+    await salvarImpostos(novos);
+    alert(`✅ Imposto gerado: ${novo.nome}`);
   };
 
   // ===== FILTROS =====
@@ -839,9 +1307,18 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
     return matchBusca && matchTipo && matchCidade && matchPais;
   });
 
-  // ===== CALCULAR TOTAL DA CARTEIRA =====
   const totalCarteira = Object.values(carteiraJogador).reduce(
     (a, b) => a + (typeof b === "number" ? b : 0),
+    0
+  );
+
+  // Totais mensais (estimados)
+  const totalAluguelMensal = imoveisAlugados.reduce(
+    (sum, a) => sum + (a.precoAluguel || 0),
+    0
+  );
+  const totalImpostoMensal = imoveisJogador.reduce(
+    (sum, i) => sum + calcularImpostoImovel(i, impostos),
     0
   );
 
@@ -857,7 +1334,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         fontFamily: "'Courier New', monospace",
       }}
     >
-      {/* BARRA DE TÍTULO INTERNA (sem arrastar) */}
+      {/* BARRA DE TÍTULO INTERNA */}
       <Box
         sx={{
           display: "flex",
@@ -869,7 +1346,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
           borderBottom: "1px solid #3b82f644",
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
           <HomeIcon sx={{ color: "#3b82f6" }} />
           <Typography variant="subtitle2" sx={{ color: "#3b82f6", fontWeight: "bold" }}>
             🏠 IMÓVEIS
@@ -884,6 +1361,13 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
             size="small"
             sx={{ bgcolor: "#3b82f622", color: "#3b82f6", fontSize: "0.6rem", height: 20 }}
           />
+          {(totalAluguelMensal > 0 || totalImpostoMensal > 0) && (
+            <Chip
+              label={`📅 Mensal: 💰 ${(totalAluguelMensal + totalImpostoMensal).toFixed(0)}`}
+              size="small"
+              sx={{ bgcolor: "#ef444422", color: "#ef4444", fontSize: "0.6rem", height: 20 }}
+            />
+          )}
         </Box>
         <Box sx={{ display: "flex", gap: 0.5 }}>
           {isMaster && (
@@ -935,7 +1419,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               bgcolor: abaAtiva === "comprar" ? "#3b82f622" : "transparent",
             }}
           >
-            [COMPRAR]
+            [MERCADO]
           </Button>
           <Button
             size="small"
@@ -946,14 +1430,46 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               bgcolor: abaAtiva === "meus_bens" ? "#3b82f622" : "transparent",
             }}
           >
-            [MEUS BENS]
+            [IMÓVEIS COMPRADOS]
+          </Button>
+          <Button
+            size="small"
+            onClick={() => setAbaAtiva("alugados")}
+            sx={{
+              color: abaAtiva === "alugados" ? "#3b82f6" : "#888",
+              fontSize: "0.65rem",
+              bgcolor: abaAtiva === "alugados" ? "#3b82f622" : "transparent",
+            }}
+          >
+            [ALUGADOS {imoveisAlugados.length > 0 ? `(${imoveisAlugados.length})` : ""}]
+          </Button>
+          <Button
+            size="small"
+            onClick={() => setAbaAtiva("impostos")}
+            sx={{
+              color: abaAtiva === "impostos" ? "#3b82f6" : "#888",
+              fontSize: "0.65rem",
+              bgcolor: abaAtiva === "impostos" ? "#3b82f622" : "transparent",
+            }}
+          >
+            [IMPOSTOS {impostos.length > 0 ? `(${impostos.length})` : ""}]
+          </Button>
+          <Button
+            size="small"
+            onClick={() => setAbaAtiva("historico")}
+            sx={{
+              color: abaAtiva === "historico" ? "#3b82f6" : "#888",
+              fontSize: "0.65rem",
+              bgcolor: abaAtiva === "historico" ? "#3b82f622" : "transparent",
+            }}
+          >
+            [PAGAMENTOS]
           </Button>
         </Box>
 
-        {/* ABA COMPRAR */}
+        {/* ABA MERCADO */}
         {abaAtiva === "comprar" && (
           <Box>
-            {/* Barra de pesquisa e filtros */}
             <Box
               sx={{
                 display: "flex",
@@ -984,9 +1500,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                 >
                   <MenuItem value="todos">Todos</MenuItem>
                   {tipos.map((t) => (
-                    <MenuItem key={t} value={t}>
-                      {t}
-                    </MenuItem>
+                    <MenuItem key={t} value={t}>{t}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
@@ -999,9 +1513,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                 >
                   <MenuItem value="todos">Todas</MenuItem>
                   {cidades.map((c) => (
-                    <MenuItem key={c} value={c}>
-                      {c}
-                    </MenuItem>
+                    <MenuItem key={c} value={c}>{c}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
@@ -1014,9 +1526,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                 >
                   <MenuItem value="todos">Todos</MenuItem>
                   {paises.map((p) => (
-                    <MenuItem key={p} value={p}>
-                      {p}
-                    </MenuItem>
+                    <MenuItem key={p} value={p}>{p}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
@@ -1038,6 +1548,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                       banheiros: 1,
                       precoVenda: 100000,
                       precoAluguel: 500,
+                      disponivelAluguel: true,
                       imagem: "",
                     });
                     setModalEdicaoOpen(true);
@@ -1053,7 +1564,6 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               )}
             </Box>
 
-            {/* Lista de imóveis */}
             <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
               {imoveisFiltrados.map((imovel) => (
                 <Paper
@@ -1071,7 +1581,6 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                     position: "relative",
                   }}
                 >
-                  {/* Imagem ou placeholder (emoji) */}
                   <Box
                     sx={{
                       width: 120,
@@ -1098,7 +1607,6 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                     )}
                   </Box>
 
-                  {/* Informações */}
                   <Box sx={{ flex: 1, minWidth: 150 }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
                       <Typography variant="body2" sx={{ fontWeight: "bold", color: "#fff" }}>
@@ -1117,20 +1625,27 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                           }}
                         />
                       )}
+                      {imovel.disponivelAluguel && (
+                        <Chip
+                          label="🔑 Aluguel"
+                          size="small"
+                          sx={{
+                            bgcolor: "#3b82f622",
+                            color: "#3b82f6",
+                            fontSize: "0.55rem",
+                            height: 16,
+                          }}
+                        />
+                      )}
                     </Box>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "#64748b", display: "block" }}
-                    >
+                    <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
                       {imovel.cidade}, {imovel.pais} • {imovel.tipo}
                     </Typography>
                     <Typography variant="caption" sx={{ color: "#64748b" }}>
-                      {imovel.metrosQuadrados}m² • {imovel.quartos} quartos •{" "}
-                      {imovel.banheiros} banheiros
+                      {imovel.metrosQuadrados}m² • {imovel.quartos} quartos • {imovel.banheiros} banheiros
                     </Typography>
                   </Box>
 
-                  {/* Preços e ações */}
                   <Box
                     sx={{
                       display: "flex",
@@ -1144,11 +1659,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                       {imovel.descontoAtivo && imovel.precoOriginal && (
                         <Typography
                           variant="caption"
-                          sx={{
-                            color: "#64748b",
-                            textDecoration: "line-through",
-                            display: "block",
-                          }}
+                          sx={{ color: "#64748b", textDecoration: "line-through", display: "block" }}
                         >
                           💰 {imovel.precoOriginal.toFixed(2)}
                         </Typography>
@@ -1163,10 +1674,10 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                         💰 {imovel.precoVenda.toFixed(2)}
                       </Typography>
                       <Typography variant="caption" sx={{ color: "#64748b" }}>
-                        Aluguel: {imovel.precoAluguel}/mês
+                        🔑 Aluguel: {imovel.precoAluguel}/mês
                       </Typography>
                     </Box>
-                    <Box sx={{ display: "flex", gap: 0.5 }}>
+                    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", justifyContent: "flex-end" }}>
                       <Button
                         size="small"
                         variant="contained"
@@ -1175,14 +1686,24 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                           setImovelSelecionado(imovel);
                           setModalCompraOpen(true);
                         }}
-                        sx={{
-                          bgcolor: "#22c55e",
-                          "&:hover": { bgcolor: "#16a34a" },
-                          fontSize: "0.6rem",
-                        }}
+                        sx={{ bgcolor: "#22c55e", "&:hover": { bgcolor: "#16a34a" }, fontSize: "0.6rem" }}
                       >
                         Comprar
                       </Button>
+                      {imovel.disponivelAluguel && (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<KeyIcon sx={{ fontSize: 14 }} />}
+                          onClick={() => {
+                            setImovelSelecionado(imovel);
+                            setModalAluguelOpen(true);
+                          }}
+                          sx={{ bgcolor: "#3b82f6", "&:hover": { bgcolor: "#2563eb" }, fontSize: "0.6rem" }}
+                        >
+                          Alugar
+                        </Button>
+                      )}
                       {isMaster && modoEdicao && (
                         <>
                           <IconButton
@@ -1198,9 +1719,9 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                                 metrosQuadrados: imovel.metrosQuadrados || 100,
                                 quartos: imovel.quartos || 1,
                                 banheiros: imovel.banheiros || 1,
-                                precoVenda:
-                                  imovel.precoOriginal ?? imovel.precoVenda,
+                                precoVenda: imovel.precoOriginal ?? imovel.precoVenda,
                                 precoAluguel: imovel.precoAluguel || 0,
+                                disponivelAluguel: imovel.disponivelAluguel ?? true,
                                 imagem: imovel.imagem || "",
                               });
                               setModalEdicaoOpen(true);
@@ -1209,11 +1730,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                           >
                             <EditIcon fontSize="small" />
                           </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() => deletarImovel(imovel.id)}
-                            sx={{ color: "#ef4444" }}
-                          >
+                          <IconButton size="small" onClick={() => deletarImovel(imovel.id)} sx={{ color: "#ef4444" }}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </>
@@ -1231,11 +1748,18 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
           </Box>
         )}
 
-        {/* ABA MEUS BENS */}
+        {/* ABA IMÓVEIS COMPRADOS */}
         {abaAtiva === "meus_bens" && (
           <Box>
             <Typography variant="subtitle2" sx={{ color: "#3b82f6", mb: 1.5 }}>
-              🏠 MEUS IMÓVEIS ({imoveisJogador.length})
+              🏠 IMÓVEIS COMPRADOS ({imoveisJogador.length})
+              {totalImpostoMensal > 0 && (
+                <Chip
+                  label={`📅 Imposto mensal: 💰 ${totalImpostoMensal.toFixed(2)}`}
+                  size="small"
+                  sx={{ ml: 1, bgcolor: "#ef444422", color: "#ef4444", fontSize: "0.6rem", height: 18 }}
+                />
+              )}
             </Typography>
 
             {imoveisJogador.length === 0 ? (
@@ -1245,15 +1769,14 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
             ) : (
               <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                 {imoveisJogador.map((imovel) => {
-                  const valorAtual =
-                    imovel.valorCompra || imovel.precoVenda || 0;
-                  const valorMercado =
-                    imoveis.find((i) => i.id === imovel.id)?.precoVenda ||
-                    valorAtual;
+                  const valorCompra = imovel.valorCompra || imovel.precoVenda || 0;
+                  const valorMercado = imovel.valorMercado || valorCompra;
                   const valorizacao =
-                    valorAtual > 0
-                      ? ((valorMercado - valorAtual) / valorAtual) * 100
+                    valorCompra > 0
+                      ? ((valorMercado - valorCompra) / valorCompra) * 100
                       : 0;
+                  const impostoMensal = calcularImpostoImovel(imovel, impostos);
+                  const valorVendaLiquido = Math.round(valorMercado * (1 - CORRETAGEM) * 100) / 100;
 
                   return (
                     <Paper
@@ -1284,11 +1807,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                           <img
                             src={imovel.imagem}
                             alt={imovel.nome}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                            }}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
                           />
                         ) : (
                           <Typography sx={{ fontSize: "2.5rem", opacity: 0.6 }}>
@@ -1298,41 +1817,20 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                       </Box>
 
                       <Box sx={{ flex: 1, minWidth: 150 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{ fontWeight: "bold", color: "#fff" }}
-                        >
+                        <Typography variant="body2" sx={{ fontWeight: "bold", color: "#fff" }}>
                           {imovel.nome}
                         </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#64748b", display: "block" }}
-                        >
+                        <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
                           {imovel.cidade}, {imovel.pais}
                         </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: "#64748b" }}
-                        >
+                        <Typography variant="caption" sx={{ color: "#64748b" }}>
                           Comprado em: {getDataRPG()}
                         </Typography>
-                        <Chip
-                          label={imovel.status || "Ocupado"}
-                          size="small"
-                          sx={{
-                            mt: 0.5,
-                            bgcolor:
-                              imovel.status === "ocupado"
-                                ? "#22c55e22"
-                                : "#ef444422",
-                            color:
-                              imovel.status === "ocupado"
-                                ? "#22c55e"
-                                : "#ef4444",
-                            fontSize: "0.5rem",
-                            height: 16,
-                          }}
-                        />
+                        {impostoMensal > 0 && (
+                          <Typography variant="caption" sx={{ color: "#ef4444", display: "block" }}>
+                            📅 Imposto: 💰 {impostoMensal.toFixed(2)}/mês
+                          </Typography>
+                        )}
                       </Box>
 
                       <Box
@@ -1345,26 +1843,20 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                         }}
                       >
                         <Box sx={{ textAlign: "right" }}>
-                          <Typography
-                            variant="body2"
-                            sx={{ color: "#fbbf24", fontWeight: "bold" }}
-                          >
+                          <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold" }}>
                             💰 {valorMercado.toFixed(2)}
                           </Typography>
                           <Typography
                             variant="caption"
-                            sx={{
-                              color: valorizacao >= 0 ? "#22c55e" : "#ef4444",
-                            }}
+                            sx={{ color: valorizacao >= 0 ? "#22c55e" : "#ef4444" }}
                           >
-                            {valorizacao >= 0 ? "📈" : "📉"}{" "}
-                            {Math.abs(valorizacao).toFixed(1)}%
+                            {valorizacao >= 0 ? "📈" : "📉"} {Math.abs(valorizacao).toFixed(1)}%
                           </Typography>
-                          <Typography
-                            variant="caption"
-                            sx={{ color: "#64748b", display: "block" }}
-                          >
-                            Compra: {valorAtual.toFixed(2)}
+                          <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
+                            Compra: {valorCompra.toFixed(2)}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: "#22c55e", display: "block" }}>
+                            Venda líq.: 💰 {valorVendaLiquido.toFixed(2)}
                           </Typography>
                         </Box>
                         <Button
@@ -1391,6 +1883,320 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
             )}
           </Box>
         )}
+
+        {/* ABA ALUGADOS */}
+        {abaAtiva === "alugados" && (
+          <Box>
+            <Typography variant="subtitle2" sx={{ color: "#3b82f6", mb: 1.5 }}>
+              🔑 IMÓVEIS ALUGADOS ({imoveisAlugados.length})
+              {totalAluguelMensal > 0 && (
+                <Chip
+                  label={`📅 Aluguel mensal: 💰 ${totalAluguelMensal.toFixed(2)}`}
+                  size="small"
+                  sx={{ ml: 1, bgcolor: "#ef444422", color: "#ef4444", fontSize: "0.6rem", height: 18 }}
+                />
+              )}
+            </Typography>
+
+            {imoveisAlugados.length === 0 ? (
+              <Typography sx={{ color: "#64748b", textAlign: "center", py: 4 }}>
+                Você não tem imóveis alugados. Vá em [MERCADO] e alugue um!
+              </Typography>
+            ) : (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                {imoveisAlugados.map((imovel) => (
+                  <Paper
+                    key={imovel.id}
+                    sx={{
+                      p: 1.5,
+                      bgcolor: "#1a1a1a",
+                      border: "1px solid #3b82f644",
+                      display: "flex",
+                      gap: 1.5,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 120,
+                        height: 90,
+                        flexShrink: 0,
+                        borderRadius: 1,
+                        overflow: "hidden",
+                        bgcolor: "#0a0a0a",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {imovel.imagem ? (
+                        <img
+                          src={imovel.imagem}
+                          alt={imovel.nome}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : (
+                        <Typography sx={{ fontSize: "2.5rem", opacity: 0.6 }}>
+                          {imovel.emoji || getEmojiPorTipo(imovel.tipo)}
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <Box sx={{ flex: 1, minWidth: 150 }}>
+                      <Typography variant="body2" sx={{ fontWeight: "bold", color: "#fff" }}>
+                        {imovel.nome}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
+                        {imovel.cidade}, {imovel.pais}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: "#64748b", display: "block" }}>
+                        📅 Início: {imovel.dataInicioRPG || getDataRPG()}
+                      </Typography>
+                      <Chip
+                        label={`🔑 ${imovel.precoAluguel}/mês`}
+                        size="small"
+                        sx={{
+                          mt: 0.5,
+                          bgcolor: "#3b82f622",
+                          color: "#3b82f6",
+                          fontSize: "0.55rem",
+                          height: 18,
+                        }}
+                      />
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-end",
+                        justifyContent: "space-between",
+                        gap: 0.5,
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: "#94a3b8", textAlign: "right" }}>
+                        Cobrança todo dia 1<br />
+                        do mês RPG
+                      </Typography>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={<CancelIcon sx={{ fontSize: 14 }} />}
+                        onClick={() => {
+                          setImovelSelecionado(imovel);
+                          setModalCancelarAluguelOpen(true);
+                        }}
+                        sx={{
+                          bgcolor: "#ef4444",
+                          "&:hover": { bgcolor: "#dc2626" },
+                          fontSize: "0.6rem",
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                    </Box>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {/* ABA IMPOSTOS */}
+        {abaAtiva === "impostos" && (
+          <Box>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5, flexWrap: "wrap", gap: 1 }}>
+              <Typography variant="subtitle2" sx={{ color: "#3b82f6" }}>
+                🧾 REGRAS DE IMPOSTO ({impostos.length})
+              </Typography>
+              {isMaster && modoEdicao && (
+                <Box sx={{ display: "flex", gap: 0.5 }}>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={<AutorenewIcon />}
+                    onClick={gerarImpostoAuto}
+                    sx={{ bgcolor: "#a855f7", "&:hover": { bgcolor: "#9333ea" }, fontSize: "0.6rem" }}
+                  >
+                    Gerar Aleatório
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={() => {
+                      setImpostoEditando(null);
+                      setNovoImposto({
+                        nome: "",
+                        tipoImovel: "todos",
+                        pais: "todos",
+                        cidade: "",
+                        percentual: 0.5,
+                        valorFixo: 0,
+                        descricao: "",
+                        editavel: true,
+                      });
+                      setModalImpostoOpen(true);
+                    }}
+                    sx={{ bgcolor: "#22c55e", "&:hover": { bgcolor: "#16a34a" }, fontSize: "0.6rem" }}
+                  >
+                    + Imposto
+                  </Button>
+                </Box>
+              )}
+            </Box>
+
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+              {impostos.map((imp) => (
+                <Paper
+                  key={imp.id}
+                  sx={{
+                    p: 1.2,
+                    bgcolor: "#1a1a1a",
+                    border: "1px solid #333",
+                    display: "flex",
+                    gap: 1,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Box sx={{ flex: 1, minWidth: 150 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
+                      <Typography variant="body2" sx={{ fontWeight: "bold", color: "#fff" }}>
+                        {imp.nome}
+                      </Typography>
+                      <Chip
+                        label={imp.tipoImovel === "todos" ? "Todos os tipos" : imp.tipoImovel}
+                        size="small"
+                        sx={{ bgcolor: "#3b82f622", color: "#3b82f6", fontSize: "0.55rem", height: 16 }}
+                      />
+                      <Chip
+                        label={imp.pais === "todos" ? "Todos os países" : imp.pais}
+                        size="small"
+                        sx={{ bgcolor: "#fbbf2422", color: "#fbbf24", fontSize: "0.55rem", height: 16 }}
+                      />
+                      {imp.cidade && (
+                        <Chip
+                          label={`📍 ${imp.cidade}`}
+                          size="small"
+                          sx={{ bgcolor: "#22c55e22", color: "#22c55e", fontSize: "0.55rem", height: 16 }}
+                        />
+                      )}
+                    </Box>
+                    <Typography variant="caption" sx={{ color: "#64748b", display: "block", mt: 0.3 }}>
+                      {imp.descricao || "Sem descrição."}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: "right", minWidth: 90 }}>
+                    <Typography variant="body2" sx={{ color: "#ef4444", fontWeight: "bold" }}>
+                      {imp.percentual}%
+                    </Typography>
+                    {imp.valorFixo > 0 && (
+                      <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+                        + 💰 {imp.valorFixo}
+                      </Typography>
+                    )}
+                  </Box>
+                  {isMaster && modoEdicao && (
+                    <Box sx={{ display: "flex", gap: 0.3 }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setImpostoEditando(imp);
+                          setNovoImposto({ ...imp });
+                          setModalImpostoOpen(true);
+                        }}
+                        sx={{ color: "#ff9800" }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => deletarImposto(imp.id)} sx={{ color: "#ef4444" }}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  )}
+                </Paper>
+              ))}
+              {impostos.length === 0 && (
+                <Typography sx={{ color: "#64748b", textAlign: "center", py: 4 }}>
+                  Nenhum imposto configurado.
+                </Typography>
+              )}
+            </Box>
+
+            {!isMaster && (
+              <Typography variant="caption" sx={{ color: "#475569", display: "block", mt: 2, fontStyle: "italic" }}>
+                💡 Apenas o mestre pode criar e editar impostos. Fale com ele se achar algo estranho.
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        {/* ABA HISTÓRICO DE PAGAMENTOS */}
+        {abaAtiva === "historico" && (
+          <Box>
+            <Typography variant="subtitle2" sx={{ color: "#3b82f6", mb: 1.5 }}>
+              💰 HISTÓRICO DE PAGAMENTOS ({historicoPagamentos.length})
+            </Typography>
+            {historicoPagamentos.length === 0 ? (
+              <Typography sx={{ color: "#64748b", textAlign: "center", py: 4 }}>
+                Nenhum pagamento registrado ainda.
+              </Typography>
+            ) : (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                {[...historicoPagamentos].reverse().map((h, idx) => (
+                  <Paper
+                    key={idx}
+                    sx={{
+                      p: 1.2,
+                      bgcolor: "#1a1a1a",
+                      border: h.insuficiente ? "1px solid #ef444488" : "1px solid #333",
+                    }}
+                  >
+                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.5, flexWrap: "wrap", gap: 0.5 }}>
+                      <Typography variant="caption" sx={{ color: "#3b82f6", fontWeight: "bold" }}>
+                        📅 {h.dataRPG}
+                      </Typography>
+                      <Box sx={{ display: "flex", gap: 0.5 }}>
+                        {h.totalAluguel > 0 && (
+                          <Chip
+                            label={`🔑 Aluguel: ${h.totalAluguel.toFixed(2)}`}
+                            size="small"
+                            sx={{ bgcolor: "#3b82f622", color: "#3b82f6", fontSize: "0.55rem", height: 16 }}
+                          />
+                        )}
+                        {h.totalImposto > 0 && (
+                          <Chip
+                            label={`🧾 Imposto: ${h.totalImposto.toFixed(2)}`}
+                            size="small"
+                            sx={{ bgcolor: "#ef444422", color: "#ef4444", fontSize: "0.55rem", height: 16 }}
+                          />
+                        )}
+                        {h.insuficiente && (
+                          <Chip
+                            label="⚠️ Saldo insuficiente"
+                            size="small"
+                            sx={{ bgcolor: "#f9731622", color: "#f97316", fontSize: "0.55rem", height: 16 }}
+                          />
+                        )}
+                      </Box>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: "#fbbf24", fontWeight: "bold" }}>
+                      Total cobrado: 💰 {h.total.toFixed(2)}
+                    </Typography>
+                    <Box sx={{ mt: 0.5 }}>
+                      {h.detalhes?.map((d, i) => (
+                        <Typography key={i} variant="caption" sx={{ color: "#64748b", display: "block", fontSize: "0.6rem" }}>
+                          {d.tipo === "aluguel" ? "🔑" : "🧾"} {d.nome}: 💰 {d.valor.toFixed(2)}
+                        </Typography>
+                      ))}
+                    </Box>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
       </Box>
 
       {/* MODAL DE COMPRA */}
@@ -1399,9 +2205,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         onClose={() => setModalCompraOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 },
-        }}
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
       >
         <DialogTitle sx={{ color: "#3b82f6" }}>🏠 Comprar Imóvel</DialogTitle>
         <DialogContent>
@@ -1416,21 +2220,13 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                 </Typography>
                 {imovelSelecionado.descontoAtivo && imovelSelecionado.precoOriginal && (
                   <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                    <Typography
-                      variant="body2"
-                      sx={{ color: "#64748b", textDecoration: "line-through" }}
-                    >
+                    <Typography variant="body2" sx={{ color: "#64748b", textDecoration: "line-through" }}>
                       💰 {imovelSelecionado.precoOriginal.toFixed(2)}
                     </Typography>
                     <Chip
                       label={`-${imovelSelecionado.descontoPercent}%`}
                       size="small"
-                      sx={{
-                        bgcolor: "#ef444422",
-                        color: "#ef4444",
-                        fontSize: "0.65rem",
-                        fontWeight: "bold",
-                      }}
+                      sx={{ bgcolor: "#ef444422", color: "#ef4444", fontSize: "0.65rem", fontWeight: "bold" }}
                     />
                   </Box>
                 )}
@@ -1471,15 +2267,112 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         </DialogActions>
       </Dialog>
 
+      {/* MODAL DE ALUGUEL */}
+      <Dialog
+        open={modalAluguelOpen}
+        onClose={() => setModalAluguelOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ color: "#3b82f6" }}>🔑 Alugar Imóvel</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}>
+            {imovelSelecionado && (
+              <>
+                <Typography variant="body1" sx={{ color: "#fff", fontWeight: "bold" }}>
+                  {imovelSelecionado.nome}
+                </Typography>
+                <Typography variant="body2" sx={{ color: "#94a3b8" }}>
+                  {imovelSelecionado.cidade}, {imovelSelecionado.pais}
+                </Typography>
+                <Typography variant="body2" sx={{ color: "#3b82f6", fontWeight: "bold" }}>
+                  💰 {imovelSelecionado.precoAluguel}/mês
+                </Typography>
+                <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+                  📅 O 1º mês é cobrado agora. Depois, cobrança automática todo dia 1 do mês RPG.
+                </Typography>
+                <FormControl fullWidth size="small">
+                  <InputLabel sx={{ color: "#94a3b8" }}>Carteira para débito do 1º mês</InputLabel>
+                  <Select
+                    value={carteiraSelecionada}
+                    onChange={(e) => setCarteiraSelecionada(e.target.value)}
+                    sx={{ color: "#fff", bgcolor: "#1a1a2e" }}
+                  >
+                    {Object.entries(carteiraJogador).map(([nome, valor]) => (
+                      <MenuItem key={nome} value={nome}>
+                        {nome}: 💰 {typeof valor === "number" ? valor.toFixed(2) : "0.00"}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setModalAluguelOpen(false)} sx={{ color: "#94a3b8" }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={alugarImovel}
+            disabled={loading}
+            sx={{ bgcolor: "#3b82f6", "&:hover": { bgcolor: "#2563eb" } }}
+          >
+            {loading ? "Processando..." : "Alugar"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL DE CANCELAR ALUGUEL */}
+      <Dialog
+        open={modalCancelarAluguelOpen}
+        onClose={() => setModalCancelarAluguelOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ color: "#ef4444" }}>❌ Cancelar Aluguel</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}>
+            {imovelSelecionado && (
+              <>
+                <Typography variant="body1" sx={{ color: "#fff", fontWeight: "bold" }}>
+                  {imovelSelecionado.nome}
+                </Typography>
+                <Typography variant="body2" sx={{ color: "#94a3b8" }}>
+                  Você tem certeza que deseja cancelar o aluguel deste imóvel?
+                </Typography>
+                <Typography variant="caption" sx={{ color: "#ef4444" }}>
+                  ⚠️ Não há reembolso do mês já pago.
+                </Typography>
+              </>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setModalCancelarAluguelOpen(false)} sx={{ color: "#94a3b8" }}>
+            Voltar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={cancelarAluguel}
+            disabled={loading}
+            sx={{ bgcolor: "#ef4444", "&:hover": { bgcolor: "#dc2626" } }}
+          >
+            {loading ? "Processando..." : "Cancelar Aluguel"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* MODAL DE VENDA */}
       <Dialog
         open={modalVendaOpen}
         onClose={() => setModalVendaOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 },
-        }}
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
       >
         <DialogTitle sx={{ color: "#ef4444" }}>📉 Vender Imóvel</DialogTitle>
         <DialogContent>
@@ -1493,11 +2386,19 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                   {imovelSelecionado.cidade}, {imovelSelecionado.pais}
                 </Typography>
                 <Typography variant="body2" sx={{ color: "#fbbf24" }}>
-                  Valor de venda: 💰{" "}
-                  {Math.round((imovelSelecionado.valorCompra || 0) * 0.85).toFixed(2)}
+                  Valor de mercado: 💰{" "}
+                  {(imovelSelecionado.valorMercado || imovelSelecionado.valorCompra || 0).toFixed(2)}
+                </Typography>
+                <Typography variant="body2" sx={{ color: "#22c55e", fontWeight: "bold" }}>
+                  Você recebe: 💰{" "}
+                  {Math.round(
+                    (imovelSelecionado.valorMercado ||
+                      imovelSelecionado.valorCompra ||
+                      0) * (1 - CORRETAGEM) * 100
+                  ) / 100}
                 </Typography>
                 <Typography variant="caption" sx={{ color: "#64748b" }}>
-                  💡 Taxa de corretagem: 15% (inclusa no valor)
+                  💡 Taxa de corretagem: {CORRETAGEM * 100}% · O preço de mercado flutua ±30% a cada 10 minutos.
                 </Typography>
               </>
             )}
@@ -1518,15 +2419,13 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         </DialogActions>
       </Dialog>
 
-      {/* MODAL DE EDIÇÃO DE IMÓVEL */}
+      {/* MODAL DE EDIÇÃO DE IMÓVEL (MESTRE) */}
       <Dialog
         open={modalEdicaoOpen}
         onClose={() => setModalEdicaoOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 },
-        }}
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
       >
         <DialogTitle sx={{ color: "#3b82f6" }}>
           {imovelEditando ? "✏️ Editar Imóvel" : "➕ Novo Imóvel"}
@@ -1538,9 +2437,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               fullWidth
               size="small"
               value={novoImovel.nome}
-              onChange={(e) =>
-                setNovoImovel({ ...novoImovel, nome: e.target.value })
-              }
+              onChange={(e) => setNovoImovel({ ...novoImovel, nome: e.target.value })}
               InputProps={{ sx: { color: "#fff" } }}
               InputLabelProps={{ sx: { color: "#94a3b8" } }}
               sx={{ bgcolor: "#1a1a2e" }}
@@ -1552,9 +2449,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               multiline
               rows={2}
               value={novoImovel.descricao}
-              onChange={(e) =>
-                setNovoImovel({ ...novoImovel, descricao: e.target.value })
-              }
+              onChange={(e) => setNovoImovel({ ...novoImovel, descricao: e.target.value })}
               InputProps={{ sx: { color: "#fff" } }}
               InputLabelProps={{ sx: { color: "#94a3b8" } }}
               sx={{ bgcolor: "#1a1a2e" }}
@@ -1564,9 +2459,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               fullWidth
               size="small"
               value={novoImovel.cidade}
-              onChange={(e) =>
-                setNovoImovel({ ...novoImovel, cidade: e.target.value })
-              }
+              onChange={(e) => setNovoImovel({ ...novoImovel, cidade: e.target.value })}
               InputProps={{ sx: { color: "#fff" } }}
               InputLabelProps={{ sx: { color: "#94a3b8" } }}
               sx={{ bgcolor: "#1a1a2e" }}
@@ -1575,9 +2468,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               <InputLabel sx={{ color: "#94a3b8" }}>País</InputLabel>
               <Select
                 value={novoImovel.pais}
-                onChange={(e) =>
-                  setNovoImovel({ ...novoImovel, pais: e.target.value })
-                }
+                onChange={(e) => setNovoImovel({ ...novoImovel, pais: e.target.value })}
                 sx={{ color: "#fff", bgcolor: "#1a1a2e" }}
               >
                 <MenuItem value="Império Aurano">Império Aurano</MenuItem>
@@ -1599,9 +2490,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               <InputLabel sx={{ color: "#94a3b8" }}>Tipo</InputLabel>
               <Select
                 value={novoImovel.tipo}
-                onChange={(e) =>
-                  setNovoImovel({ ...novoImovel, tipo: e.target.value })
-                }
+                onChange={(e) => setNovoImovel({ ...novoImovel, tipo: e.target.value })}
                 sx={{ color: "#fff", bgcolor: "#1a1a2e" }}
               >
                 <MenuItem value="Casa">Casa</MenuItem>
@@ -1623,10 +2512,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                   type="number"
                   value={novoImovel.metrosQuadrados}
                   onChange={(e) =>
-                    setNovoImovel({
-                      ...novoImovel,
-                      metrosQuadrados: Math.max(1, Number(e.target.value) || 1),
-                    })
+                    setNovoImovel({ ...novoImovel, metrosQuadrados: Math.max(1, Number(e.target.value) || 1) })
                   }
                   InputProps={{ sx: { color: "#fff" } }}
                   InputLabelProps={{ sx: { color: "#94a3b8" } }}
@@ -1641,10 +2527,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                   type="number"
                   value={novoImovel.quartos}
                   onChange={(e) =>
-                    setNovoImovel({
-                      ...novoImovel,
-                      quartos: Math.max(0, Number(e.target.value) || 0),
-                    })
+                    setNovoImovel({ ...novoImovel, quartos: Math.max(0, Number(e.target.value) || 0) })
                   }
                   InputProps={{ sx: { color: "#fff" } }}
                   InputLabelProps={{ sx: { color: "#94a3b8" } }}
@@ -1659,10 +2542,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                   type="number"
                   value={novoImovel.banheiros}
                   onChange={(e) =>
-                    setNovoImovel({
-                      ...novoImovel,
-                      banheiros: Math.max(0, Number(e.target.value) || 0),
-                    })
+                    setNovoImovel({ ...novoImovel, banheiros: Math.max(0, Number(e.target.value) || 0) })
                   }
                   InputProps={{ sx: { color: "#fff" } }}
                   InputLabelProps={{ sx: { color: "#94a3b8" } }}
@@ -1677,10 +2557,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               type="number"
               value={novoImovel.precoVenda}
               onChange={(e) =>
-                setNovoImovel({
-                  ...novoImovel,
-                  precoVenda: Math.max(0, Number(e.target.value) || 0),
-                })
+                setNovoImovel({ ...novoImovel, precoVenda: Math.max(0, Number(e.target.value) || 0) })
               }
               InputProps={{ sx: { color: "#fbbf24" }, inputProps: { min: 0, step: 1000 } }}
               InputLabelProps={{ sx: { color: "#94a3b8" } }}
@@ -1693,22 +2570,27 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
               type="number"
               value={novoImovel.precoAluguel}
               onChange={(e) =>
-                setNovoImovel({
-                  ...novoImovel,
-                  precoAluguel: Math.max(0, Number(e.target.value) || 0),
-                })
+                setNovoImovel({ ...novoImovel, precoAluguel: Math.max(0, Number(e.target.value) || 0) })
               }
-              InputProps={{ sx: { color: "#94a3b8" }, inputProps: { min: 0, step: 100 } }}
+              InputProps={{ sx: { color: "#3b82f6" }, inputProps: { min: 0, step: 100 } }}
               InputLabelProps={{ sx: { color: "#94a3b8" } }}
               sx={{ bgcolor: "#1a1a2e" }}
             />
-
-            {/* UPLOAD DE IMAGEM DO DISPOSITIVO */}
-            <Box>
-              <Typography
-                variant="caption"
-                sx={{ color: "#94a3b8", display: "block", mb: 1 }}
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: "#94a3b8" }}>Disponível para aluguel?</InputLabel>
+              <Select
+                value={novoImovel.disponivelAluguel ? "sim" : "nao"}
+                onChange={(e) => setNovoImovel({ ...novoImovel, disponivelAluguel: e.target.value === "sim" })}
+                sx={{ color: "#fff", bgcolor: "#1a1a2e" }}
               >
+                <MenuItem value="sim">🔑 Sim</MenuItem>
+                <MenuItem value="nao">🚫 Não</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* UPLOAD DE IMAGEM */}
+            <Box>
+              <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mb: 1 }}>
                 Imagem do Imóvel (opcional — redimensionada automaticamente)
               </Typography>
               {novoImovel.imagem ? (
@@ -1726,11 +2608,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                     <img
                       src={novoImovel.imagem}
                       alt="Preview"
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     />
                   </Box>
                   <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
@@ -1738,11 +2616,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                       component="label"
                       size="small"
                       variant="outlined"
-                      sx={{
-                        color: "#3b82f6",
-                        borderColor: "#3b82f644",
-                        fontSize: "0.65rem",
-                      }}
+                      sx={{ color: "#3b82f6", borderColor: "#3b82f644", fontSize: "0.65rem" }}
                     >
                       Trocar
                       <input
@@ -1754,10 +2628,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                           if (!file) return;
                           try {
                             const dataUrl = await processarImagemUpload(file);
-                            setNovoImovel((prev) => ({
-                              ...prev,
-                              imagem: dataUrl,
-                            }));
+                            setNovoImovel((prev) => ({ ...prev, imagem: dataUrl }));
                           } catch (err) {
                             console.error(err);
                             alert("Erro ao processar imagem.");
@@ -1767,9 +2638,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                     </Button>
                     <Button
                       size="small"
-                      onClick={() =>
-                        setNovoImovel((prev) => ({ ...prev, imagem: "" }))
-                      }
+                      onClick={() => setNovoImovel((prev) => ({ ...prev, imagem: "" }))}
                       sx={{ color: "#ef4444", fontSize: "0.65rem" }}
                     >
                       Remover
@@ -1808,12 +2677,6 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                   />
                 </Button>
               )}
-              <Typography
-                variant="caption"
-                sx={{ color: "#475569", display: "block", mt: 0.5, fontSize: "0.6rem" }}
-              >
-                💡 Dica: se não enviar imagem, o imóvel usa um emoji automático.
-              </Typography>
             </Box>
           </Box>
         </DialogContent>
@@ -1827,6 +2690,127 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
             sx={{ bgcolor: "#3b82f6", "&:hover": { bgcolor: "#2563eb" } }}
           >
             {imovelEditando ? "Salvar Alterações" : "Adicionar Imóvel"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* MODAL DE EDIÇÃO DE IMPOSTO (MESTRE) */}
+      <Dialog
+        open={modalImpostoOpen}
+        onClose={() => setModalImpostoOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ color: "#3b82f6" }}>
+          {impostoEditando ? "✏️ Editar Imposto" : "➕ Novo Imposto"}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}>
+            <TextField
+              label="Nome do Imposto"
+              fullWidth
+              size="small"
+              value={novoImposto.nome}
+              onChange={(e) => setNovoImposto({ ...novoImposto, nome: e.target.value })}
+              InputProps={{ sx: { color: "#fff" } }}
+              InputLabelProps={{ sx: { color: "#94a3b8" } }}
+              sx={{ bgcolor: "#1a1a2e" }}
+            />
+            <TextField
+              label="Descrição"
+              fullWidth
+              size="small"
+              multiline
+              rows={2}
+              value={novoImposto.descricao}
+              onChange={(e) => setNovoImposto({ ...novoImposto, descricao: e.target.value })}
+              InputProps={{ sx: { color: "#fff" } }}
+              InputLabelProps={{ sx: { color: "#94a3b8" } }}
+              sx={{ bgcolor: "#1a1a2e" }}
+            />
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: "#94a3b8" }}>Tipo de Imóvel</InputLabel>
+              <Select
+                value={novoImposto.tipoImovel}
+                onChange={(e) => setNovoImposto({ ...novoImposto, tipoImovel: e.target.value })}
+                sx={{ color: "#fff", bgcolor: "#1a1a2e" }}
+              >
+                <MenuItem value="todos">Todos os tipos</MenuItem>
+                {["Casa", "Apartamento", "Comercial", "Terreno", "Fazenda", "Castelo", "Cobertura", "Loft"].map((t) => (
+                  <MenuItem key={t} value={t}>{t}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth size="small">
+              <InputLabel sx={{ color: "#94a3b8" }}>País</InputLabel>
+              <Select
+                value={novoImposto.pais}
+                onChange={(e) => setNovoImposto({ ...novoImposto, pais: e.target.value })}
+                sx={{ color: "#fff", bgcolor: "#1a1a2e" }}
+              >
+                <MenuItem value="todos">Todos os países</MenuItem>
+                {["Império Aurano", "Kratória", "Arcádia", "Vaurana", "Parax", "Varosia", "Burgo", "Narshan", "Dryadalis", "Quark", "Tsar", "Amuras", "Ferglacius"].map((p) => (
+                  <MenuItem key={p} value={p}>{p}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              label="Cidade (opcional)"
+              fullWidth
+              size="small"
+              value={novoImposto.cidade}
+              onChange={(e) => setNovoImposto({ ...novoImposto, cidade: e.target.value })}
+              InputProps={{ sx: { color: "#fff" } }}
+              InputLabelProps={{ sx: { color: "#94a3b8" } }}
+              helperText="Deixe vazio para valer em qualquer cidade"
+              FormHelperTextProps={{ sx: { color: "#64748b" } }}
+              sx={{ bgcolor: "#1a1a2e" }}
+            />
+            <Grid container spacing={1}>
+              <Grid item xs={6}>
+                <TextField
+                  label="Percentual (%)"
+                  fullWidth
+                  size="small"
+                  type="number"
+                  value={novoImposto.percentual}
+                  onChange={(e) =>
+                    setNovoImposto({ ...novoImposto, percentual: Math.max(0, Number(e.target.value) || 0) })
+                  }
+                  InputProps={{ sx: { color: "#ef4444" }, inputProps: { min: 0, step: 0.1 } }}
+                  InputLabelProps={{ sx: { color: "#94a3b8" } }}
+                  sx={{ bgcolor: "#1a1a2e" }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  label="Valor Fixo (opcional)"
+                  fullWidth
+                  size="small"
+                  type="number"
+                  value={novoImposto.valorFixo}
+                  onChange={(e) =>
+                    setNovoImposto({ ...novoImposto, valorFixo: Math.max(0, Number(e.target.value) || 0) })
+                  }
+                  InputProps={{ sx: { color: "#fbbf24" }, inputProps: { min: 0, step: 10 } }}
+                  InputLabelProps={{ sx: { color: "#94a3b8" } }}
+                  sx={{ bgcolor: "#1a1a2e" }}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setModalImpostoOpen(false)} sx={{ color: "#94a3b8" }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={salvarImposto}
+            sx={{ bgcolor: "#3b82f6", "&:hover": { bgcolor: "#2563eb" } }}
+          >
+            {impostoEditando ? "Salvar Alterações" : "Adicionar Imposto"}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,5 +1,5 @@
 // src/components/CassinoJogos.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   Box, Paper, Typography, IconButton, Button, TextField,
@@ -59,30 +59,40 @@ const CAVALOS = [
   { id: 5, cor: "#f97316", nome: "Carpeado",   emoji: "🐎" }, // favorito
 ];
 
-// ============ ODDS (10 min por bloco, iguais pra todo mundo) ============
-const ODDS_BLOCO_MS = 10 * 60 * 1000;
+// ============ ODDS GLOBAIS (5 min por bloco, iguais pra todo mundo) ============
+const ODDS_BLOCO_MS = 5 * 60 * 1000;
 
 const seededRandom = (seed) => {
   const x = Math.sin(seed) * 10000;
   return x - Math.floor(x);
 };
 
-const calcularOdds = (bloco) => {
+const calcularOddsGlobais = (bloco) => {
   return CAVALOS.map((c) => {
     const r = seededRandom(bloco * 7.31 + c.id * 3.17);
     let odd;
     if (c.id === 2) {
       // Verde — azarão (odd sempre alta)
-      odd = 8.0 + r * 5.0; // 8.0 a 13.0
+      odd = 2.2 + r * 1.3;  // 2.20 a 3.50
     } else if (c.id === 5) {
       // Laranja — favorito (odd sempre baixa)
-      odd = 1.4 + r * 0.9; // 1.4 a 2.3
+      odd = 1.05 + r * 0.30; // 1.05 a 1.35
     } else {
-      odd = 2.5 + r * 4.0; // 2.5 a 6.5
+      odd = 1.15 + r * 0.75; // 1.15 a 1.90
     }
-    return { ...c, odd: Math.round(odd * 10) / 10 };
+    return { ...c, odd: Math.round(odd * 100) / 100 };
   });
 };
+
+// ============ MODIFICADOR PESSOAL DE ODD ============
+// Cada jogador tem seu próprio modificador por cavalo.
+// Venceu apostando no cavalo X  → mod do X cai (odd fica menos vantajosa)
+// Perdeu apostando no cavalo X → mod do X sobe (odd fica mais vantajosa)
+const MOD_PESSOAL_MIN = 0.5;      // odd efetiva cai no mínimo à metade
+const MOD_PESSOAL_MAX = 2.0;      // odd efetiva sobe no máximo ao dobro
+const MOD_FATOR_VITORIA = 0.90;   // -10% por vitória no mesmo cavalo
+const MOD_FATOR_DERROTA = 1.05;   // +5% por derrota no mesmo cavalo
+const ODD_EFETIVA_MIN = 1.0;      // nunca paga menos que a aposta
 
 const formatarTempoRestante = (ms) => {
   if (ms <= 0) return "00:00";
@@ -143,8 +153,17 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
   const [resultadoCorrida, setResultadoCorrida] = useState(null);
   const rafRef = useRef(null);
   const corridaRef = useRef(null);
-  const [oddsAtuais, setOddsAtuais] = useState(() => calcularOdds(Math.floor(Date.now() / ODDS_BLOCO_MS)));
+  const [oddsGlobais, setOddsGlobais] = useState(() =>
+    calcularOddsGlobais(Math.floor(Date.now() / ODDS_BLOCO_MS))
+  );
   const [tempoAteAtualizacao, setTempoAteAtualizacao] = useState(0);
+
+  // Modificadores pessoais por cavalo (1.0 = sem alteração)
+  const [modsPessoais, setModsPessoais] = useState(() => {
+    const inicial = {};
+    for (let i = 0; i < CAVALOS.length; i++) inicial[i] = 1.0;
+    return inicial;
+  });
 
   // ============ CHAT GLOBAL ============
   const [chatMensagens, setChatMensagens] = useState([]);
@@ -155,6 +174,20 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
 
   // ============ RANKING ============
   const [ranking, setRanking] = useState([]);
+
+  // ============ ODDS EFETIVAS (global × modificador pessoal) ============
+  const oddsEfetivas = useMemo(() => {
+    return oddsGlobais.map((o) => {
+      const mod = modsPessoais[o.id] ?? 1.0;
+      const bruta = o.odd * mod;
+      const efetiva = Math.max(ODD_EFETIVA_MIN, bruta);
+      return {
+        ...o,
+        odd: Math.round(efetiva * 100) / 100,
+        modPessoal: mod,
+      };
+    });
+  }, [oddsGlobais, modsPessoais]);
 
   // ============ SALDO EM TEMPO REAL ============
   useEffect(() => {
@@ -172,6 +205,28 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
         setSaldo(total);
       }
     });
+    return () => unsub();
+  }, [userEmail]);
+
+  // ============ MODIFICADORES PESSOAIS (Firestore, tempo real) ============
+  useEffect(() => {
+    if (!userEmail) return;
+    const ref = doc(db, "cassino_odds_pessoais", userEmail);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const m = data.modificadores || {};
+          const normalizado = {};
+          for (let i = 0; i < CAVALOS.length; i++) {
+            normalizado[i] = typeof m[i] === "number" ? m[i] : 1.0;
+          }
+          setModsPessoais(normalizado);
+        }
+      },
+      (err) => console.warn("Erro mods pessoais:", err)
+    );
     return () => unsub();
   }, [userEmail]);
 
@@ -237,13 +292,13 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
     return () => unsub();
   }, []);
 
-  // ============ ODDS — atualiza a cada 10 min ============
+  // ============ ODDS — atualiza a cada 5 min ============
   useEffect(() => {
     const tick = () => {
       const agora = Date.now();
       const bloco = Math.floor(agora / ODDS_BLOCO_MS);
       const proximoBloco = (bloco + 1) * ODDS_BLOCO_MS;
-      setOddsAtuais(calcularOdds(bloco));
+      setOddsGlobais(calcularOddsGlobais(bloco));
       setTempoAteAtualizacao(proximoBloco - agora);
     };
     tick();
@@ -414,6 +469,30 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
     }
   };
 
+  // ============ MODIFICADOR PESSOAL — atualiza após corrida ============
+  const atualizarModPessoal = async (cavaloId, ganhou) => {
+    if (!userEmail) return;
+    try {
+      const ref = doc(db, "cassino_odds_pessoais", userEmail);
+      const snap = await getDoc(ref);
+      const atual = snap.exists() ? (snap.data().modificadores || {}) : {};
+      const modAtual = typeof atual[cavaloId] === "number" ? atual[cavaloId] : 1.0;
+      const fator = ganhou ? MOD_FATOR_VITORIA : MOD_FATOR_DERROTA;
+      const bruto = modAtual * fator;
+      const novo = Math.max(MOD_PESSOAL_MIN, Math.min(MOD_PESSOAL_MAX, bruto));
+      await setDoc(
+        ref,
+        {
+          modificadores: { ...atual, [cavaloId]: novo },
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn("Erro mod pessoal:", e);
+    }
+  };
+
   // ============ TIGRINHO: GIRAR ============
   const girarTigrinho = async () => {
     if (girando) return;
@@ -562,7 +641,12 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
 
     setResultadoCorrida(null);
 
-    const cavalos = oddsAtuais.map((c) => {
+    // Congela a odd efetiva no momento da aposta (pra pagar justo mesmo se
+    // as odds atualizarem no meio da corrida)
+    const infoAposta = oddsEfetivas.find((c) => c.id === cavaloEscolhido);
+    const oddApostada = infoAposta?.odd || 2;
+
+    const cavalos = oddsEfetivas.map((c) => {
       // Velocidade base inversamente proporcional à odd (azarão mais lento)
       const speedBias = Math.pow(1.5 / c.odd, 0.3);
       return {
@@ -576,8 +660,12 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
     });
 
     corridaRef.current = {
-      cavalos, rodando: true, vencedor: null,
-      cavaloEscolhido, ultimaAtualizacao: performance.now(),
+      cavalos,
+      rodando: true,
+      vencedor: null,
+      cavaloEscolhido,
+      oddApostada,
+      ultimaAtualizacao: performance.now(),
     };
 
     setCorrida({ cavalos, rodando: true, vencedor: null });
@@ -628,10 +716,11 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
     if (!ref) return;
     const cavaloVencedor = CAVALOS[vencedorId];
     const cavaloApostado = CAVALOS[ref.cavaloEscolhido];
+    const acertou = ref.cavaloEscolhido === vencedorId;
 
-    if (ref.cavaloEscolhido === vencedorId) {
-      // Payout: aposta * odd
-      const oddVencedor = oddsAtuais.find((c) => c.id === vencedorId)?.odd || 2;
+    if (acertou) {
+      // Payout: aposta × odd efetiva congelada no momento da aposta
+      const oddVencedor = ref.oddApostada || 2;
       const premioReal = Math.floor(apostaCorrida * oddVencedor);
       await creditarSaldo(premioReal);
       setResultadoCorrida({
@@ -655,6 +744,10 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
       await atualizarRanking("corrida", apostaCorrida, 0);
     }
 
+    // 🟢 Atualiza modificador pessoal: vitória baixa a odd do cavalo apostado,
+    // derrota sobe.
+    await atualizarModPessoal(ref.cavaloEscolhido, acertou);
+
     // 🟢 RESET dos cavalos após 3 segundos (o botão fica travado até lá)
     setTimeout(() => {
       corridaRef.current = null;
@@ -676,6 +769,11 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
 
   // Mensagens visíveis (oculta as mais antigas)
   const chatVisivel = chatMensagens.slice(-chatVisibleCount);
+
+  // Verifica se algum modificador pessoal está diferente de 1.0
+  const temAjustePessoal = CAVALOS.some(
+    (c) => Math.abs((modsPessoais[c.id] ?? 1) - 1) > 0.001
+  );
 
   // ============ RENDER ============
   return createPortal(
@@ -1033,31 +1131,47 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
                   >
                     <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
                       <Typography variant="caption" sx={{ color: "#facc15", fontWeight: "bold" }}>
-                        📊 ODDS ATUAIS
+                        📊 SUAS ODDS ATUAIS
                       </Typography>
                       <Typography variant="caption" sx={{ color: "#a16207", fontSize: "0.6rem" }}>
-                        Atualiza a cada 10 min (igual pra todos)
+                        Base muda a cada 5 min · ajuste pessoal conforme você joga
                       </Typography>
                     </Box>
                     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.6 }}>
-                      {oddsAtuais.map((c) => (
-                        <Chip
-                          key={c.id}
-                          label={`${c.emoji} ${c.nome} · ${c.odd}x${c.id === 2 ? " 🔥" : c.id === 5 ? " ⭐" : ""}`}
-                          onClick={() => setCavaloEscolhido(c.id)}
-                          disabled={!!corrida}
-                          sx={{
-                            bgcolor: cavaloEscolhido === c.id ? c.cor : "#1a0f00",
-                            color: cavaloEscolhido === c.id ? "#fff" : c.cor,
-                            border: `2px solid ${c.cor}`,
-                            fontWeight: "bold", cursor: "pointer",
-                            fontSize: "0.7rem",
-                            transition: "all 0.2s",
-                            transform: cavaloEscolhido === c.id ? "scale(1.05)" : "scale(1)",
-                            "&:hover": { bgcolor: c.cor + "44" },
-                          }}
-                        />
-                      ))}
+                      {oddsEfetivas.map((c) => {
+                        const subiu = c.modPessoal > 1.001;
+                        const caiu = c.modPessoal < 0.999;
+                        const seta = subiu ? "↑" : caiu ? "↓" : "";
+                        const corSeta = subiu ? "#22c55e" : caiu ? "#ef4444" : "transparent";
+                        return (
+                          <Chip
+                            key={c.id}
+                            label={
+                              <span>
+                                {c.emoji} {c.nome} · {c.odd}x
+                                {seta && (
+                                  <span style={{ color: corSeta, fontWeight: 900, marginLeft: 4 }}>
+                                    {seta}
+                                  </span>
+                                )}
+                                {c.id === 2 ? " 🔥" : c.id === 5 ? " ⭐" : ""}
+                              </span>
+                            }
+                            onClick={() => setCavaloEscolhido(c.id)}
+                            disabled={!!corrida}
+                            sx={{
+                              bgcolor: cavaloEscolhido === c.id ? c.cor : "#1a0f00",
+                              color: cavaloEscolhido === c.id ? "#fff" : c.cor,
+                              border: `2px solid ${c.cor}`,
+                              fontWeight: "bold", cursor: "pointer",
+                              fontSize: "0.7rem",
+                              transition: "all 0.2s",
+                              transform: cavaloEscolhido === c.id ? "scale(1.05)" : "scale(1)",
+                              "&:hover": { bgcolor: c.cor + "44" },
+                            }}
+                          />
+                        );
+                      })}
                     </Box>
                   </Paper>
 
@@ -1181,6 +1295,40 @@ function CassinoJogos({ userEmail, userNick, isMaster, onClose }) {
                   ))
                 )}
               </Box>
+
+              {/* SEUS AJUSTES PESSOAIS (só na aba aposta, só se algum mod != 1) */}
+              {abaAtiva === "aposta" && temAjustePessoal && (
+                <Box sx={{ p: 1.2, borderBottom: "1px solid #eab30822" }}>
+                  <Typography variant="caption" sx={{ color: "#facc15", fontWeight: "bold", display: "block", mb: 1 }}>
+                    🎯 SEUS AJUSTES
+                  </Typography>
+                  {CAVALOS.map((c) => {
+                    const m = modsPessoais[c.id] ?? 1;
+                    if (Math.abs(m - 1) < 0.001) return null;
+                    const seta = m < 1 ? "↓" : "↑";
+                    const cor = m < 1 ? "#ef4444" : "#22c55e";
+                    return (
+                      <Box
+                        key={c.id}
+                        sx={{ display: "flex", justifyContent: "space-between", mb: 0.3, fontSize: "0.65rem" }}
+                      >
+                        <Typography sx={{ color: c.cor, fontSize: "0.65rem", fontWeight: "bold" }}>
+                          {c.nome}
+                        </Typography>
+                        <Typography sx={{ color: cor, fontWeight: "bold", fontSize: "0.65rem" }}>
+                          {seta} x{m.toFixed(2)}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                  <Typography
+                    sx={{ color: "#665500", fontSize: "0.55rem", fontStyle: "italic", mt: 0.8, lineHeight: 1.3 }}
+                  >
+                    ↓ = você ganha muito nesse cavalo (odd cai)<br />
+                    ↑ = você perde muito nesse cavalo (odd sobe)
+                  </Typography>
+                </Box>
+              )}
 
               {/* MULTIPLICADORES (só no tigrinho) */}
               {abaAtiva === "tigrinho" && (

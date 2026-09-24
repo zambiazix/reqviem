@@ -174,6 +174,7 @@ const SEASONS = ["Primavera", "Verão", "Outono", "Inverno"];
     { valor: "Contundente", label: "Contundente", cor: "#a0522d", descricao: "Impactos e quedas. 50% Chance de soltar itens empunhados." },
     { valor: "Cortante", label: "Cortante", cor: "#c0c0c0", descricao: "Lâminas e garras. 50% Eficaz contra tecidos." },
     { valor: "Elétrico", label: "Elétrico", cor: "#ffff00", descricao: "Queimaduras e paralisia. 50% Chance de paralisar o local." },
+    { valor: "Digital", label: "Digital", cor: "#00ff41", descricao: "Código/vírus digital. 50% Chance de corromper armas e equipamentos do alvo." },
     { valor: "Aurano", label: "Aurano", cor: "#00e0ff", descricao: "Dano puro de Aura. Eficaz contra quase todas as defesas." },
     { valor: "Gélido", label: "Gélido", cor: "#87ceeb", descricao: "Congelamento e lentidão. 20% Chance de causar necrose." },
     { valor: "Térmico", label: "Térmico", cor: "#ff4500", descricao: "Queima e incendeia. 50% Menos cura/regeneração." },
@@ -481,6 +482,8 @@ const DEFEITOS_DISPONIVEIS = [
 
 // Estado para o modal de defeitos
 const [modalDefeitosOpen, setModalDefeitosOpen] = useState(false);
+// 🟢 TRAVA DO BOTÃO RESTAURAR (só Mestre libera)
+const [restauracaoLiberada, setRestauracaoLiberada] = useState(false);
 const [defeitosSelecionados, setDefeitosSelecionados] = useState([]);
 
 // Calcular pontos extras de perícia dos defeitos
@@ -1121,6 +1124,8 @@ const unsub = onSnapshot(ref, (snap) => {
 
     const habilidadesXPCarregado = dados.habilidadesXP || {};
     setHabilidadesXP(habilidadesXPCarregado);
+    // 🟢 Carrega a trava de restauração (se Mestre liberar em tempo real, o jogador vê na hora)
+setRestauracaoLiberada(dados.restauracaoLiberada || false);
   } else {
     setDoc(ref, modelo);
     setFicha({ ...modelo });
@@ -1251,6 +1256,23 @@ const verificarSubirNivel = (tipo, chave, valorAtual) => {
       }));
     }
     
+    function adicionarHabilidade() {
+  setFicha((p) => ({
+    ...p,
+    habilidades: [
+      ...(p.habilidades || []),
+      {
+        nome: "",
+        descricao: "",
+        dado: 1,
+        tipoDano: "Aurano",
+        custoPE: 0,
+        condicoes: [],
+        imagem: "",
+      },
+    ],
+  }));
+}
     // 🟢 FUNÇÃO DE AVALIAÇÃO DA IA
 const avaliarHabilidadeComIA = async (habilidade) => {
   setCarregandoIA(true);
@@ -3147,402 +3169,472 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
 
     return (
       <Paper sx={{ p: 2, bgcolor: "#07121a", color: "#fff", height: "100%", overflowY: "auto" }}>
-        {/* Título, dropdown de tipo e checkbox de redistribuição */}
-<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-    <Typography variant="h5" component="h2">{LABELS.titulo}</Typography>
-    
-    {/* Dropdown PJ / PM (apenas Mestre vê) */}
-    {isMestre && (
-      <FormControl size="small" sx={{ minWidth: 100 }}>
-        <InputLabel sx={{ color: '#94a3b8' }}>Tipo</InputLabel>
-        <Select
-          value={ficha.tipoFicha || "PJ"}
-          label="Tipo"
-          onChange={(e) => setCampo("tipoFicha", e.target.value)}
-          sx={{
-            color: '#fff',
-            '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
-          }}
-        >
-          <MenuItem value="PJ">PJ</MenuItem>
-          <MenuItem value="PM">PM</MenuItem>
-        </Select>
-      </FormControl>
-    )}
+{/* 🟢 HERO — CABEÇALHO ESTILO SISTEMA.JSX */}
+<Paper sx={{
+  p: 2.5,
+  mb: 2,
+  bgcolor: '#0a0a12',
+  background: 'linear-gradient(135deg, #0a0a12 0%, #1a0f2e 50%, #0a0a12 100%)',
+  border: '1px solid #9c27b0',
+  borderRadius: 3,
+  boxShadow: '0 0 30px rgba(156,39,176,0.25), inset 0 0 60px rgba(156,39,176,0.05)',
+  position: 'relative',
+  overflow: 'hidden',
+}}>
+  {/* Marca d'água decorativa */}
+  <Box sx={{
+    position: 'absolute', top: -40, right: -20,
+    fontSize: '14rem', opacity: 0.04, color: '#a855f7',
+    fontWeight: 900, pointerEvents: 'none', lineHeight: 1,
+    userSelect: 'none',
+  }}>
+    ⚜
   </Box>
 
-  {/* Checkbox para permitir redistribuir pontos */}
-  {isMestre && (
-    <FormControlLabel
-      control={
-        <Checkbox
-          checked={ficha?.permitirRedistribuirPontos || false}
-          onChange={async (e) => {
-            const novoValor = e.target.checked;
-            setFicha((prev) => ({
-              ...prev,
-              permitirRedistribuirPontos: novoValor,
-            }));
-                          const ref = doc(db, "fichas", fichaId);
-            await setDoc(ref, { permitirRedistribuirPontos: novoValor }, { merge: true });
-          }}
-          size="small"
-          sx={{ color: '#ff9800' }}
-        />
-      }
-      label={
-        <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
-          Permitir redistribuir pontos
-        </Typography>
-      }
-    />
-  )}
-</Box>
-
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={9}>
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
-                {/* CAMPO NOME */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["nome"]}</Typography>
-  <Box sx={{ position: 'relative' }}>
-    <TextField 
-      fullWidth 
-      size="small" 
-      value={ficha.nome || ""} 
-      onChange={(e) => setCampo("nome", e.target.value)} 
-      InputProps={{ sx: { pr: 5 } }}
-    />
-    <IconButton
-      size="small"
-      onClick={() => {
-        const nomesMasculinos = ["Cassius", "Elias", "Oliver", "Morgan", "Isaiah", "Aldric", "Thorne", "Cedric"];
-        const nomesFemininos = ["Agatha", "Katherine", "Nuxia", "Anna", "Lyra", "Seraphine", "Morgana", "Elara"];
-        const sobrenomes = ["D'Hollow", "Aktreniz", "Sawsky", "Thorne", "Oigres", "Severus", "Fields", "Maha"];
-        
-        const genero = ficha.genero || "Feminino";
-        const listaNomes = genero === "Masculino" ? nomesMasculinos : nomesFemininos;
-        const nomeAleatorio = listaNomes[Math.floor(Math.random() * listaNomes.length)];
-        const sobrenomeAleatorio = sobrenomes[Math.floor(Math.random() * sobrenomes.length)];
-        
-        setCampo("nome", `${nomeAleatorio} ${sobrenomeAleatorio}`);
-      }}
-      sx={{ 
-        position: 'absolute',
-        right: 4,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        minWidth: 'auto',
-        p: 0.5
-      }}
-    >
-      🎲
-    </IconButton>
-  </Box>
-</Box>
-
-{/* CAMPO GÊNERO */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["genero"]}</Typography>
-  <TextField
-    select
-    fullWidth
-    size="small"
-    value={ficha.genero || "Feminino"}
-    onChange={(e) => setCampo("genero", e.target.value)}
-    SelectProps={{ native: true }}
-  >
-    <option value="Feminino">Feminino</option>
-    <option value="Masculino">Masculino</option>
-  </TextField>
-</Box>
-
-{/* CAMPO IDADE */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["idade"]}</Typography>
-  <Box sx={{ position: 'relative' }}>
-    <TextField
-      fullWidth
-      size="small"
-      value={ficha.idade ? `${calcularIdade()} - ${ficha.idade}` : ""}
-      InputProps={{ 
-        readOnly: true,
-        sx: { pr: 5 }
-      }}
-      placeholder="Selecione a data de nascimento"
-    />
-    <IconButton
-      size="small"
-      onClick={() => setCalendarioOpen(true)}
-      sx={{ 
-        position: 'absolute',
-        right: 4,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        minWidth: 'auto',
-        p: 0.5
-      }}
-    >
-      📅
-    </IconButton>
-  </Box>
-</Box>
-
-{/* CAMPO ALTURA */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["altura"]}</Typography>
-  <TextField
-    fullWidth
-    size="small"
-    type="number"
-    value={ficha.altura || "0.00"}
-    onChange={(e) => setCampo("altura", e.target.value)}
-    InputProps={{
-      endAdornment: <InputAdornment position="end">m</InputAdornment>,
-      inputProps: { step: 0.01, min: 0 }
-    }}
-  />
-</Box>
-
-{/* CAMPO PESO */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["peso"]}</Typography>
-  <TextField
-    fullWidth
-    size="small"
-    type="number"
-    value={ficha.peso || "0"}
-    onChange={(e) => setCampo("peso", e.target.value)}
-    InputProps={{
-      endAdornment: <InputAdornment position="end">kg</InputAdornment>,
-      inputProps: { step: 1, min: 0 }
-    }}
-  />
-</Box>
-                <Box sx={{ mb: 1 }}>
-    <Typography component="div">Movimentação</Typography>
-    <TextField
-      fullWidth
-      size="small"
-      value={`${movimentacaoCalculada} m/t`}
-      InputProps={{ readOnly: true }}
-    />
-  </Box>
-              </Grid>
-              <Grid item xs={12} md={6}>
-
-                
-                {/* Campo de Defeitos - NOVO */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["defeitos"]}</Typography>
-  <Box sx={{ position: 'relative' }}>
-    <TextField
-      fullWidth
-      size="small"
-      value={ficha.defeitos || ""}
-      InputProps={{ 
-        readOnly: true,
-        sx: { pr: 7 } // padding right para não sobrepor o botão
-      }}
-      placeholder="Nenhum defeito selecionado"
-    />
-    <Button
-      variant="contained"
-      size="small"
-      onClick={() => {
-  if (ficha?.defeitos) {
-    const defeitosArray = ficha.defeitos.split('; ').filter(d => d.trim() !== '');
-    setDefeitosSelecionados(defeitosArray);
-  } else {
-    setDefeitosSelecionados([]);
-  }
-  setModalDefeitosOpen(true);
-}}
-      sx={{ 
-        position: 'absolute',
-        right: 4,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        minWidth: 'auto',
-        px: 1,
-        py: 0.5,
-        fontSize: '0.7rem',
-        height: 28,
-        bgcolor: '#1976d2',
-        '&:hover': { bgcolor: '#115293' }
-      }}
-    >
-      Defeitos
-    </Button>
-  </Box>
-</Box>
-
-{/* Campo de Traços - READONLY */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["tracos"]}</Typography>
-  <TextField
-    fullWidth
-    size="small"
-    value={ficha.tracos || ""}
-    InputProps={{ readOnly: true }}
-    placeholder="Traços serão desbloqueados ao atingir nível 5 nas perícias"
-  />
-</Box>
-
-{/* Campo de Talentos - NOVO */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">{LABEL_MAP["caracteristicas"]}</Typography>
-  <Box sx={{ position: 'relative' }}>
-    <TextField
-      fullWidth
-      size="small"
-      value={ficha.caracteristicas || ""}
-      InputProps={{ 
-        readOnly: true,
-        sx: { pr: 7 }
-      }}
-      placeholder="Nenhum talento selecionado"
-    />
-    <Button
-      variant="contained"
-      size="small"
-      onClick={() => setModalTalentosOpen(true)}
-      sx={{ 
-        position: 'absolute',
-        right: 4,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        minWidth: 'auto',
-        px: 1,
-        py: 0.5,
-        fontSize: '0.7rem',
-        height: 28,
-        bgcolor: '#9c27b0',
-        '&:hover': { bgcolor: '#7b1fa2' }
-      }}
-    >
-      Talentos
-    </Button>
-  </Box>
-</Box>
-  {/* Pontos de Vida */}
-  <Box sx={{ mb: 1 }}>
-    <Typography component="div">Pontos de Vida</Typography>
-    <Grid container spacing={1} alignItems="center">
-      <Grid item xs={6}>
-        <TextField
-          fullWidth
-          size="small"
-          type="number"
-          value={ficha.pontosVida}
-          onChange={async (e) => {
-  const valor = Math.min(Number(e.target.value), pontosVidaMax);
-
-  setCampo("pontosVida", valor);
-
-  const ref = doc(db, "fichas", fichaId);
-  await setDoc(ref, { pontosVida: valor }, { merge: true });
-}}
-        />
-      </Grid>
-      <Grid item xs={6}>
-        <Typography>
-    / <span style={{ color: "#ff4d4f", fontWeight: 600 }}>
-        {pontosVidaMax}
-      </span>
-  </Typography>
-      </Grid>
-    </Grid>
-  </Box>
-
-  {/* Pontos de Energia */}
-  <Box sx={{ mb: 1 }}>
-    <Typography component="div">Pontos de Energia</Typography>
-    <Grid container spacing={1} alignItems="center">
-      <Grid item xs={6}>
-        <TextField
-          fullWidth
-          size="small"
-          type="number"
-          value={ficha.pontosEnergia}
-          onChange={async (e) => {
-  const valor = Math.min(Number(e.target.value), pontosEnergiaMax);
-
-  setCampo("pontosEnergia", valor);
-
-  const ref = doc(db, "fichas", fichaId);
-  await setDoc(ref, { pontosEnergia: valor }, { merge: true });
-}}
-        />
-      </Grid>
-      <Grid item xs={6}>
-        <Typography>
-    / <span style={{ color: "#facc15", fontWeight: 600 }}>
-        {pontosEnergiaMax}
-      </span>
-  </Typography>
-      </Grid>
-    </Grid>
-  </Box>
-
-  {/* Armadura */}
-<Box sx={{ mb: 1 }}>
-  <Typography component="div">Armadura</Typography>
-  <Grid container spacing={1} alignItems="center">
-    <Grid item xs={6}>
-      <TextField
-        fullWidth
-        size="small"
-        type="number"
-        value={ficha.armadura}
-        disabled={!isMestre} // 🟢 Apenas Mestre pode editar manualmente
-        onChange={(e) => {
-          if (!isMestre) return; // Jogador não pode mexer
-          const valor = Math.min(Number(e.target.value), armaduraMax);
-          setCampo("armadura", valor);
-        }}
-        InputProps={{
-          readOnly: !isMestre,
-          sx: { color: '#fff' }
-        }}
-        helperText={!isMestre ? "Calculado pelas vestimentas" : ""}
-        FormHelperTextProps={{ sx: { color: '#00e0ff', fontSize: '0.7rem' } }}
-      />
-    </Grid>
-    <Grid item xs={6}>
-      <Typography>
-        / {armaduraMax}
+  {/* Linha superior: título + controles do Mestre */}
+  <Box sx={{
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    mb: 2, flexWrap: 'wrap', gap: 1.5, position: 'relative', zIndex: 1,
+  }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+      <Typography sx={{
+        fontSize: { xs: '1.2rem', md: '1.6rem' },
+        fontWeight: 900,
+        letterSpacing: 1.5,
+        background: 'linear-gradient(90deg, #a855f7 0%, #00e0ff 50%, #a855f7 100%)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        backgroundClip: 'text',
+        filter: 'drop-shadow(0 0 12px rgba(156,39,176,0.5))',
+      }}>
+        ● FICHA RPG RÉQUIEM ●
       </Typography>
-    </Grid>
-  </Grid>
-</Box>
 
-  {/* 🟢 BOTÃO DESCANSO (EMBAIXO DA ARMADURA) */}
-  <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
-    <Button
-      variant="contained"
-      onClick={() => setModalDescansoOpen(true)}
-      sx={{
-        bgcolor: '#2e7d32',
-        '&:hover': { bgcolor: '#1b5e20' },
-        borderRadius: 2,
-        py: 0.5,
-        px: 2,
-        fontSize: '0.8rem',
-        fontWeight: 'bold',
-        minWidth: 'auto',
-        width: '100%',
-      }}
-    >
-      🛌 Descansar
-    </Button>
+      {ficha.tipoFicha === "PM" && (
+        <Chip label="MESTRE" size="small" sx={{
+          bgcolor: '#ff980022', color: '#ff9800',
+          fontWeight: 'bold', fontSize: '0.65rem', height: 22,
+          border: '1px solid #ff980066',
+        }} />
+      )}
+
+      {ficha.tipoAura && (
+        <Chip label={`✨ ${ficha.tipoAura}`} size="small" sx={{
+          bgcolor: `${CORES_AURA[ficha.tipoAura]}22`,
+          color: CORES_AURA[ficha.tipoAura],
+          fontWeight: 'bold', fontSize: '0.65rem', height: 22,
+          border: `1px solid ${CORES_AURA[ficha.tipoAura]}66`,
+        }} />
+      )}
+    </Box>
+
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      {isMestre && (
+        <>
+          <FormControl size="small" sx={{ minWidth: 90 }}>
+            <InputLabel sx={{ color: '#94a3b8', fontSize: '0.8rem' }}>Tipo</InputLabel>
+            <Select
+              value={ficha.tipoFicha || "PJ"}
+              label="Tipo"
+              onChange={(e) => setCampo("tipoFicha", e.target.value)}
+              sx={{
+                color: '#fff', fontSize: '0.8rem', height: 34,
+                bgcolor: 'rgba(15,23,42,0.7)',
+                '.MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#9c27b0' },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#9c27b0' },
+              }}
+            >
+              <MenuItem value="PJ">PJ</MenuItem>
+              <MenuItem value="PM">PM</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={ficha?.permitirRedistribuirPontos || false}
+                onChange={async (e) => {
+                  const novoValor = e.target.checked;
+                  setFicha((prev) => ({ ...prev, permitirRedistribuirPontos: novoValor }));
+                  const ref = doc(db, "fichas", fichaId);
+                  await setDoc(ref, { permitirRedistribuirPontos: novoValor }, { merge: true });
+                }}
+                size="small"
+                sx={{ color: '#ff9800', '&.Mui-checked': { color: '#ff9800' } }}
+              />
+            }
+            label={
+              <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 700, fontSize: '0.65rem' }}>
+                Redistribuir Pontos
+              </Typography>
+            }
+          />
+        </>
+      )}
+    </Box>
   </Box>
+
+  {/* Chips de status rápido */}
+  <Box sx={{
+    display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap',
+    position: 'relative', zIndex: 1,
+  }}>
+    <Chip
+      icon={<span style={{ fontSize: '1rem' }}>❤️</span>}
+      label={`PV ${ficha.pontosVida || 0}/${pontosVidaMax}`}
+      sx={{ bgcolor: '#ff4d4f22', color: '#ff4d4f', border: '1px solid #ff4d4f66', fontWeight: 'bold', fontSize: '0.75rem' }}
+    />
+    <Chip
+      icon={<span style={{ fontSize: '1rem' }}>⚡</span>}
+      label={`PE ${ficha.pontosEnergia || 0}/${pontosEnergiaMax}`}
+      sx={{ bgcolor: '#facc1522', color: '#facc15', border: '1px solid #facc1566', fontWeight: 'bold', fontSize: '0.75rem' }}
+    />
+    <Chip
+      icon={<span style={{ fontSize: '1rem' }}>🛡️</span>}
+      label={`ARM ${ficha.armadura || 0}/${armaduraMax}`}
+      sx={{ bgcolor: '#00e0ff22', color: '#00e0ff', border: '1px solid #00e0ff66', fontWeight: 'bold', fontSize: '0.75rem' }}
+    />
+    <Chip
+      icon={<span style={{ fontSize: '1rem' }}>🏃</span>}
+      label={`MOV ${movimentacaoCalculada} m/t`}
+      sx={{ bgcolor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e66', fontWeight: 'bold', fontSize: '0.75rem' }}
+    />
+    <Chip
+      icon={<span style={{ fontSize: '1rem' }}>⭐</span>}
+      label={`NÍVEL ${nivelJogador}`}
+      sx={{ bgcolor: '#9c27b022', color: '#a855f7', border: '1px solid #9c27b066', fontWeight: 'bold', fontSize: '0.75rem' }}
+    />
+  </Box>
+</Paper>
+
+{/* 🟢 GRID DOS CAMPOS — visual mais limpo */}
+<Grid container spacing={2}>
+  <Grid item xs={12} md={9}>
+    <Paper sx={{
+      p: 2,
+      bgcolor: 'rgba(10, 10, 18, 0.6)',
+      border: '1px solid #9c27b044',
+      borderRadius: 3,
+      mb: 2,
+    }}>
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={6}>
+          {/* CAMPO NOME */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["nome"]}
+            </Typography>
+            <Box sx={{ position: 'relative' }}>
+              <TextField
+                fullWidth
+                size="small"
+                value={ficha.nome || ""}
+                onChange={(e) => setCampo("nome", e.target.value)}
+                InputProps={{ sx: { pr: 5 } }}
+              />
+              <IconButton
+                size="small"
+                onClick={() => {
+                  const nomesMasculinos = ["Cassius", "Elias", "Oliver", "Morgan", "Isaiah", "Aldric", "Thorne", "Cedric"];
+                  const nomesFemininos = ["Agatha", "Katherine", "Nuxia", "Anna", "Lyra", "Seraphine", "Morgana", "Elara"];
+                  const sobrenomes = ["D'Hollow", "Aktreniz", "Sawsky", "Thorne", "Oigres", "Severus", "Fields", "Maha"];
+
+                  const genero = ficha.genero || "Feminino";
+                  const listaNomes = genero === "Masculino" ? nomesMasculinos : nomesFemininos;
+                  const nomeAleatorio = listaNomes[Math.floor(Math.random() * listaNomes.length)];
+                  const sobrenomeAleatorio = sobrenomes[Math.floor(Math.random() * sobrenomes.length)];
+
+                  setCampo("nome", `${nomeAleatorio} ${sobrenomeAleatorio}`);
+                }}
+                sx={{
+                  position: 'absolute',
+                  right: 4,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  minWidth: 'auto',
+                  p: 0.5
+                }}
+              >
+                🎲
+              </IconButton>
+            </Box>
+          </Box>
+
+          {/* CAMPO GÊNERO */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["genero"]}
+            </Typography>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              value={ficha.genero || "Feminino"}
+              onChange={(e) => setCampo("genero", e.target.value)}
+              SelectProps={{ native: true }}
+            >
+              <option value="Feminino">Feminino</option>
+              <option value="Masculino">Masculino</option>
+            </TextField>
+          </Box>
+
+          {/* CAMPO IDADE */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["idade"]}
+            </Typography>
+            <Box sx={{ position: 'relative' }}>
+              <TextField
+                fullWidth
+                size="small"
+                value={ficha.idade ? `${calcularIdade()} - ${ficha.idade}` : ""}
+                InputProps={{ readOnly: true, sx: { pr: 5 } }}
+                placeholder="Selecione a data de nascimento"
+              />
+              <IconButton
+                size="small"
+                onClick={() => setCalendarioOpen(true)}
+                sx={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', minWidth: 'auto', p: 0.5 }}
+              >
+                📅
+              </IconButton>
+            </Box>
+          </Box>
+
+          {/* CAMPO ALTURA */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["altura"]}
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              type="number"
+              value={ficha.altura || "0.00"}
+              onChange={(e) => setCampo("altura", e.target.value)}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">m</InputAdornment>,
+                inputProps: { step: 0.01, min: 0 }
+              }}
+            />
+          </Box>
+
+          {/* CAMPO PESO */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["peso"]}
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              type="number"
+              value={ficha.peso || "0"}
+              onChange={(e) => setCampo("peso", e.target.value)}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">kg</InputAdornment>,
+                inputProps: { step: 1, min: 0 }
+              }}
+            />
+          </Box>
+
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              Movimentação
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              value={`${movimentacaoCalculada} m/t`}
+              InputProps={{ readOnly: true }}
+            />
+          </Box>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          {/* Campo de Defeitos */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["defeitos"]}
+            </Typography>
+            <Box sx={{ position: 'relative' }}>
+              <TextField
+                fullWidth
+                size="small"
+                value={ficha.defeitos || ""}
+                InputProps={{ readOnly: true, sx: { pr: 7 } }}
+                placeholder="Nenhum defeito selecionado"
+              />
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => {
+                  if (ficha?.defeitos) {
+                    const defeitosArray = ficha.defeitos.split('; ').filter(d => d.trim() !== '');
+                    setDefeitosSelecionados(defeitosArray);
+                  } else {
+                    setDefeitosSelecionados([]);
+                  }
+                  setModalDefeitosOpen(true);
+                }}
+                sx={{
+                  position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+                  minWidth: 'auto', px: 1, py: 0.5, fontSize: '0.7rem', height: 28,
+                  bgcolor: '#1976d2', '&:hover': { bgcolor: '#115293' }
+                }}
+              >
+                Defeitos
+              </Button>
+            </Box>
+          </Box>
+
+          {/* Campo de Traços */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["tracos"]}
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              value={ficha.tracos || ""}
+              InputProps={{ readOnly: true }}
+              placeholder="Traços serão desbloqueados ao atingir nível 5 nas perícias"
+            />
+          </Box>
+
+          {/* Campo de Talentos */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              {LABEL_MAP["caracteristicas"]}
+            </Typography>
+            <Box sx={{ position: 'relative' }}>
+              <TextField
+                fullWidth
+                size="small"
+                value={ficha.caracteristicas || ""}
+                InputProps={{ readOnly: true, sx: { pr: 7 } }}
+                placeholder="Nenhum talento selecionado"
+              />
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => setModalTalentosOpen(true)}
+                sx={{
+                  position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+                  minWidth: 'auto', px: 1, py: 0.5, fontSize: '0.7rem', height: 28,
+                  bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' }
+                }}
+              >
+                Talentos
+              </Button>
+            </Box>
+          </Box>
+
+          {/* Pontos de Vida */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              Pontos de Vida
+            </Typography>
+            <Grid container spacing={1} alignItems="center">
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  value={ficha.pontosVida}
+                  onChange={async (e) => {
+                    const valor = Math.min(Number(e.target.value), pontosVidaMax);
+                    setCampo("pontosVida", valor);
+                    const ref = doc(db, "fichas", fichaId);
+                    await setDoc(ref, { pontosVida: valor }, { merge: true });
+                  }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <Typography>
+                  / <span style={{ color: "#ff4d4f", fontWeight: 600 }}>{pontosVidaMax}</span>
+                </Typography>
               </Grid>
             </Grid>
+          </Box>
 
+          {/* Pontos de Energia */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              Pontos de Energia
+            </Typography>
+            <Grid container spacing={1} alignItems="center">
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  value={ficha.pontosEnergia}
+                  onChange={async (e) => {
+                    const valor = Math.min(Number(e.target.value), pontosEnergiaMax);
+                    setCampo("pontosEnergia", valor);
+                    const ref = doc(db, "fichas", fichaId);
+                    await setDoc(ref, { pontosEnergia: valor }, { merge: true });
+                  }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <Typography>
+                  / <span style={{ color: "#facc15", fontWeight: 600 }}>{pontosEnergiaMax}</span>
+                </Typography>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* Armadura */}
+          <Box sx={{ mb: 1 }}>
+            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
+              Armadura
+            </Typography>
+            <Grid container spacing={1} alignItems="center">
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  value={ficha.armadura}
+                  disabled={!isMestre}
+                  onChange={(e) => {
+                    if (!isMestre) return;
+                    const valor = Math.min(Number(e.target.value), armaduraMax);
+                    setCampo("armadura", valor);
+                  }}
+                  InputProps={{ readOnly: !isMestre, sx: { color: '#fff' } }}
+                  helperText={!isMestre ? "Calculado pelas vestimentas" : ""}
+                  FormHelperTextProps={{ sx: { color: '#00e0ff', fontSize: '0.7rem' } }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <Typography>/ {armaduraMax}</Typography>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* Botão Descanso */}
+          <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="contained"
+              onClick={() => setModalDescansoOpen(true)}
+              sx={{
+                bgcolor: '#2e7d32',
+                '&:hover': { bgcolor: '#1b5e20' },
+                borderRadius: 2, py: 0.5, px: 2, fontSize: '0.8rem',
+                fontWeight: 'bold', minWidth: 'auto', width: '100%',
+              }}
+            >
+              🛌 Descansar
+            </Button>
+          </Box>
+        </Grid>
+      </Grid>
+    </Paper>
+
+    {/* ATRIBUTOS e PERÍCIAS continuam aqui embaixo, sem alteração */}
             <Box mt={2}>
   <Box
     display="flex"
@@ -4046,11 +4138,53 @@ sx={{
 </Box>
             {/* Botões Galeria e Salvar */}
 <Box mt={2} sx={{ display: "flex", justifyContent: "space-between", gap: 1, flexWrap: 'wrap' }}>
-  <Box sx={{ display: 'flex', gap: 1 }}>
-    <Button variant="outlined" startIcon={<span>🖼️</span>} onClick={() => setModalGaleriaOpen(true)}>Galeria</Button>
-    <Button variant="outlined" startIcon={<span>💾</span>} onClick={handleBackup}>Backup</Button>
-    <Button variant="outlined" startIcon={<span>📂</span>} onClick={handleRestore}>Restaurar</Button>
-  </Box>
+<Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+  <Button variant="outlined" startIcon={<span>🖼️</span>} onClick={() => setModalGaleriaOpen(true)}>Galeria</Button>
+  <Button variant="outlined" startIcon={<span>💾</span>} onClick={handleBackup}>Backup</Button>
+
+  {/* 🟢 TRAVA do Restaurar — apenas Mestre vê o botão de cadeado */}
+  {isMestre && (
+    <Tooltip title={restauracaoLiberada ? "Bloquear restauração para o jogador" : "Liberar restauração para o jogador"}>
+      <IconButton
+        size="small"
+        onClick={async () => {
+          const novoValor = !restauracaoLiberada;
+          setRestauracaoLiberada(novoValor);
+          await setDoc(doc(db, "fichas", fichaId), { restauracaoLiberada: novoValor }, { merge: true });
+        }}
+        sx={{
+          border: `1px solid ${restauracaoLiberada ? '#4caf50' : '#ef4444'}66`,
+          borderRadius: 2,
+          color: restauracaoLiberada ? '#4caf50' : '#ef4444',
+          px: 1, height: 36,
+          '&:hover': { bgcolor: restauracaoLiberada ? '#4caf5022' : '#ef444422' },
+        }}
+      >
+        <span style={{ fontSize: '1.1rem' }}>{restauracaoLiberada ? '🔓' : '🔒'}</span>
+      </IconButton>
+    </Tooltip>
+  )}
+
+  {/* 🟢 Botão Restaurar — só aparece/ativa se Mestre liberou (ou se for o próprio Mestre) */}
+  {isMestre || restauracaoLiberada ? (
+    <Button variant="outlined" startIcon={<span>📂</span>} onClick={handleRestore}>
+      Restaurar
+    </Button>
+  ) : (
+    <Tooltip title="🔒 Restauração bloqueada pelo Mestre">
+      <span>
+        <Button
+          variant="outlined"
+          startIcon={<span>🔒</span>}
+          disabled
+          sx={{ color: '#64748b', borderColor: '#334155' }}
+        >
+          Restaurar
+        </Button>
+      </span>
+    </Tooltip>
+  )}
+</Box>
   <Button variant="contained" color="primary" onClick={salvarFicha} disabled={saving}>
     {saving ? "Salvando..." : "Salvar Ficha"}
   </Button>

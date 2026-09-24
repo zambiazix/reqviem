@@ -60,6 +60,11 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
     ceoAtual: "", tipoEmpresa: "Pública", valorEmpresa: 0,
     faturamentoAnual: 0, historia: "", empresasAfiliadas: [],
   });
+
+  // 🟢 GUARDA O FORMATO ORIGINAL DAS CARTEIRAS ("array" ou "object")
+  //    Isso evita que a gente converta array→objeto e quebre o resto do app.
+  const carteirasFormatoRef = useRef("array");
+
   // 🟢 Atualização a cada 10 segundos (preço flutua mas sempre volta ao original)
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -124,6 +129,11 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
     const unsub = onSnapshot(fichaRef, (snap) => {
       if (snap.exists()) {
         const dados = snap.data();
+
+        // 🟢 DETECTA O FORMATO ORIGINAL E GUARDA NA REF
+        carteirasFormatoRef.current = Array.isArray(dados.carteiras) ? "array" : "object";
+
+        // 🟢 Converte pra objeto plano só pra usar na UI (Select, valores etc.)
         const carteiras = Array.isArray(dados.carteiras) 
           ? dados.carteiras.reduce((acc, item) => ({ ...acc, [item.nome || 'default']: item.valor || 0 }), {})
           : (dados.carteiras || {});
@@ -149,11 +159,23 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
     await setDoc(doc(db, "bolsa_valores", "dados"), { empresas: novasEmpresas }, { merge: true });
   };
 
-  const salvarCarteiraJogador = async (novasAcoes, novasCarteiras) => {
+  // 🟢 SALVA CARTEIRAS PRESERVANDO O FORMATO ORIGINAL (array ou objeto)
+  const salvarCarteiraJogador = async (novasAcoes, novasCarteirasFlat) => {
     const fichaRef = doc(db, "fichas", emailParaCarteira || userEmail);
     const atualizacao = {};
     if (novasAcoes) atualizacao.acoes = novasAcoes;
-    if (novasCarteiras) atualizacao.carteiras = novasCarteiras;
+    if (novasCarteirasFlat) {
+      if (carteirasFormatoRef.current === "array") {
+        // Reconstrói como array: [{ nome, valor }, ...]
+        atualizacao.carteiras = Object.entries(novasCarteirasFlat).map(([nome, valor]) => ({
+          nome,
+          valor,
+        }));
+      } else {
+        // Mantém como objeto: { nome: valor, ... }
+        atualizacao.carteiras = novasCarteirasFlat;
+      }
+    }
     await setDoc(fichaRef, atualizacao, { merge: true });
   };
 
@@ -302,7 +324,7 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
                   return (
                     <Paper key={emp.id} onClick={() => { setEmpresaSelecionada(emp); setModalDetalhesOpen(true); }}
                       sx={{ p: 1, bgcolor: "#1a1a2e", border: "1px solid #334155", cursor: "pointer", '&:hover': { borderColor: "#fbbf2466" }, display: "flex", alignItems: "center", gap: 1 }}>
-                                            {emp.imagem ? (
+                      {emp.imagem ? (
                         <Box sx={{ width: 32, height: 32, borderRadius: 1, overflow: 'hidden', flexShrink: 0 }}>
                           <img src={emp.imagem} alt={emp.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         </Box>
