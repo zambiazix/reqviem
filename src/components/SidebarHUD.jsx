@@ -12,6 +12,8 @@ import LanguageIcon from "@mui/icons-material/Language";
 import PublicIcon from "@mui/icons-material/Public";
 import VideogameAssetIcon from "@mui/icons-material/VideogameAsset";
 import WhatsAppChat from "./WhatsAppChat";
+import { db } from "../firebaseConfig";
+import { doc, onSnapshot } from "firebase/firestore";
 
 // ==================== COMPONENTES IMPORTADOS ====================
 import AnotacoesFlutuante from "./AnotacoesFlutuante";
@@ -25,6 +27,7 @@ import Chaveamento from "./Chaveamento";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import GridOnIcon from "@mui/icons-material/GridOn";
 import IAChat from "./IAChat";
+import SimuladorMundo from "./SimuladorMundo";
 
 const ICONES_PADRAO = [
   { id: "whatsapp", icon: <GroupsIcon />, label: "Chat de Personagens", cor: "#00e0ff" },
@@ -39,6 +42,7 @@ const ICONES_PADRAO = [
     { id: "chaveamento", icon: <EmojiEventsIcon />, label: "Chaveamento", cor: "#a855f7" },
     { id: "ia", icon: <SmartToyIcon />, label: "IA Réquiem", cor: "#a855f7" },
         { id: "battlemap", icon: <GridOnIcon />, label: "Grid de Batalha", cor: "#00e0ff" },
+    { id: "mundo", icon: <PublicIcon />, label: "Simulador do Mundo", cor: "#c9a961" },
 ];
 
 function SidebarHUD({ userEmail = null, userNick = "", isMaster = false, fichasMap = {}, whatsappNotificacoes = {}, setWhatsappNotificacoes = () => {} }) {
@@ -46,7 +50,46 @@ function SidebarHUD({ userEmail = null, userNick = "", isMaster = false, fichasM
   const timeoutRef = useRef(null);
   const [moduloAtivo, setModuloAtivo] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
-    const totalNotificacoesWhats = Object.values(whatsappNotificacoes).filter(v => v).length;
+  const [travas, setTravas] = useState({
+    chat: false, grid: false, cassino: false, rede: false,
+    roleta: false, eventos: false, comercio: false,
+  });
+  const totalNotificacoesWhats = Object.values(whatsappNotificacoes).filter(v => v).length;
+
+  useEffect(() => {
+    const ref = doc(db, "game", "travaSessao");
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        const d = snap.data() || {};
+        setTravas({
+          chat: false, grid: false, cassino: false, rede: false,
+          roleta: false, eventos: false, comercio: false,
+          ...(d.travados || {}),
+        });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const mapaTravas = {
+    comercio: "comercio",
+    eventos: "eventos",
+    roleta: "roleta",
+    rede: "rede",
+    cassino: "cassino",
+    battlemap: "grid",
+  };
+
+  const estaTravado = (id) => {
+    const chave = mapaTravas[id];
+    return !!chave && !!travas[chave];
+  };
+
+  useEffect(() => {
+    if (moduloAtivo && mapaTravas[moduloAtivo] && travas[mapaTravas[moduloAtivo]]) {
+      setModuloAtivo(null);
+    }
+  }, [travas, moduloAtivo]);
 
   // 🟢 DETECTAR DISPOSITIVO MÓVEL
   useEffect(() => {
@@ -75,19 +118,17 @@ function SidebarHUD({ userEmail = null, userNick = "", isMaster = false, fichasM
   };
 
 const toggleModulo = (id) => {
+  if (estaTravado(id)) return;
   if (id === "perfil") {
-    // 🟢 DISPARA O MESMO EVENTO QUE O FloatingHUD USA PARA ABRIR PERFIS
     window.dispatchEvent(new CustomEvent('togglePerfilDetalhado'));
     return;
   }
   if (id === "comercio") {
-    // 🟢 DISPARA O MESMO EVENTO QUE O FloatingHUD USA PARA ABRIR COMÉRCIO
     window.dispatchEvent(new CustomEvent('toggleCommerceHUD'));
     return;
   }
-    if (id === "battlemap") {
-    // 🟢 ABRE O GRID DE BATALHA FLUTUANTE
-    window.__toggleBattleMap();
+  if (id === "battlemap") {
+    if (typeof window.__toggleBattleMap === "function") window.__toggleBattleMap();
     return;
   }
   setModuloAtivo(prev => prev === id ? null : id);
@@ -124,19 +165,38 @@ const toggleModulo = (id) => {
             "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.3)", borderRadius: "10px" } }}>
           <Box sx={{ width: 4, height: 20, bgcolor: "rgba(0, 224, 255, 0.5)", borderRadius: 2, mb: 0.3 }} />
           {ICONES_PADRAO.map((item) => (
-            <Tooltip key={item.id} title={item.label} placement={isMobile ? "left" : "right"} arrow disableHoverListener={isMobile} disableTouchListener={isMobile}>
+            <Tooltip
+              key={item.id}
+              title={estaTravado(item.id) ? `🔒 ${item.label} (travado pelo Mestre)` : item.label}
+              placement={isMobile ? "left" : "right"}
+              arrow
+              disableHoverListener={isMobile}
+              disableTouchListener={isMobile}
+            >
               <Box 
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleModulo(item.id);
                 }}
-                sx={{ display: "flex", alignItems: "center", justifyContent: "center", 
+                sx={{
+                  display: "flex", alignItems: "center", justifyContent: "center", 
                   width: isMobile ? 36 : 40, 
                   height: isMobile ? 36 : 40, 
-                  borderRadius: 1.5, cursor: "pointer",
+                  borderRadius: 1.5,
                   touchAction: 'manipulation',
-                  bgcolor: moduloAtivo === item.id ? `${item.cor}44` : `${item.cor}18`, border: `1px solid ${moduloAtivo === item.id ? item.cor : item.cor}33`,
-                  transition: "all 0.2s ease", "&:hover": { bgcolor: `${item.cor}33`, border: `1px solid ${item.cor}66`, boxShadow: `0 0 12px ${item.cor}44`, transform: "scale(1.08)" } }}>
+                  cursor: estaTravado(item.id) ? "not-allowed" : "pointer",
+                  opacity: estaTravado(item.id) ? 0.35 : 1,
+                  filter: estaTravado(item.id) ? "grayscale(100%)" : "none",
+                  bgcolor: estaTravado(item.id)
+                    ? "rgba(120,120,120,0.18)"
+                    : (moduloAtivo === item.id ? `${item.cor}44` : `${item.cor}18`),
+                  border: `1px solid ${estaTravado(item.id) ? "rgba(120,120,120,0.35)" : (moduloAtivo === item.id ? item.cor : item.cor + "33")}`,
+                  transition: "all 0.2s ease",
+                  "&:hover": estaTravado(item.id)
+                    ? {}
+                    : { bgcolor: `${item.cor}33`, border: `1px solid ${item.cor}66`, boxShadow: `0 0 12px ${item.cor}44`, transform: "scale(1.08)" },
+                }}
+              >
                 {item.id === "whatsapp" && totalNotificacoesWhats > 0 ? (
                   <Badge badgeContent={totalNotificacoesWhats} color="error">
                     {React.cloneElement(item.icon, { sx: { color: item.cor, fontSize: 22, filter: `drop-shadow(0 0 4px ${item.cor}66)` } })}
@@ -164,6 +224,14 @@ const toggleModulo = (id) => {
       {moduloAtivo === "cassino" && <CassinoJogos userEmail={userEmail} userNick={userNick} isMaster={isMaster} onClose={() => setModuloAtivo(null)} />}
               {moduloAtivo === "chaveamento" && <Chaveamento isMaster={isMaster} fichasMap={fichasMap} onClose={() => setModuloAtivo(null)} />}
                 {moduloAtivo === "ia" && <IAChat onClose={() => setModuloAtivo(null)} userNick={userNick} />}
+                {moduloAtivo === "mundo" && (
+                  <SimuladorMundo
+                    userEmail={userEmail}
+                    isMaster={isMaster}
+                    fichasMap={fichasMap}
+                    onClose={() => setModuloAtivo(null)}
+                  />
+                )}
     </>, document.body
   );
 }

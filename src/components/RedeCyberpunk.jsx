@@ -43,6 +43,7 @@ import { doc, setDoc, onSnapshot, getDoc, collection } from "firebase/firestore"
 import ImoveisHUD from "./ImoveisHUD";
 import HackeamentoGame from "./HackeamentoGame";
 import RedesClandestinas from "./RedesClandestinas";
+import ServicosEspeciais from "./ServicosEspeciais";
 
 // ==================== ESTILOS MATRIX ====================
 const matrixStyles = {
@@ -538,7 +539,7 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
       noticias: n || noticias, 
       links: l || links,
       apps: a || apps 
-    });
+    }, { merge: true });
   };
 
   // ===== PUBLICAR NOTÍCIA COM ROTAÇÃO =====
@@ -970,111 +971,15 @@ function RedeCyberpunk({ isMaster, onClose, userEmail = null, fichasMap = {} }) 
           />
         );
         break;
-      case "servicos":
+            case "servicos":
         conteudo = (
-          <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-              <Typography variant="h6" sx={{ color: matrixStyles.colorPrimary, fontFamily: "'Courier New', monospace" }}>
-                ⭐ SERVICOS_PREMIUM.exe
-              </Typography>
-              <Chip 
-                label={`💰 ${totalCarteira.toFixed(2)}`}
-                size="small"
-                sx={{ bgcolor: "#fbbf2422", color: "#fbbf24", fontSize: "0.6rem", height: 20 }}
-              />
-            </Box>
-            <Typography variant="caption" sx={{ color: matrixStyles.colorDim, display: "block", mb: 2, fontFamily: "'Courier New', monospace" }}>
-              Para clientes selecionados - Elite & Luxo
-            </Typography>
-            
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              {[
-                { 
-                  id: "seguranca", 
-                  titulo: "🛡️ Segurança Privada de Elite", 
-                  desc: "Proteção pessoal 24/7, escolta armada, segurança de eventos VIP, análise de ameaças.",
-                  preco: "A partir de 10.000 💰",
-                  detalhes: "Equipe: Ex-Caçadores Auranos • Armamento de ponta • Discrição garantida"
-                },
-                { 
-                  id: "eventos", 
-                  titulo: "🎭 Organização de Eventos de Luxo", 
-                  desc: "Festas exclusivas, galas, leilões privados, casamentos de elite. Experiência impecável.",
-                  preco: "A partir de 25.000 💰",
-                  detalhes: "Equipe: Especialistas em eventos • Localizações secretas • Catering gourmet"
-                },
-                { 
-                  id: "transporte", 
-                  titulo: "🚁 Transporte de Luxo", 
-                  desc: "Frotas de veículos blindados, helicópteros executivos, iates particulares, aeronaves.",
-                  preco: "A partir de 5.000 💰",
-                  detalhes: "Frota: Veículos premium • Pilotos experientes • Rotas personalizadas"
-                },
-                { 
-                  id: "consultoria", 
-                  titulo: "🏛️ Consultoria Política Estratégica", 
-                  desc: "Assessoria para figuras públicas, lobby, relações governamentais, gestão de crises.",
-                  preco: "Sob consulta",
-                  detalhes: "Equipe: Ex-assessores senatoriais • Rede de contatos • Resultados garantidos"
-                },
-                { 
-                  id: "inteligencia", 
-                  titulo: "💼 Inteligência Competitiva", 
-                  desc: "Análise de mercado, inteligência competitiva, due diligence, investigações corporativas.",
-                  preco: "A partir de 15.000 💰",
-                  detalhes: "Equipe: Especialistas em dados • Análise aprofundada • Relatórios confidenciais"
-                },
-                { 
-                  id: "arte", 
-                  titulo: "🎨 Curadoria de Arte e Antiguidades", 
-                  desc: "Arte rara, antiguidades, coleções exclusivas, restauração, avaliação, aquisição.",
-                  preco: "Sob consulta",
-                  detalhes: "Curadores especializados • Peças únicas • Autenticidade garantida"
-                },
-              ].map((item) => {
-                const precoMin = item.preco.includes('Sob consulta') ? 0 : parseFloat(item.preco.replace(/[^\d.]/g, ''));
-                const precoReal = precoMin > 0 ? precoMin + Math.random() * precoMin * 2 : 0;
-                
-                return (
-                  <Paper key={item.id} sx={{ p: 1.5, bgcolor: matrixStyles.cardBg, border: matrixStyles.borderGlow }}>
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 1 }}>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body2" sx={{ color: matrixStyles.colorPrimary, fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
-                          {item.titulo}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: matrixStyles.colorSecondary, display: "block", fontFamily: "'Courier New', monospace" }}>
-                          {item.desc}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: "#666", display: "block", fontFamily: "'Courier New', monospace", mt: 0.5 }}>
-                          {item.detalhes}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5 }}>
-                        <Typography variant="caption" sx={{ color: "#fbbf24", fontFamily: "'Courier New', monospace", fontWeight: "bold" }}>
-                          {item.preco}
-                        </Typography>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          onClick={() => {
-                            setItemSelecionado(item);
-                            setPrecoItem(precoReal);
-                            setModalCompraServicos(true);
-                          }}
-                          sx={{ bgcolor: matrixStyles.colorPrimary, '&:hover': { bgcolor: "#0d9488" }, fontSize: "0.6rem" }}
-                        >
-                          Contratar
-                        </Button>
-                      </Box>
-                    </Box>
-                  </Paper>
-                );
-              })}
-            </Box>
-          </Box>
+          <ServicosEspeciais
+            userEmail={userEmail}
+            fichasMap={fichasMap}
+            isMaster={isMaster}
+          />
         );
         break;
-        
       case "imoveis":
         conteudo = (
           <ImoveisHUD 

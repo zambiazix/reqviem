@@ -32,6 +32,7 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { collection, onSnapshot, getDocs, addDoc, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { updateDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
@@ -113,6 +114,9 @@ const [profilesOpen, setProfilesOpen] = useState(false);
 const [comercioOpen, setComercioOpen] = useState(false);
 const [perfilVisivel, setPerfilVisivel] = useState(false);
 const [perfis, setPerfis] = useState([]);
+const [hudBackgrounds, setHudBackgrounds] = useState({ manha: "", tarde: "", noite: "", madrugada: "" });
+const [uploadingBg, setUploadingBg] = useState("");
+const [bgDialogOpen, setBgDialogOpen] = useState(false);
 // 🟢 CARREGAR POSIÇÃO SALVA DO FIRESTORE
 useEffect(() => {
   if (!hud?.floatingPos) return;
@@ -143,6 +147,35 @@ const [novoPerfil, setNovoPerfil] = useState({
   const pmEmails = useMemo(() => 
     mergedEmails.filter(e => fichasMap[e]?.tipoFicha === "PM"),
   [mergedEmails, fichasMap]);
+
+  const isEmailOculto = useCallback((email) => {
+    if (!email) return true;
+    if (email === "mestre@reqviemrpg.com") return true;
+    const f = fichasMap[email];
+    if (!f) return false;
+    return (
+      f.tipoConta === "convidado" ||
+      f.convidado === true ||
+      f.isConvidado === true ||
+      f.role === "convidado" ||
+      f.tipoUsuario === "convidado"
+    );
+  }, [fichasMap]);
+
+  const emailsXP = useMemo(
+    () => mergedEmails.filter((e) => !isEmailOculto(e)),
+    [mergedEmails, isEmailOculto]
+  );
+
+  const pjEmailsXP = useMemo(
+    () => emailsXP.filter((e) => (fichasMap[e]?.tipoFicha || "PJ") === "PJ"),
+    [emailsXP, fichasMap]
+  );
+
+  const pmEmailsXP = useMemo(
+    () => emailsXP.filter((e) => fichasMap[e]?.tipoFicha === "PM"),
+    [emailsXP, fichasMap]
+  );
   
   const textShadow = "0px 0px 3px rgba(0,0,0,0.85)";
     const CORES_AURA_HUD = {
@@ -183,6 +216,57 @@ useEffect(() => {
     }
   });
   return () => unsub();
+}, []);
+
+useEffect(() => {
+  const unsub = onSnapshot(doc(db, "hud_backgrounds", "dados"), (snap) => {
+    if (snap.exists()) {
+      const d = snap.data() || {};
+      setHudBackgrounds({
+        manha: d.manha || "",
+        tarde: d.tarde || "",
+        noite: d.noite || "",
+        madrugada: d.madrugada || "",
+      });
+    }
+  });
+  return () => unsub();
+}, []);
+
+const uploadBackground = async (fase, file) => {
+  if (!file || !isMaster) return;
+  setUploadingBg(fase);
+  try {
+    const fd = new FormData();
+    fd.append("image", file);
+    const res = await fetch("https://api.imgbb.com/1/upload?key=73fcf242ce0108665fa0c9e9de33bd50", { method: "POST", body: fd });
+    const data = await res.json();
+    if (data?.success) {
+      const url = data.data.url;
+      await setDoc(doc(db, "hud_backgrounds", "dados"), { [fase]: url }, { merge: true });
+      setHudBackgrounds((prev) => ({ ...prev, [fase]: url }));
+    } else {
+      alert("Falha no upload da imagem.");
+    }
+  } catch (e) {
+    alert("Erro ao enviar imagem.");
+  } finally {
+    setUploadingBg("");
+  }
+};
+
+const removerBackground = async (fase) => {
+  if (!isMaster) return;
+  await setDoc(doc(db, "hud_backgrounds", "dados"), { [fase]: "" }, { merge: true });
+  setHudBackgrounds((prev) => ({ ...prev, [fase]: "" }));
+};
+
+const getBgKeyFase = useCallback((phase) => {
+  if (phase === "manhã") return "manha";
+  if (phase === "tarde") return "tarde";
+  if (phase === "noite") return "noite";
+  if (phase === "madrugada") return "madrugada";
+  return "manha";
 }, []);
 
   useEffect(() => {
@@ -674,16 +758,24 @@ if (!fichasMap) return null;
     left: posicaoLocal.x,
     top: posicaoLocal.y,
     zIndex: 120000,
-    width: collapsed ? 360 : tamanho.width,
-height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
-    maxWidth: collapsed ? 360 : "95vw",
-    maxHeight: collapsed ? 80 : "90vh",
+    width: collapsed ? 360 : (minimizado ? 300 : tamanho.width),
+    height: collapsed ? 80 : (minimizado ? 54 : tamanho.height),
+    maxWidth: collapsed ? 360 : (minimizado ? 300 : "95vw"),
+    maxHeight: collapsed ? 80 : (minimizado ? 54 : "90vh"),
     borderRadius: 2,
-    p: collapsed ? 0.5 : 1,
+    p: collapsed ? 0.5 : (minimizado ? 0.5 : 1),
     cursor: "grab",
     userSelect: "none",
-    overflow: "visible",
+    overflow: "hidden",
     background: "inherit",
+    ...(hudBackgrounds[getBgKeyFase(hud?.world?.phase)]
+      ? {
+          backgroundImage: `linear-gradient(rgba(0,0,0,0.18), rgba(0,0,0,0.18)), url(${hudBackgrounds[getBgKeyFase(hud?.world?.phase)]})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }
+      : {}),
     color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111",
     boxShadow: "0 12px 28px rgba(0,0,0,0.6)",
     display: "flex",
@@ -716,36 +808,136 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
           <Box sx={{ display: "flex", alignItems: "center" }}>{CollapsedView}</Box>
         ) : (
           <Paper elevation={0} sx={{ width: "100%", p: 0, bgcolor: "transparent" }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", mb: 0.5 }}>
-              <DragIndicatorIcon sx={{ color: "inherit" }} />
-              <Typography 
-                variant="h6" 
-                sx={{ 
-                  fontWeight: 800, 
-                  textShadow
+            {minimizado ? (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", px: 1, py: 0.4 }}>
+                <DragIndicatorIcon sx={{ color: "inherit", fontSize: 20 }} />
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    fontWeight: 700,
+                    textShadow,
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {hud.turn?.nick ? `Turno: ${hud.turn.nick}` : "Turno: —"}
+                </Typography>
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    if (showTurnMenu) setShowTurnMenu(false);
+                    setMinimizado(false);
+                  }}
+                  title="Expandir HUD"
+                  aria-label="expandir-hud"
+                  sx={{ color: "inherit" }}
+                >
+                  <ExpandMoreIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            ) : (
+              <Paper
+                elevation={0}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.2,
+                  width: "100%",
+                  mb: 1,
+                  p: 1,
+                  px: 1.4,
+                  borderRadius: 2,
+                  background: "linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  backdropFilter: "blur(8px)",
+                  boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
                 }}
               >
-                {hud.turn?.nick ? `Turno atual: ${hud.turn.nick}` : "Turno: —"}
-              </Typography>
-              <Box sx={{ ml: "auto", display: "flex", gap: 0.5, alignItems: "center" }}>
-                {isMaster && (
-                  <IconButton size="small" onClick={handleTurnClick} title="Selecionar Turno" aria-label="selecionar-turno">
-                    <ListIcon />
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 1.5,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(0,0,0,0.14)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <DragIndicatorIcon sx={{ color: "inherit", fontSize: 20 }} />
+                </Box>
+                <Box sx={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      opacity: 0.65,
+                      fontSize: "0.55rem",
+                      letterSpacing: 1.6,
+                      textTransform: "uppercase",
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      mb: 0.2,
+                    }}
+                  >
+                    Turno Atual
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 800,
+                      textShadow,
+                      lineHeight: 1.1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      fontSize: "1.05rem",
+                    }}
+                  >
+                    {hud.turn?.nick ? hud.turn.nick : "—"}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
+                  {isMaster && (
+                    <IconButton
+                      size="small"
+                      onClick={handleTurnClick}
+                      title="Selecionar Turno"
+                      aria-label="selecionar-turno"
+                      sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}
+                    >
+                      <ListIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                  {isMaster && (
+                    <IconButton
+                      size="small"
+                      onClick={() => setBgDialogOpen(true)}
+                      title="Fundos das Fases"
+                      aria-label="fundos-fases"
+                      sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}
+                    >
+                      <CloudUploadIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      if (showTurnMenu) setShowTurnMenu(false);
+                      setMinimizado(true);
+                    }}
+                    title="Minimizar HUD"
+                    aria-label="minimizar-hud"
+                    sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}
+                  >
+                    <ExpandLessIcon fontSize="small" />
                   </IconButton>
-                )}
- <IconButton
-  size="small"
-  onClick={() => {
-    if (showTurnMenu) setShowTurnMenu(false);
-    setMinimizado(!minimizado);
-  }}
-  title={minimizado ? "Expandir HUD" : "Minimizar HUD"}
-  aria-label={minimizado ? "expandir-hud" : "minimizar-hud"}
->
-  {minimizado ? <ExpandMoreIcon /> : <ExpandLessIcon />}
-</IconButton>
-              </Box>
-            </Box>
+                </Box>
+              </Paper>
+            )}
 
             {isMaster && showTurnMenu &&
   createPortal(
@@ -989,12 +1181,12 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
     // 🟢 MESTRE VÊ SEPARADO POR PJ/PM COM CORES DE AURA
     <>
       {/* PJ - Personagens dos Jogadores */}
-      {pjEmails.length > 0 && (
+      {pjEmailsXP.length > 0 && (
         <Box sx={{ mb: 1 }}>
           <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', borderBottom: '1px solid #4caf5022', pb: 0.3, mb: 0.5, display: 'block' }}>
             ── PERSONAGENS DO JOGADOR ──
           </Typography>
-          {pjEmails.map((email) => {
+          {pjEmailsXP.map((email) => {
             const status = calcularStatus(email);
             const aura = fichasMap[email]?.tipoAura;
             const corAura = CORES_AURA_HUD[aura] || '#4caf50';
@@ -1039,12 +1231,12 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
       )}
 
       {/* PM - Personagens do Mestre */}
-      {pmEmails.length > 0 && (
+      {pmEmailsXP.length > 0 && (
         <Box sx={{ mb: 1 }}>
           <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold', borderBottom: '1px solid #ff980022', pb: 0.3, mb: 0.5, display: 'block' }}>
             ── PERSONAGENS DO MESTRE ──
           </Typography>
-          {pmEmails.map((email) => {
+          {pmEmailsXP.map((email) => {
             const status = calcularStatus(email);
             const aura = fichasMap[email]?.tipoAura;
             const corAura = CORES_AURA_HUD[aura] || '#ff9800';
@@ -1151,45 +1343,64 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
   value={selectedPlayerForXP || ""}
   label="Jogador"
   onChange={(e) => setSelectedPlayerForXP(e.target.value)}
-    MenuProps={{
+  renderValue={(selected) => {
+    if (!selected) return <em style={{ color: "#94a3b8" }}>-- selecione --</em>;
+    return displayNameFor(selected);
+  }}
+  sx={{
+    color: "#fff",
+    bgcolor: "rgba(0,0,0,0.25)",
+    borderRadius: 1.5,
+    fontSize: "0.8rem",
+    ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.18)" },
+    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.35)" },
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#8ecaff" },
+  }}
+  MenuProps={{
     disablePortal: false,
     container: typeof document !== "undefined" ? document.body : undefined,
     PaperProps: {
       sx: {
         zIndex: 140000,
-        backdropFilter: "blur(4px)",
-        maxHeight: 300,
-        overflowY: 'auto',
-        '&::-webkit-scrollbar': { width: '4px' },
-        '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.3)', borderRadius: '10px' }
+        bgcolor: "rgba(20,20,20,0.98)",
+        backdropFilter: "blur(10px)",
+        color: "#fff",
+        borderRadius: 2,
+        border: "1px solid rgba(255,255,255,0.12)",
+        boxShadow: "0 12px 40px rgba(0,0,0,0.7)",
+        maxHeight: 340,
+        mt: 0.5,
+        overflowY: "auto",
+        "&::-webkit-scrollbar": { width: "5px" },
+        "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.25)", borderRadius: "10px" },
       },
     },
     anchorOrigin: { vertical: "bottom", horizontal: "left" },
     transformOrigin: { vertical: "top", horizontal: "left" },
   }}
 >
-    <MenuItem value="">
-    <em>-- selecione --</em>
+  <MenuItem value="" sx={{ fontSize: "0.8rem" }}>
+    <em style={{ color: "#94a3b8" }}>-- selecione --</em>
   </MenuItem>
-  <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
-    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', fontSize: '0.65rem' }}>
+  <MenuItem disabled sx={{ opacity: 1, borderBottom: "1px solid #4caf5044", mt: 0.5, py: 0.3 }}>
+    <Typography variant="caption" sx={{ color: "#4caf50", fontWeight: 800, fontSize: "0.6rem", letterSpacing: 1 }}>
       ── PERSONAGENS DO JOGADOR ──
     </Typography>
   </MenuItem>
-  {pjEmails.map((email) => (
-    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
+  {pjEmailsXP.map((email) => (
+    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(76,175,80,0.15)" } }}>
       {displayNameFor(email)}
     </MenuItem>
   ))}
-  {mergedEmails.some(e => fichasMap[e]?.tipoFicha === "PM") && (
-    <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 0.5 }}>
-      <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '0.65rem' }}>
+  {pmEmailsXP.length > 0 && (
+    <MenuItem disabled sx={{ opacity: 1, borderBottom: "1px solid #ff980044", mt: 0.5, py: 0.3 }}>
+      <Typography variant="caption" sx={{ color: "#ff9800", fontWeight: 800, fontSize: "0.6rem", letterSpacing: 1 }}>
         ── PERSONAGENS DO MESTRE ──
       </Typography>
     </MenuItem>
   )}
-  {pmEmails.map((email) => (
-    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: '0.8rem' }}>
+  {pmEmailsXP.map((email) => (
+    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(255,152,0,0.15)" } }}>
       {displayNameFor(email)}
     </MenuItem>
   ))}
@@ -1269,51 +1480,7 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
                   </IconButton>
                 </Box>
                 
-<IconButton
-  size="small"
-  type="button"
-  aria-label="Abrir comércio"
-  className="commerce-button"
-  onClick={(e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setComercioOpen(prev => !prev);
-  }}
-  sx={{
-    position: "absolute",
-    right: 10,
-    bottom: 10,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    color: "white",
-    "&:hover": { backgroundColor: "rgba(0,0,0,0.7)" },
-    width: 40,
-    height: 40,
-    zIndex: 20,
-  }}
->
-  <span style={{ fontSize: 20, pointerEvents: "none" }}>🏪</span>
-</IconButton>
-<IconButton
-  size="small"
-  aria-label="Abrir perfis"
-  onClick={(e) => {
-  e.stopPropagation();
-  setPerfilVisivel(prev => !prev);
-}}
-  sx={{
-    position: "absolute",
-    left: 10,
-    bottom: 10,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    color: "white",
-    "&:hover": { backgroundColor: "rgba(0,0,0,0.7)" },
-    width: 40,
-    height: 40,
-    zIndex: 20,
-  }}
->
-  <span style={{ fontSize: 20, pointerEvents: "none" }}>👥</span>
-</IconButton>
+
                 {isMaster && (
                   <Box
                     sx={{
@@ -1559,6 +1726,125 @@ height: collapsed ? 80 : (minimizado ? 77 : tamanho.height),
         fichaData={fichasMap[currentUserEmail] || {}}
         fichasMap={fichasMap}
       />
+      {/* 🟢 FUNDOS DAS FASES */}
+      <Dialog
+        open={bgDialogOpen}
+        onClose={() => setBgDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "1px solid #1e293b",
+            borderRadius: 2,
+            backgroundImage: "linear-gradient(135deg, rgba(0,224,255,0.06), rgba(0,0,0,0.4))",
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: "#00e0ff", display: "flex", alignItems: "center", gap: 1, borderBottom: "1px solid #1e293b" }}>
+          <CloudUploadIcon />
+          Fundos das Fases
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mb: 2, fontSize: "0.7rem" }}>
+            Envie uma imagem para cada fase do dia. Elas aparecem como plano de fundo do HUD quando a fase correspondente estiver ativa.
+          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.2 }}>
+            {[
+              { key: "manha", label: "☀️ Manhã" },
+              { key: "tarde", label: "🌤️ Tarde" },
+              { key: "noite", label: "🌙 Noite" },
+              { key: "madrugada", label: "✨ Madrugada" },
+            ].map(({ key, label }) => (
+              <Paper
+                key={key}
+                sx={{
+                  p: 1.2,
+                  bgcolor: "rgba(26,26,46,0.85)",
+                  border: "1px solid #334155",
+                  borderRadius: 1.5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
+                  transition: "all 0.2s",
+                  "&:hover": { borderColor: "#00e0ff44" },
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 90,
+                    height: 58,
+                    borderRadius: 1,
+                    overflow: "hidden",
+                    bgcolor: "#0a0a0a",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    border: "1px solid #1e293b",
+                  }}
+                >
+                  {hudBackgrounds[key] ? (
+                    <img src={hudBackgrounds[key]} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <Typography variant="caption" sx={{ color: "#475569", fontSize: "0.6rem" }}>
+                      sem imagem
+                    </Typography>
+                  )}
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ color: "#fff", fontWeight: 700, mb: 0.6 }}>
+                    {label}
+                  </Typography>
+                  <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                    <Button
+                      component="label"
+                      size="small"
+                      variant="contained"
+                      disabled={uploadingBg === key}
+                      startIcon={<CloudUploadIcon sx={{ fontSize: 14 }} />}
+                      sx={{
+                        bgcolor: "#00e0ff",
+                        color: "#000",
+                        fontSize: "0.65rem",
+                        fontWeight: 800,
+                        "&:hover": { bgcolor: "#22d3ee" },
+                        "&.Mui-disabled": { bgcolor: "#334155", color: "#64748b" },
+                      }}
+                    >
+                      {uploadingBg === key ? "Enviando..." : "Enviar"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) uploadBackground(key, file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </Button>
+                    {hudBackgrounds[key] && (
+                      <Button
+                        size="small"
+                        onClick={() => removerBackground(key)}
+                        sx={{ color: "#ef4444", fontSize: "0.65rem" }}
+                      >
+                        Remover
+                      </Button>
+                    )}
+                  </Box>
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: "1px solid #1e293b", p: 2 }}>
+          <Button onClick={() => setBgDialogOpen(false)} sx={{ color: "#94a3b8" }}>
+            Fechar
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

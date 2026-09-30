@@ -324,6 +324,7 @@ function JanelaPerfil({ perfil, onClose, isMaster, todasFichas, xpMap, jogadorPo
   const textAreaRef = useRef(null);
     const [conquistasDesbloqueadas, setConquistasDesbloqueadas] = useState({});
   const [avaliacoesMestre, setAvaliacoesMestre] = useState({});
+  const [empresasBolsa, setEmpresasBolsa] = useState([]);
   // 🟢 CARREGAR CONQUISTAS DO PERSONAGEM VINCULADO
   useEffect(() => {
     if (!perfil.fichaEmail) {
@@ -340,6 +341,15 @@ function JanelaPerfil({ perfil, onClose, isMaster, todasFichas, xpMap, jogadorPo
     });
     return () => unsub();
   }, [perfil.fichaEmail]);
+  useEffect(() => {
+    const ref = doc(db, "bolsa_valores", "dados");
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists() && Array.isArray(snap.data().empresas)) {
+        setEmpresasBolsa(snap.data().empresas);
+      }
+    });
+    return () => unsub();
+  }, []);
   // 🟢 CARREGAR AVALIAÇÕES DO MESTRE
   useEffect(() => {
     if (!perfil.fichaEmail) {
@@ -452,6 +462,44 @@ function JanelaPerfil({ perfil, onClose, isMaster, todasFichas, xpMap, jogadorPo
 
   const tipoInfo = getTipoInfo(dadosPerfil.tipo);
   const auraCor = fichaVinculada?.tipoAura ? CORES_AURA[fichaVinculada.tipoAura] : tipoInfo.cor;
+
+  const totalCarteiras = useMemo(() => {
+    const c = fichaVinculada?.carteiras;
+    if (!c) return 0;
+    if (Array.isArray(c)) return c.reduce((s, x) => s + (Number(x?.valor) || 0), 0);
+    return Object.values(c).reduce((s, v) => s + (Number(v) || 0), 0);
+  }, [fichaVinculada?.carteiras]);
+
+  const totalImoveis = useMemo(() => {
+    const arr = Array.isArray(fichaVinculada?.imoveis) ? fichaVinculada.imoveis : [];
+    return arr.reduce((s, imv) => {
+      const v = imv?.valorMercado || imv?.valorCompra || imv?.precoVenda || 0;
+      return s + (Number(v) || 0);
+    }, 0);
+  }, [fichaVinculada?.imoveis]);
+
+  const qtdImoveis = useMemo(
+    () => (Array.isArray(fichaVinculada?.imoveis) ? fichaVinculada.imoveis.length : 0),
+    [fichaVinculada?.imoveis]
+  );
+
+  const totalAcoes = useMemo(() => {
+    const a = fichaVinculada?.acoes;
+    if (!a || typeof a !== "object") return 0;
+    return Object.entries(a).reduce((s, [id, acao]) => {
+      const emp = empresasBolsa.find((e) => e.id === id);
+      const preco = emp?.precoAtual ?? emp?.preco ?? acao?.precoAtual ?? acao?.precoMedio ?? 0;
+      return s + (Number(acao?.quantidade) || 0) * (Number(preco) || 0);
+    }, 0);
+  }, [fichaVinculada?.acoes, empresasBolsa]);
+
+  const qtdAcoes = useMemo(() => {
+    const a = fichaVinculada?.acoes;
+    if (!a || typeof a !== "object") return 0;
+    return Object.values(a).reduce((s, x) => s + (Number(x?.quantidade) || 0), 0);
+  }, [fichaVinculada?.acoes]);
+
+  const totalPatrimonio = totalCarteiras + totalImoveis + totalAcoes;
   const isMorto = dadosPerfil.status === "morto";
   const idade = calcularIdade(dadosPerfil.dataNascimento, dadosPerfil.dataFalecimento);
     const emailFicha = dadosPerfil.fichaEmail;
@@ -617,6 +665,68 @@ function JanelaPerfil({ perfil, onClose, isMaster, todasFichas, xpMap, jogadorPo
                   ))}
                 </Box>
               )}
+            </Box>
+          )}
+
+          {/* PATRIMÔNIO */}
+          {fichaVinculada && (
+            <Box sx={{ mb: 2, p: 1.5, bgcolor: "#1a1a2e", borderRadius: 1, border: `1px solid ${auraCor}44` }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1, flexWrap: "wrap", gap: 0.5 }}>
+                <Typography variant="subtitle2" sx={{ color: "#fbbf24", fontWeight: "bold" }}>
+                  💎 Patrimônio
+                </Typography>
+                <Chip
+                  label={`💰 ${totalPatrimonio.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  size="small"
+                  sx={{
+                    bgcolor: "#fbbf2422",
+                    color: "#fbbf24",
+                    fontWeight: "bold",
+                    fontSize: "0.7rem",
+                    border: "1px solid #fbbf2466",
+                  }}
+                />
+              </Box>
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Box sx={{ flex: 1, minWidth: 120, p: 1, bgcolor: "#0f172a", borderRadius: 1, border: "1px solid #fbbf2433" }}>
+                  <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.65rem" }}>
+                    💰 Carteiras
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
+                    {totalCarteiras.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: "#475569", fontSize: "0.6rem" }}>
+                    {(() => {
+                      const c = fichaVinculada?.carteiras;
+                      if (!c) return "0 carteira(s)";
+                      if (Array.isArray(c)) return `${c.length} carteira(s)`;
+                      return `${Object.keys(c).length} carteira(s)`;
+                    })()}
+                  </Typography>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 120, p: 1, bgcolor: "#0f172a", borderRadius: 1, border: "1px solid #3b82f633" }}>
+                  <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.65rem" }}>
+                    🏠 Bens (Imóveis)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#3b82f6", fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
+                    {totalImoveis.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: "#475569", fontSize: "0.6rem" }}>
+                    {qtdImoveis} imóvel(is)
+                  </Typography>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 120, p: 1, bgcolor: "#0f172a", borderRadius: 1, border: "1px solid #22c55e33" }}>
+                  <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", fontSize: "0.65rem" }}>
+                    📈 Títulos (Ações)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#22c55e", fontWeight: "bold", fontFamily: "'Courier New', monospace" }}>
+                    {totalAcoes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: "#475569", fontSize: "0.6rem" }}>
+                    {qtdAcoes} ação(ões)
+                  </Typography>
+                </Box>
+              </Box>
             </Box>
           )}
 

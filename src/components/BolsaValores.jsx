@@ -14,6 +14,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { db } from "../firebaseConfig";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import useSimulador from "../hooks/useSimulador";
 
 const EMPRESAS_INICIAIS = [
   { id: "hollow", nome: "Hollow Corp", setor: "Tecnologia", sigla: "HLC", preco: 847.50, variacao: 0, historico: [], logo: "🏢", imagem: "", descricao: "Maior corporação de tecnologia do Império Aurano.", sede: "Auraxia", fundador: "Viktor Hollow", ceoAtual: "Sarah Hollow", tipoEmpresa: "Pública", valorEmpresa: 1200000000000, faturamentoAnual: 480000000000, historia: "Fundada em 722 D.C.", empresasAfiliadas: [{ nome: "Hollow Defense", relacao: "Subsidiária" }] },
@@ -29,6 +30,7 @@ const EMPRESAS_INICIAIS = [
 ];
 
 function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
+  const { getFatorBolsa, getPrecoBolsaAjustado } = useSimulador();
   const [posicao, setPosicao] = useState({ x: 150, y: 80 });
   const [tamanho, setTamanho] = useState({ width: 900, height: 650 });
   const [minimizado, setMinimizado] = useState(false);
@@ -182,7 +184,7 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
   const comprarAcoes = async () => {
     if (!empresaSelecionada || quantidadeCompra <= 0) return;
     if (!carteiraSelecionada) { alert("Selecione uma carteira!"); return; }
-    const valorTotal = (empresaSelecionada.precoAtual || empresaSelecionada.preco) * quantidadeCompra;
+    const valorTotal = getPrecoBolsaAjustado(empresaSelecionada) * quantidadeCompra;
     const carteiraAtual = carteiraJogador[carteiraSelecionada] || 0;
     if (carteiraAtual < valorTotal) { alert("Saldo insuficiente!"); return; }
     setLoading(true);
@@ -192,10 +194,10 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
       if (novasAcoes[empresaSelecionada.id]) {
         const acaoAtual = novasAcoes[empresaSelecionada.id];
         const quantidadeAtual = acaoAtual.quantidade || 0;
-        const precoMedio = (acaoAtual.precoMedio * quantidadeAtual + (empresaSelecionada.precoAtual || empresaSelecionada.preco) * quantidadeCompra) / (quantidadeAtual + quantidadeCompra);
-        novasAcoes[empresaSelecionada.id] = { quantidade: quantidadeAtual + quantidadeCompra, precoMedio, precoAtual: (empresaSelecionada.precoAtual || empresaSelecionada.preco), dataCompra: new Date().toISOString() };
+        const precoMedio = (acaoAtual.precoMedio * quantidadeAtual + getPrecoBolsaAjustado(empresaSelecionada) * quantidadeCompra) / (quantidadeAtual + quantidadeCompra);
+        novasAcoes[empresaSelecionada.id] = { quantidade: quantidadeAtual + quantidadeCompra, precoMedio, precoAtual: getPrecoBolsaAjustado(empresaSelecionada), dataCompra: new Date().toISOString() };
       } else {
-        novasAcoes[empresaSelecionada.id] = { quantidade: quantidadeCompra, precoMedio: (empresaSelecionada.precoAtual || empresaSelecionada.preco), precoAtual: (empresaSelecionada.precoAtual || empresaSelecionada.preco), dataCompra: new Date().toISOString() };
+        novasAcoes[empresaSelecionada.id] = { quantidade: quantidadeCompra, precoMedio: getPrecoBolsaAjustado(empresaSelecionada), precoAtual: getPrecoBolsaAjustado(empresaSelecionada), dataCompra: new Date().toISOString() };
       }
       await salvarCarteiraJogador(novasAcoes, novasCarteiras);
       setCarteiraJogador(novasCarteiras);
@@ -208,7 +210,7 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
     if (!empresaSelecionada || quantidadeVenda <= 0) return;
     const acaoJogador = acoesJogador[empresaSelecionada.id];
     if (!acaoJogador || acaoJogador.quantidade < quantidadeVenda) { alert("Ações insuficientes!"); return; }
-    const valorTotal = (empresaSelecionada.precoAtual || empresaSelecionada.preco) * quantidadeVenda;
+    const valorTotal = getPrecoBolsaAjustado(empresaSelecionada) * quantidadeVenda;
     setLoading(true);
     try {
       const novasAcoes = { ...acoesJogador };
@@ -336,10 +338,13 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
                         <Typography variant="caption" sx={{ color: "#64748b" }}>{emp.sigla} • {emp.setor}</Typography>
                       </Box>
                       <MiniGrafico historico={emp.historico} />
-                      <Box sx={{ textAlign: "right", minWidth: 70 }}>
-                        <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold", fontSize: "0.75rem" }}>💰 {(emp.precoAtual || emp.preco).toFixed(2)}</Typography>
-                        <Typography variant="caption" sx={{ color: variacaoPositiva ? "#22c55e" : "#ef4444", fontWeight: "bold" }}>
+                      <Box sx={{ textAlign: "right", minWidth: 90 }}>
+                        <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold", fontSize: "0.75rem" }}>💰 {getPrecoBolsaAjustado(emp).toFixed(2)}</Typography>
+                        <Typography variant="caption" sx={{ color: variacaoPositiva ? "#22c55e" : "#ef4444", fontWeight: "bold", display: "block" }}>
                           {variacaoPositiva ? "▲" : "▼"} {Math.abs(emp.variacao).toFixed(2)}%
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: "#c9a961", fontSize: "0.55rem" }}>
+                          🌍 ×{getFatorBolsa(emp.setor, emp.sede)}
                         </Typography>
                       </Box>
                       <Button size="small" variant="contained" startIcon={<ShoppingCartIcon sx={{ fontSize: 14 }} />}
@@ -426,7 +431,8 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <Typography variant="subtitle2" sx={{ color: "#fbbf24", mb: 0.5 }}>📊 Informações</Typography>
-                  <Typography variant="body2" sx={{ color: "#fff" }}>💰 Preço: <strong>{(empresaSelecionada.precoAtual || empresaSelecionada.preco).toFixed(2)}</strong></Typography>
+                  <Typography variant="body2" sx={{ color: "#fff" }}>💰 Preço: <strong>{getPrecoBolsaAjustado(empresaSelecionada).toFixed(2)}</strong></Typography>
+                  <Typography variant="caption" sx={{ color: "#c9a961", display: "block" }}>🌍 Fator de simulação: ×{getFatorBolsa(empresaSelecionada.setor, empresaSelecionada.sede)}</Typography>
                   <Typography variant="body2" sx={{ color: "#fff" }}>🏙️ Sede: <strong>{empresaSelecionada.sede || "—"}</strong></Typography>
                   <Typography variant="body2" sx={{ color: "#fff" }}>👤 Fundador: <strong>{empresaSelecionada.fundador || "—"}</strong></Typography>
                   <Typography variant="body2" sx={{ color: "#fff" }}>👔 CEO: <strong>{empresaSelecionada.ceoAtual || "—"}</strong></Typography>
@@ -469,7 +475,7 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
             {empresaSelecionada && (
               <>
                 <Typography sx={{ color: '#fff' }}>{empresaSelecionada.nome} ({empresaSelecionada.sigla})</Typography>
-                <Typography sx={{ color: '#94a3b8' }}>Preço: <strong style={{ color: '#fbbf24' }}>💰 {(empresaSelecionada.precoAtual || empresaSelecionada.preco).toFixed(2)}</strong></Typography>
+                <Typography sx={{ color: '#94a3b8' }}>Preço: <strong style={{ color: '#fbbf24' }}>💰 {getPrecoBolsaAjustado(empresaSelecionada).toFixed(2)}</strong></Typography>
                 <FormControl fullWidth size="small">
                   <InputLabel sx={{ color: '#94a3b8' }}>Carteira</InputLabel>
                   <Select value={carteiraSelecionada} onChange={(e) => setCarteiraSelecionada(e.target.value)} sx={{ color: '#fff', bgcolor: '#1a1a2e' }}>

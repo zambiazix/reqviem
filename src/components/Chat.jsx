@@ -404,6 +404,23 @@ if (typeof document !== 'undefined') {
       50% { box-shadow: 0 0 20px #FFD700; }
       100% { box-shadow: 0 0 5px #FFD700; }
     }
+    @keyframes pulseGreen {
+      0% { box-shadow: 0 0 5px #4caf50; }
+      50% { box-shadow: 0 0 20px #4caf50, 0 0 30px #4caf50; }
+      100% { box-shadow: 0 0 5px #4caf50; }
+    }
+    @keyframes slideInLeft {
+      from { opacity: 0; transform: translateX(-15px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(15px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes floatUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   `;
   document.head.appendChild(styleSheet);
 }
@@ -489,8 +506,18 @@ const [rolagemMorteIndex, setRolagemMorteIndex] = useState(-1);
 
 // 🟢 DADO SECRETO
 const [modoSecreto, setModoSecreto] = useState(false);
-// 🟢 CHAT TRAVADO PELO MESTRE
-const [chatTravado, setChatTravado] = useState(false);
+const [travaSessao, setTravaSessao] = useState({
+  travados: { chat: false, grid: false, cassino: false, rede: false, roleta: false, eventos: false, comercio: false },
+  sessaoAtiva: false,
+  sessaoTitulo: "",
+  sessaoInicio: null,
+  historico: [],
+});
+const [sessaoDialogOpen, setSessaoDialogOpen] = useState(false);
+const [tempoDecorrido, setTempoDecorrido] = useState("00:00:00");
+const [tituloSessaoTemp, setTituloSessaoTemp] = useState("");
+
+const chatTravado = !!travaSessao?.travados?.chat;
 // 🟢 OTIMIZAÇÃO: SCROLL INFINITO COM PAGINAÇÃO NO FIRESTORE
 const [todasMensagens, setTodasMensagens] = useState([]); // Todas as mensagens carregadas
 const [quantidadeMensagens, setQuantidadeMensagens] = useState(50); // Começa com 50
@@ -499,36 +526,111 @@ const [ultimoDocumento, setUltimoDocumento] = useState(null); // Para paginaçã
 const [temMaisMensagens, setTemMaisMensagens] = useState(true); // Se há mais no Firestore
 const [carregamentoInicial, setCarregamentoInicial] = useState(true); // Primeira carga
 
-// 🟢 OUVIR ESTADO DO CHAT TRAVADO EM TEMPO REAL
 useEffect(() => {
-  const ref = doc(db, "game", "chatTravado");
+  const ref = doc(db, "game", "travaSessao");
   const unsub = onSnapshot(ref, (snap) => {
     if (snap.exists()) {
-      setChatTravado(snap.data().travado || false);
+      const d = snap.data() || {};
+      const base = { chat: false, grid: false, cassino: false, rede: false, roleta: false, eventos: false, comercio: false };
+      setTravaSessao({
+        travados: { ...base, ...(d.travados || {}) },
+        sessaoAtiva: d.sessaoAtiva || false,
+        sessaoTitulo: d.sessaoTitulo || "",
+        sessaoInicio: d.sessaoInicio || null,
+        historico: Array.isArray(d.historico) ? d.historico : [],
+      });
+      setTituloSessaoTemp((prev) => (prev ? prev : (d.sessaoTitulo || "")));
     } else {
-      setChatTravado(false);
+      const inicial = {
+        travados: { chat: false, grid: false, cassino: false, rede: false, roleta: false, eventos: false, comercio: false },
+        sessaoAtiva: false,
+        sessaoTitulo: "",
+        sessaoInicio: null,
+        historico: [],
+      };
+      setTravaSessao(inicial);
+      setDoc(ref, inicial, { merge: true }).catch(() => {});
     }
   });
   return () => unsub();
 }, []);
 
-// 🟢 TRAVAR/DESTRAVAR CHAT (só Mestre)
-const toggleChatTravado = async () => {
+useEffect(() => {
+  if (!travaSessao.sessaoAtiva || !travaSessao.sessaoInicio) {
+    setTempoDecorrido("00:00:00");
+    return;
+  }
+  const tick = () => {
+    const inicio = new Date(travaSessao.sessaoInicio).getTime();
+    const diff = Math.max(0, Math.floor((Date.now() - inicio) / 1000));
+    const h = String(Math.floor(diff / 3600)).padStart(2, "0");
+    const m = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
+    const s = String(diff % 60).padStart(2, "0");
+    setTempoDecorrido(`${h}:${m}:${s}`);
+  };
+  tick();
+  const i = setInterval(tick, 1000);
+  return () => clearInterval(i);
+}, [travaSessao.sessaoAtiva, travaSessao.sessaoInicio]);
+
+const toggleTravaModulo = async (modulo) => {
   if (!isMaster) return;
-  const novoEstado = !chatTravado;
-  setChatTravado(novoEstado);
-  await setDoc(doc(db, "game", "chatTravado"), { travado: novoEstado });
-  
-  // Enviar mensagem no chat avisando
+  const novosTravados = { ...travaSessao.travados, [modulo]: !travaSessao.travados[modulo] };
+  setTravaSessao((prev) => ({ ...prev, travados: novosTravados }));
+  await setDoc(doc(db, "game", "travaSessao"), { travados: novosTravados }, { merge: true });
+};
+
+const iniciarSessao = async () => {
+  if (!isMaster) return;
+  const titulo = (tituloSessaoTemp || "").trim() || `Sessão de ${new Date().toLocaleDateString("pt-BR")}`;
+  const inicio = new Date().toISOString();
+  const travados = { chat: false, grid: false, cassino: false, rede: false, roleta: false, eventos: false, comercio: false };
+  setTravaSessao((prev) => ({ ...prev, travados, sessaoAtiva: true, sessaoTitulo: titulo, sessaoInicio: inicio }));
+  await setDoc(doc(db, "game", "travaSessao"), { travados, sessaoAtiva: true, sessaoTitulo: titulo, sessaoInicio: inicio }, { merge: true });
   await addDoc(chatCol, {
     userNick: "SISTEMA",
     userEmail: "sistema@reqviemrpg.com",
     type: "sistema",
-    text: novoEstado 
-      ? "🔒 O Mestre TRAVOU o chat. Aguarde a sessão começar!"
-      : "🔓 O Mestre DESTRAVOU o chat. Podem conversar!",
+    text: `🎬 **SESSÃO INICIADA:** ${titulo}\nBom jogo a todos!`,
     timestamp: serverTimestamp(),
   });
+};
+
+const encerrarSessao = async () => {
+  if (!isMaster) return;
+  const inicio = travaSessao.sessaoInicio;
+  const fim = new Date().toISOString();
+  let duracaoSegundos = 0;
+  if (inicio) duracaoSegundos = Math.max(0, Math.floor((new Date(fim).getTime() - new Date(inicio).getTime()) / 1000));
+  const h = String(Math.floor(duracaoSegundos / 3600)).padStart(2, "0");
+  const m = String(Math.floor((duracaoSegundos % 3600) / 60)).padStart(2, "0");
+  const s = String(duracaoSegundos % 60).padStart(2, "0");
+  const registro = {
+    titulo: travaSessao.sessaoTitulo || "Sessão sem título",
+    inicio,
+    fim,
+    duracao: `${h}:${m}:${s}`,
+    duracaoSegundos,
+  };
+  const novoHistorico = [registro, ...(travaSessao.historico || [])].slice(0, 50);
+  const travados = { chat: true, grid: true, cassino: true, rede: true, roleta: true, eventos: true, comercio: true };
+  setTravaSessao((prev) => ({ ...prev, travados, sessaoAtiva: false, sessaoTitulo: "", sessaoInicio: null, historico: novoHistorico }));
+  await setDoc(doc(db, "game", "travaSessao"), { travados, sessaoAtiva: false, sessaoTitulo: "", sessaoInicio: null, historico: novoHistorico }, { merge: true });
+  await addDoc(chatCol, {
+    userNick: "SISTEMA",
+    userEmail: "sistema@reqviemrpg.com",
+    type: "sistema",
+    text: `⏹️ **SESSÃO ENCERRADA:** ${registro.titulo}\nDuração: ${registro.duracao}`,
+    timestamp: serverTimestamp(),
+  });
+};
+
+const apagarRegistroSessao = async (index) => {
+  if (!isMaster) return;
+  if (!window.confirm("Apagar este registro?")) return;
+  const novoHistorico = travaSessao.historico.filter((_, i) => i !== index);
+  setTravaSessao((prev) => ({ ...prev, historico: novoHistorico }));
+  await setDoc(doc(db, "game", "travaSessao"), { historico: novoHistorico }, { merge: true });
 };
 // 🟢 EFEITOS DE TIPO DE DANO
 const EFEITOS_DANO = {
@@ -2883,6 +2985,7 @@ useEffect(() => {
                   sx={{
                     flexDirection: m.userEmail === userEmail ? "row-reverse" : "row",
                     px: 0,
+                    animation: `${m.userEmail === userEmail ? 'slideInRight' : 'slideInLeft'} 0.28s ease-out`,
                   }}
                 >
                   <Avatar
@@ -2920,6 +3023,13 @@ useEffect(() => {
                       wordBreak: "break-word",
                       contentVisibility: 'auto',
                       containIntrinsicSize: 'auto 100px',
+                      transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+                      '&:hover': {
+                        transform: 'translateY(-1px)',
+                        boxShadow: m.userEmail === userEmail
+                          ? '0 6px 22px rgba(30, 58, 95, 0.55)'
+                          : '0 6px 22px rgba(0, 0, 0, 0.5)',
+                      },
                     }}
                   >
                     <Box
@@ -3277,23 +3387,22 @@ useEffect(() => {
       sx={{ mr: 1 }}
     />
   )}
-  {/* 🟢 BOTÃO TRAVAR/DESTRAVAR CHAT - SÓ MESTRE */}
+  {/* 🟢 CONTROLE DE SESSÃO - SÓ MESTRE */}
   {isMaster && (
     <Button
       variant="contained"
       size="small"
-      onClick={toggleChatTravado}
+      onClick={() => setSessaoDialogOpen(true)}
       sx={{
-        bgcolor: chatTravado ? '#ef4444' : '#4caf50',
+        bgcolor: travaSessao.sessaoAtiva ? '#4caf50' : '#ef4444',
         color: '#fff',
         fontWeight: 'bold',
         fontSize: '0.7rem',
-        '&:hover': { 
-          bgcolor: chatTravado ? '#dc2626' : '#388e3c' 
-        }
+        animation: travaSessao.sessaoAtiva ? 'pulseGreen 2s infinite' : 'none',
+        '&:hover': { bgcolor: travaSessao.sessaoAtiva ? '#388e3c' : '#dc2626' },
       }}
     >
-      {chatTravado ? '🔒 Chat Travado' : '🔓 Chat Aberto'}
+      {travaSessao.sessaoAtiva ? `🟢 SESSÃO ATIVA (${tempoDecorrido})` : '⏹️ SEM SESSÃO'}
     </Button>
   )}
 
@@ -4510,6 +4619,217 @@ useEffect(() => {
         </DialogActions>
       </Dialog>
             
+      {/* 🟢 MODAL CONTROLE DE SESSÃO */}
+      <Dialog
+        open={sessaoDialogOpen}
+        onClose={() => setSessaoDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "2px solid #00e0ff",
+            borderRadius: 3,
+            background: "linear-gradient(145deg, #0f172a, #1a1a2e)",
+            boxShadow: "0 0 40px rgba(0, 224, 255, 0.3)",
+          },
+        }}
+      >
+        <DialogTitle sx={{
+          color: '#00e0ff',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          borderBottom: '1px solid rgba(0, 224, 255, 0.3)',
+          background: 'linear-gradient(90deg, rgba(0,224,255,0.15), transparent)',
+        }}>
+          <span style={{ fontSize: '1.5rem' }}>🎬</span>
+          <Typography variant="h6" sx={{ fontWeight: 'bold', flex: 1 }}>
+            Controle de Sessão
+          </Typography>
+          <IconButton onClick={() => setSessaoDialogOpen(false)} sx={{ color: '#94a3b8' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Paper sx={{
+            p: 2,
+            mb: 2,
+            bgcolor: travaSessao.sessaoAtiva ? 'rgba(76,175,80,0.1)' : 'rgba(239,68,68,0.1)',
+            border: `2px solid ${travaSessao.sessaoAtiva ? '#4caf50' : '#ef4444'}`,
+            borderRadius: 2,
+            textAlign: 'center',
+          }}>
+            <Typography variant="h6" sx={{
+              color: travaSessao.sessaoAtiva ? '#4caf50' : '#ef4444',
+              fontWeight: 'bold',
+              mb: 0.5,
+            }}>
+              {travaSessao.sessaoAtiva ? '🟢 SESSÃO EM ANDAMENTO' : '⏹️ NENHUMA SESSÃO ATIVA'}
+            </Typography>
+            {travaSessao.sessaoAtiva && (
+              <>
+                <Typography variant="body2" sx={{ color: '#94a3b8', mb: 0.5 }}>
+                  Título: <strong style={{ color: '#fff' }}>{travaSessao.sessaoTitulo}</strong>
+                </Typography>
+                <Typography variant="h4" sx={{
+                  color: '#00e0ff',
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold',
+                  textShadow: '0 0 20px rgba(0, 224, 255, 0.5)',
+                }}>
+                  {tempoDecorrido}
+                </Typography>
+              </>
+            )}
+          </Paper>
+
+          <TextField
+            fullWidth
+            size="small"
+            label="Título da Sessão"
+            value={tituloSessaoTemp}
+            onChange={(e) => setTituloSessaoTemp(e.target.value)}
+            disabled={travaSessao.sessaoAtiva}
+            placeholder="Ex: A Queda de Auraxia"
+            sx={{
+              mb: 2,
+              '& .MuiOutlinedInput-root': {
+                color: '#fff',
+                '& fieldset': { borderColor: '#334155' },
+                '&:hover fieldset': { borderColor: '#00e0ff' },
+                '&.Mui-focused fieldset': { borderColor: '#00e0ff' },
+              },
+              '& .MuiInputLabel-root': { color: '#94a3b8' },
+              '& .MuiInputLabel-root.Mui-focused': { color: '#00e0ff' },
+            }}
+          />
+
+          <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1, fontWeight: 'bold' }}>
+            🔒 Travar funcionalidades:
+          </Typography>
+          <Paper sx={{
+            p: 1.5,
+            bgcolor: '#1a1a2e',
+            border: '1px solid #334155',
+            borderRadius: 2,
+            mb: 2,
+          }}>
+            {[
+              { key: 'chat', label: '💬 Chat Principal' },
+              { key: 'grid', label: '🗺️ Grid de Batalha' },
+              { key: 'cassino', label: '🎰 Cassino' },
+              { key: 'rede', label: '🌐 Rede' },
+              { key: 'roleta', label: '🎲 Roleta' },
+              { key: 'eventos', label: '⭐ Eventos Aleatórios' },
+              { key: 'comercio', label: '🏪 Comércio' },
+            ].map((mod) => (
+              <FormControlLabel
+                key={mod.key}
+                control={
+                  <Checkbox
+                    checked={!!travaSessao.travados[mod.key]}
+                    onChange={() => toggleTravaModulo(mod.key)}
+                    sx={{
+                      color: '#4caf50',
+                      '&.Mui-checked': { color: '#ef4444' },
+                    }}
+                  />
+                }
+                label={
+                  <Typography sx={{
+                    color: travaSessao.travados[mod.key] ? '#ef4444' : '#4caf50',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                  }}>
+                    {mod.label}
+                  </Typography>
+                }
+                sx={{ display: 'flex', width: '100%', mr: 0 }}
+              />
+            ))}
+          </Paper>
+
+          <Typography variant="subtitle2" sx={{ color: '#00e0ff', mb: 1, fontWeight: 'bold' }}>
+            📜 Histórico de Sessões ({travaSessao.historico.length})
+          </Typography>
+          <Box sx={{
+            maxHeight: 200,
+            overflowY: 'auto',
+            pr: 1,
+            '&::-webkit-scrollbar': { width: '6px' },
+            '&::-webkit-scrollbar-thumb': { background: '#00e0ff44', borderRadius: '10px' },
+          }}>
+            {travaSessao.historico.length === 0 && (
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', textAlign: 'center', py: 2 }}>
+                Nenhuma sessão registrada.
+              </Typography>
+            )}
+            {travaSessao.historico.map((h, i) => (
+              <Paper key={i} sx={{
+                p: 1.5,
+                mb: 0.5,
+                bgcolor: '#1a1a2e',
+                border: '1px solid #334155',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+              }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ color: '#fff', fontWeight: 'bold' }}>
+                    {h.titulo}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                    📅 {h.inicio ? new Date(h.inicio).toLocaleString('pt-BR') : '—'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                    ⏱️ {h.duracao}
+                  </Typography>
+                </Box>
+                {isMaster && (
+                  <IconButton size="small" onClick={() => apagarRegistroSessao(i)} sx={{ color: '#ef4444' }}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                )}
+              </Paper>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(0, 224, 255, 0.3)' }}>
+          {isMaster && !travaSessao.sessaoAtiva && (
+            <Button
+              variant="contained"
+              onClick={iniciarSessao}
+              sx={{
+                bgcolor: '#4caf50',
+                fontWeight: 'bold',
+                flex: 1,
+                '&:hover': { bgcolor: '#388e3c' },
+              }}
+            >
+              🎬 INICIAR SESSÃO
+            </Button>
+          )}
+          {isMaster && travaSessao.sessaoAtiva && (
+            <Button
+              variant="contained"
+              onClick={encerrarSessao}
+              sx={{
+                bgcolor: '#ef4444',
+                fontWeight: 'bold',
+                flex: 1,
+                '&:hover': { bgcolor: '#dc2626' },
+              }}
+            >
+              ⏹️ ENCERRAR SESSÃO
+            </Button>
+          )}
+          <Button onClick={() => setSessaoDialogOpen(false)} sx={{ color: '#94a3b8' }}>
+            Fechar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* 🟢 SOBREPOSIÇÃO DO DADO DE MORTE */}
       {modoMorte && (
         <Box

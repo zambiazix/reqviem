@@ -21,6 +21,7 @@ import ReceiptIcon from "@mui/icons-material/Receipt";
 import AutorenewIcon from "@mui/icons-material/Autorenew";
 import { db } from "../firebaseConfig";
 import { doc, getDoc, setDoc, onSnapshot, updateDoc } from "firebase/firestore";
+import useSimulador from "../hooks/useSimulador";
 
 // ==================== CORES DE AURA ====================
 const CORES_AURA = {
@@ -450,6 +451,7 @@ const calcularImpostoImovel = (imovel, impostos) => {
 
 // ==================== COMPONENTE PRINCIPAL ====================
 function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
+  const { getFatorImovel, getProsperidade } = useSimulador();
   // ===== ESTADOS DA JANELA =====
   const [minimizado, setMinimizado] = useState(false);
 
@@ -961,7 +963,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
       return;
     }
 
-    const valorTotal = imovelSelecionado.precoVenda;
+    const valorTotal = Math.round(imovelSelecionado.precoVenda * getFatorImovel(imovelSelecionado.cidade) * 100) / 100;
     const carteiraAtual = carteiraJogador[carteiraSelecionada] || 0;
 
     if (carteiraAtual < valorTotal) {
@@ -1089,7 +1091,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
       alert("Selecione um imóvel e uma carteira!");
       return;
     }
-    const primeiroAluguel = imovelSelecionado.precoAluguel || 0;
+    const primeiroAluguel = Math.round((imovelSelecionado.precoAluguel || 0) * getFatorImovel(imovelSelecionado.cidade) * 100) / 100;
     const carteiraAtual = carteiraJogador[carteiraSelecionada] || 0;
     if (carteiraAtual < primeiroAluguel) {
       alert(`Saldo insuficiente! Você precisa de ${primeiroAluguel.toFixed(2)} 💰`);
@@ -1110,6 +1112,7 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
         dataInicioRPG: getDataRPG(),
         proximoVencimento: getDataRPG(),
         valorAluguelMensal: primeiroAluguel,
+        fatorCidadeAluguel: getFatorImovel(imovelSelecionado.cidade),
       };
 
       const novosAlugados = [...imoveisAlugados, imovelAlugado];
@@ -1671,10 +1674,13 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                           fontWeight: "bold",
                         }}
                       >
-                        💰 {imovel.precoVenda.toFixed(2)}
+                        💰 {(imovel.precoVenda * getFatorImovel(imovel.cidade)).toFixed(2)}
                       </Typography>
                       <Typography variant="caption" sx={{ color: "#64748b" }}>
-                        🔑 Aluguel: {imovel.precoAluguel}/mês
+                        🔑 Aluguel: {Math.round(imovel.precoAluguel * getFatorImovel(imovel.cidade))}/mês
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: "#c9a961", display: "block", fontSize: "0.55rem" }}>
+                        🌍 Prosperidade {imovel.cidade}: {Math.round(getProsperidade(imovel.cidade))} • Fator {getFatorImovel(imovel.cidade)}×
                       </Typography>
                     </Box>
                     <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -2231,7 +2237,10 @@ function ImoveisHUD({ userEmail, onClose, fichasMap, isMaster }) {
                   </Box>
                 )}
                 <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold" }}>
-                  Preço: 💰 {imovelSelecionado.precoVenda.toFixed(2)}
+                  Preço: 💰 {(imovelSelecionado.precoVenda * getFatorImovel(imovelSelecionado.cidade)).toFixed(2)}
+                </Typography>
+                <Typography variant="caption" sx={{ color: "#c9a961" }}>
+                  🌍 Fator de cidade: {getFatorImovel(imovelSelecionado.cidade)}× (prosperidade {Math.round(getProsperidade(imovelSelecionado.cidade))})
                 </Typography>
 
                 <FormControl fullWidth size="small">

@@ -6,6 +6,8 @@ import CloseIcon from "@mui/icons-material/Close";
 import { Link } from "react-router-dom";
 import HomePage from "../pages/HomePage";
 import SoundBoard from "./SoundBoard";
+import AgendadorSessoes from "./AgendadorSessoes";
+import SimuladorEngine from "./SimuladorEngine";
 import FichaPersonagem from "./FichaPersonagem";
 import MemoizedChat from "./Chat";
 import LoginForm from "./LoginForm";
@@ -500,6 +502,11 @@ const Home = memo(function Home({
                   setLightboxOpen={setLightboxOpen}
                   fichaAtual={fichaAtual}
                 />
+                <AgendadorSessoes
+                  userEmail={user?.email}
+                  userNick={displayName}
+                  isMaster={isMaster}
+                />
                 <Paper sx={{ 
                   flex: 1, 
                   display: "flex", 
@@ -602,6 +609,15 @@ const Home = memo(function Home({
           )}
         </Grid>
       </Box>
+
+      {/* MOTOR DO SIMULADOR */}
+      {user?.email && (
+        <SimuladorEngine
+          userEmail={user.email}
+          isMaster={isMaster}
+          isConvidado={!!fichaAtual?.isConvidado}
+        />
+      )}
 
       {/* LIGHTBOX */}
       {lightboxOverlay}
