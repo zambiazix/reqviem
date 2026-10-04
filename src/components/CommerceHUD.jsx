@@ -497,6 +497,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
   const comprarItem = async () => {
     if (!comprandoItem || !currentUserEmail) return;
     if (!carteiraSelecionada) { alert("Selecione uma carteira!"); return; }
+    // 🟢 Busca a ficha pelo email do jogador (pode ser diferente do auth.email no caso do mestre)
     const ficha = fichasMap[currentUserEmail];
     if (!ficha) { alert("Ficha não encontrada! Verifique se a ficha do Mestre existe."); return; }
     const carteiras = Array.isArray(ficha.carteiras) ? ficha.carteiras : [];
@@ -589,7 +590,13 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       }
     });
 
-    await setDoc(doc(db, "fichas", currentUserEmail), { carteiras: novasCarteiras, [categoriaDestinoCompra]: categoriaItens }, { merge: true });
+    try {
+      await setDoc(doc(db, "fichas", currentUserEmail), { carteiras: novasCarteiras, [categoriaDestinoCompra]: categoriaItens }, { merge: true });
+    } catch (err) {
+      console.error("Erro ao salvar compra:", err);
+      alert("Erro ao salvar a compra: " + err.message + "\n\nVerifique se você tem permissão para editar esta ficha.");
+      return;
+    }
 
     const novoEstoque = Math.max(0, (comprandoItem.estoque || 1) - quantidadeComprada);
     const aumentoDemanda = Math.floor(Math.random() * 30) + 1;

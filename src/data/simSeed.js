@@ -1,40 +1,105 @@
+export const CATEGORIAS_COMMODITY = {
+  basico:    { nome: "Básico",   icone: "🍞", cor: "#b8945a" },
+  luxo:      { nome: "Luxo",     icone: "💎", cor: "#c9a961" },
+  industria: { nome: "Indústria",icone: "⚙️", cor: "#5a6b7a" },
+  militar:   { nome: "Militar",  icone: "⚔️", cor: "#8b2f2f" },
+};
+
 export const COMMODITIES = [
-  { id: "ferro", nome: "Ferro", icone: "⛏️", categoria: "bruto", precoBase: 12, oferta: 1000, demanda: 900 },
-  { id: "carvao", nome: "Carvão", icone: "🪨", categoria: "bruto", precoBase: 8, oferta: 1200, demanda: 1100 },
-  { id: "madeira", nome: "Madeira", icone: "🪵", categoria: "bruto", precoBase: 6, oferta: 900, demanda: 800 },
-  { id: "grao", nome: "Grão", icone: "🌾", categoria: "bruto", precoBase: 5, oferta: 1500, demanda: 1400 },
-  { id: "frutas", nome: "Frutas", icone: "🍎", categoria: "bruto", precoBase: 7, oferta: 800, demanda: 780 },
-  { id: "legumes", nome: "Legumes", icone: "🥬", categoria: "bruto", precoBase: 6, oferta: 800, demanda: 780 },
-  { id: "peixe", nome: "Peixe", icone: "🐟", categoria: "bruto", precoBase: 9, oferta: 700, demanda: 720 },
-  { id: "la", nome: "Lã", icone: "🐑", categoria: "bruto", precoBase: 14, oferta: 400, demanda: 420 },
-  { id: "couro", nome: "Couro", icone: "🟫", categoria: "bruto", precoBase: 16, oferta: 380, demanda: 400 },
-  { id: "obsidiana", nome: "Obsidiana", icone: "🖤", categoria: "mineral", precoBase: 450, oferta: 220, demanda: 240 },
-  { id: "aurita", nome: "Aurita", icone: "🤍", categoria: "mineral", precoBase: 380, oferta: 120, demanda: 130 },
-  { id: "pyridium", nome: "Pyridium", icone: "🟠", categoria: "mineral", precoBase: 520, oferta: 180, demanda: 200 },
-  { id: "adamantina", nome: "Adamantina", icone: "🔷", categoria: "mineral", precoBase: 620, oferta: 60, demanda: 70 },
-  { id: "ouro", nome: "Ouro", icone: "🥇", categoria: "mineral", precoBase: 800, oferta: 100, demanda: 95 },
-  { id: "aco", nome: "Aço", icone: "🔩", categoria: "intermediario", precoBase: 42, oferta: 600, demanda: 620 },
-  { id: "tecido", nome: "Tecido", icone: "🧵", categoria: "intermediario", precoBase: 28, oferta: 500, demanda: 520 },
-  { id: "papel", nome: "Papel", icone: "📜", categoria: "intermediario", precoBase: 18, oferta: 400, demanda: 400 },
-  { id: "vidro", nome: "Vidro", icone: "🪟", categoria: "intermediario", precoBase: 22, oferta: 350, demanda: 360 },
-  { id: "cimento", nome: "Cimento", icone: "🧱", categoria: "intermediario", precoBase: 15, oferta: 500, demanda: 480 },
-  { id: "alcool", nome: "Bebidas", icone: "🍺", categoria: "intermediario", precoBase: 25, oferta: 300, demanda: 320 },
-  { id: "conservas", nome: "Conservas", icone: "🥫", categoria: "intermediario", precoBase: 32, oferta: 250, demanda: 270 },
-  { id: "armas", nome: "Armas", icone: "⚔️", categoria: "manufaturado", precoBase: 180, oferta: 200, demanda: 220 },
-  { id: "armaduras", nome: "Armaduras", icone: "🛡️", categoria: "manufaturado", precoBase: 210, oferta: 160, demanda: 170 },
-  { id: "implantes", nome: "Implantes", icone: "🦾", categoria: "manufaturado", precoBase: 320, oferta: 140, demanda: 160 },
-  { id: "celulas", nome: "Células de Pyridium", icone: "🔋", categoria: "manufaturado", precoBase: 280, oferta: 180, demanda: 200 },
-  { id: "medicamentos", nome: "Medicamentos", icone: "💊", categoria: "manufaturado", precoBase: 95, oferta: 220, demanda: 240 },
-  { id: "moveis", nome: "Móveis", icone: "🪑", categoria: "manufaturado", precoBase: 65, oferta: 180, demanda: 200 },
-  { id: "instrumentos", nome: "Instrumentos", icone: "🎻", categoria: "manufaturado", precoBase: 88, oferta: 90, demanda: 100 },
-  { id: "joias", nome: "Joias", icone: "💎", categoria: "manufaturado", precoBase: 420, oferta: 80, demanda: 90 },
-  { id: "navios", nome: "Navios", icone: "🚢", categoria: "manufaturado", precoBase: 900, oferta: 30, demanda: 32 },
+  // ---- BÁSICO ----
+  { id: "grao",       nome: "Grãos",       icone: "🌾", categoria: "basico", precoBase: 5,   oferta: 1500, demanda: 1400 },
+  { id: "peixe",      nome: "Peixe",       icone: "🐟", categoria: "basico", precoBase: 9,   oferta: 700,  demanda: 720 },
+  { id: "carne",      nome: "Carne",       icone: "🥩", categoria: "basico", precoBase: 18,  oferta: 500,  demanda: 520 },
+  { id: "madeira",    nome: "Madeira",     icone: "🪵", categoria: "basico", precoBase: 6,   oferta: 900,  demanda: 800 },
+  { id: "tecido",     nome: "Tecido",      icone: "🧵", categoria: "basico", precoBase: 28,  oferta: 500,  demanda: 520 },
+  { id: "roupas",     nome: "Roupas",      icone: "👕", categoria: "basico", precoBase: 55,  oferta: 400,  demanda: 430 },
+  { id: "mobiliario", nome: "Mobiliário",  icone: "🪑", categoria: "basico", precoBase: 65,  oferta: 180,  demanda: 200 },
+  { id: "servicos",   nome: "Serviços",    icone: "🛎️", categoria: "basico", precoBase: 40,  oferta: 300,  demanda: 320 },
+
+  // ---- LUXO ----
+  { id: "roupas_luxo",     nome: "Roupas de Luxo",      icone: "👗", categoria: "luxo", precoBase: 220, oferta: 120, demanda: 140 },
+  { id: "mobiliario_luxo", nome: "Mobiliário de Luxo",  icone: "🛋️", categoria: "luxo", precoBase: 280, oferta: 90,  demanda: 100 },
+  { id: "veiculos",        nome: "Veículos",            icone: "🚗", categoria: "luxo", precoBase: 550, oferta: 60,  demanda: 70 },
+  { id: "vinho",           nome: "Vinho",               icone: "🍷", categoria: "luxo", precoBase: 95,  oferta: 200, demanda: 220 },
+  { id: "cha_cafe_tabaco", nome: "Chá, Café e Tabaco",  icone: "☕", categoria: "luxo", precoBase: 75,  oferta: 250, demanda: 270 },
+  { id: "acucar_frutas",   nome: "Açúcar e Frutas",     icone: "🍬", categoria: "luxo", precoBase: 45,  oferta: 350, demanda: 380 },
+  { id: "opio",            nome: "Ópio",                icone: "🌺", categoria: "luxo", precoBase: 180, oferta: 100, demanda: 130 },
+  { id: "cibernetica",     nome: "Cibernética",         icone: "🦾", categoria: "luxo", precoBase: 320, oferta: 140, demanda: 160 },
+
+  // ---- INDÚSTRIA ----
+  { id: "ferro",       nome: "Ferro",        icone: "⛏️", categoria: "industria", precoBase: 12,  oferta: 1000, demanda: 900 },
+  { id: "carvao",      nome: "Carvão",       icone: "🪨", categoria: "industria", precoBase: 8,   oferta: 1200, demanda: 1100 },
+  { id: "aco",         nome: "Aço",          icone: "🔩", categoria: "industria", precoBase: 42,  oferta: 600,  demanda: 620 },
+  { id: "ferramentas", nome: "Ferramentas",  icone: "🔧", categoria: "industria", precoBase: 55,  oferta: 400,  demanda: 420 },
+  { id: "chumbo",      nome: "Chumbo",       icone: "🔘", categoria: "industria", precoBase: 30,  oferta: 400,  demanda: 380 },
+  { id: "enxofre",     nome: "Enxofre",      icone: "💛", categoria: "industria", precoBase: 35,  oferta: 350,  demanda: 340 },
+  { id: "petroleo",    nome: "Petróleo",     icone: "🛢️", categoria: "industria", precoBase: 110, oferta: 300,  demanda: 320 },
+  { id: "borracha",    nome: "Borracha",     icone: "⚫", categoria: "industria", precoBase: 60,  oferta: 280,  demanda: 300 },
+  { id: "eletricidade",nome: "Eletricidade", icone: "⚡", categoria: "industria", precoBase: 48,  oferta: 500,  demanda: 540 },
+  { id: "navios",      nome: "Navios",       icone: "🚢", categoria: "industria", precoBase: 900, oferta: 30,   demanda: 32 },
+  { id: "corantes",    nome: "Corantes",     icone: "🎨", categoria: "industria", precoBase: 70,  oferta: 200,  demanda: 220 },
+  { id: "seda",        nome: "Seda",         icone: "🧶", categoria: "industria", precoBase: 130, oferta: 140,  demanda: 150 },
+  { id: "obsidiana",   nome: "Obsidiana",    icone: "🖤", categoria: "industria", precoBase: 450, oferta: 220,  demanda: 240 },
+  { id: "aurita",      nome: "Aurita",       icone: "🤍", categoria: "industria", precoBase: 380, oferta: 120,  demanda: 130 },
+  { id: "pyridium",    nome: "Pyridium",     icone: "🟠", categoria: "industria", precoBase: 520, oferta: 180,  demanda: 200 },
+
+  // ---- MILITAR ----
+  { id: "armas_portateis",     nome: "Armas Portáteis",     icone: "🔫", categoria: "militar", precoBase: 180, oferta: 200, demanda: 220 },
+  { id: "artilharia",          nome: "Artilharia",          icone: "💣", categoria: "militar", precoBase: 420, oferta: 90,  demanda: 100 },
+  { id: "municao",             nome: "Munição",             icone: "🎯", categoria: "militar", precoBase: 65,  oferta: 400, demanda: 450 },
+  { id: "navios_guerra",       nome: "Navios de Guerra",    icone: "⚓", categoria: "militar", precoBase: 1400,oferta: 20,  demanda: 22 },
+  { id: "aeroplano",           nome: "Aeroplano",           icone: "✈️", categoria: "militar", precoBase: 1100,oferta: 25,  demanda: 28 },
+  { id: "tanques",             nome: "Tanques",             icone: "🛡️", categoria: "militar", precoBase: 950, oferta: 30,  demanda: 32 },
+  { id: "cibernetica_militar", nome: "Cibernética Militar", icone: "🦿", categoria: "militar", precoBase: 480, oferta: 80,  demanda: 95 },
 ];
+
+const MAPA_COMMODITIES_ANTIGO_NOVO = {
+  grao: "grao",
+  peixe: "peixe",
+  frutas: "acucar_frutas",
+  legumes: "carne",
+  madeira: "madeira",
+  la: "tecido",
+  couro: "carne",
+  tecido: "tecido",
+  tecido_roupa: "roupas",
+  moveis: "mobiliario",
+  papel: "servicos",
+  vidro: "servicos",
+  cimento: "servicos",
+  alcool: "vinho",
+  conservas: "carne",
+  armas: "armas_portateis",
+  armaduras: "armas_portateis",
+  implantes: "cibernetica",
+  celulas: "pyridium",
+  medicamentos: "opio",
+  instrumentos: "cha_cafe_tabaco",
+  joias: "roupas_luxo",
+  navios: "navios",
+  aco: "aco",
+  ferro: "ferro",
+  carvao: "carvao",
+  obsidiana: "obsidiana",
+  aurita: "aurita",
+  pyridium: "pyridium",
+  adamantina: "obsidiana",
+  ouro: "roupas_luxo",
+};
+
+const remapCommodities = (obj) => {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    const novo = MAPA_COMMODITIES_ANTIGO_NOVO[k] || k;
+    out[novo] = (out[novo] || 0) + Number(v || 0);
+  }
+  return out;
+};
 
 const cid = (id, nome, pop, tipo, prod, cons) => ({
   id, nome, pop, tipo,
-  prod: prod || {},
-  cons: cons || {},
+  prod: remapCommodities(prod),
+  cons: remapCommodities(cons),
 });
 
 export const PAISES = [
@@ -673,7 +738,6 @@ export const IG_LOCAIS_POR_TIPO = {
   ],
   industrial: [
     { sufixo: "Sindicato dos Operários", icone: "🔧", cor: "#8b2f2f", tipo: "economico", poder: 40, humor: 35, desc: "Operários das fábricas." },
-    { sufixo: "Guilda dos Artesãos", icone: "🔨", cor: "#b8945a", tipo: "economico", poder: 30, humor: 60, desc: "Artesãos e mestres de ofício." },
     { sufixo: "Patronato Industrial", icone: "🏭", cor: "#5a6b7a", tipo: "economico", poder: 35, humor: 70, desc: "Donos das fábricas." },
   ],
   mineracao: [
@@ -701,6 +765,54 @@ export const IG_LOCAIS_POR_TIPO = {
   ],
 };
 
+export const IG_POR_COMMODITY = {
+  // ---- BÁSICO ----
+  grao:       { sufixo: "Comunidade dos Lavradores", icone: "🌾", cor: "#b8945a", tipo: "economico", poder: 35, humor: 60, desc: "Cultivam os campos de grão que alimentam o reino." },
+  peixe:      { sufixo: "Guilda dos Pescadores",     icone: "🐟", cor: "#3b6e8f", tipo: "economico", poder: 35, humor: 55, desc: "Enfrentam mares e rios pelo sustento da costa." },
+  carne:      { sufixo: "Irmandade dos Criadores",   icone: "🥩", cor: "#8b3a3a", tipo: "economico", poder: 30, humor: 55, desc: "Criam gado e abastecem os açougues das cidades." },
+  madeira:    { sufixo: "Irmandade dos Lenhadores",  icone: "🪵", cor: "#6b4a2b", tipo: "economico", poder: 30, humor: 55, desc: "Cortam e transportam madeira das florestas." },
+  tecido:     { sufixo: "Guilda dos Tecelões",       icone: "🧵", cor: "#9c6b8e", tipo: "economico", poder: 30, humor: 55, desc: "Tecem panos que vestem nobres e plebeus." },
+  roupas:     { sufixo: "Guilda dos Alfaiates",      icone: "👕", cor: "#c9856b", tipo: "economico", poder: 30, humor: 60, desc: "Costuram o vestuário básico que cobre a plebe." },
+  mobiliario: { sufixo: "Guilda dos Marceneiros",    icone: "🪑", cor: "#8b5a2b", tipo: "economico", poder: 30, humor: 60, desc: "Móveis finos e simples para as habitações." },
+  servicos:   { sufixo: "Associação dos Serviçais",  icone: "🛎️", cor: "#a87a4a", tipo: "economico", poder: 25, humor: 55, desc: "Carregadores, cocheiros e artesãos do cotidiano." },
+
+  // ---- LUXO ----
+  roupas_luxo:     { sufixo: "Casa dos Costureiros Reais", icone: "👗", cor: "#c9a961", tipo: "economico", poder: 40, humor: 65, desc: "Vestem a nobreza com seda, ouro e renda." },
+  mobiliario_luxo: { sufixo: "Guilda dos Ebanistas Finos", icone: "🛋️", cor: "#b8945a", tipo: "economico", poder: 35, humor: 65, desc: "Móveis requintados para palácios e mansões." },
+  veiculos:        { sufixo: "Clube dos Motoristas",       icone: "🚗", cor: "#5a6b7a", tipo: "economico", poder: 45, humor: 60, desc: "Donos das primeiras máquinas motorizadas." },
+  vinho:           { sufixo: "Irmandade dos Vinicultores", icone: "🍷", cor: "#8b2f4a", tipo: "economico", poder: 30, humor: 70, desc: "Cultivam vinhedos e destilam vinhos finos." },
+  cha_cafe_tabaco: { sufixo: "Consórcio das Plantações",   icone: "☕", cor: "#6b4a2b", tipo: "economico", poder: 40, humor: 65, desc: "Controlam chá, café e tabaco — o luxo dos ricos." },
+  acucar_frutas:   { sufixo: "Guilda das Confeitarias",    icone: "🍬", cor: "#e8a0b0", tipo: "economico", poder: 30, humor: 70, desc: "Açúcar e frutas raras para sobremesas da elite." },
+  opio:            { sufixo: "Irmandade do Ópio",          icone: "🌺", cor: "#3a2e20", tipo: "economico", poder: 45, humor: 30, desc: "Controlam o narcótico que entorpece ricos e desesperados." },
+  cibernetica:     { sufixo: "Irmandade dos Cibernéticos", icone: "🦾", cor: "#5a6b7a", tipo: "economico", poder: 55, humor: 60, desc: "Cirurgiões e artesãos da carne mecânica." },
+
+  // ---- INDÚSTRIA ----
+  ferro:        { sufixo: "Irmandade dos Ferreiros",   icone: "🔨", cor: "#8b6f47", tipo: "economico", poder: 40, humor: 50, desc: "Forjam o metal bruto em ferramentas e armas." },
+  carvao:       { sufixo: "Guilda dos Carvoeiros",     icone: "⬛", cor: "#3a3a3a", tipo: "economico", poder: 35, humor: 45, desc: "Extraem e vendem o combustível das forjas." },
+  aco:          { sufixo: "Guilda dos Aço-Chefes",     icone: "🔩", cor: "#5a6b7a", tipo: "economico", poder: 45, humor: 50, desc: "Transformam o ferro bruto em aço de qualidade." },
+  ferramentas:  { sufixo: "Guilda dos Ferramenteiros", icone: "🔧", cor: "#8b6f47", tipo: "economico", poder: 40, humor: 55, desc: "Fornecem ferramentas que movem todas as indústrias." },
+  chumbo:       { sufixo: "Irmandade do Chumbo",       icone: "🔘", cor: "#6b6b7a", tipo: "economico", poder: 35, humor: 50, desc: "Extraem o metal das munições e vidrarias." },
+  enxofre:      { sufixo: "Irmandade do Enxofre",      icone: "💛", cor: "#c9a961", tipo: "economico", poder: 35, humor: 50, desc: "Fornecem matéria-prima para fertilizantes e explosivos." },
+  petroleo:     { sufixo: "Consórcio do Petróleo",     icone: "🛢️", cor: "#3a2e20", tipo: "economico", poder: 60, humor: 65, desc: "Controlam o recurso mais valioso da era moderna." },
+  borracha:     { sufixo: "Irmandade da Borracha",     icone: "⚫", cor: "#2a2a2a", tipo: "economico", poder: 35, humor: 55, desc: "Produzem a borracha das fábricas e motores." },
+  eletricidade: { sufixo: "Consórcio Elétrico",        icone: "⚡", cor: "#fbbf24", tipo: "economico", poder: 55, humor: 65, desc: "Distribuem a energia que ilumina as cidades." },
+  navios:       { sufixo: "Guilda dos Estaleiros",     icone: "🚢", cor: "#3b6e8f", tipo: "economico", poder: 55, humor: 60, desc: "Constroem os navios que cruzam mares e rios." },
+  corantes:     { sufixo: "Guilda dos Tintureiros",    icone: "🎨", cor: "#a04a8b", tipo: "economico", poder: 30, humor: 60, desc: "Produzem corantes para as tecelagens finas." },
+  seda:         { sufixo: "Irmandade da Seda",         icone: "🧶", cor: "#e8dcc0", tipo: "economico", poder: 40, humor: 65, desc: "Criam bichos-da-seda e fiam o tecido nobre." },
+  obsidiana:    { sufixo: "Irmandade da Obsidiana",    icone: "🖤", cor: "#1a1a2e", tipo: "economico", poder: 50, humor: 40, desc: "Mineiros da rocha negra, guardiões dos segredos da Aura densa." },
+  aurita:       { sufixo: "Irmandade da Aurita",       icone: "🤍", cor: "#e8e0d0", tipo: "economico", poder: 45, humor: 55, desc: "Mestres do metal raro, cobiçado por alquimistas e cortes nobres." },
+  pyridium:     { sufixo: "Irmandade do Pyridium",     icone: "🟠", cor: "#ff8c00", tipo: "economico", poder: 50, humor: 50, desc: "Fornecedores de energia bruta; controlam o combustível das máquinas." },
+
+  // ---- MILITAR ----
+  armas_portateis:     { sufixo: "Irmandade dos Armeiros",   icone: "🔫", cor: "#8b2f2f", tipo: "militar", poder: 50, humor: 65, desc: "Forjam rifles e pistolas para a infantaria." },
+  artilharia:          { sufixo: "Guilda dos Artilheiros",   icone: "💣", cor: "#8b2f2f", tipo: "militar", poder: 55, humor: 60, desc: "Fundem canhões de todos os portes." },
+  municao:             { sufixo: "Consórcio das Munições",   icone: "🎯", cor: "#6b3a3a", tipo: "militar", poder: 50, humor: 55, desc: "Produzem a munição que alimenta as guerras." },
+  navios_guerra:       { sufixo: "Almirantado Local",        icone: "⚓", cor: "#3b3a6e", tipo: "militar", poder: 65, humor: 70, desc: "Constroem e comandam os navios de guerra." },
+  aeroplano:           { sufixo: "Irmandade dos Aeronautas", icone: "✈️", cor: "#5a6b7a", tipo: "militar", poder: 60, humor: 65, desc: "Pilotos e engenheiros dos primeiros aeroplanos." },
+  tanques:             { sufixo: "Guilda dos Blindados",     icone: "🛡️", cor: "#3a3a3a", tipo: "militar", poder: 60, humor: 60, desc: "Montam os veículos blindados da vanguarda." },
+  cibernetica_militar: { sufixo: "Ordem dos Ciborgues de Guerra", icone: "🦿", cor: "#5a6b7a", tipo: "militar", poder: 70, humor: 55, desc: "Cibernética de altíssimo nível, só para o exército." },
+};
+
 export const CARGOS_LOCAIS = {
   capital: [
     { id: "prefeito", nome: "Prefeito", poderes: ["mudarLei", "ajustarSliders"] },
@@ -712,7 +824,15 @@ export const CARGOS_LOCAIS = {
 };
 
 export function gerarIgLocais(cidade, paisId) {
-  const template = IG_LOCAIS_POR_TIPO[cidade.tipo] || IG_LOCAIS_POR_TIPO.misto;
+  const base = IG_LOCAIS_POR_TIPO[cidade.tipo] || IG_LOCAIS_POR_TIPO.misto;
+  const prod = cidade.prod || {};
+  const igsProducao = [];
+  for (const commodityId of Object.keys(prod)) {
+    if (IG_POR_COMMODITY[commodityId]) {
+      igsProducao.push({ commodityId, ...IG_POR_COMMODITY[commodityId] });
+    }
+  }
+  const template = [...base, ...igsProducao];
   return template.map((t, i) => ({
     id: `${paisId}_${cidade.id}_ig_${i}`,
     nome: `${t.sufixo} de ${cidade.nome}`,
@@ -721,11 +841,12 @@ export function gerarIgLocais(cidade, paisId) {
     tipo: t.tipo,
     poder: t.poder,
     humor: t.humor,
-    desc: t.desc,
+    desc: t.desc || (t.commodityId ? `Produzem ${t.commodityId} em ${cidade.nome}.` : ""),
     paisOrigem: paisId,
     cidadeId: `${paisId}_${cidade.id}`,
     escopo: "cidade",
-    composicaoPops: { operarios: 0.3, camponeses: 0.2, mercadores: 0.2, clero: 0.1, militares: 0.1, nobres: 0.1 },
+    commodityId: t.commodityId || null,
+    composicaoPops: { operarios: 0.4, camponeses: 0.1, mercadores: 0.2, clero: 0.05, militares: 0.15, nobres: 0.1 },
   }));
 }
 

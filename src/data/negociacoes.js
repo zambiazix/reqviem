@@ -33,7 +33,7 @@ export const TIPOS_NEGOCIACAO = [
   },
 ];
 
-export const calcularChanceNegociacao = ({ tipo, oferta, pedido, commodities }) => {
+export const calcularChanceNegociacao = ({ tipo, oferta, pedido, commodities, impostoAlvo }) => {
   const t = TIPOS_NEGOCIACAO.find((x) => x.id === tipo);
   const base = 50;
   const bonusTipo = t?.bonusChance || 0;
@@ -47,8 +47,21 @@ export const calcularChanceNegociacao = ({ tipo, oferta, pedido, commodities }) 
     bonusValor = ((valorOferta - valorPedido) / total) * 40;
   }
 
-  const chance = Math.max(5, Math.min(95, base + bonusTipo + bonusValor));
-  return { chance: Math.round(chance), valorOferta, valorPedido, bonusTipo, bonusValor: Math.round(bonusValor) };
+  let bonusImposto = 0;
+  if (typeof impostoAlvo === "number" && impostoAlvo > 0 && (pedido?.dinheiro || pedido?.commodity)) {
+    bonusImposto = -Math.round(impostoAlvo * 0.4);
+  }
+
+  const chance = Math.max(5, Math.min(95, base + bonusTipo + bonusValor + bonusImposto));
+  return {
+    chance: Math.round(chance),
+    valorOferta,
+    valorPedido,
+    bonusTipo,
+    bonusValor: Math.round(bonusValor),
+    bonusImposto,
+    impostoAlvo: impostoAlvo || 0,
+  };
 };
 
 export const calcularValorPacote = (pacote, commodities) => {

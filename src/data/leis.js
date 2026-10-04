@@ -29,6 +29,13 @@ export const LEIS_CATALOGO = [
     { id: "subsidio", nome: "Subsídio Agrícola", desc: "Estado banca o campo.", custo: 800, efeitos: { arrecadacao: 0.90, lealdade_camponeses: 1.4 } },
     { id: "coletivo", nome: "Coletivização", desc: "Terras coletivas.", custo: 400, efeitos: { arrecadacao: 0.95, lealdade_camponeses: 1.3, radicalizacao_nobres: 1.5 } },
   ] },
+  { id: "imposto_importacao", categoria: "economica", escalas: ["pais"], nome: "Imposto de Importação", icone: "🛃", desc: "Taxa sobre bens recebidos de outros países.", opcoes: [
+    { id: "isento",     nome: "Isento (0%)",           desc: "Sem taxação sobre importações.", custo: 0,    efeitos: {}, taxRate: 0 },
+    { id: "baixo",      nome: "Baixo (5%)",            desc: "Taxa simbólica.", custo: 0,                efeitos: {}, taxRate: 5 },
+    { id: "moderado",   nome: "Moderado (15%)",        desc: "Padrão mercantil.", custo: 0,              efeitos: {}, taxRate: 15 },
+    { id: "alto",       nome: "Alto (30%)",            desc: "Protege a produção interna.", custo: 200,    efeitos: {}, taxRate: 30 },
+    { id: "proibitivo", nome: "Proibitivo (50%)",      desc: "Desencoraja comércio externo.", custo: 0,    efeitos: {}, taxRate: 50 },
+  ] },
   { id: "padrao_comercial", categoria: "economica", escalas: ["pais"], nome: "Padrão Comercial", icone: "🌐", desc: "Abertura ao comércio exterior.", opcoes: [
     { id: "autarquia", nome: "Autarquia", desc: "Fechado ao mundo.", custo: 0, efeitos: { producao_interna: 1.05, lealdade_nobres: 1.2 } },
     { id: "protecionista", nome: "Protecionismo", desc: "Tarifas altas.", custo: 0, efeitos: { producao_interna: 1.10, lealdade_operarios: 1.2 } },
@@ -110,10 +117,16 @@ export const LEIS_CATALOGO = [
     { id: "defensiva", nome: "Contrainteligência", desc: "Só defender.", custo: 300, efeitos: { espionagem_defesa: 1.4 } },
     { id: "ativa", nome: "Espionagem Ativa", desc: "Espiões em toda parte.", custo: 1500, efeitos: { espionagem_ofensiva: 1.5, espionagem_defesa: 1.2, radicalizacao_pops: 1.15 } },
   ] },
+  { id: "iluminacao_publica", categoria: "social", escalas: ["cidade", "provincia", "pais"], nome: "Iluminação Pública", icone: "💡", desc: "Como as ruas são iluminadas à noite.", opcoes: [
+    { id: "ausente", nome: "Sem Iluminação", desc: "Ruas mergulham no escuro.", custo: 0, efeitos: { radicalizacao_pops: 1.15 } },
+    { id: "gas", nome: "Lâmpadas a Gás", desc: "Postes de gás nas ruas principais.", custo: 150, efeitos: { prosperidadeBonus: 0.03, radicalizacao_pops: 0.95 } },
+    { id: "eletrica", nome: "Iluminação Elétrica", desc: "Luz elétrica em toda a cidade.", custo: 500, requerTech: "eletricidade", efeitos: { prosperidadeBonus: 0.08, radicalizacao_pops: 0.85, lealdade_pops: 1.05 } },
+  ] },
 ];
 
 export const LEIS_DEFAULT_PAIS = {
   sistema_tributario: "consumo",
+  imposto_importacao: "moderado",
   politica_mineracao: "mista",
   politica_agricola: "livre",
   padrao_comercial: "protecionista",
@@ -132,6 +145,7 @@ export const LEIS_DEFAULT_PAIS = {
   relacao_imperio: "pragmatico",
   tratados: "seletivo",
   espionagem: "defensiva",
+  iluminacao_publica: "ausente",
 };
 
 export const leisAplicaveisEm = (nivel) => {
@@ -168,6 +182,31 @@ export const getCustoLeis = (leis) => {
   return total;
 };
 
+export const getImpostoEfetivo = (leis, tipoNegociacao) => {
+  const impostoImp = getOpcaoAtual("imposto_importacao", leis);
+  const taxaBase = impostoImp?.taxRate !== undefined ? impostoImp.taxRate : 15;
+
+  let modificador = 1;
+  const sistemaTrib = getOpcaoAtual("sistema_tributario", leis);
+  if (sistemaTrib?.id === "riqueza") modificador += 0.20;
+  else if (sistemaTrib?.id === "renda") modificador += 0.10;
+  else if (sistemaTrib?.id === "consumo") modificador += 0.05;
+
+  const padrao = getOpcaoAtual("padrao_comercial", leis);
+  if (padrao?.id === "livre") modificador -= 0.30;
+  else if (padrao?.id === "autarquia") modificador += 0.25;
+
+  const politica = getOpcaoAtual("politica_externa", leis);
+  if (politica?.id === "isolacionista") modificador += 0.15;
+  else if (politica?.id === "expansionista") modificador -= 0.10;
+
+  if (tipoNegociacao === "corrupcao") modificador -= 0.5;
+  if (tipoNegociacao === "concessao") modificador -= 0.2;
+
+  const taxaFinal = Math.max(0, Math.min(80, taxaBase * modificador));
+  return Math.round(taxaFinal);
+};
+
 export const getFatoresLeis = (leis) => {
   const fatores = {};
   for (const lei of LEIS_CATALOGO) {
@@ -179,4 +218,18 @@ export const getFatoresLeis = (leis) => {
     }
   }
   return fatores;
+};
+
+export const opcaoDesbloqueada = (opcao, pesquisadas) => {
+  if (!opcao?.requerTech) return { desbloqueada: true, motivo: "" };
+  const set = pesquisadas instanceof Set ? pesquisadas : new Set(pesquisadas || []);
+  if (set.has(opcao.requerTech)) return { desbloqueada: true, motivo: "" };
+  return { desbloqueada: false, motivo: `Requer pesquisa: ${opcao.requerTech}` };
+};
+
+export const leiDesbloqueada = (lei, pesquisadas) => {
+  if (!lei?.requerTech) return { desbloqueada: true, motivo: "" };
+  const set = pesquisadas instanceof Set ? pesquisadas : new Set(pesquisadas || []);
+  if (set.has(lei.requerTech)) return { desbloqueada: true, motivo: "" };
+  return { desbloqueada: false, motivo: `Requer pesquisa: ${lei.requerTech}` };
 };

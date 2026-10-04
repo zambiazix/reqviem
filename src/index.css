@@ -222,3 +222,8 @@ button:focus-visible {
     min-height: 100vh !important;
   }
 }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
