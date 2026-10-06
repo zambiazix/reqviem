@@ -101,15 +101,21 @@ function SidebarHUD({ userEmail = null, userNick = "", isMaster = false, fichasM
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleMouseEnter = () => { 
-    if (isMobile) return; // Não expande automaticamente no mobile
-    clearTimeout(timeoutRef.current); 
-    setExpandido(true); 
+  const handleTriggerEnter = () => {
+    if (isMobile) return;
+    clearTimeout(timeoutRef.current);
+    setExpandido(true);
   };
-  
-  const handleMouseLeave = () => { 
-    if (isMobile) return; // Não recolhe automaticamente no mobile
-    timeoutRef.current = setTimeout(() => setExpandido(false), 400); 
+
+  const handlePaperEnter = () => {
+    if (isMobile) return;
+    clearTimeout(timeoutRef.current);
+    setExpandido(true);
+  };
+
+  const handlePaperLeave = () => {
+    if (isMobile) return;
+    timeoutRef.current = setTimeout(() => setExpandido(false), 600);
   };
 
   // 🟢 TOGGLE PARA MOBILE (toque)
@@ -136,21 +142,39 @@ const toggleModulo = (id) => {
 
   return createPortal(
     <>
-      <Box 
-        onMouseEnter={handleMouseEnter} 
-        onMouseLeave={handleMouseLeave}
+      {/* Zona de gatilho — 8px colada na parede esquerda */}
+      <Box
+        onMouseEnter={handleTriggerEnter}
         onClick={isMobile ? handleToggleMobile : undefined}
+        sx={{
+          position: "fixed",
+          left: 0,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 8,
+          height: "80vh",
+          zIndex: 9999,
+          cursor: "pointer",
+        }}
+      />
+
+      <Box
+        onMouseEnter={handlePaperEnter}
+        onMouseLeave={handlePaperLeave}
         sx={{ 
           position: "fixed", 
           left: 0, 
           top: "50%", 
           transform: "translateY(-50%)", 
-          zIndex: 9999, 
+          zIndex: 9998, 
           display: "flex", 
           alignItems: "center",
           touchAction: 'manipulation',
+          pointerEvents: expandido ? "auto" : "none",
         }}>
         <Paper elevation={8}
+          onMouseEnter={handlePaperEnter}
+          onMouseLeave={handlePaperLeave}
           sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, py: 1.5, px: 1,
             bgcolor: "rgba(15, 23, 42, 0.95)", backdropFilter: "blur(10px)", border: "1px solid rgba(0, 224, 255, 0.2)", borderLeft: "none",
             borderRadius: "0 14px 14px 0", 
@@ -162,6 +186,7 @@ const toggleModulo = (id) => {
             minWidth: isMobile ? 48 : 56, 
             maxHeight: "80vh", 
             overflowY: "auto",
+            pointerEvents: "auto",
             "&::-webkit-scrollbar": { width: "3px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.3)", borderRadius: "10px" } }}>
           <Box sx={{ width: 4, height: 20, bgcolor: "rgba(0, 224, 255, 0.5)", borderRadius: 2, mb: 0.3 }} />
           {ICONES_PADRAO.map((item) => (

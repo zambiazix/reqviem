@@ -29,7 +29,7 @@ import { Checkbox, FormControlLabel, Tooltip } from "@mui/material";
   import CloseIcon from "@mui/icons-material/Close";
   import EditIcon from "@mui/icons-material/Edit";
   import { db } from "../firebaseConfig";
-  import { doc, getDoc, setDoc, onSnapshot, updateDoc, collection, getDocs } from "firebase/firestore";
+  import { doc, getDoc, setDoc, onSnapshot, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
   import { CircularProgress } from "@mui/material";
   import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -547,123 +547,89 @@ const [valorTransferencia, setValorTransferencia] = useState(0);
 const [valorPagamento, setValorPagamento] = useState(0);
 const [carteiraPagamento, setCarteiraPagamento] = useState("");
 const [listaJogadores, setListaJogadores] = useState([]);
-// 🟢 TRANSFERÊNCIAS PENDENTES
-const [transferenciasPendentes, setTransferenciasPendentes] = useState([]);
-const [modalTransferenciasOpen, setModalTransferenciasOpen] = useState(false);
+// 🟢 LISTENER DE TRANSFERÊNCIAS AUTOMÁTICAS (aplica sozinho, sem aceitar)
+const [transferenciasProcessando, setTransferenciasProcessando] = useState(false);
+const processadasRef = useRef(new Set());
 
 useEffect(() => {
   if (!fichaId) return;
+  
   const unsub = onSnapshot(
-    collection(db, "fichas", fichaId, "transferencias"),
+    query(
+      collection(db, "transferencias_pendentes"),
+      where("para", "==", fichaId),
+      where("aplicado", "==", false)
+    ),
     (snap) => {
-      const lista = [];
-      snap.forEach((d) => {
-        const dados = d.data();
-        if (dados.status === "pendente") lista.push({ id: d.id, ...dados });
+      snap.forEach(async (d) => {
+        const transf = d.data();
+        // Evita processar o mesmo doc 2x (por causa do StrictMode / re-render)
+        if (processadasRef.current.has(d.id)) return;
+        
+        try {
+          setTransferenciasProcessando(true);
+          
+          // 1) Lê a ficha ATUAL do Firestore (não do state, pra não sobrescrever mudanças recentes)
+          const refAtual = doc(db, "fichas", fichaId);
+          const snapAtual = await getDoc(refAtual);
+          if (!snapAtual.exists()) return;
+          const fichaAtual = snapAtual.data();
+          
+          // 2) Aplica a transferência
+          if (transf.tipo === "dinheiro") {
+            const carteirasAtuais = Array.isArray(fichaAtual.carteiras) ? [...fichaAtual.carteiras] : [];
+            const idx = carteirasAtuais.findIndex(c => c.nome === transf.carteiraDestino);
+            if (idx >= 0) {
+              carteirasAtuais[idx] = { ...carteirasAtuais[idx], valor: (carteirasAtuais[idx].valor || 0) + transf.valor };
+            } else {
+              carteirasAtuais.push({ nome: transf.carteiraDestino, valor: transf.valor });
+            }
+            await setDoc(refAtual, { carteiras: carteirasAtuais }, { merge: true });
+            setCarteiras(carteirasAtuais);
+          } else if (transf.tipo === "item") {
+            const categoria = transf.categoria || "diversos";
+            const itensAtuais = Array.isArray(fichaAtual[categoria]) ? [...fichaAtual[categoria]] : [];
+            const itemNovo = transf.item;
+            const existente = itensAtuais.findIndex(it =>
+              it.nome === itemNovo.nome &&
+              (it.tipoDano || "Nenhum") === (itemNovo.tipoDano || "Nenhum") &&
+              (it.dado || 1) === (itemNovo.dado || 1)
+            );
+            if (existente >= 0) {
+              itensAtuais[existente] = {
+                ...itensAtuais[existente],
+                quantidade: (itensAtuais[existente].quantidade || 1) + (itemNovo.quantidade || 1),
+              };
+            } else {
+              itensAtuais.push(itemNovo);
+            }
+            await setDoc(refAtual, { [categoria]: itensAtuais }, { merge: true });
+            setFicha(prev => ({ ...prev, [categoria]: itensAtuais }));
+          }
+          
+          // 3) Marca como aplicado
+          await setDoc(doc(db, "transferencias_pendentes", d.id), {
+            aplicado: true,
+            aplicadoEm: new Date().toISOString(),
+          }, { merge: true });
+          
+          // 🟢 SÓ adiciona ao cache depois de aplicar com sucesso
+          processadasRef.current.add(d.id);
+          
+        } catch (err) {
+          console.error("Erro ao aplicar transferência:", err);
+          // Não adiciona ao cache — vai tentar de novo na próxima emissão
+        } finally {
+          setTransferenciasProcessando(false);
+        }
       });
-      lista.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
-      setTransferenciasPendentes(lista);
     },
     (err) => {
-      console.warn("Erro ao carregar transferências:", err.message);
+      console.warn("Erro no listener de transferências:", err.message);
     }
   );
   return () => unsub();
 }, [fichaId]);
-
-// 🟢 Aceitar transferência
-const aceitarTransferencia = async (transf) => {
-  try {
-    const transfRef = doc(db, "fichas", fichaId, "transferencias", transf.id);
-    
-    if (transf.tipo === "dinheiro") {
-      const carteirasAtuais = Array.isArray(ficha.carteiras) ? [...ficha.carteiras] : [];
-      const idx = carteirasAtuais.findIndex(c => c.nome === transf.carteiraDestino);
-      if (idx >= 0) {
-        carteirasAtuais[idx] = { ...carteirasAtuais[idx], valor: (carteirasAtuais[idx].valor || 0) + transf.valor };
-      } else {
-        carteirasAtuais.push({ nome: transf.carteiraDestino, valor: transf.valor });
-      }
-      await setDoc(doc(db, "fichas", fichaId), { carteiras: carteirasAtuais }, { merge: true });
-      setCarteiras(carteirasAtuais);
-    } else if (transf.tipo === "item") {
-      const categoria = transf.categoria || "diversos";
-      const itensAtuais = Array.isArray(ficha[categoria]) ? [...ficha[categoria]] : [];
-      const itemNovo = transf.item;
-      const existente = itensAtuais.findIndex(it =>
-        it.nome === itemNovo.nome &&
-        (it.tipoDano || "Nenhum") === (itemNovo.tipoDano || "Nenhum") &&
-        (it.dado || 1) === (itemNovo.dado || 1)
-      );
-      if (existente >= 0) {
-        itensAtuais[existente] = {
-          ...itensAtuais[existente],
-          quantidade: (itensAtuais[existente].quantidade || 1) + (itemNovo.quantidade || 1),
-        };
-      } else {
-        itensAtuais.push(itemNovo);
-      }
-      await setDoc(doc(db, "fichas", fichaId), { [categoria]: itensAtuais }, { merge: true });
-      setFicha(prev => ({ ...prev, [categoria]: itensAtuais }));
-    }
-    
-    await setDoc(transfRef, {
-      status: "aceita",
-      respondidoEm: new Date().toISOString(),
-      respondidoPor: user?.email || fichaId,
-    }, { merge: true });
-    
-    alert("✅ Transferência aceita!");
-  } catch (err) {
-    console.error("Erro ao aceitar transferência:", err);
-    alert("Erro ao aceitar: " + err.message);
-  }
-};
-
-// 🟢 Recusar transferência
-const recusarTransferencia = async (transf) => {
-  try {
-    // Devolve o valor/item pro remetente
-    const refOrigem = doc(db, "fichas", transf.de);
-    
-    if (transf.tipo === "dinheiro") {
-      const snap = await getDoc(refOrigem);
-      if (snap.exists()) {
-        const dados = snap.data();
-        const carteirasAtuais = Array.isArray(dados.carteiras) ? [...dados.carteiras] : [];
-        const idx = carteirasAtuais.findIndex(c => c.nome === "Bolso");
-        if (idx >= 0) {
-          carteirasAtuais[idx] = { ...carteirasAtuais[idx], valor: (carteirasAtuais[idx].valor || 0) + transf.valor };
-        } else {
-          carteirasAtuais.push({ nome: "Bolso", valor: transf.valor });
-        }
-        // Só devolve se for o próprio remetente (regra permite)
-        if (transf.de === user?.email) {
-          await setDoc(refOrigem, { carteiras: carteirasAtuais }, { merge: true });
-        }
-      }
-    } else if (transf.tipo === "item" && transf.de === user?.email) {
-      const snap = await getDoc(refOrigem);
-      if (snap.exists()) {
-        const dados = snap.data();
-        const categoria = transf.categoria || "diversos";
-        const itensAtuais = [...(dados[categoria] || []), transf.item];
-        await setDoc(refOrigem, { [categoria]: itensAtuais }, { merge: true });
-      }
-    }
-    
-    await setDoc(doc(db, "fichas", fichaId, "transferencias", transf.id), {
-      status: "recusada",
-      respondidoEm: new Date().toISOString(),
-      respondidoPor: user?.email || fichaId,
-    }, { merge: true });
-    
-    alert("Transferência recusada. O valor/item voltou pro remetente.");
-  } catch (err) {
-    console.error("Erro ao recusar:", err);
-    alert("Erro: " + err.message);
-  }
-};
 const [modalInventarioOpen, setModalInventarioOpen] = useState(false);
 const [abaAtiva, setAbaAtiva] = useState("equipamentos"); // equipamentos, vestes, diversos
 const [itemDadoModalOpen, setItemDadoModalOpen] = useState(false);
@@ -2270,8 +2236,27 @@ const realizarTransferencia = async () => {
       return;
     }
     
-    // 🟢 CASO 2: Transferência para OUTRO jogador — usa subcoleção
-    // Passo 1: debita da origem
+    // 🟢 CASO 2: Transferência para OUTRO jogador — envio DIRETO
+    // 1º cria o envelope, 2º debita da origem
+    
+    const destFicha = listaJogadores.find(j => j.id === jogadorSelecionado);
+    const destNome = destFicha?.nome || jogadorSelecionado;
+    const agora = new Date().toISOString();
+    const transfId = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    
+    await setDoc(doc(db, "transferencias_pendentes", transfId), {
+      tipo: "dinheiro",
+      valor: valorTransferencia,
+      carteiraDestino: carteiraDestino,
+      de: user?.email || fichaId,
+      deNome: ficha?.nome || fichaId,
+      para: jogadorSelecionado,
+      paraNome: destNome,
+      aplicado: false,
+      criadoEm: agora,
+    });
+    
+    // Só debita da origem DEPOIS que o envelope foi criado
     const novasCarteirasOrig = carteiras.map(c => 
       c.nome === carteiraOrigem ? { ...c, valor: c.valor - valorTransferencia } : c
     );
@@ -2280,26 +2265,7 @@ const realizarTransferencia = async () => {
     await setDoc(refOrigem, { carteiras: novasCarteirasOrig }, { merge: true });
     setCarteiras(novasCarteirasOrig);
     
-    // Passo 2: cria transferência pendente na subcoleção do destinatário
-    const destFicha = listaJogadores.find(j => j.id === jogadorSelecionado);
-    const destNome = destFicha?.nome || jogadorSelecionado;
-    const agora = new Date().toISOString();
-    const transfId = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-    
-    const transfRef = doc(db, "fichas", jogadorSelecionado, "transferencias", transfId);
-    await setDoc(transfRef, {
-      tipo: "dinheiro",
-      valor: valorTransferencia,
-      carteiraDestino: carteiraDestino,
-      de: user?.email || fichaId,
-      deNome: ficha?.nome || fichaId,
-      para: jogadorSelecionado,
-      paraNome: destNome,
-      status: "pendente",
-      criadoEm: agora,
-    });
-    
-    alert(`✅ Transferência de ${valorTransferencia} 💰 enviada para ${destNome}.\n\nO destinatário (ou o Mestre) precisa aprovar no painel dele.`);
+    alert(`✅ ${valorTransferencia} 💰 enviados para ${destNome}. Cai na hora.`);
     
     setModalTransferenciaOpen(false);
     setJogadorSelecionado("");
@@ -2443,9 +2409,30 @@ const transferirItem = async () => {
       alert(`${quantidadeTransferir}x ${itemParaTransferir.item.nome} movido para ${nomesCategorias[categoriaDestino]}!`);
       
     } else {
-      // 🟢 Transferência para OUTRO jogador — via subcoleção
+      // 🟢 Transferência para OUTRO jogador — envio DIRETO
+      // 1º cria o envelope, 2º remove da origem (se envelope falhar, origem intacta)
       
-      // 1. Remove item do jogador atual
+      const itemParaEnviar = { ...itemParaTransferir.item, quantidade: quantidadeTransferir };
+      delete itemParaEnviar.index;
+      
+      const destFicha = listaJogadores.find(j => j.id === jogadorDestinoItem);
+      const destNome = destFicha?.nome || jogadorDestinoItem;
+      const agora = new Date().toISOString();
+      const transfId = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      
+      await setDoc(doc(db, "transferencias_pendentes", transfId), {
+        tipo: "item",
+        categoria: abaAtiva,
+        item: itemParaEnviar,
+        de: user?.email || fichaId,
+        deNome: ficha?.nome || fichaId,
+        para: jogadorDestinoItem,
+        paraNome: destNome,
+        aplicado: false,
+        criadoEm: agora,
+      });
+      
+      // Só remove da origem DEPOIS que o envelope foi criado
       const novosItens = ficha[abaAtiva].map((item, idx) => {
         if (idx === itemParaTransferir.index) {
           const novaQuantidade = item.quantidade - quantidadeTransferir;
@@ -2458,29 +2445,7 @@ const transferirItem = async () => {
       await setDoc(refOrigem, { [abaAtiva]: novosItens }, { merge: true });
       setFicha(prev => ({ ...prev, [abaAtiva]: novosItens }));
       
-      // 2. Cria transferência pendente na subcoleção do destinatário
-      const itemParaEnviar = { ...itemParaTransferir.item, quantidade: quantidadeTransferir };
-      delete itemParaEnviar.index;
-      
-      const destFicha = listaJogadores.find(j => j.id === jogadorDestinoItem);
-      const destNome = destFicha?.nome || jogadorDestinoItem;
-      const agora = new Date().toISOString();
-      const transfId = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-      
-      const transfRef = doc(db, "fichas", jogadorDestinoItem, "transferencias", transfId);
-      await setDoc(transfRef, {
-        tipo: "item",
-        categoria: abaAtiva,
-        item: itemParaEnviar,
-        de: user?.email || fichaId,
-        deNome: ficha?.nome || fichaId,
-        para: jogadorDestinoItem,
-        paraNome: destNome,
-        status: "pendente",
-        criadoEm: agora,
-      });
-      
-      alert(`✅ ${quantidadeTransferir}x ${itemParaEnviar.nome} enviado para ${destNome}.\n\nO destinatário (ou o Mestre) precisa aprovar.`);
+      alert(`✅ ${quantidadeTransferir}x ${itemParaEnviar.nome} enviado para ${destNome}. Cai na hora.`);
     }
     
     // Limpa o modal
@@ -4260,35 +4225,6 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   >
     + Comprar Inventário Secundário
   </Button>
-  {transferenciasPendentes.length > 0 && (
-    <Paper
-      onClick={() => setModalTransferenciasOpen(true)}
-      sx={{
-        p: 1.5,
-        mb: 1.5,
-        bgcolor: '#facc1522',
-        border: '2px solid #facc15',
-        borderRadius: 2,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1,
-        animation: 'pulse 2s infinite',
-        '&:hover': { bgcolor: '#facc1533' },
-      }}
-    >
-      <Typography sx={{ fontSize: '1.5rem' }}>📨</Typography>
-      <Box sx={{ flex: 1 }}>
-        <Typography sx={{ color: '#facc15', fontWeight: 900, fontSize: '0.9rem' }}>
-          {transferenciasPendentes.length} transferência(s) pendente(s)
-        </Typography>
-        <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>
-          Clique para aceitar ou recusar
-        </Typography>
-      </Box>
-      <Typography sx={{ color: '#facc15', fontSize: '1.2rem' }}>→</Typography>
-    </Paper>
-  )}
 
   <Box sx={{ display: 'flex', gap: 1.5 }}>
     <Button
@@ -9328,71 +9264,7 @@ const novosDiversos = [...diversosAtuais, novoItem];
         </DialogActions>
       </Dialog>
 
-      {/* 🟢 MODAL DE TRANSFERÊNCIAS PENDENTES */}
-      <Dialog
-        open={modalTransferenciasOpen}
-        onClose={() => setModalTransferenciasOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { bgcolor: "#0f172a", border: "2px solid #facc15", borderRadius: 2 } }}
-      >
-        <DialogTitle sx={{ color: '#facc15', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <span>📨</span>
-            <Typography variant="h6">Transferências Pendentes</Typography>
-          </Box>
-          <IconButton onClick={() => setModalTransferenciasOpen(false)} sx={{ color: '#94a3b8' }}>
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          {transferenciasPendentes.length === 0 ? (
-            <Typography sx={{ color: '#64748b', textAlign: 'center', py: 4 }}>
-              Nenhuma transferência pendente.
-            </Typography>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              {transferenciasPendentes.map((transf) => (
-                <Paper key={transf.id} sx={{ p: 2, bgcolor: '#1a1a2e', border: '1px solid #334155', borderRadius: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                    <Typography sx={{ fontSize: '1.5rem' }}>
-                      {transf.tipo === 'dinheiro' ? '💰' : '🎒'}
-                    </Typography>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: '0.9rem' }}>
-                        {transf.tipo === 'dinheiro'
-                          ? `${transf.valor.toLocaleString()} 💰 para "${transf.carteiraDestino}"`
-                          : `${transf.item?.quantidade || 1}x ${transf.item?.nome || 'Item'}`}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', display: 'block' }}>
-                        De: <strong>{transf.deNome}</strong> · {new Date(transf.criadoEm).toLocaleString('pt-BR')}
-                      </Typography>
-                    </Box>
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      onClick={() => aceitarTransferencia(transf)}
-                      sx={{ flex: 1, bgcolor: '#22c55e', '&:hover': { bgcolor: '#16a34a' } }}
-                    >
-                      ✅ Aceitar
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => recusarTransferencia(transf)}
-                      sx={{ flex: 1, color: '#ef4444', borderColor: '#ef4444' }}
-                    >
-                      ❌ Recusar
-                    </Button>
-                  </Box>
-                </Paper>
-              ))}
-            </Box>
-          )}
-        </DialogContent>
-      </Dialog>
+
 
     </Paper>
     );

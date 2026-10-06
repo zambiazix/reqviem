@@ -16,29 +16,44 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
-// 🔹 Registro do Service Worker para permitir instalação como app
+// 🔹 Registro do Service Worker (reload único por sessão de aba)
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/service-worker.js")
       .then((registration) => {
-        // Força atualização imediata ao detectar uma nova versão
-        registration.addEventListener('updatefound', () => {
+        // 🟢 Só recarrega UMA VEZ por sessão de aba
+        const RELOAD_KEY = "__sw_reload_done__";
+        if (sessionStorage.getItem(RELOAD_KEY)) {
+          console.log("✅ Service Worker já registrado nesta sessão.");
+          return;
+        }
+
+        registration.addEventListener("updatefound", () => {
           const newWorker = registration.installing;
-          newWorker.addEventListener('statechange', () => {
-            // Quando o novo service worker estiver ativado, recarrega a página com cache limpo
-            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
-              window.location.reload(true); // true = hard reload (ignora cache)
+          if (!newWorker) return;
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "activated" && navigator.serviceWorker.controller) {
+              sessionStorage.setItem(RELOAD_KEY, "1");
+              console.log("🔄 Nova versão detectada — recarregando uma vez.");
+              // Reload limpo: só reescreve a URL com cache-buster
+              const url = new URL(window.location.href);
+              url.searchParams.set("_v", Date.now());
+              window.location.replace(url.toString());
             }
           });
         });
 
-        // Se já houver um service worker esperando (waiting), ativa-o imediatamente
+        // Se já houver SW esperando, ativa e recarrega UMA VEZ
         if (registration.waiting) {
-          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-          window.location.reload(true);
+          sessionStorage.setItem(RELOAD_KEY, "1");
+          registration.waiting.postMessage({ type: "SKIP_WAITING" });
+          const url = new URL(window.location.href);
+          url.searchParams.set("_v", Date.now());
+          window.location.replace(url.toString());
         }
-        console.log("✅ Service Worker registrado com sucesso:", registration);
+
+        console.log("✅ Service Worker registrado:", registration);
       })
       .catch((error) => {
         console.log("❌ Falha ao registrar o Service Worker:", error);
