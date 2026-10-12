@@ -20,6 +20,7 @@ import {
   Select,
   MenuItem,
   Paper,
+  Tooltip,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -29,6 +30,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import SaveIcon from "@mui/icons-material/Save";
 import UploadIcon from "@mui/icons-material/Upload";
 import CloseIcon from "@mui/icons-material/Close";
+import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import { useNavigate } from "react-router-dom";
 import { getAuth } from "firebase/auth";
 import ReactMarkdown from "react-markdown";
@@ -227,7 +229,20 @@ const [arrastandoBalão, setArrastandoBalão] = useState(false);
 const [cidadeMarcadorDescricaoOpen, setCidadeMarcadorDescricaoOpen] = useState(false);
 const [cidadeDescricaoEditando, setCidadeDescricaoEditando] = useState(null);
 const [cidadeDescricaoTexto, setCidadeDescricaoTexto] = useState("");
-const balãoRef = useRef(null);
+
+// 📖 WIKI DA CRÔNICA
+const [wikiCategorias, setWikiCategorias] = useState([]);
+const [wikiCronicas, setWikiCronicas] = useState([]);
+const [wikiCatSelecionada, setWikiCatSelecionada] = useState(null);
+const [wikiCronicaAberta, setWikiCronicaAberta] = useState(null);
+const [wikiEditandoCat, setWikiEditandoCat] = useState(null); // { id?, nome, descricao }
+const [wikiEditandoCronica, setWikiEditandoCronica] = useState(null); // { id?, categoriaId, titulo, data, texto, imagem }
+const [wikiModoGerenciar, setWikiModoGerenciar] = useState(false);
+const [wikiMoverCronica, setWikiMoverCronica] = useState(null); // { cronica, destinoId }
+const wikiTextareaRef = useRef(null);
+const wikiImagemInputRef = useRef(null);
+
+const balãoRef = useRef(null);  
 const cidadeSvgRef = useRef(null);
 const cidadePanZoomRef = useRef(null);
 const converterCoordenadasClique = (e, containerRef) => {
@@ -435,9 +450,23 @@ const calcularDistanciaTotal = (pontos) => {
       setGlobalChapters(snap.data().list || []);
     });
 
+    // 📖 WIKI
+    const wikiRef = doc(db, "world", "CronicaWiki");
+    const unsubWiki = onSnapshot(wikiRef, (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setWikiCategorias(Array.isArray(d.categorias) ? d.categorias : []);
+        setWikiCronicas(Array.isArray(d.cronicas) ? d.cronicas : []);
+      } else {
+        setWikiCategorias([]);
+        setWikiCronicas([]);
+      }
+    });
+
     return () => {
       unsubscribers.forEach((u) => u && u());
       unsubGlobal();
+      unsubWiki();
     };
   }, []);
 
@@ -1611,6 +1640,196 @@ const criarCidadeCaminho = async () => {
     await setDoc(doc(db, "world", "Chapters"), { list: existing });
   };
 
+  // 📖 CRUD WIKI DA CRÔNICA
+  const salvarWikiNoFirestore = async (categorias, cronicas) => {
+    await setDoc(doc(db, "world", "CronicaWiki"), { categorias, cronicas }, { merge: true });
+  };
+
+  const salvarWikiCategoria = async () => {
+    if (!wikiEditandoCat?.nome?.trim()) return;
+    const nova = {
+      id: wikiEditandoCat.id || `cat_${Date.now()}`,
+      nome: wikiEditandoCat.nome.trim(),
+      descricao: (wikiEditandoCat.descricao || "").trim(),
+      ordem: wikiEditandoCat.ordem ?? wikiCategorias.length,
+    };
+    let novas;
+    if (wikiEditandoCat.id) {
+      novas = wikiCategorias.map((c) => (c.id === wikiEditandoCat.id ? nova : c));
+    } else {
+      novas = [...wikiCategorias, nova];
+    }
+    setWikiCategorias(novas);
+    await salvarWikiNoFirestore(novas, wikiCronicas);
+    setWikiEditandoCat(null);
+  };
+
+  const deletarWikiCategoria = async (id) => {
+    if (!window.confirm("Deletar esta categoria e TODAS as crônicas dela?")) return;
+    const novasCats = wikiCategorias.filter((c) => c.id !== id);
+    const novasCron = wikiCronicas.filter((c) => c.categoriaId !== id);
+    setWikiCategorias(novasCats);
+    setWikiCronicas(novasCron);
+    if (wikiCatSelecionada === id) setWikiCatSelecionada(null);
+    await salvarWikiNoFirestore(novasCats, novasCron);
+  };
+
+  const salvarWikiCronica = async () => {
+    if (!wikiEditandoCronica?.titulo?.trim() || !wikiEditandoCronica?.categoriaId) return;
+    const nova = {
+      id: wikiEditandoCronica.id || `cron_${Date.now()}`,
+      categoriaId: wikiEditandoCronica.categoriaId,
+      titulo: wikiEditandoCronica.titulo.trim(),
+      data: (wikiEditandoCronica.data || "").trim(),
+      imagem: wikiEditandoCronica.imagem || "",
+      texto: wikiEditandoCronica.texto || "",
+      ordem: wikiEditandoCronica.ordem ?? 0,
+    };
+    let novas;
+    if (wikiEditandoCronica.id) {
+      novas = wikiCronicas.map((c) => (c.id === wikiEditandoCronica.id ? nova : c));
+    } else {
+      novas = [...wikiCronicas, nova];
+    }
+    setWikiCronicas(novas);
+    await salvarWikiNoFirestore(wikiCategorias, novas);
+    setWikiEditandoCronica(null);
+  };
+
+  const deletarWikiCronica = async (id) => {
+    if (!window.confirm("Deletar esta crônica?")) return;
+    const novas = wikiCronicas.filter((c) => c.id !== id);
+    setWikiCronicas(novas);
+    if (wikiCronicaAberta === id) setWikiCronicaAberta(null);
+    await salvarWikiNoFirestore(wikiCategorias, novas);
+  };
+
+  const moverWikiCronica = async () => {
+    if (!wikiMoverCronica?.cronica || !wikiMoverCronica?.destinoId) return;
+    const novas = wikiCronicas.map((c) =>
+      c.id === wikiMoverCronica.cronica.id ? { ...c, categoriaId: wikiMoverCronica.destinoId } : c
+    );
+    setWikiCronicas(novas);
+    await salvarWikiNoFirestore(wikiCategorias, novas);
+    setWikiMoverCronica(null);
+  };
+
+  // 📥 MIGRAR CRÔNICAS ANTIGAS (world/Chapters) PARA O GRIMÓRIO
+  const migrarCronicasAntigas = async () => {
+    if (!window.confirm("Importar TODAS as crônicas antigas (world/Chapters) para o Grimório?\n\nUma categoria 'Crônica Antiga' será criada. Você pode mover elas depois.")) return;
+    try {
+      const ref = doc(db, "world", "Chapters");
+      const snap = await getDoc(ref);
+      if (!snap.exists() || !Array.isArray(snap.data().list) || snap.data().list.length === 0) {
+        alert("Não há crônicas antigas para importar.");
+        return;
+      }
+      const listaAntiga = snap.data().list;
+
+      // Cria ou reusa categoria "Crônica Antiga"
+      let novasCats = [...wikiCategorias];
+      let catId = "cat_antigas";
+      if (!novasCats.some((c) => c.id === catId)) {
+        novasCats.push({
+          id: catId,
+          nome: "Crônica Antiga",
+          descricao: "Crônicas importadas do formato antigo.",
+          ordem: novasCats.length,
+        });
+      }
+
+      // Adiciona as crônicas antigas (evita duplicar pelo título)
+      let novasCron = [...wikiCronicas];
+      let importadas = 0;
+      listaAntiga.forEach((item, idx) => {
+        const titulo = (item.title || `Crônica ${idx + 1}`).trim();
+        const existe = novasCron.some(
+          (c) => c.categoriaId === catId && c.titulo === titulo
+        );
+        if (!existe) {
+          novasCron.push({
+            id: `cron_antiga_${Date.now()}_${idx}`,
+            categoriaId: catId,
+            titulo,
+            data: "",
+            imagem: "",
+            texto: item.text || "",
+            ordem: idx,
+          });
+          importadas++;
+        }
+      });
+
+      setWikiCategorias(novasCats);
+      setWikiCronicas(novasCron);
+      await salvarWikiNoFirestore(novasCats, novasCron);
+      setWikiCatSelecionada(catId);
+      alert(`✅ ${importadas} crônica(s) importada(s) para "Crônica Antiga".`);
+    } catch (err) {
+      console.error("Erro ao migrar:", err);
+      alert("Erro ao migrar: " + err.message);
+    }
+  };
+
+  // 🖼️ Upload de imagem da crônica (insere no cursor do textarea)
+  const handleUploadImagemCronica = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const apiBase = window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://reqviem.onrender.com";
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.url) {
+        const markdown = `\n\n![](${data.url})\n\n`;
+        const el = wikiTextareaRef.current;
+        if (el) {
+          const start = el.selectionStart || 0;
+          const end = el.selectionEnd || 0;
+          const valorAtual = wikiEditandoCronica?.texto || "";
+          const novoTexto = valorAtual.substring(0, start) + markdown + valorAtual.substring(end);
+          setWikiEditandoCronica((prev) => ({ ...prev, texto: novoTexto }));
+          setTimeout(() => {
+            el.focus();
+            const pos = start + markdown.length;
+            el.setSelectionRange(pos, pos);
+          }, 50);
+        } else {
+          setWikiEditandoCronica((prev) => ({ ...prev, texto: (prev?.texto || "") + markdown }));
+        }
+      }
+    } catch (err) {
+      alert("Erro ao enviar imagem");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  // 🖼️ Upload da imagem de capa
+  const handleUploadImagemCapa = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const apiBase = window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://reqviem.onrender.com";
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.url) {
+        setWikiEditandoCronica((prev) => ({ ...prev, imagem: data.url }));
+      }
+    } catch (err) {
+      alert("Erro ao enviar imagem");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   const handleExpand = (mapId) => setExpanded((prev) => (prev === mapId ? null : mapId));
 
   // 🔹 Markdown com suporte ao lightbox (click on image opens lightbox)
@@ -1956,45 +2175,75 @@ const criarCidadeCaminho = async () => {
           <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: "#fff" }} />}>
             <Typography sx={{ flex: 1, color: "#fff" }}>{m.title}</Typography>
             {isMestre && (
-  <>
-    <Button
-      variant="outlined"
-      size="small"
-      component="label"
-      sx={{ ml: 1 }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      Upload SVG
-      <input
-        hidden
-        accept=".svg"
-        type="file"
-        onChange={(e) => {
-          e.stopPropagation();
-          handleFileUpload(e, m.id);
-        }}
-      />
-    </Button>
-    
-    {/* 🟢 BOTÃO CRIAR CAMINHO */}
-    <Button
-      variant="outlined"
-      size="small"
-      color={modoCriarCaminho && caminhoAtivo?.mapId === m.id ? "error" : "info"}
-      sx={{ ml: 1 }}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (modoCriarCaminho && caminhoAtivo?.mapId === m.id) {
-          finalizarCaminho();
-        } else {
-          iniciarNovoCaminho(m.id);
-        }
-      }}
-    >
-      {modoCriarCaminho && caminhoAtivo?.mapId === m.id ? "🛑 Finalizar Rota" : "📏 Criar Rota"}
-    </Button>
-  </>
-)}
+              <>
+                {/* 🟢 Botão Upload SVG — Box estilizado (não gera <button>) */}
+                <Box
+                  component="label"
+                  onClick={(e) => e.stopPropagation()}
+                  sx={{
+                    ml: 1,
+                    px: 1.5,
+                    py: 0.5,
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    borderRadius: 1,
+                    border: '1px solid rgba(144, 202, 249, 0.5)',
+                    color: '#90caf9',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      borderColor: '#90caf9',
+                      bgcolor: 'rgba(144, 202, 249, 0.08)',
+                    },
+                  }}
+                >
+                  Upload SVG
+                  <input
+                    hidden
+                    accept=".svg"
+                    type="file"
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleFileUpload(e, m.id);
+                    }}
+                  />
+                </Box>
+
+                {/* 🟢 Botão Criar Rota — Box estilizado */}
+                <Box
+                  component="span"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (modoCriarCaminho && caminhoAtivo?.mapId === m.id) {
+                      finalizarCaminho();
+                    } else {
+                      iniciarNovoCaminho(m.id);
+                    }
+                  }}
+                  sx={{
+                    ml: 1,
+                    px: 1.5,
+                    py: 0.5,
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    borderRadius: 1,
+                    border: `1px solid ${modoCriarCaminho && caminhoAtivo?.mapId === m.id ? '#f44336' : '#29b6f6'}`,
+                    color: modoCriarCaminho && caminhoAtivo?.mapId === m.id ? '#f44336' : '#29b6f6',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: modoCriarCaminho && caminhoAtivo?.mapId === m.id
+                        ? 'rgba(244, 67, 54, 0.08)'
+                        : 'rgba(41, 182, 246, 0.08)',
+                    },
+                  }}
+                >
+                  {modoCriarCaminho && caminhoAtivo?.mapId === m.id ? "🛑 Finalizar Rota" : "📏 Criar Rota"}
+                </Box>
+              </>
+            )}
           </AccordionSummary>
 
           <AccordionDetails
@@ -2195,38 +2444,541 @@ const criarCidadeCaminho = async () => {
           </AccordionDetails>
         </Accordion>
       ))}
-{/* === CRÔNICA GLOBAL === */}
-{/* === CRÔNICA GLOBAL - VERSÃO CORRIGIDA === */}
-<Box sx={{ bgcolor: "#2a2a2a", p: 2, mt: 3, borderRadius: 1, mb: 3 }}>
-  <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2, alignItems: "center" }}>
-    <Typography variant="h6" sx={{ color: "#fff" }}>
-      📜 Crônica Geral
-      <Typography component="span" sx={{ color: '#64748b', fontSize: '0.7rem', ml: 1 }}>
-        ({globalChapters.length})
+{/* === CRÔNICA WIKI — GRIMÓRIO === */}
+<Box
+  sx={{
+    mt: 3,
+    mb: 3,
+    borderRadius: 3,
+    overflow: 'hidden',
+    border: '1px solid rgba(184, 148, 90, 0.35)',
+    background: `
+      radial-gradient(circle at 20% 10%, rgba(168, 85, 247, 0.08), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(0, 224, 255, 0.06), transparent 40%),
+      linear-gradient(135deg, #0a0a12 0%, #14101e 50%, #0a0a12 100%)
+    `,
+    boxShadow: '0 8px 40px rgba(0,0,0,0.6), inset 0 0 80px rgba(184, 148, 90, 0.04)',
+    position: 'relative',
+    minHeight: 480,
+  }}
+>
+  {/* Textura de fundo */}
+  <Box sx={{
+    position: 'absolute', inset: 0, opacity: 0.06, pointerEvents: 'none',
+    backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><circle cx='20' cy='20' r='1' fill='%23b8945a'/><circle cx='80' cy='50' r='1' fill='%23b8945a'/><circle cx='40' cy='90' r='1' fill='%23b8945a'/><circle cx='110' cy='30' r='0.8' fill='%23b8945a'/><circle cx='60' cy='110' r='0.8' fill='%23b8945a'/></svg>")`,
+    backgroundSize: '120px 120px',
+  }} />
+
+  {/* CABEÇALHO */}
+  <Box sx={{
+    p: 2.5, pb: 2,
+    borderBottom: '1px solid rgba(184, 148, 90, 0.25)',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1,
+    position: 'relative', zIndex: 1,
+    background: 'linear-gradient(180deg, rgba(184, 148, 90, 0.06), transparent)',
+  }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <Typography sx={{
+        fontSize: '1.6rem',
+        fontWeight: 900,
+        letterSpacing: 2,
+        background: 'linear-gradient(90deg, #b8945a 0%, #ffd700 50%, #b8945a 100%)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        filter: 'drop-shadow(0 0 12px rgba(184, 148, 90, 0.5))',
+        fontFamily: '"Cinzel", "Trajan Pro", serif',
+      }}>
+        📜 GRIMÓRIO DO MUNDO
       </Typography>
-    </Typography>
+      <Typography sx={{ color: '#7a6a4a', fontSize: '0.75rem', fontStyle: 'italic' }}>
+        {wikiCategorias.length} categorias · {wikiCronicas.length} crônicas
+      </Typography>
+    </Box>
+
     {isMestre && (
-      <Button startIcon={<AddIcon />} variant="contained" size="small" onClick={(e) => openGlobalChapterDialog(null, e)}>
-        Nova
-      </Button>
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<span>📥</span>}
+          onClick={migrarCronicasAntigas}
+          sx={{
+            color: '#00e0ff',
+            borderColor: '#00e0ff',
+            '&:hover': { bgcolor: 'rgba(0,224,255,0.1)' },
+            fontWeight: 'bold',
+          }}
+        >
+          Importar Antigas
+        </Button>
+        <Button
+          size="small"
+          variant={wikiModoGerenciar ? "contained" : "outlined"}
+          startIcon={<EditIcon />}
+          onClick={() => setWikiModoGerenciar(!wikiModoGerenciar)}
+          sx={{
+            color: wikiModoGerenciar ? '#000' : '#ffd700',
+            borderColor: '#b8945a',
+            bgcolor: wikiModoGerenciar ? '#b8945a' : 'transparent',
+            '&:hover': { bgcolor: wikiModoGerenciar ? '#d4a76a' : 'rgba(184,148,90,0.15)' },
+            fontWeight: 'bold',
+          }}
+        >
+          {wikiModoGerenciar ? "Concluir Edição" : "Gerenciar"}
+        </Button>
+        <Button
+          size="small"
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => setWikiEditandoCat({ nome: "", descricao: "" })}
+          sx={{
+            bgcolor: '#a855f7', '&:hover': { bgcolor: '#7b1fa2' },
+            fontWeight: 'bold',
+          }}
+        >
+          Nova Categoria
+        </Button>
+      </Box>
     )}
   </Box>
 
-{globalChapters.length === 0 ? (
-  <Typography sx={{ color: "#aaa" }}>Nenhuma crônica global cadastrada.</Typography>
-) : (
-  globalChapters.map((ch, i) => (
-    <AnotacaoExpansivel
-      key={i}
-      titulo={ch.title}
-      conteudo={ch.text}
-      isMestre={isMestre}
-      onEdit={() => openGlobalChapterDialog(i)}
-      onDelete={() => deleteGlobalChapter(i)}
-      renderMarkdown={renderMarkdown}
-    />
-  ))
-)}
+  {/* CORPO: SIDEBAR + CONTEÚDO */}
+  <Box sx={{
+    display: 'flex',
+    minHeight: 400,
+    position: 'relative',
+    zIndex: 1,
+  }}>
+    {/* SIDEBAR DE CATEGORIAS */}
+    <Box sx={{
+      width: 240,
+      flexShrink: 0,
+      borderRight: '1px solid rgba(184, 148, 90, 0.2)',
+      p: 1.5,
+      maxHeight: 600,
+      overflowY: 'auto',
+      bgcolor: 'rgba(0,0,0,0.25)',
+      '&::-webkit-scrollbar': { width: '4px' },
+      '&::-webkit-scrollbar-thumb': { background: 'rgba(184,148,90,0.4)', borderRadius: 2 },
+    }}>
+      <Typography sx={{
+        color: '#b8945a', fontSize: '0.65rem', fontWeight: 700,
+        letterSpacing: 1.5, mb: 1, textTransform: 'uppercase',
+        opacity: 0.8,
+      }}>
+        ✦ Categorias
+      </Typography>
+
+      {/* Botão "Todas" */}
+      <Box
+        onClick={() => { setWikiCatSelecionada(null); setWikiCronicaAberta(null); }}
+        sx={{
+          p: 1, mb: 0.5, borderRadius: 1.5, cursor: 'pointer',
+          bgcolor: wikiCatSelecionada === null ? 'rgba(184,148,90,0.2)' : 'transparent',
+          border: `1px solid ${wikiCatSelecionada === null ? '#b8945a' : 'transparent'}`,
+          transition: 'all 0.2s',
+          '&:hover': { bgcolor: 'rgba(184,148,90,0.12)' },
+        }}
+      >
+        <Typography sx={{ color: '#e8dcc0', fontSize: '0.85rem', fontWeight: 600 }}>
+          🗂️ Todas as Crônicas
+        </Typography>
+      </Box>
+
+      {wikiCategorias.length === 0 && (
+        <Typography sx={{ color: '#5a4a3a', fontSize: '0.75rem', textAlign: 'center', py: 2, fontStyle: 'italic' }}>
+          Nenhuma categoria ainda
+        </Typography>
+      )}
+
+      {wikiCategorias.map((cat) => {
+        const count = wikiCronicas.filter((c) => c.categoriaId === cat.id).length;
+        const sel = wikiCatSelecionada === cat.id;
+        return (
+          <Tooltip
+            key={cat.id}
+            arrow
+            placement="right"
+            title={
+              <Box sx={{ p: 0.5, maxWidth: 220 }}>
+                <Typography sx={{ fontWeight: 'bold', fontSize: '0.8rem', color: '#ffd700' }}>{cat.nome}</Typography>
+                {cat.descricao && (
+                  <Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1', mt: 0.5, whiteSpace: 'pre-wrap' }}>
+                    {cat.descricao}
+                  </Typography>
+                )}
+              </Box>
+            }
+          >
+            <Box
+              onClick={() => { setWikiCatSelecionada(cat.id); setWikiCronicaAberta(null); }}
+              sx={{
+                p: 1, mb: 0.5, borderRadius: 1.5, cursor: 'pointer',
+                bgcolor: sel ? 'rgba(184,148,90,0.2)' : 'transparent',
+                border: `1px solid ${sel ? '#b8945a' : 'transparent'}`,
+                transition: 'all 0.2s',
+                position: 'relative',
+                '&:hover': { bgcolor: 'rgba(184,148,90,0.1)' },
+                '&:hover .cat-acoes': { opacity: 1 },
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 0.5 }}>
+                <Typography sx={{ color: '#e8dcc0', fontSize: '0.85rem', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  📁 {cat.nome}
+                </Typography>
+                <Typography sx={{ color: '#7a6a4a', fontSize: '0.65rem' }}>({count})</Typography>
+              </Box>
+
+              {isMestre && wikiModoGerenciar && (
+                <Box className="cat-acoes" sx={{
+                  display: 'flex', gap: 0.3, mt: 0.5,
+                  opacity: 0, transition: 'opacity 0.2s',
+                }}>
+                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); setWikiEditandoCat({ ...cat }); }} sx={{ color: '#ffd700', p: 0.2 }}>
+                    <EditIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarWikiCategoria(cat.id); }} sx={{ color: '#ef4444', p: 0.2 }}>
+                    <DeleteIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Box>
+              )}
+            </Box>
+          </Tooltip>
+        );
+      })}
+    </Box>
+
+    {/* CONTEÚDO PRINCIPAL */}
+    <Box sx={{ flex: 1, p: 2.5, overflowY: 'auto', maxHeight: 600 }}>
+      {/* Nenhuma categoria selecionada — mostra tudo */}
+      {wikiCatSelecionada === null && !wikiCronicaAberta && (
+        <Box>
+          <Typography sx={{
+            fontSize: '1.2rem', fontWeight: 800, mb: 2,
+            color: '#b8945a', letterSpacing: 1,
+            fontFamily: '"Cinzel", serif',
+          }}>
+            ✦ Todas as Crônicas
+          </Typography>
+          {wikiCronicas.length === 0 ? (
+            <Typography sx={{ color: '#5a4a3a', fontStyle: 'italic', textAlign: 'center', py: 4 }}>
+              Nenhuma crônica escrita ainda. Comece sua lenda.
+            </Typography>
+          ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 1.5 }}>
+              {wikiCronicas.map((cron) => {
+                const cat = wikiCategorias.find((c) => c.id === cron.categoriaId);
+                return (
+                  <Paper
+                    key={cron.id}
+                    onClick={() => setWikiCronicaAberta(cron.id)}
+                    sx={{
+                      p: 1.5,
+                      cursor: 'pointer',
+                      bgcolor: 'rgba(20, 16, 30, 0.85)',
+                      border: '1px solid rgba(184, 148, 90, 0.3)',
+                      borderRadius: 2,
+                      transition: 'all 0.25s',
+                      display: 'flex', gap: 1.5, alignItems: 'flex-start',
+                      position: 'relative',
+                      '&:hover': {
+                        border: '1px solid #b8945a',
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 6px 24px rgba(184, 148, 90, 0.25)',
+                      },
+                      '&:hover .cron-acoes': { opacity: 1 },
+                    }}
+                  >
+                    {cron.imagem && (
+                      <Box sx={{
+                        width: 64, height: 64, minWidth: 64, borderRadius: 1,
+                        overflow: 'hidden', border: '1px solid rgba(184,148,90,0.4)',
+                      }}>
+                        <img src={cron.imagem} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </Box>
+                    )}
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{
+                        color: '#ffd700', fontSize: '0.95rem', fontWeight: 700,
+                        fontFamily: '"Cinzel", serif',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {cron.titulo}
+                      </Typography>
+                      {cron.data && (
+                        <Typography sx={{ color: '#7a6a4a', fontSize: '0.65rem', mt: 0.3, fontStyle: 'italic' }}>
+                          📅 {cron.data}
+                        </Typography>
+                      )}
+                      {cat && (
+                        <Typography sx={{ color: '#a855f7', fontSize: '0.6rem', mt: 0.3 }}>
+                          📁 {cat.nome}
+                        </Typography>
+                      )}
+                    </Box>
+
+                    {isMestre && wikiModoGerenciar && (
+                      <Box className="cron-acoes" sx={{
+                        display: 'flex', flexDirection: 'column', gap: 0.3,
+                        opacity: 0, transition: 'opacity 0.2s',
+                      }}>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setWikiEditandoCronica({ ...cron }); }} sx={{ color: '#ffd700', p: 0.2 }}>
+                          <EditIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setWikiMoverCronica({ cronica: cron, destinoId: "" }); }} sx={{ color: '#3b82f6', p: 0.2 }}>
+                          <DriveFileMoveIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarWikiCronica(cron.id); }} sx={{ color: '#ef4444', p: 0.2 }}>
+                          <DeleteIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </Box>
+                    )}
+                  </Paper>
+                );
+              })}
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {/* Categoria selecionada — lista de crônicas */}
+      {wikiCatSelecionada !== null && !wikiCronicaAberta && (
+        <Box>
+          {(() => {
+            const cat = wikiCategorias.find((c) => c.id === wikiCatSelecionada);
+            if (!cat) return null;
+            const lista = wikiCronicas.filter((c) => c.categoriaId === wikiCatSelecionada);
+            return (
+              <>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                  <Box>
+                    <Typography sx={{
+                      fontSize: '1.3rem', fontWeight: 800,
+                      color: '#b8945a', letterSpacing: 1,
+                      fontFamily: '"Cinzel", serif',
+                      display: 'flex', alignItems: 'center', gap: 1,
+                    }}>
+                      📁 {cat.nome}
+                    </Typography>
+                    {cat.descricao && (
+                      <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', mt: 0.5, fontStyle: 'italic', maxWidth: 600 }}>
+                        {cat.descricao}
+                      </Typography>
+                    )}
+                  </Box>
+                  {isMestre && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<AddIcon />}
+                      onClick={() => setWikiEditandoCronica({ categoriaId: cat.id, titulo: "", data: "", texto: "", imagem: "" })}
+                      sx={{ bgcolor: '#b8945a', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#d4a76a' } }}
+                    >
+                      Nova Crônica
+                    </Button>
+                  )}
+                </Box>
+
+                {lista.length === 0 ? (
+                  <Typography sx={{ color: '#5a4a3a', fontStyle: 'italic', textAlign: 'center', py: 4 }}>
+                    Nenhuma crônica nesta categoria.
+                  </Typography>
+                ) : (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {lista.map((cron) => (
+                      <Paper
+                        key={cron.id}
+                        onClick={() => setWikiCronicaAberta(cron.id)}
+                        sx={{
+                          p: 1.5, cursor: 'pointer',
+                          bgcolor: 'rgba(20, 16, 30, 0.7)',
+                          border: '1px solid rgba(184, 148, 90, 0.2)',
+                          borderRadius: 1.5,
+                          display: 'flex', gap: 1.5, alignItems: 'center',
+                          transition: 'all 0.25s',
+                          position: 'relative',
+                          '&:hover': {
+                            border: '1px solid #b8945a',
+                            bgcolor: 'rgba(184, 148, 90, 0.08)',
+                            transform: 'translateX(4px)',
+                          },
+                          '&:hover .cron-acoes': { opacity: 1 },
+                        }}
+                      >
+                        {cron.imagem ? (
+                          <Box sx={{ width: 48, height: 48, minWidth: 48, borderRadius: 1, overflow: 'hidden', border: '1px solid rgba(184,148,90,0.3)' }}>
+                            <img src={cron.imagem} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          </Box>
+                        ) : (
+                          <Box sx={{ width: 48, height: 48, minWidth: 48, borderRadius: 1, bgcolor: 'rgba(184,148,90,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <span style={{ fontSize: '1.2rem', opacity: 0.5 }}>📜</span>
+                          </Box>
+                        )}
+                        <Box sx={{ flex: 1 }}>
+                          <Typography sx={{ color: '#ffd700', fontWeight: 700, fontSize: '0.95rem', fontFamily: '"Cinzel", serif' }}>
+                            {cron.titulo}
+                          </Typography>
+                          {cron.data && (
+                            <Typography sx={{ color: '#7a6a4a', fontSize: '0.65rem', fontStyle: 'italic' }}>
+                              📅 {cron.data}
+                            </Typography>
+                          )}
+                        </Box>
+                        {isMestre && wikiModoGerenciar && (
+                          <Box className="cron-acoes" sx={{ display: 'flex', gap: 0.3, opacity: 0, transition: 'opacity 0.2s' }}>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); setWikiEditandoCronica({ ...cron }); }} sx={{ color: '#ffd700', p: 0.3 }}>
+                              <EditIcon sx={{ fontSize: 14 }} />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); setWikiMoverCronica({ cronica: cron, destinoId: "" }); }} sx={{ color: '#3b82f6', p: 0.3 }}>
+                              <DriveFileMoveIcon sx={{ fontSize: 14 }} />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarWikiCronica(cron.id); }} sx={{ color: '#ef4444', p: 0.3 }}>
+                              <DeleteIcon sx={{ fontSize: 14 }} />
+                            </IconButton>
+                          </Box>
+                        )}
+                      </Paper>
+                    ))}
+                  </Box>
+                )}
+              </>
+            );
+          })()}
+        </Box>
+      )}
+
+      {/* Crônica aberta — leitura */}
+      {wikiCronicaAberta && (() => {
+        const cron = wikiCronicas.find((c) => c.id === wikiCronicaAberta);
+        if (!cron) return null;
+        const cat = wikiCategorias.find((c) => c.id === cron.categoriaId);
+        return (
+          <Box>
+            <Button
+              size="small"
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setWikiCronicaAberta(null)}
+              sx={{ color: '#b8945a', mb: 2, '&:hover': { bgcolor: 'rgba(184,148,90,0.1)' } }}
+            >
+              Voltar
+            </Button>
+
+            <Paper sx={{
+              p: 3,
+              bgcolor: 'rgba(15, 12, 22, 0.85)',
+              border: '1px solid rgba(184, 148, 90, 0.35)',
+              borderRadius: 2,
+              boxShadow: 'inset 0 0 60px rgba(184, 148, 90, 0.04)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              {/* Cantos decorativos */}
+              <Box sx={{ position: 'absolute', top: 8, left: 8, width: 24, height: 24, borderTop: '2px solid #b8945a', borderLeft: '2px solid #b8945a', opacity: 0.5 }} />
+              <Box sx={{ position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderTop: '2px solid #b8945a', borderRight: '2px solid #b8945a', opacity: 0.5 }} />
+              <Box sx={{ position: 'absolute', bottom: 8, left: 8, width: 24, height: 24, borderBottom: '2px solid #b8945a', borderLeft: '2px solid #b8945a', opacity: 0.5 }} />
+              <Box sx={{ position: 'absolute', bottom: 8, right: 8, width: 24, height: 24, borderBottom: '2px solid #b8945a', borderRight: '2px solid #b8945a', opacity: 0.5 }} />
+
+              {/* Cabeçalho com imagem à esquerda do título */}
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 3, pb: 2, borderBottom: '1px solid rgba(184,148,90,0.25)' }}>
+                {cron.imagem && (
+                  <Box sx={{
+                    width: 100, height: 100, minWidth: 100, borderRadius: 2,
+                    overflow: 'hidden',
+                    border: '2px solid rgba(184, 148, 90, 0.5)',
+                    boxShadow: '0 0 20px rgba(184, 148, 90, 0.25)',
+                    cursor: 'pointer',
+                  }}
+                    onClick={() => { setLightboxImage(cron.imagem); setZoom(1); }}
+                  >
+                    <img src={cron.imagem} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </Box>
+                )}
+                <Box sx={{ flex: 1 }}>
+                  <Typography sx={{
+                    fontSize: '1.6rem', fontWeight: 900,
+                    fontFamily: '"Cinzel", serif',
+                    background: 'linear-gradient(90deg, #ffd700 0%, #b8945a 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    letterSpacing: 1, mb: 0.5,
+                    lineHeight: 1.2,
+                  }}>
+                    {cron.titulo}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {cron.data && (
+                      <Typography sx={{ color: '#7a6a4a', fontSize: '0.8rem', fontStyle: 'italic' }}>
+                        📅 {cron.data}
+                      </Typography>
+                    )}
+                    {cat && (
+                      <Typography sx={{ color: '#a855f7', fontSize: '0.75rem' }}>
+                        📁 {cat.nome}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              </Box>
+
+              {/* Corpo do texto */}
+              <Box
+                className="markdown-content"
+                sx={{
+                  color: '#e8dcc0',
+                  lineHeight: 1.9,
+                  fontSize: '1rem',
+                  fontFamily: '"Crimson Text", "Georgia", serif',
+                  '& p': { color: '#e8dcc0', mb: 1.5 },
+                  '& h1, & h2, & h3': {
+                    color: '#ffd700',
+                    fontFamily: '"Cinzel", serif',
+                    mt: 2, mb: 1,
+                    borderBottom: '1px solid rgba(184,148,90,0.25)',
+                    pb: 0.5,
+                  },
+                  '& strong': { color: '#ffd700' },
+                  '& em': { color: '#c9a961' },
+                  '& blockquote': {
+                    borderLeft: '3px solid #b8945a',
+                    pl: 2, ml: 0, color: '#c9a961',
+                    fontStyle: 'italic',
+                    bgcolor: 'rgba(184,148,90,0.05)',
+                    py: 1, borderRadius: 1,
+                  },
+                  '& img': {
+                    maxWidth: '100%', borderRadius: 2, my: 1.5,
+                    border: '1px solid rgba(184,148,90,0.3)',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                    cursor: 'pointer',
+                  },
+                  '& a': { color: '#00e0ff' },
+                }}
+                onClick={(e) => {
+                  if (e.target.tagName === "IMG") {
+                    setLightboxImage(e.target.src);
+                    setZoom(1);
+                  }
+                }}
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{cron.texto}</ReactMarkdown>
+              </Box>
+
+              {isMestre && (
+                <Box sx={{ display: 'flex', gap: 1, mt: 3, pt: 2, borderTop: '1px solid rgba(184,148,90,0.2)' }}>
+                  <Button size="small" startIcon={<EditIcon />} onClick={() => setWikiEditandoCronica({ ...cron })} sx={{ color: '#ffd700' }}>
+                    Editar
+                  </Button>
+                  <Button size="small" startIcon={<DeleteIcon />} onClick={() => deletarWikiCronica(cron.id)} sx={{ color: '#ef4444' }}>
+                    Deletar
+                  </Button>
+                </Box>
+              )}
+            </Paper>
+          </Box>
+        );
+      })()}
+    </Box>
+  </Box>
 </Box>
       {/* Capítulos do Mapa */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth maxWidth="md">
@@ -2316,7 +3068,210 @@ const criarCidadeCaminho = async () => {
         </DialogActions>
       </Dialog>
 
-      {/* === LIGHTBOX (igual ao Chat) === */}
+      {/* 🟢 DIALOG: CATEGORIA DA WIKI */}
+      <Dialog
+        open={!!wikiEditandoCat}
+        onClose={() => setWikiEditandoCat(null)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#14101e', color: '#fff', border: '1px solid rgba(184,148,90,0.35)' } }}
+      >
+        <DialogTitle sx={{ color: '#b8945a', fontFamily: '"Cinzel", serif' }}>
+          {wikiEditandoCat?.id ? '✏️ Editar Categoria' : '✦ Nova Categoria'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Nome da categoria"
+              fullWidth
+              value={wikiEditandoCat?.nome || ""}
+              onChange={(e) => setWikiEditandoCat(prev => ({ ...(prev || {}), nome: e.target.value }))}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#b8945a' } }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(184,148,90,0.35)' } } }}
+            />
+            <TextField
+              label="Descrição"
+              fullWidth
+              multiline
+              minRows={3}
+              value={wikiEditandoCat?.descricao || ""}
+              onChange={(e) => setWikiEditandoCat(prev => ({ ...(prev || {}), descricao: e.target.value }))}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#b8945a' } }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(184,148,90,0.35)' } } }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWikiEditandoCat(null)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={salvarWikiCategoria}
+            disabled={!wikiEditandoCat?.nome?.trim()}
+            sx={{ bgcolor: '#b8945a', color: '#000', '&:hover': { bgcolor: '#d4a76a' } }}
+          >
+            Salvar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🟢 DIALOG: CRÔNICA DA WIKI */}
+      <Dialog
+        open={!!wikiEditandoCronica}
+        onClose={() => setWikiEditandoCronica(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#14101e', color: '#fff', border: '1px solid rgba(184,148,90,0.35)' } }}
+      >
+        <DialogTitle sx={{ color: '#b8945a', fontFamily: '"Cinzel", serif' }}>
+          {wikiEditandoCronica?.id ? '✏️ Editar Crônica' : '✦ Nova Crônica'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Título"
+              fullWidth
+              value={wikiEditandoCronica?.titulo || ""}
+              onChange={(e) => setWikiEditandoCronica(prev => ({ ...(prev || {}), titulo: e.target.value }))}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#b8945a' } }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(184,148,90,0.35)' } } }}
+            />
+
+            <TextField
+              label="Data (ex: 3ª Era, Ano 412)"
+              fullWidth
+              value={wikiEditandoCronica?.data || ""}
+              onChange={(e) => setWikiEditandoCronica(prev => ({ ...(prev || {}), data: e.target.value }))}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#b8945a' } }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(184,148,90,0.35)' } } }}
+            />
+
+            <FormControl fullWidth>
+              <InputLabel sx={{ color: '#b8945a' }}>Categoria</InputLabel>
+              <Select
+                value={wikiEditandoCronica?.categoriaId || ""}
+                label="Categoria"
+                onChange={(e) => setWikiEditandoCronica(prev => ({ ...(prev || {}), categoriaId: e.target.value }))}
+                sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(184,148,90,0.35)' } }}
+              >
+                {wikiCategorias.map(cat => (
+                  <MenuItem key={cat.id} value={cat.id}>{cat.nome}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Box>
+              <Typography variant="caption" sx={{ color: '#b8945a', display: 'block', mb: 0.5 }}>
+                Imagem de Capa
+              </Typography>
+              <input
+                type="file"
+                accept="image/*"
+                ref={wikiImagemInputRef}
+                style={{ display: 'none' }}
+                onChange={handleUploadImagemCapa}
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => wikiImagemInputRef.current?.click()}
+                sx={{ color: '#b8945a', borderColor: 'rgba(184,148,90,0.5)' }}
+              >
+                {wikiEditandoCronica?.imagem ? "Trocar Imagem" : "Enviar Imagem"}
+              </Button>
+              {wikiEditandoCronica?.imagem && (
+                <Box sx={{ mt: 1, width: 120, height: 120, borderRadius: 1, overflow: 'hidden', border: '1px solid rgba(184,148,90,0.35)' }}>
+                  <img src={wikiEditandoCronica.imagem} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </Box>
+              )}
+            </Box>
+
+            <TextField
+              label="Texto (Markdown)"
+              fullWidth
+              multiline
+              minRows={10}
+              value={wikiEditandoCronica?.texto || ""}
+              onChange={(e) => setWikiEditandoCronica(prev => ({ ...(prev || {}), texto: e.target.value }))}
+              inputRef={wikiTextareaRef}
+              InputProps={{ style: { color: '#fff' } }}
+              InputLabelProps={{ style: { color: '#b8945a' } }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(184,148,90,0.35)' } } }}
+            />
+
+            <Button
+              variant="outlined"
+              size="small"
+              component="label"
+              startIcon={<UploadIcon />}
+              sx={{ alignSelf: 'flex-start', color: '#94a3b8', borderColor: 'rgba(184,148,90,0.35)' }}
+            >
+              Inserir Imagem no Texto
+              <input hidden type="file" accept="image/*" onChange={handleUploadImagemCronica} />
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWikiEditandoCronica(null)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={salvarWikiCronica}
+            disabled={!wikiEditandoCronica?.titulo?.trim() || !wikiEditandoCronica?.categoriaId}
+            sx={{ bgcolor: '#b8945a', color: '#000', '&:hover': { bgcolor: '#d4a76a' } }}
+          >
+            Salvar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🟢 DIALOG: MOVER CRÔNICA */}
+      <Dialog
+        open={!!wikiMoverCronica}
+        onClose={() => setWikiMoverCronica(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#14101e', color: '#fff', border: '1px solid rgba(184,148,90,0.35)' } }}
+      >
+        <DialogTitle sx={{ color: '#b8945a', fontFamily: '"Cinzel", serif' }}>
+          📁 Mover Crônica
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <Typography sx={{ color: '#e8dcc0', mb: 1.5, fontSize: '0.85rem', fontStyle: 'italic' }}>
+              "{wikiMoverCronica?.cronica?.titulo}"
+            </Typography>
+            <FormControl fullWidth>
+              <InputLabel sx={{ color: '#b8945a' }}>Categoria de Destino</InputLabel>
+              <Select
+                value={wikiMoverCronica?.destinoId || ""}
+                label="Categoria de Destino"
+                onChange={(e) => setWikiMoverCronica(prev => ({ ...(prev || {}), destinoId: e.target.value }))}
+                sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(184,148,90,0.35)' } }}
+              >
+                {wikiCategorias
+                  .filter(c => c.id !== wikiMoverCronica?.cronica?.categoriaId)
+                  .map(cat => (
+                    <MenuItem key={cat.id} value={cat.id}>{cat.nome}</MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWikiMoverCronica(null)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={moverWikiCronica}
+            disabled={!wikiMoverCronica?.destinoId}
+            sx={{ bgcolor: '#b8945a', color: '#000', '&:hover': { bgcolor: '#d4a76a' } }}
+          >
+            Mover
+          </Button>
+        </DialogActions>
+      </Dialog>
 {/* === LIGHTBOX (igual ao Chat, com arrastar) === */}
 {lightboxImage && (
   <div

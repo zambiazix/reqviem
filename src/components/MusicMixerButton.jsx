@@ -16,8 +16,13 @@ function MusicMixerButton() {
     const unsub = onSnapshot(ref, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        const sounds = data.sounds || [];
-        setTemMusica(sounds.length > 0);
+        const lista = (data.sounds || []).filter((s) => {
+          const u = (s.url || "").toLowerCase();
+          // 🟢 Ignora SFX (efeitos sonoros) que NÃO são música
+          if (u.includes("xp_pickup") || u.includes("/sfx/") || u.includes("sfx_")) return false;
+          return true;
+        });
+        setTemMusica(lista.length > 0);
       } else {
         setTemMusica(false);
       }

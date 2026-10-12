@@ -22,7 +22,12 @@ function MusicMixer({ visible, onToggle }) {
     const unsub = onSnapshot(ref, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        const lista = data.sounds || [];
+        const lista = (data.sounds || []).filter((s) => {
+          const u = (s.url || "").toLowerCase();
+          // 🟢 Ignora SFX (efeitos sonoros) que NÃO são música
+          if (u.includes("xp_pickup") || u.includes("/sfx/") || u.includes("sfx_")) return false;
+          return true;
+        });
         setSounds(lista);
         
         // Inicializar volumes individuais

@@ -335,11 +335,18 @@ useEffect(() => {
       }
 
       // canonicalize sounds from doc
-      const sounds = data.sounds.map((s) => ({
-        url: normalizeUrl(getMusicUrl(s.url || s.url)),
-        playing: !!s.playing,
-        volume: s.volume != null ? s.volume : 100,
-      }));
+      // 🟢 FILTRA SFX (efeitos sonoros) que não devem tocar como música
+      const sounds = data.sounds
+        .filter((s) => {
+          const u = (s.url || "").toLowerCase();
+          if (u.includes("xp_pickup") || u.includes("/sfx/") || u.includes("sfx_")) return false;
+          return true;
+        })
+        .map((s) => ({
+          url: normalizeUrl(getMusicUrl(s.url || s.url)),
+          playing: !!s.playing,
+          volume: s.volume != null ? s.volume : 100,
+        }));
 
       // update desired volumes map
       sounds.forEach((s) => {

@@ -14,7 +14,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { db } from "../firebaseConfig";
-import { collection, doc, onSnapshot, addDoc, serverTimestamp, query, orderBy, updateDoc, deleteDoc, setDoc, getDoc, limit, getDocs } from "firebase/firestore";
+import { collection, doc, onSnapshot, addDoc, serverTimestamp, query, orderBy, updateDoc, deleteDoc, setDoc, getDoc, limit, getDocs, startAfter } from "firebase/firestore";
 
 const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
 const MESTRE_EMAIL = "mestre@reqviemrpg.com";
@@ -185,25 +185,26 @@ const MessageBubble = memo(({
           </Avatar>
         )}
 
-        <Box className="msg-actions" sx={{
-          position: 'absolute',
-          top: 0,
-          right: ehMeu ? 40 : undefined,
-          left: ehMeu ? undefined : 40,
-          display: 'flex',
-          gap: 0.2,
-          opacity: 0,
-          transition: 'opacity 0.2s',
-          pointerEvents: 'none',
-          '&:hover': { pointerEvents: 'auto' }
-        }}>
-          <IconButton size="small" onClick={() => { setEditandoMsg(msg.id); setTextoEdicao(msg.conteudo); }} sx={{ bgcolor: '#1a1a2e', width: 18, height: 18, pointerEvents: 'auto' }}>
-            <EditIcon sx={{ fontSize: 10, color: '#ff9800' }} />
-          </IconButton>
-          <IconButton size="small" onClick={() => excluirMensagem(msg.id)} sx={{ bgcolor: '#1a1a2e', width: 18, height: 18, pointerEvents: 'auto' }}>
-            <DeleteIcon sx={{ fontSize: 10, color: '#ef4444' }} />
-          </IconButton>
-        </Box>
+        {ehMeu && (
+          <Box className="msg-actions" sx={{
+            position: 'absolute',
+            top: 0,
+            right: 40,
+            display: 'flex',
+            gap: 0.2,
+            opacity: 0,
+            transition: 'opacity 0.2s',
+            pointerEvents: 'none',
+            '&:hover': { pointerEvents: 'auto' }
+          }}>
+            <IconButton size="small" onClick={() => { setEditandoMsg(msg.id); setTextoEdicao(msg.conteudo); }} sx={{ bgcolor: '#1a1a2e', width: 18, height: 18, pointerEvents: 'auto' }}>
+              <EditIcon sx={{ fontSize: 10, color: '#ff9800' }} />
+            </IconButton>
+            <IconButton size="small" onClick={() => excluirMensagem(msg.id)} sx={{ bgcolor: '#1a1a2e', width: 18, height: 18, pointerEvents: 'auto' }}>
+              <DeleteIcon sx={{ fontSize: 10, color: '#ef4444' }} />
+            </IconButton>
+          </Box>
+        )}
       </Box>
     </React.Fragment>
   );
@@ -236,6 +237,10 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
   const [notificacoesLocais, setNotificacoesLocais] = useState({});
   const [naoLidas, setNaoLidas] = useState({});
   const [enviandoImagem, setEnviandoImagem] = useState(false);
+  // 🟢 PAGINAÇÃO
+  const [ultimoDoc, setUltimoDoc] = useState(null);
+  const [temMaisMensagens, setTemMaisMensagens] = useState(true);
+  const [carregandoAntigas, setCarregandoAntigas] = useState(false);
   const chatEndRef = useRef(null);
   const chatRef = useRef(null);
   const divisoriaRef = useRef(null);
@@ -338,22 +343,64 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
     }
   }, []);
 
-  // 🟢 CARREGAR MENSAGENS COM LIMIT
+  // 🟢 CARREGAR AS 50 MAIS RECENTES (e preparar paginação)
   useEffect(() => {
     if (!chatAberto || !userEmail) return;
     const chatId = [userEmail, chatAberto].sort().join("_");
     const ref = collection(db, "whatsapp_chats", chatId, "mensagens");
-    const q = query(ref, orderBy("timestamp", "asc"), limit(100));
+    const q = query(ref, orderBy("timestamp", "desc"), limit(50));
     const unsub = onSnapshot(q, (snap) => {
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
       setMensagens(msgs);
+
+      // Guarda o doc mais antigo pra paginação
+      setUltimoDoc(snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null);
+      setTemMaisMensagens(snap.docs.length >= 50);
 
       const ultimaLida = ultimaLeitura[chatAberto];
       const novas = msgs.filter(m => m.de !== userEmail && (!ultimaLida || m.id > ultimaLida));
       setNaoLidas(prev => ({ ...prev, [chatAberto]: novas.length }));
     });
     return () => unsub();
-  }, [chatAberto, userEmail, ultimaLeitura]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatAberto, userEmail]);
+
+  // 🟢 CARREGAR MAIS 50 ANTIGAS (scroll infinito)
+  const carregarMensagensAntigas = useCallback(async () => {
+    if (carregandoAntigas || !temMaisMensagens || !ultimoDoc || !chatAberto || !userEmail) return;
+    setCarregandoAntigas(true);
+
+    const container = chatRef.current;
+    const alturaAntiga = container?.scrollHeight || 0;
+
+    try {
+      const chatId = [userEmail, chatAberto].sort().join("_");
+      const ref = collection(db, "whatsapp_chats", chatId, "mensagens");
+      const q = query(ref, orderBy("timestamp", "desc"), startAfter(ultimoDoc), limit(50));
+      const snap = await getDocs(q);
+
+      if (snap.docs.length > 0) {
+        const antigas = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+        setMensagens(prev => [...antigas, ...prev]);
+        setUltimoDoc(snap.docs[snap.docs.length - 1]);
+        if (snap.docs.length < 50) setTemMaisMensagens(false);
+
+        // Preserva posição do scroll (fica no mesmo lugar visual)
+        requestAnimationFrame(() => {
+          if (container) {
+            const alturaNova = container.scrollHeight;
+            container.scrollTop = alturaNova - alturaAntiga;
+          }
+        });
+      } else {
+        setTemMaisMensagens(false);
+      }
+    } catch (err) {
+      console.error("[Chat] Erro ao carregar antigas:", err);
+    } finally {
+      setCarregandoAntigas(false);
+    }
+  }, [carregandoAntigas, temMaisMensagens, ultimoDoc, chatAberto, userEmail]);
 
   // 🟢 ABRIR CHAT NA DIVISÓRIA
   useEffect(() => {
@@ -405,7 +452,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
     }
   }, [userEmail, setNotificacoesSidebar]);
 
-  // 🟢 SCROLL LISTENER
+  // 🟢 SCROLL LISTENER (com paginação)
   useEffect(() => {
     const container = chatRef.current;
     if (!container) return;
@@ -425,6 +472,11 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
         } else {
           setShowScrollButton(true);
         }
+
+        // 🟢 Perto do topo → carrega mais antigas
+        if (container.scrollTop < 50 && temMaisMensagens && !carregandoAntigas) {
+          carregarMensagensAntigas();
+        }
       }, 100);
     };
 
@@ -433,7 +485,7 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
       container.removeEventListener("scroll", handleScroll);
       if (scrollTimeout) clearTimeout(scrollTimeout);
     };
-  }, [chatAberto, marcarComoLida]);
+  }, [chatAberto, marcarComoLida, temMaisMensagens, carregandoAntigas, carregarMensagensAntigas]);
 
   // 🟢 CARREGAR ÚLTIMA LEITURA
   useEffect(() => {
@@ -637,9 +689,14 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
     }
   }, [textoMsg, filePreviews, chatAberto, userEmail, enviandoImagem]);
 
-  // 🟢 EDITAR MENSAGEM
+  // 🟢 EDITAR MENSAGEM (só a própria)
   const editarMensagem = useCallback(async (msgId) => {
     if (!textoEdicao.trim()) return;
+    const msg = mensagensRef.current.find(m => m.id === msgId);
+    if (!msg || msg.de !== userEmail) {
+      alert("❌ Você só pode editar suas próprias mensagens.");
+      return;
+    }
     const chatId = [userEmail, chatAberto].sort().join("_");
     await updateDoc(doc(db, "whatsapp_chats", chatId, "mensagens", msgId), {
       conteudo: textoEdicao.trim(),
@@ -649,8 +706,13 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
     setTextoEdicao("");
   }, [textoEdicao, userEmail, chatAberto]);
 
-  // 🟢 EXCLUIR MENSAGEM
+  // 🟢 EXCLUIR MENSAGEM (só a própria)
   const excluirMensagem = useCallback(async (msgId) => {
+    const msg = mensagensRef.current.find(m => m.id === msgId);
+    if (!msg || msg.de !== userEmail) {
+      alert("❌ Você só pode excluir suas próprias mensagens.");
+      return;
+    }
     if (!window.confirm("Excluir esta mensagem?")) return;
     const chatId = [userEmail, chatAberto].sort().join("_");
     await deleteDoc(doc(db, "whatsapp_chats", chatId, "mensagens", msgId));
@@ -914,6 +976,27 @@ function WhatsAppChat({ userEmail, userNick, fichasMap: fichasMapProp, onClose, 
                 "&::-webkit-scrollbar": { width: "4px" },
                 "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.2)", borderRadius: "10px" }
               }}>
+                {carregandoAntigas && (
+                  <Box sx={{ textAlign: 'center', py: 1.5, opacity: 0.7 }}>
+                    <Typography variant="caption" sx={{ color: '#00e0ff', fontSize: '0.65rem' }}>
+                      ⏳ Carregando mensagens antigas...
+                    </Typography>
+                  </Box>
+                )}
+                {!carregandoAntigas && temMaisMensagens && mensagens.length >= 50 && (
+                  <Box
+                    onClick={carregarMensagensAntigas}
+                    sx={{
+                      textAlign: 'center', py: 1, cursor: 'pointer',
+                      '&:hover': { bgcolor: 'rgba(0,224,255,0.05)' },
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ color: '#4caf50', fontSize: '0.6rem' }}>
+                      ⬆️ Clique ou role pra cima pra carregar mais
+                    </Typography>
+                  </Box>
+                )}
                 {mensagens.map((msg, index) => {
                   const ehMeu = msg.de === userEmail;
                   const fotoRemetente = ehMeu ? getFotoPersonagem(userEmail) : getFotoPersonagem(chatAberto);

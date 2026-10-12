@@ -1,5 +1,6 @@
 // src/components/Chat.jsx
 import React, { useEffect, useRef, useState, memo, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Box,
   Button,
@@ -421,6 +422,10 @@ if (typeof document !== 'undefined') {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
+    @keyframes glowConjunto {
+      0%, 100% { box-shadow: 0 0 20px rgba(76,175,80,0.35), inset 0 0 30px rgba(76,175,80,0.08); }
+      50% { box-shadow: 0 0 30px rgba(76,175,80,0.6), inset 0 0 40px rgba(76,175,80,0.15); }
+    }
   `;
   document.head.appendChild(styleSheet);
 }
@@ -477,6 +482,8 @@ const [acaoConsumivelValor, setAcaoConsumivelValor] = useState(0); // Valor máx
 const [acaoConsumivelPercentual, setAcaoConsumivelPercentual] = useState(100); // % a usar
 // 🟢 ESTADOS DO SISTEMA DE COMBATE
 const [acaoModo, setAcaoModo] = useState("acao"); // "acao" = normal, "reacao" = respondendo ataque
+// 🟢 JOGADA EM CONJUNTO
+const [jogadoresConjunto, setJogadoresConjunto] = useState([]);
 const [acaoAlvo, setAcaoAlvo] = useState(""); // email do alvo
 const [acaoTipo, setAcaoTipo] = useState(""); // "dano", "esquiva", "contragolpe"
 const [acaoPendenteId, setAcaoPendenteId] = useState(null); // ID da ação pendente
@@ -934,8 +941,8 @@ useEffect(() => {
         if (item.type.startsWith("image/")) {
           const file = item.getAsFile();
           if (file) {
-            const img = await compressImage(file);
-            setFilePreviews((prev) => [...prev, img]);
+            const url = await uploadImagemFullQuality(file);
+            if (url) setFilePreviews((prev) => [...prev, url]);
           }
         }
       }
@@ -1150,34 +1157,54 @@ async function rolarDadoMorte() {
   }, 3000);
 }
 
-  async function compressImage(file, maxSize = 500, quality = 0.5) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const reader = new FileReader();
-      reader.onload = (e) => (img.src = e.target.result);
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let { width, height } = img;
-        if (width > height && width > maxSize) {
-          height = (height * maxSize) / width;
-          width = maxSize;
-        } else if (height > width && height > maxSize) {
-          width = (width * maxSize) / height;
-          height = maxSize;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      reader.readAsDataURL(file);
-    });
+  // 🟢 UPLOAD DE ALTA QUALIDADE PRO IMGBB (preserva qualidade original)
+  async function uploadImagemFullQuality(file) {
+    const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
+    const fd = new FormData();
+    fd.append("image", file);
+    try {
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (data?.success && data.data?.url) return data.data.url;
+      throw new Error("Falha no upload");
+    } catch (err) {
+      console.error("Erro no upload:", err);
+      // Fallback: comprime local e retorna base64 se ImgBB falhar
+      return new Promise((resolve) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (e) => (img.src = e.target.result);
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let { width, height } = img;
+          const maxSize = 1920;
+          if (width > height && width > maxSize) {
+            height = (height * maxSize) / width;
+            width = maxSize;
+          } else if (height > width && height > maxSize) {
+            width = (width * maxSize) / height;
+            height = maxSize;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.92));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
   }
 
   async function handleFiles(files) {
-    const imgs = await Promise.all([...files].map((f) => compressImage(f)));
-    setFilePreviews((p) => [...p, ...imgs]);
+    // Upload em paralelo, full quality
+    const urls = await Promise.all(
+      [...files].map((f) => uploadImagemFullQuality(f))
+    );
+    setFilePreviews((p) => [...p, ...urls.filter(Boolean)]);
   }
 
   async function sendMessage(e) {
@@ -1424,6 +1451,147 @@ async function desgastarItem(email, nomeItem, quantidade = 1) {
   }
 }
 
+// 🟢 ROLAR AÇÃO EM CONJUNTO (soma os valores de todos os participantes)
+async function rolarAcaoConjunta() {
+  if (rolagemEmAndamento) return;
+  setRolagemEmAndamento(true);
+
+  try {
+    const participantes = [
+      { email: jogadorSelecionadoEmail, ficha: fichaJogador, isPrincipal: true },
+      ...jogadoresConjunto.map((email) => ({ email, ficha: fichasMap[email], isPrincipal: false })),
+    ].filter((p) => p.ficha);
+
+    if (participantes.length === 0) {
+      alert("Nenhum participante válido.");
+      setRolagemEmAndamento(false);
+      return;
+    }
+
+    const resultados = [];
+
+    for (const p of participantes) {
+      let totalD10 = 0;
+      const descParts = [];
+
+      if (acaoAtributo && p.ficha?.atributos?.[acaoAtributo] !== undefined) {
+        const v = Math.max(1, Number(p.ficha.atributos[acaoAtributo]) || 1);
+        totalD10 += v;
+        descParts.push(`${acaoAtributo}(${v})`);
+      }
+      if (acaoPericia && p.ficha?.pericias?.[acaoPericia]) {
+        const v = Number(p.ficha.pericias[acaoPericia]) || 0;
+        totalD10 += v;
+        descParts.push(`${acaoPericia}(${v})`);
+      }
+      if (acaoPericia2 && p.ficha?.pericias?.[acaoPericia2]) {
+        const v = Number(p.ficha.pericias[acaoPericia2]) || 0;
+        totalD10 += v;
+        descParts.push(`${acaoPericia2}(${v})`);
+      }
+      if (acaoItemDado) totalD10 += acaoItemDado;
+      if (acaoCasting) totalD10 += acaoCasting;
+      if (acaoEmbuicao) totalD10 += acaoEmbuicao;
+      if (acaoHabilidadeDado) totalD10 += acaoHabilidadeDado;
+
+      // Roll
+      const fatorSorte = sorteAzarMap[p.email];
+      const rolls = [];
+      let soma = 0;
+      for (let i = 0; i < totalD10; i++) {
+        let valor;
+        if (fatorSorte !== undefined) {
+          valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
+        } else {
+          valor = Math.floor(Math.random() * 10) + 1;
+        }
+        rolls.push(valor);
+        soma += valor;
+      }
+
+      // Debuffs e bônus
+      const totalDebuff = acaoDebuffs.reduce((s, d) => s + d.valor, 0);
+      const totalBonus = acaoBonusVariavelLista.reduce((s, b) => s + b.valor, 0);
+      soma = Math.max(0, soma - totalDebuff) + totalBonus;
+
+      // Crítico por jogador
+      const temDez = rolls.some((r) => r === 10);
+      const temUm = rolls.some((r) => r === 1);
+      const todosPos = rolls.length > 0 && rolls.every((r) => r >= 6);
+      const todosNeg = rolls.length > 0 && rolls.every((r) => r <= 5);
+      const isCrit = temDez && todosPos;
+      const isErro = temUm && todosNeg;
+
+      resultados.push({
+        email: p.email,
+        nome: p.ficha.nome || p.email,
+        totalD10,
+        rolls,
+        total: soma,
+        descricao: descParts.join(" + "),
+        isCrit,
+        isErro,
+      });
+    }
+
+    const somaTotal = resultados.reduce((s, r) => s + r.total, 0);
+    const nomePrincipal = fichaJogador?.nome || userNick;
+
+    let mensagem = `🎭 **AÇÃO EM CONJUNTO** 🎭\n`;
+    mensagem += `${resultados.length} participante(s)\n\n`;
+
+    for (const r of resultados) {
+      mensagem += `🎲 **${r.nome}**: ${r.totalD10}d10 => [${r.rolls.join(", ")}] = **${r.total}**`;
+      if (r.descricao) mensagem += `\n   _${r.descricao}_`;
+      if (r.isCrit) mensagem += ` 🌟 **CRÍTICO!**`;
+      if (r.isErro) mensagem += ` 💥 **ERRO CRÍTICO!**`;
+      mensagem += `\n\n`;
+    }
+
+    mensagem += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    mensagem += `🎯 **TOTAL COMBINADO:** **${somaTotal}**\n`;
+
+    if (acaoValorDificuldade) {
+      const vd = Number(acaoValorDificuldade);
+      mensagem += `\n${somaTotal >= vd ? '✅ **SUCESSO!**' : '❌ **FRACASSO!**'} (VD ${vd})`;
+    }
+
+    if (acaoAlvo) {
+      mensagem += `\n\n🎯 Alvo: **${fichasMap[acaoAlvo]?.nome || acaoAlvo}**`;
+    }
+
+    const isDadoSecreto = modoSecreto;
+    await addDoc(chatCol, {
+      userNick: nomePrincipal,
+      userEmail: jogadorSelecionadoEmail,
+      type: "acao",
+      text: isDadoSecreto
+        ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***')
+        : mensagem,
+      dadosRolados: resultados.flatMap((r) => r.rolls),
+      secretRolls: isDadoSecreto ? resultados.flatMap((r) => r.rolls) : null,
+      secretText: isDadoSecreto
+        ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***')
+        : null,
+      timestamp: serverTimestamp(),
+    });
+
+    // XP pra cada participante (não-mestre)
+    for (const r of resultados) {
+      if (r.email !== "mestre@reqviemrpg.com") {
+        await adicionarXpAcao(r.email, 1);
+      }
+    }
+
+    setAcaoOpen(false);
+    setJogadoresConjunto([]);
+  } catch (err) {
+    console.error("Erro na ação conjunta:", err);
+    alert("Erro: " + err.message);
+  } finally {
+    setRolagemEmAndamento(false);
+  }
+}
 
 async function rolarAcao() {
   if (rolagemEmAndamento) return;
@@ -1542,6 +1710,11 @@ const confirmarPosChoque = async () => {
     return;
   }
   
+  // 🟢 Se tiver jogadores em conjunto, vai pra função própria
+  if (jogadoresConjunto.length > 0) {
+    return await rolarAcaoConjunta();
+  }
+
   try {
     let totalD10 = 0;
     let descricao = [];
@@ -3532,7 +3705,7 @@ useEffect(() => {
         </DialogContent>
       </Dialog>
 
-      {lightboxImage && (
+      {lightboxImage && createPortal(
         <div
           onClick={() => setLightboxImage(null)}
           onWheel={(e) => {
@@ -3542,15 +3715,40 @@ useEffect(() => {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.85)",
+            background: "rgba(0,0,0,0.92)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 3000,
+            zIndex: 2147483647,
+            cursor: "zoom-out",
           }}
         >
           <LightboxImage src={lightboxImage} zoom={zoom} setZoom={setZoom} />
-        </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxImage(null); }}
+            style={{
+              position: "fixed",
+              top: 16,
+              right: 16,
+              background: "rgba(0,0,0,0.6)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.3)",
+              borderRadius: 8,
+              width: 40,
+              height: 40,
+              fontSize: 20,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 2147483647,
+            }}
+            title="Fechar"
+          >
+            ✕
+          </button>
+        </div>,
+        document.body
       )}
 
       <Fade in={showScrollButton}>
@@ -3573,7 +3771,7 @@ useEffect(() => {
        {/* 🟢 MODAL DE AÇÃO - VERSÃO COMPLETA */}
       <Dialog 
         open={acaoOpen} 
-        onClose={() => setAcaoOpen(false)}
+        onClose={() => { setAcaoOpen(false); setJogadoresConjunto([]); }}
         maxWidth="sm"
         fullWidth
         PaperProps={{
@@ -3636,6 +3834,147 @@ useEffect(() => {
                 Todos os demais campos são <strong style={{ color: '#4caf50' }}>opcionais</strong>.
               </Typography>
             </Box>
+
+            {/* 🟢 JOGADA EM CONJUNTO */}
+            <Paper sx={{
+              p: 2,
+              bgcolor: jogadoresConjunto.length > 0 ? 'rgba(76,175,80,0.14)' : 'rgba(76,175,80,0.03)',
+              border: jogadoresConjunto.length > 0 ? '1px solid #4caf50' : '1px dashed #4caf5044',
+              borderRadius: 2,
+              opacity: jogadoresConjunto.length > 0 ? 1 : 0.55,
+              boxShadow: jogadoresConjunto.length > 0 ? '0 0 20px rgba(76,175,80,0.35), inset 0 0 30px rgba(76,175,80,0.08)' : 'none',
+              transition: 'all 0.35s ease',
+              animation: jogadoresConjunto.length > 0 ? 'glowConjunto 2.5s ease-in-out infinite' : 'none',
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="subtitle2" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                  🎭 JOGADA EM CONJUNTO
+                </Typography>
+                <Typography variant="caption" sx={{ color: jogadoresConjunto.length > 0 ? '#4caf50' : '#64748b', fontWeight: 'bold' }}>
+                  {jogadoresConjunto.length === 0 ? 'Sozinho' : `${jogadoresConjunto.length + 1} participantes`}
+                </Typography>
+              </Box>
+              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1.5 }}>
+                Adicione outros personagens. Cada um rola sua própria ação e os <strong style={{ color: '#4caf50' }}>valores são somados</strong> no total final.
+              </Typography>
+
+              {/* Jogador principal */}
+              <Box sx={{ mb: 1, p: 1, bgcolor: '#0f172a', borderRadius: 1, border: '1px solid #4caf5066', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <span style={{ fontSize: '1rem' }}>⭐</span>
+                <Typography sx={{ color: '#4caf50', fontWeight: 'bold', fontSize: '0.8rem' }}>
+                  {fichaJogador?.nome || userNick}
+                </Typography>
+                <Chip label="Principal" size="small" sx={{ bgcolor: '#4caf5022', color: '#4caf50', fontSize: '0.55rem', height: 16, ml: 'auto' }} />
+              </Box>
+
+              {/* Selects progressivos */}
+              {[...jogadoresConjunto, ""].map((email, i) => {
+                const isLast = i === jogadoresConjunto.length;
+                return (
+                  <FormControl key={i} fullWidth size="small" sx={{ mt: 0.5 }}>
+                    <Select
+                      value={email}
+                      displayEmpty
+                      renderValue={(selected) => {
+                        if (!selected) {
+                          return (
+                            <em style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                              {isLast ? "➕ Adicionar personagem..." : "Selecione..."}
+                            </em>
+                          );
+                        }
+                        const ficha = fichasMap[selected];
+                        const corAura = CORES_AURA_CHAT[ficha?.tipoAura] || '#4caf50';
+                        return (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: corAura, boxShadow: `0 0 6px ${corAura}` }} />
+                            <Typography sx={{ color: corAura, fontWeight: 'bold', fontSize: '0.8rem' }}>
+                              {ficha?.nome || selected}
+                            </Typography>
+                          </Box>
+                        );
+                      }}
+                      onChange={(e) => {
+                        if (isLast) {
+                          if (e.target.value) setJogadoresConjunto([...jogadoresConjunto, e.target.value]);
+                        } else {
+                          if (e.target.value === "") {
+                            setJogadoresConjunto(jogadoresConjunto.filter((_, k) => k !== i));
+                          } else {
+                            const novos = [...jogadoresConjunto];
+                            novos[i] = e.target.value;
+                            setJogadoresConjunto(novos);
+                          }
+                        }
+                      }}
+                      sx={{
+                        color: '#fff',
+                        bgcolor: '#1a1a2e',
+                        fontSize: '0.8rem',
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: isLast ? '#4caf5066' : '#334155' },
+                        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#4caf50' },
+                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#4caf50' },
+                        '& .MuiSelect-icon': { color: '#4caf50' },
+                        '& .MuiSelect-select': { display: 'flex', alignItems: 'center', minHeight: 22 },
+                      }}
+                      MenuProps={{ PaperProps: { sx: { bgcolor: '#1a1a2e', color: '#fff', maxHeight: 350 } } }}
+                    >
+                      {isLast ? (
+                        <MenuItem value="" disabled>
+                          <em style={{ color: '#64748b' }}>➕ Adicionar personagem...</em>
+                        </MenuItem>
+                      ) : (
+                        <MenuItem value="">
+                          <em style={{ color: '#ef4444' }}>❌ Remover</em>
+                        </MenuItem>
+                      )}
+
+                      <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+                        <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                          ── PERSONAGENS DO JOGADOR ──
+                        </Typography>
+                      </MenuItem>
+
+                      {Object.entries(fichasMap)
+                        .filter(([e, d]) => (d.tipoFicha || "PJ") === "PJ" && e !== jogadorSelecionadoEmail && !jogadoresConjunto.includes(e))
+                        .map(([e, d]) => {
+                          const corAura = CORES_AURA_CHAT[d.tipoAura] || '#4caf50';
+                          return (
+                            <MenuItem key={e} value={e} sx={{ pl: 3 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: corAura, boxShadow: `0 0 6px ${corAura}` }} />
+                                <Typography sx={{ color: corAura, fontSize: '0.8rem', fontWeight: 'bold' }}>{d.nome || e}</Typography>
+                              </Box>
+                            </MenuItem>
+                          );
+                        })}
+
+                      {Object.entries(fichasMap).some(([e, d]) => d.tipoFicha === "PM" && e !== jogadorSelecionadoEmail && !jogadoresConjunto.includes(e)) && (
+                        <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
+                          <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                            ── PERSONAGENS DO MESTRE ──
+                          </Typography>
+                        </MenuItem>
+                      )}
+
+                      {Object.entries(fichasMap)
+                        .filter(([e, d]) => d.tipoFicha === "PM" && e !== jogadorSelecionadoEmail && !jogadoresConjunto.includes(e))
+                        .map(([e, d]) => {
+                          const corAura = CORES_AURA_CHAT[d.tipoAura] || '#ff9800';
+                          return (
+                            <MenuItem key={e} value={e} sx={{ pl: 3 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: corAura, boxShadow: `0 0 6px ${corAura}` }} />
+                                <Typography sx={{ color: corAura, fontSize: '0.8rem', fontWeight: 'bold' }}>{d.nome || e}</Typography>
+                              </Box>
+                            </MenuItem>
+                          );
+                        })}
+                    </Select>
+                  </FormControl>
+                );
+              })}
+            </Paper>
             
  {/* Atributo */}
 <FormControl fullWidth size="small">

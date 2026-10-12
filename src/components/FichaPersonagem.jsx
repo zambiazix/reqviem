@@ -23,16 +23,410 @@
   Chip,
 } from "@mui/material";
 import { Divider } from "@mui/material";
-import { Checkbox, FormControlLabel, Tooltip } from "@mui/material";
+import { Checkbox, FormControlLabel, Tooltip, Collapse } from "@mui/material";
   import AddIcon from "@mui/icons-material/Add";
   import DeleteIcon from "@mui/icons-material/Delete";
   import CloseIcon from "@mui/icons-material/Close";
   import EditIcon from "@mui/icons-material/Edit";
+  import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+  import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
   import { db } from "../firebaseConfig";
   import { doc, getDoc, setDoc, onSnapshot, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
   import { CircularProgress } from "@mui/material";
   import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+// 🟢 CARD DE ITEM EXPANSÍVEL (usado no inventário principal e nos secundários)
+function ItemCard({
+  item,
+  categoria,
+  index,
+  isMestre,
+  expandido,
+  onToggle,
+  onAtualizarItem,
+  onRemoverItem,
+  onAbrirImagem,
+  onAbrirEditar,
+  onMoverItem,
+  mostrarAcoes = true,
+  TIPOS_DANO = [],
+  TIPOS_CONSUMIVEL = [],
+  TIPOS_INSUMIVEL = [],
+}) {
+  const durabilidadePercent = Math.max(0, Math.min(100, item.durabilidade ?? 100)) / 100;
+  const barColor = durabilidadePercent > 0.66 ? '#4caf50' : durabilidadePercent > 0.33 ? '#ff9800' : '#f44336';
+  const tipoDanoInfo = TIPOS_DANO.find(t => t.valor === (item.tipoDano || "Nenhum"));
+  const consumivelInfo = TIPOS_CONSUMIVEL.find(t => t.valor === (item.consumivel || "Nenhum"));
+  const insumivelInfo = TIPOS_INSUMIVEL.find(t => t.valor === (item.insumivel || "Nenhum"));
+
+  const nomeExibido = item.nomeOriginal && item.nomeOriginal !== item.nome
+    ? `${item.nome} (${item.nomeOriginal})`
+    : (item.nome || "Sem nome");
+
+  const temTipoDano = tipoDanoInfo && item.tipoDano && item.tipoDano !== "Nenhum";
+  const temConsumivel = consumivelInfo && item.consumivel && item.consumivel !== "Nenhum";
+  const temInsumivel = insumivelInfo && item.insumivel && item.insumivel !== "Nenhum";
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        mb: 1,
+        bgcolor: '#1a1a2e',
+        border: expandido ? '1px solid #00e0ff88' : '1px solid #334155',
+        borderRadius: 2,
+        overflow: 'hidden',
+        transition: 'border-color 0.25s ease, box-shadow 0.25s ease',
+        boxShadow: expandido ? '0 0 18px rgba(0,224,255,0.15)' : 'none',
+        '&:hover .arrows-reorder': { opacity: 1 },
+      }}
+    >
+      {/* ===== HEADER (sempre visível, mesmo tamanho nos dois estados) ===== */}
+      <Box
+        onClick={onToggle}
+        sx={{
+          p: 1,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.2,
+          bgcolor: expandido ? 'rgba(0,224,255,0.05)' : 'transparent',
+          transition: 'background-color 0.25s ease',
+          '&:hover': { bgcolor: 'rgba(0,224,255,0.08)' },
+        }}
+      >
+        {/* Imagem 48x48 */}
+        <Box
+          onClick={(e) => {
+            if (item.imagem) { e.stopPropagation(); onAbrirImagem(item.imagem); }
+          }}
+          sx={{
+            width: 48, height: 48, minWidth: 48,
+            borderRadius: 1.5, overflow: 'hidden',
+            bgcolor: '#0f172a', border: '1px solid #334155',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: item.imagem ? 'pointer' : 'default',
+            transition: 'transform 0.2s ease, border-color 0.2s ease',
+            '&:hover': item.imagem ? { transform: 'scale(1.05)', borderColor: '#00e0ff' } : {},
+          }}
+        >
+          {item.imagem ? (
+            <img src={item.imagem} alt={item.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <Typography sx={{ fontSize: '1.4rem', opacity: 0.5 }}>📦</Typography>
+          )}
+        </Box>
+
+        {/* Nome + chips */}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {nomeExibido}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 0.5, mt: 0.4, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Chip
+              label={`📦 x${item.quantidade || 1}`}
+              size="small"
+              sx={{ height: 20, fontSize: '0.62rem', bgcolor: '#0f172a', color: '#cbd5e1', border: '1px solid #334155', fontWeight: 600 }}
+            />
+            <Chip
+              label={`🎲 ${item.dado || 1}`}
+              size="small"
+              sx={{ height: 20, fontSize: '0.62rem', bgcolor: '#0f172a', color: '#00e0ff', border: '1px solid #334155', fontWeight: 700 }}
+            />
+            <Chip
+              label={`🔧 ${item.durabilidade ?? 100}%`}
+              size="small"
+              sx={{ height: 20, fontSize: '0.62rem', bgcolor: '#0f172a', color: barColor, border: '1px solid #334155', fontWeight: 700 }}
+            />
+            {temTipoDano && (
+              <Chip
+                label={`🗡️ ${tipoDanoInfo.label}`}
+                size="small"
+                sx={{ height: 20, fontSize: '0.62rem', bgcolor: `${tipoDanoInfo.cor}18`, color: tipoDanoInfo.cor, border: `1px solid ${tipoDanoInfo.cor}55`, fontWeight: 700 }}
+              />
+            )}
+            {temConsumivel && (
+              <Chip
+                label={`🧪 ${consumivelInfo.label}`}
+                size="small"
+                sx={{ height: 20, fontSize: '0.62rem', bgcolor: `${consumivelInfo.cor}18`, color: consumivelInfo.cor, border: `1px solid ${consumivelInfo.cor}55`, fontWeight: 600 }}
+              />
+            )}
+            {temInsumivel && (
+              <Chip
+                label={`🛢️ ${insumivelInfo.label}`}
+                size="small"
+                sx={{ height: 20, fontSize: '0.62rem', bgcolor: `${insumivelInfo.cor}18`, color: insumivelInfo.cor, border: `1px solid ${insumivelInfo.cor}55`, fontWeight: 600 }}
+              />
+            )}
+          </Box>
+        </Box>
+
+        {/* Setas de reordenar (só no hover, só quando recolhido) */}
+        {onMoverItem && !expandido && (
+          <Box
+            className="arrows-reorder"
+            onClick={(e) => e.stopPropagation()}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              opacity: 0,
+              transition: 'opacity 0.2s ease',
+              pointerEvents: 'auto',
+              mr: 0.5,
+            }}
+          >
+            <IconButton
+              size="small"
+              onClick={() => onMoverItem(categoria, index, -1)}
+              sx={{
+                p: 0.1,
+                color: '#00e0ff',
+                '&:hover': { bgcolor: 'rgba(0,224,255,0.18)' },
+              }}
+              title="Mover para cima"
+            >
+              <KeyboardArrowUpIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+            <IconButton
+              size="small"
+              onClick={() => onMoverItem(categoria, index, 1)}
+              sx={{
+                p: 0.1,
+                color: '#00e0ff',
+                '&:hover': { bgcolor: 'rgba(0,224,255,0.18)' },
+              }}
+              title="Mover para baixo"
+            >
+              <KeyboardArrowDownIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Box>
+        )}
+
+        {/* Seta animada */}
+        <Typography
+          sx={{
+            color: expandido ? '#00e0ff' : '#94a3b8',
+            fontSize: '1rem',
+            transform: expandido ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.25s ease, color 0.25s ease',
+            userSelect: 'none',
+          }}
+        >
+          ▶
+        </Typography>
+      </Box>
+
+      {/* ===== CORPO (animado com Collapse) ===== */}
+      <Collapse in={expandido} timeout={220}>
+        <Box sx={{ p: 2, borderTop: '1px solid #334155', bgcolor: 'rgba(15,23,42,0.4)' }}>
+          {/* Descrição */}
+          <Box sx={{ mb: 2 }}>
+            <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5, letterSpacing: 0.5 }}>
+              📝 DESCRIÇÃO
+            </Typography>
+            <Box
+              sx={{
+                maxHeight: 100,
+                overflowY: 'auto',
+                bgcolor: '#0f172a',
+                borderRadius: 1,
+                p: 1,
+                border: '1px solid #1e293b',
+                minHeight: 40,
+                '&::-webkit-scrollbar': { width: '4px' },
+                '&::-webkit-scrollbar-thumb': { background: 'rgba(0,224,255,0.3)', borderRadius: '10px' },
+              }}
+            >
+              <Typography sx={{ color: '#cbd5e1', fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>
+                {item.descricao || (isMestre ? "Sem descrição. Edite para adicionar." : "—")}
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Durabilidade como barra visual */}
+          <Box sx={{ mb: 2 }}>
+            <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5, letterSpacing: 0.5 }}>
+              🔧 DURABILIDADE
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ position: 'relative', flex: 1, height: 26, bgcolor: '#0f172a', borderRadius: 2, overflow: 'hidden', border: '1px solid #334155' }}>
+                <Box
+                  sx={{
+                    width: `${durabilidadePercent * 100}%`,
+                    height: '100%',
+                    bgcolor: barColor,
+                    transition: 'width 0.35s ease, background-color 0.35s ease',
+                    boxShadow: `0 0 10px ${barColor}66`,
+                  }}
+                />
+                <Typography
+                  sx={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.78rem',
+                    fontWeight: 800,
+                    color: '#fff',
+                    textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+                    pointerEvents: 'none',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {item.durabilidade ?? 100}%
+                </Typography>
+              </Box>
+              {isMestre && (
+                <TextField
+                  size="small"
+                  type="number"
+                  value={item.durabilidade ?? 100}
+                  onChange={(e) => onAtualizarItem(categoria, index, "durabilidade", Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                  InputProps={{ inputProps: { min: 0, max: 100 }, sx: { color: barColor, fontSize: '0.8rem', fontWeight: 700 } }}
+                  sx={{
+                    width: 80,
+                    bgcolor: '#0f172a',
+                    '& input': { textAlign: 'center' },
+                  }}
+                />
+              )}
+            </Box>
+          </Box>
+
+          {/* Qtd + Dado compactos */}
+          <Grid container spacing={1.5} sx={{ mb: 2 }}>
+            <Grid item xs={6}>
+              <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5, letterSpacing: 0.5 }}>
+                📦 QUANTIDADE
+              </Typography>
+              <TextField
+                fullWidth size="small" type="number"
+                value={item.quantidade || 1}
+                disabled={!isMestre}
+                onChange={(e) => isMestre && onAtualizarItem(categoria, index, "quantidade", Math.max(1, Number(e.target.value) || 1))}
+                InputProps={{ inputProps: { min: 1 }, sx: { color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 600 } }}
+                sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5, letterSpacing: 0.5 }}>
+                🎲 DADO
+              </Typography>
+              <TextField
+                fullWidth size="small" type="number"
+                value={item.dado || 1}
+                disabled={!isMestre}
+                onChange={(e) => isMestre && onAtualizarItem(categoria, index, "dado", Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
+                InputProps={{ inputProps: { min: 1, max: 10 }, sx: { color: '#00e0ff', fontSize: '0.85rem', fontWeight: 700 } }}
+                sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
+              />
+            </Grid>
+          </Grid>
+
+          {/* Tipo Dano / Consumível / Insumível */}
+          <Grid container spacing={1.5} sx={{ mb: 1 }}>
+            <Grid item xs={12} sm={4}>
+              <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5, letterSpacing: 0.5 }}>
+                🗡️ TIPO DE DANO
+              </Typography>
+              {isMestre ? (
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={item.tipoDano || "Nenhum"}
+                    onChange={(e) => onAtualizarItem(categoria, index, "tipoDano", e.target.value)}
+                    sx={{ color: tipoDanoInfo?.cor || '#888', bgcolor: '#0f172a', fontSize: '0.75rem' }}
+                    MenuProps={{ PaperProps: { sx: { bgcolor: '#0f172a', color: '#fff', maxHeight: 300 } } }}
+                  >
+                    {TIPOS_DANO.map(td => (
+                      <MenuItem key={td.valor} value={td.valor}>
+                        <Box>
+                          <Typography sx={{ color: td.cor, fontWeight: 'bold', fontSize: '0.8rem' }}>{td.label}</Typography>
+                          <Typography sx={{ color: '#94a3b8', fontSize: '0.6rem' }}>{td.descricao}</Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <Chip
+                  label={`${tipoDanoInfo?.valor !== "Nenhum" ? "🗡️ " : ""}${tipoDanoInfo?.label || "Nenhum"}`}
+                  sx={{ bgcolor: `${tipoDanoInfo?.cor || "#888"}22`, color: tipoDanoInfo?.cor || '#888', fontWeight: 'bold', fontSize: '0.75rem', height: 28, border: `1px solid ${tipoDanoInfo?.cor || "#888"}55` }}
+                />
+              )}
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5, letterSpacing: 0.5 }}>
+                🧪 CONSUMÍVEL
+              </Typography>
+              {isMestre ? (
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={item.consumivel || "Nenhum"}
+                    onChange={(e) => onAtualizarItem(categoria, index, "consumivel", e.target.value)}
+                    sx={{ color: consumivelInfo?.cor || '#888', bgcolor: '#0f172a', fontSize: '0.75rem' }}
+                    MenuProps={{ PaperProps: { sx: { bgcolor: '#0f172a', color: '#fff', maxHeight: 200 } } }}
+                  >
+                    {TIPOS_CONSUMIVEL.map(tc => (
+                      <MenuItem key={tc.valor} value={tc.valor}>
+                        <Typography sx={{ color: tc.cor, fontWeight: 'bold', fontSize: '0.8rem' }}>{tc.label}</Typography>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <Chip
+                  label={consumivelInfo?.label || "Nenhum"}
+                  sx={{ bgcolor: `${consumivelInfo?.cor || "#888"}22`, color: consumivelInfo?.cor || '#888', fontWeight: 'bold', fontSize: '0.75rem', height: 28, border: `1px solid ${consumivelInfo?.cor || "#888"}55` }}
+                />
+              )}
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5, letterSpacing: 0.5 }}>
+                🛢️ INSUMÍVEL
+              </Typography>
+              {isMestre ? (
+                <FormControl fullWidth size="small">
+                  <Select
+                    value={item.insumivel || "Nenhum"}
+                    onChange={(e) => onAtualizarItem(categoria, index, "insumivel", e.target.value)}
+                    sx={{ color: insumivelInfo?.cor || '#888', bgcolor: '#0f172a', fontSize: '0.75rem' }}
+                    MenuProps={{ PaperProps: { sx: { bgcolor: '#0f172a', color: '#fff', maxHeight: 250 } } }}
+                  >
+                    {TIPOS_INSUMIVEL.map(ti => (
+                      <MenuItem key={ti.valor} value={ti.valor}>
+                        <Typography sx={{ color: ti.cor, fontWeight: 'bold', fontSize: '0.8rem' }}>{ti.label}</Typography>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <Chip
+                  label={insumivelInfo?.label || "Nenhum"}
+                  sx={{ bgcolor: `${insumivelInfo?.cor || "#888"}22`, color: insumivelInfo?.cor || '#888', fontWeight: 'bold', fontSize: '0.75rem', height: 28, border: `1px solid ${insumivelInfo?.cor || "#888"}55` }}
+                />
+              )}
+            </Grid>
+          </Grid>
+
+          {/* Ações */}
+          {mostrarAcoes && isMestre && (
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 1.5 }}>
+              <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => onAbrirEditar(categoria, index, item)} sx={{ color: '#ff9800', borderColor: '#ff9800' }}>
+                Editar Item
+              </Button>
+              <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => { if (window.confirm(`Remover "${item.nome || "item"}"?`)) onRemoverItem(categoria, index); }}>
+                Remover
+              </Button>
+            </Box>
+          )}
+        </Box>
+      </Collapse>
+    </Paper>
+  );
+}
 
   export default function FichaPersonagem({ user, fichaId, isMestre }) {
     // 🟢 ESTILOS CSS PARA ANIMAÇÕES
@@ -632,6 +1026,10 @@ useEffect(() => {
 }, [fichaId]);
 const [modalInventarioOpen, setModalInventarioOpen] = useState(false);
 const [abaAtiva, setAbaAtiva] = useState("equipamentos"); // equipamentos, vestes, diversos
+// 🟢 NOVOS: cards expansíveis de item
+const [itemExpandido, setItemExpandido] = useState(null); // chave única "categoria-idx"
+const [modalEditarItemOpen, setModalEditarItemOpen] = useState(false);
+const [itemEditando, setItemEditando] = useState(null); // { categoria, index, item }
 const [itemDadoModalOpen, setItemDadoModalOpen] = useState(false);
 const [itemSelecionadoParaDado, setItemSelecionadoParaDado] = useState(null);
 const [dadoQuantidade, setDadoQuantidade] = useState(1);
@@ -1210,6 +1608,7 @@ const unsub = onSnapshot(ref, (snap) => {
       if (!Array.isArray(itens)) return [];
       return itens.map(item => ({
         ...item,
+        _uid: item._uid || `it_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
         dado: item.dado || 1,
         tipoDano: item.tipoDano || "Nenhum",
         consumivel: item.consumivel || "Nenhum",
@@ -1217,6 +1616,8 @@ const unsub = onSnapshot(ref, (snap) => {
         consumivelPercentual: item.consumivelPercentual || 100,
         insumivel: item.insumivel || "Nenhum",
         insumivelValor: item.insumivelValor || 0,
+        descricao: item.descricao || "",
+        nomeOriginal: item.nomeOriginal || "",
       }));
     };
 
@@ -1890,7 +2291,21 @@ const gerarCampoComIA = async (habilidadeIndex, campo) => {
     ...p,
     [tipo]: [
       ...(p[tipo] || []),
-            { quantidade: 1, nome: "", durabilidade: 100, imagem: "", dado: 1, tipoDano: "Nenhum", consumivel: "Nenhum", consumivelValor: 0, insumivel: "Nenhum", insumivelValor: 0 },
+      {
+        _uid: `it_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+        quantidade: 1,
+        nome: "",
+        descricao: "",
+        nomeOriginal: "",
+        durabilidade: 100,
+        imagem: "",
+        dado: 1,
+        tipoDano: "Nenhum",
+        consumivel: "Nenhum",
+        consumivelValor: 0,
+        insumivel: "Nenhum",
+        insumivelValor: 0,
+      },
     ],
   }));
 }
@@ -1908,7 +2323,23 @@ const gerarCampoComIA = async (habilidadeIndex, campo) => {
         [tipo]: p[tipo].filter((_, idx) => idx !== i),
       }));
     }
-
+function moverItem(tipo, i, direcao) {
+  setFicha((p) => {
+    const arr = [...(p[tipo] || [])];
+    const destino = i + direcao;
+    if (destino < 0 || destino >= arr.length) return p;
+    const [movido] = arr.splice(i, 1);
+    arr.splice(destino, 0, movido);
+    return { ...p, [tipo]: arr };
+  });
+  // Salva no Firestore depois do setState
+  setTimeout(async () => {
+    const novaFicha = fichaRef.current;
+    if (!novaFicha) return;
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, { [tipo]: novaFicha[tipo] }, { merge: true });
+  }, 50);
+}
     
     // Adicione estas funções após as funções de item existentes
 
@@ -2659,6 +3090,20 @@ const comprarComPP = async (tamanho, custoPP, slots) => {
     alert("Erro ao comprar.");
   }
 };
+const moverItemSecundario = async (secundarioId, idx, direcao) => {
+  const invAtual = inventariosSecundarios.find(inv => inv.id === secundarioId);
+  if (!invAtual) return;
+  const destino = idx + direcao;
+  if (destino < 0 || destino >= invAtual.itens.length) return;
+  const novosItens = [...invAtual.itens];
+  const [movido] = novosItens.splice(idx, 1);
+  novosItens.splice(destino, 0, movido);
+  const novosInventarios = inventariosSecundarios.map(inv =>
+    inv.id === secundarioId ? { ...inv, itens: novosItens } : inv
+  );
+  setInventariosSecundarios(novosInventarios);
+  await setDoc(doc(db, "fichas", fichaId), { inventariosSecundarios: novosInventarios }, { merge: true });
+};
 // 🟢 FUNÇÃO PARA TRANSFERIR ITEM DO INVENTÁRIO PRINCIPAL PARA SECUNDÁRIO
 const transferirParaSecundario = async () => {
   if (!itemParaTransferir || !inventarioSecundarioAtivo) {
@@ -3014,6 +3459,7 @@ const adicionarItemCraftado = (ficha, item) => {
     };
   } else {
     lista.push({
+      _uid: `it_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       nome: item.nome,
       quantidade: item.quantidade || 1,
       durabilidade: item.durabilidade ?? 100,
@@ -5629,511 +6075,28 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   <Typography variant="body2" sx={{ color: '#94a3b8', mb: 1 }}>
     {ficha[abaAtiva]?.length || 0} itens • Clique na imagem para ampliar
   </Typography>   
-              {ficha[abaAtiva]?.map((item, index) => {
-    const durabilidadePercent = (item.durabilidade || 100) / 100;
-    const barColor = durabilidadePercent > 0.66 ? '#4caf50' : durabilidadePercent > 0.33 ? '#ff9800' : '#f44336';
-    
-    return (
-      <Box key={index} sx={{ mb: 2 }}>
-        {/* TÍTULOS */}
-        <Box sx={{ display: 'flex', mb: 0.5, px: 1 }}>
-                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 60 }}>Imagem</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 45 }}>Qtd</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Nome</Typography>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1 }}>Durabilidade</Typography>
-                                        <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Tipo Dano</Typography>
-          {isMestre && (
-            <>
-              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Consumível</Typography>
-              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flex: 1.2 }}>Insumível</Typography>
-            </>
-          )}
-          {!isMestre && (
-            <>
-              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 55 }}>Usar</Typography>
-              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 55 }}>Aplicar</Typography>
-            </>
-          )}
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', width: 50, textAlign: 'right' }}>Dado</Typography>
-        </Box>
-
-        {/* BOX DO ITEM */}
-        <Paper 
-          sx={{ 
-            p: 1.5, 
-            bgcolor: '#1a1a2e',
-            border: '1px solid #334155',
-            '&:hover': { borderColor: '#00e0ff' }
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {/* Imagem */}
-            <Box sx={{ width: 60, position: 'relative' }}>
-              <Box
-                sx={{
-                  width: 50,
-                  height: 50,
-                  bgcolor: '#0f172a',
-                  borderRadius: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: item.imagem ? 'pointer' : 'default',
-                  border: '1px solid #334155',
-                  overflow: 'hidden'
-                }}
-                onClick={() => {
-                  if (item.imagem) {
-                    setLightboxSrc(item.imagem);
-                    setZoom(1);
-                    setLightboxOpen(true);
-                  }
-                }}
-              >
-                {item.imagem ? (
-                  <img 
-                    src={item.imagem} 
-                    alt={item.nome}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <Typography sx={{ fontSize: '1.2rem', opacity: 0.5 }}>📦</Typography>
-                )}
-              </Box>
-              
-              {item.imagem && (
-                <IconButton
-                  size="small"
-                  onClick={() => atualizarItem(abaAtiva, index, "imagem", "")}
-                  sx={{
-                    position: 'absolute',
-                    top: -5,
-                    right: 5,
-                    bgcolor: '#ef4444',
-                    width: 16,
-                    height: 16,
-                    '&:hover': { bgcolor: '#dc2626' }
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 10, color: '#fff' }} />
-                </IconButton>
-              )}
-              
-              <Button
-                size="small"
-                component="label"
-                sx={{ mt: 0.5, fontSize: '0.5rem', minWidth: 'auto', p: 0 }}
-              >
-                📷
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    
-                    const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
-                    const fd = new FormData();
-                    fd.append("image", file);
-                    
-                    try {
-                      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-                      const data = await res.json();
-                      if (data?.success) {
-                        atualizarItem(abaAtiva, index, "imagem", data.data.url);
-                      }
-                    } catch (err) {
-                      console.error("Erro no upload:", err);
-                    }
-                  }}
-                />
-              </Button>
-            </Box>
-
-            {/* Quantidade */}
-            <TextField
-              size="small"
-              type="number"
-              value={item.quantidade || 1}
-              disabled={!isMestre}
-              onChange={(e) => {
-                if (!isMestre) return;
-                atualizarItem(abaAtiva, index, "quantidade", Number(e.target.value));
-              }}
-              InputProps={{ 
-                inputProps: { min: 1 },
-                sx: { color: '#fff' }
-              }}
-              sx={{ 
-                width: 50,
-                bgcolor: '#0f172a',
-                '& input': { textAlign: 'center' }
-              }}
-            />
-              <Tooltip title={item.nome || "Sem nome"} placement="top" arrow>
-                <TextField
-  size="small"
-  placeholder="Nome"
-  value={item.nome || ""}
-  disabled={item.travado || (!isMestre && !item.editandoNome)}
-  onChange={(e) => {
-    if (item.travado) return;
-    if (!isMestre && !item.editandoNome) return;
-    atualizarItem(abaAtiva, index, "nome", e.target.value);
-  }}
-  InputProps={{ 
-    sx: { color: '#fff', fontWeight: 'bold' },
-    readOnly: item.travado,
-    endAdornment: !item.travado ? (
-      <InputAdornment position="end">
-        <IconButton
-          size="small"
-          onClick={() => {
-            const novosItens = [...ficha[abaAtiva]];
-            novosItens[index] = { 
-              ...novosItens[index], 
-              editandoNome: !novosItens[index].editandoNome 
-            };
-            setFicha(p => ({ ...p, [abaAtiva]: novosItens }));
-          }}
-          sx={{ color: item.editandoNome ? '#4caf50' : '#94a3b8' }}
-        >
-          {item.editandoNome ? '✅' : '✏️'}
-        </IconButton>
-      </InputAdornment>
-    ) : null
-  }}
-  sx={{ 
-    flex: 1,
-    bgcolor: '#0f172a',
-    '& .MuiInputBase-input': { 
-      color: '#fff',
-      fontWeight: 'bold'
-    }
-  }}
-/>
-              </Tooltip>
-            {/* Durabilidade - MAIOR AGORA (flex: 2.5) */}
-            <Box sx={{ flex: 2.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', minWidth: 30 }}>
-                Dur:
-              </Typography>
-              
-              <Box sx={{ 
-                flex: 1, 
-                height: 12, 
-                bgcolor: '#1e293b', 
-                borderRadius: 6, 
-                overflow: 'hidden',
-                border: '1px solid #475569'
-              }}>
-                <Box 
-                  sx={{ 
-                    width: `${durabilidadePercent * 100}%`, 
-                    height: '100%', 
-                    bgcolor: barColor,
-                    transition: 'width 0.3s'
-                  }} 
-                />
-              </Box>
-              
-              <TextField
-                size="small"
-                type="number"
-                value={item.durabilidade || 100}
-                disabled={!isMestre}
-                onChange={(e) => {
-                  if (!isMestre) return;
-                  const valor = Math.min(100, Math.max(0, Number(e.target.value)));
-                  atualizarItem(abaAtiva, index, "durabilidade", valor);
-                }}
-                InputProps={{ 
-                  inputProps: { min: 0, max: 100 },
-                  sx: { color: '#fff' }
-                }}
-                sx={{ width: 65, bgcolor: '#0f172a' }}
-              />
-              <Typography variant="caption" sx={{ color: '#94a3b8' }}>%</Typography>
-            </Box>
-{/* 🟢 TIPO DE DANO */}
-            <Box sx={{ flex: 1.2 }}>
-              <FormControl fullWidth size="small">
-                <Select
-                  value={item.tipoDano || "Nenhum"}
-                  disabled={!isMestre}
-                  onChange={(e) => {
-                    if (!isMestre) return;
-                    atualizarItem(abaAtiva, index, "tipoDano", e.target.value);
-                  }}
-                  sx={{ 
-                    color: TIPOS_DANO.find(t => t.valor === (item.tipoDano || "Nenhum"))?.cor || '#888',
-                    bgcolor: '#0f172a',
-                    fontSize: '0.7rem',
-                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-                  }}
-                  MenuProps={{
-                    PaperProps: { 
-                      sx: { 
-                        bgcolor: "#0f172a", 
-                        color: "#fff",
-                        maxHeight: 300,
-                      } 
-                    }
-                  }}
-                >
-                  {TIPOS_DANO.map(td => (
-                    <MenuItem key={td.valor} value={td.valor}>
-                      <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                        <Typography variant="body2" sx={{ color: td.cor, fontWeight: 'bold' }}>
-                          {td.label}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.6rem' }}>
-                          {td.descricao}
-                        </Typography>
-                      </Box>
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-                        {/* 🟢 INSUMÍVEL (SÓ MESTRE) */}
-            {isMestre && (
-              <Box sx={{ flex: 1.2 }}>
-                <FormControl fullWidth size="small">
-                  <Select
-                    value={item.insumivel || "Nenhum"}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      atualizarItem(abaAtiva, index, "insumivel", val);
-                      if (val === "Nenhum") {
-                        atualizarItem(abaAtiva, index, "insumivelValor", 0);
-                      }
-                    }}
-                    sx={{ 
-                      color: TIPOS_INSUMIVEL.find(t => t.valor === (item.insumivel || "Nenhum"))?.cor || '#888',
-                      bgcolor: '#0f172a',
-                      fontSize: '0.7rem',
-                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-                    }}
-                    MenuProps={{
-                      PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 250 } }
-                    }}
-                  >
-                    {TIPOS_INSUMIVEL.map(ti => (
-                      <MenuItem key={ti.valor} value={ti.valor}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: ti.cor }} />
-                          <Typography sx={{ color: ti.cor, fontWeight: 'bold', fontSize: '0.75rem' }}>
-                            {ti.label}
-                          </Typography>
-                        </Box>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                {(item.insumivel && item.insumivel !== "Nenhum") && (
-                  <TextField
-                    size="small"
-                    type="number"
-                    value={item.insumivelValor || 0}
-                    onChange={(e) => {
-                      atualizarItem(abaAtiva, index, "insumivelValor", Math.min(100, Math.max(0, Number(e.target.value) || 0)));
-                    }}
-                    InputProps={{ 
-                      inputProps: { min: 0, max: 100 },
-                      sx: { color: '#fff', fontSize: '0.6rem' },
-                      endAdornment: <InputAdornment position="end" sx={{ '& p': { color: '#888', fontSize: '0.5rem' } }}>%</InputAdornment>
-                    }}
-                    sx={{ mt: 0.3, bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
-                    placeholder="% Reg."
-                  />
-                )}
-              </Box>
-            )}
-                        {/* 🟢 CONSUMÍVEL (SÓ MESTRE) */}
-            {isMestre && (
-              <Box sx={{ flex: 1.2 }}>
-                <FormControl fullWidth size="small">
-                  <Select
-                    value={item.consumivel || "Nenhum"}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      atualizarItem(abaAtiva, index, "consumivel", val);
-                      if (val === "Nenhum") {
-                        atualizarItem(abaAtiva, index, "consumivelValor", 0);
-                      }
-                    }}
-                    sx={{ 
-                      color: TIPOS_CONSUMIVEL.find(t => t.valor === (item.consumivel || "Nenhum"))?.cor || '#888',
-                      bgcolor: '#0f172a',
-                      fontSize: '0.7rem',
-                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155' },
-                    }}
-                    MenuProps={{
-                      PaperProps: { 
-                        sx: { 
-                          bgcolor: "#0f172a", 
-                          color: "#fff",
-                          maxHeight: 200,
-                        } 
-                      }
-                    }}
-                  >
-                    {TIPOS_CONSUMIVEL.map(tc => (
-                      <MenuItem key={tc.valor} value={tc.valor}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: tc.cor }} />
-                          <Typography sx={{ color: tc.cor, fontWeight: 'bold', fontSize: '0.8rem' }}>
-                            {tc.label}
-                          </Typography>
-                        </Box>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                                {(item.consumivel && item.consumivel !== "Nenhum") && (
-                  <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3 }}>
-                    <TextField
-                      size="small"
-                      type="number"
-                      value={item.consumivelValor || 0}
-                      onChange={(e) => {
-                        atualizarItem(abaAtiva, index, "consumivelValor", Math.max(0, Number(e.target.value) || 0));
-                      }}
-                      InputProps={{ 
-                        inputProps: { min: 0 },
-                        sx: { color: '#fff', fontSize: '0.6rem' }
-                      }}
-                      sx={{ 
-                        flex: 1,
-                        bgcolor: '#0f172a',
-                        '& input': { textAlign: 'center' }
-                      }}
-                      placeholder="Valor"
-                    />
-                    <TextField
-                      size="small"
-                      type="number"
-                      value={item.consumivelPercentual || 100}
-                      onChange={(e) => {
-                        const val = Math.min(100, Math.max(1, Number(e.target.value) || 1));
-                        atualizarItem(abaAtiva, index, "consumivelPercentual", val);
-                      }}
-                      InputProps={{ 
-                        inputProps: { min: 1, max: 100 },
-                        sx: { color: '#fff', fontSize: '0.6rem' },
-                        endAdornment: <InputAdornment position="end" sx={{ '& p': { color: '#888', fontSize: '0.55rem' } }}>%</InputAdornment>
-                      }}
-                      sx={{ 
-                        flex: 1,
-                        bgcolor: '#0f172a',
-                        '& input': { textAlign: 'center' }
-                      }}
-                      placeholder="%"
-                    />
-                  </Box>
-                )}
-              </Box>
-            )}
-                      
-            {/* 🟢 INFO DE CONSUMÍVEL PARA JOGADOR (apenas visual) */}
-            {!isMestre && item.consumivel && item.consumivel !== "Nenhum" && (
-              <Box sx={{ width: 55, textAlign: 'center' }}>
-                <Chip 
-                  label={`${item.consumivel} +${item.consumivelValor || 0}`}
-                  size="small"
-                  sx={{ 
-                    bgcolor: TIPOS_CONSUMIVEL.find(t => t.valor === item.consumivel)?.cor || '#888',
-                    color: '#fff',
-                    fontWeight: 'bold',
-                    fontSize: '0.6rem',
-                    height: 20,
-                  }}
-                />
-              </Box>
-            )}
-            {!isMestre && (!item.consumivel || item.consumivel === "Nenhum") && (
-              <Box sx={{ width: 55 }} />
-            )}
-
-            {/* 🟢 BOTÃO APLICAR INSUMÍVEL (JOGADOR) */}
-            {!isMestre && item.insumivel && item.insumivel !== "Nenhum" && (
-              <Box sx={{ width: 55 }}>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={() => {
-                    setInsumivelSelecionado({
-                      item,
-                      tipo: abaAtiva,
-                      index,
-                    });
-                    setItemAlvoInsumivel(null);
-                    setModalInsumivelOpen(true);
-                  }}
-                  sx={{
-                    bgcolor: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || '#888',
-                    fontSize: '0.6rem',
-                    minWidth: 'auto',
-                    px: 1,
-                    py: 0.3,
-                    '&:hover': { opacity: 0.8 }
-                  }}
-                >
-                  Aplicar
-                </Button>
-              </Box>
-            )}
-            {!isMestre && (!item.insumivel || item.insumivel === "Nenhum") && (
-              <Box sx={{ width: 55 }} />
-            )}
-
-            {/* Dado e Deletar */}
-            <Box sx={{ width: 90, display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}></Box>
-            {/* Dado e Deletar - MAIOR AGORA (width: 90) */}
-            <Box sx={{ width: 90, display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center' }}>
-              <TextField
-                size="small"
-                type="number"
-                value={item.dado || 1}
-                disabled={!isMestre}
-                onChange={(e) => {
-                  if (!isMestre) return;
-                  const valor = Math.min(10, Math.max(1, Number(e.target.value) || 1));
-                  atualizarItem(abaAtiva, index, "dado", valor);
-                }}
-                InputProps={{ 
-                  inputProps: { min: 1, max: 10 },
-                  sx: { color: '#fff' }
-                }}
-                sx={{ 
-                  width: 55,
-                  bgcolor: '#0f172a',
-                  '& input': { textAlign: 'center' },
-                  '& .MuiInputBase-input.Mui-disabled': {
-                    WebkitTextFillColor: '#fff !important',
-                    opacity: 0.7
-                  }
-                }}
-              />
-
-              {isMestre && (
-                <IconButton
-                  color="error"
-                  size="small"
-                  onClick={() => removerItem(abaAtiva, index)}
-                  sx={{ bgcolor: 'rgba(244, 67, 54, 0.1)' }}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              )}
-            </Box>
-          </Box>
-        </Paper>
-      </Box>
-    );
-  })}
+{ficha[abaAtiva]?.map((item, index) => {
+  const chave = `${abaAtiva}-${index}`;
+  return (
+    <ItemCard
+      key={chave}
+      item={item}
+      categoria={abaAtiva}
+      index={index}
+      isMestre={isMestre}
+      expandido={itemExpandido === chave}
+      onToggle={() => setItemExpandido(prev => prev === chave ? null : chave)}
+      onAtualizarItem={atualizarItem}
+      onRemoverItem={removerItem}
+      onMoverItem={moverItem}
+      onAbrirImagem={(src) => { setLightboxSrc(src); setZoom(1); setLightboxOpen(true); }}
+      onAbrirEditar={(cat, idx, it) => { setItemEditando({ categoria: cat, index: idx, item: it }); setModalEditarItemOpen(true); }}
+      TIPOS_DANO={TIPOS_DANO}
+      TIPOS_CONSUMIVEL={TIPOS_CONSUMIVEL}
+      TIPOS_INSUMIVEL={TIPOS_INSUMIVEL}
+    />
+  );
+})}
           </Box>
 
          {/* Botão Adicionar Item - Apenas Mestre */}
@@ -7332,12 +7295,12 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                       const diversos = (ficha.diversos || []).map((it, i) => ({ ...it, _idx: i, _cat: 'diversos' }));
                       listaItens = [...atuais, ...vestes, ...diversos];
                     } else {
-                      const tipoReparado = TIPOS_INSUMIVEL.find(t => t.valor === tipoInsumo)?.tipoDanoReparado;
-                      const atuais = (ficha[abaAtiva] || []).map((it, i) => ({ ...it, _idx: i, _cat: abaAtiva }));
-                      const vestes = (ficha.vestes || []).map((it, i) => ({ ...it, _idx: i, _cat: 'vestes' }));
-                      const diversos = (ficha.diversos || []).map((it, i) => ({ ...it, _idx: i, _cat: 'diversos' }));
-                      const todos = [...atuais, ...vestes, ...diversos];
-                      listaItens = todos.filter(it => it.tipoDano === tipoReparado);
+                      const tiposReparados = TIPOS_INSUMIVEL.find(t => t.valor === tipoInsumo)?.tiposDanoReparados || [];
+const atuais = (ficha[abaAtiva] || []).map((it, i) => ({ ...it, _idx: i, _cat: abaAtiva }));
+const vestes = (ficha.vestes || []).map((it, i) => ({ ...it, _idx: i, _cat: 'vestes' }));
+const diversos = (ficha.diversos || []).map((it, i) => ({ ...it, _idx: i, _cat: 'diversos' }));
+const todos = [...atuais, ...vestes, ...diversos];
+listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                     }
                     
                     return listaItens
@@ -8848,45 +8811,46 @@ const novosDiversos = [...diversosAtuais, novoItem];
   </DialogTitle>
   
   <DialogContent>
-    {inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.itens?.map((item, idx) => (
-      <Paper key={idx} sx={{ p: 1.5, mb: 1, bgcolor: '#1a1a2e', border: '1px solid #334155' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box sx={{ width: 40, height: 40, bgcolor: '#0f172a', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {item.imagem ? (
-              <img src={item.imagem} alt={item.nome} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4 }} />
-            ) : (
-              <Typography sx={{ opacity: 0.5 }}>📦</Typography>
-            )}
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="body2" sx={{ color: '#fff', fontWeight: 'bold' }}>
-              {item.nome || 'Sem nome'}
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-              Qtd: {item.quantidade || 1} | Dado: {item.dado || 1} | Dur: {item.durabilidade || 100}%
-            </Typography>
-          </Box>
-          {isMestre && (
-            <IconButton 
-              size="small" 
-              color="error"
-              onClick={async () => {
-                const invAtual = inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo);
-                const novosItens = invAtual.itens.filter((_, i) => i !== idx);
-                const novosInventarios = inventariosSecundarios.map(inv => 
-                  inv.id === inventarioSecundarioAtivo ? { ...inv, itens: novosItens } : inv
-                );
-                setInventariosSecundarios(novosInventarios);
-                const ref = doc(db, "fichas", fichaId);
-                await setDoc(ref, { inventariosSecundarios: novosInventarios }, { merge: true });
-              }}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          )}
-        </Box>
-      </Paper>
-    ))}
+{inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.itens?.map((item, idx) => {
+  const chave = `sec-${inventarioSecundarioAtivo}-${idx}`;
+  return (
+    <ItemCard
+      key={chave}
+      item={item}
+      categoria={`sec_${inventarioSecundarioAtivo}`}
+      index={idx}
+      isMestre={isMestre}
+      expandido={itemExpandido === chave}
+      onToggle={() => setItemExpandido(prev => prev === chave ? null : chave)}
+      onAtualizarItem={async (cat, i, campo, valor) => {
+        const invAtual = inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo);
+        if (!invAtual) return;
+        const novosItens = invAtual.itens.map((it, k) => k === i ? { ...it, [campo]: valor } : it);
+        const novosInventarios = inventariosSecundarios.map(inv =>
+          inv.id === inventarioSecundarioAtivo ? { ...inv, itens: novosItens } : inv
+        );
+        setInventariosSecundarios(novosInventarios);
+        await setDoc(doc(db, "fichas", fichaId), { inventariosSecundarios: novosInventarios }, { merge: true });
+      }}
+      onRemoverItem={async (cat, i) => {
+        const invAtual = inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo);
+        if (!invAtual) return;
+        const novosItens = invAtual.itens.filter((_, k) => k !== i);
+        const novosInventarios = inventariosSecundarios.map(inv =>
+          inv.id === inventarioSecundarioAtivo ? { ...inv, itens: novosItens } : inv
+        );
+        setInventariosSecundarios(novosInventarios);
+        await setDoc(doc(db, "fichas", fichaId), { inventariosSecundarios: novosInventarios }, { merge: true });
+      }}
+      onMoverItem={(cat, i, dir) => moverItemSecundario(inventarioSecundarioAtivo, i, dir)}
+      onAbrirImagem={(src) => { setLightboxSrc(src); setZoom(1); setLightboxOpen(true); }}
+      onAbrirEditar={(cat, idx2, it) => { setItemEditando({ categoria: cat, index: idx2, item: it, secundarioId: inventarioSecundarioAtivo }); setModalEditarItemOpen(true); }}
+      TIPOS_DANO={TIPOS_DANO}
+      TIPOS_CONSUMIVEL={TIPOS_CONSUMIVEL}
+      TIPOS_INSUMIVEL={TIPOS_INSUMIVEL}
+    />
+  );
+})}
     
     {(inventariosSecundarios.find(inv => inv.id === inventarioSecundarioAtivo)?.itens?.length || 0) === 0 && (
       <Typography variant="body2" sx={{ color: '#64748b', textAlign: 'center', py: 4 }}>
@@ -9092,7 +9056,85 @@ const novosDiversos = [...diversosAtuais, novoItem];
     </Button>
   </DialogActions>
       </Dialog>
+{/* 🟢 MODAL EDITAR ITEM */}
+<Dialog
+  open={modalEditarItemOpen}
+  onClose={() => { setModalEditarItemOpen(false); setItemEditando(null); }}
+  maxWidth="sm"
+  fullWidth
+  PaperProps={{ sx: { bgcolor: '#0f172a', border: '1px solid #9c27b0', borderRadius: 2 } }}
+>
+  <DialogTitle sx={{ color: '#9c27b0' }}>✏️ Editar Item</DialogTitle>
+  <DialogContent>
+    {itemEditando && (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+        <TextField
+          label="Nome"
+          fullWidth
+          size="small"
+          value={itemEditando.item.nome || ""}
+          onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, nome: e.target.value } }))}
+          InputProps={{ sx: { color: '#fff' } }}
+          InputLabelProps={{ sx: { color: '#94a3b8' } }}
+        />
+        <TextField
+          label="Nome Original (deixe vazio se não foi renomeado)"
+          fullWidth
+          size="small"
+          value={itemEditando.item.nomeOriginal || ""}
+          onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, nomeOriginal: e.target.value } }))}
+          InputProps={{ sx: { color: '#fff' } }}
+          InputLabelProps={{ sx: { color: '#94a3b8' } }}
+          helperText="Se preenchido, o nome aparecerá como 'Nome Editado (Original)'"
+          FormHelperTextProps={{ sx: { color: '#64748b' } }}
+        />
+        <TextField
+          label="Descrição"
+          fullWidth
+          multiline
+          minRows={3}
+          value={itemEditando.item.descricao || ""}
+          onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, descricao: e.target.value } }))}
+          InputProps={{ sx: { color: '#fff' } }}
+          InputLabelProps={{ sx: { color: '#94a3b8' } }}
+        />
+      </Box>
+    )}
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => { setModalEditarItemOpen(false); setItemEditando(null); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+    <Button
+      variant="contained"
+      onClick={async () => {
+        if (!itemEditando) return;
+        const { categoria, index, item, secundarioId } = itemEditando;
 
+        // Atualiza dentro de inventário secundário
+        if (categoria.startsWith("sec_") && secundarioId) {
+          const invAtual = inventariosSecundarios.find(inv => inv.id === secundarioId);
+          if (!invAtual) return;
+          const novosItens = invAtual.itens.map((it, k) => k === index ? { ...item } : it);
+          const novosInventarios = inventariosSecundarios.map(inv =>
+            inv.id === secundarioId ? { ...inv, itens: novosItens } : inv
+          );
+          setInventariosSecundarios(novosInventarios);
+          await setDoc(doc(db, "fichas", fichaId), { inventariosSecundarios: novosInventarios }, { merge: true });
+        } else {
+          // Inventário principal
+          const novosItens = (ficha[categoria] || []).map((it, k) => k === index ? { ...item } : it);
+          setFicha(prev => ({ ...prev, [categoria]: novosItens }));
+          await setDoc(doc(db, "fichas", fichaId), { [categoria]: novosItens }, { merge: true });
+        }
+
+        setModalEditarItemOpen(false);
+        setItemEditando(null);
+      }}
+      sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+    >
+      Salvar
+    </Button>
+  </DialogActions>
+</Dialog>
       {/* 🟢 MODAL DE DESCANSO */}
       <Dialog
         open={modalDescansoOpen}

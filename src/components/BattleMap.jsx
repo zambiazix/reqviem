@@ -21,6 +21,10 @@ import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import CollectionsIcon from "@mui/icons-material/Collections";
 import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import BrushIcon from "@mui/icons-material/Brush";
+import AutoFixOffIcon from "@mui/icons-material/AutoFixOff";
+import ClearIcon from "@mui/icons-material/Clear";
+import { Slider } from "@mui/material";
 import { io } from "socket.io-client";
 import { getAuth } from "firebase/auth";
 import { db } from "../firebaseConfig";
@@ -32,6 +36,12 @@ const serverUrl = "https://reqviem.onrender.com";
 const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
 const PASTA_TODAS = "__todas__";
 
+// 🎨 CORES DO PINCEL
+const CORES_PINCEL = [
+  "#ffffff", "#000000", "#ef4444", "#f59e0b", "#facc15",
+  "#22c55e", "#00e0ff", "#3b82f6", "#a855f7", "#ec4899",
+];
+
 export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
@@ -39,6 +49,15 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [isMaster, setIsMaster] = useState(false);
   const [selectionRect, setSelectionRect] = useState(null);
+
+  // 🎨 DESENHO
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawEraser, setDrawEraser] = useState(false);
+  const [drawColor, setDrawColor] = useState(CORES_PINCEL[2]);
+  const [drawSize, setDrawSize] = useState(4);
+  const [strokes, setStrokes] = useState([]);
+  const [coresEmUso, setCoresEmUso] = useState({});
+  const currentStrokeRef = useRef(null);
 
   const fileInputRef = useRef();
   const stageRef = useRef();
@@ -56,7 +75,10 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const multiDragRef = useRef(null);
 
   const [posicao, setPosicao] = useState({ x: 150, y: 80 });
-  const [tamanho, setTamanho] = useState({ width: 800, height: 600 });
+  const [tamanho, setTamanho] = useState({
+    width: Math.min(Math.max(window.innerWidth - 80, 800), 1500),
+    height: Math.min(Math.max(window.innerHeight - 120, 500), 900),
+  });
   const [minimizado, setMinimizado] = useState(false);
   const [arrastando, setArrastando] = useState(false);
   const [redimensionando, setRedimensionando] = useState(false);
@@ -77,6 +99,20 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [galeriaLightbox, setGaleriaLightbox] = useState(null); // { src, nome }
   const [galeriaZoom, setGaleriaZoom] = useState(1);
   const [salvarTokenDialog, setSalvarTokenDialog] = useState(null); // { token, pastaId, nome }
+
+  // 🎨 Injetar keyframe do pulse da cor (uma vez)
+  useEffect(() => {
+    if (document.getElementById("__pulseCorKeyframe")) return;
+    const style = document.createElement("style");
+    style.id = "__pulseCorKeyframe";
+    style.textContent = `
+      @keyframes pulseCorRing {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.4); opacity: 0.4; }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
 
   // Auth
   useEffect(() => {
@@ -106,6 +142,25 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
       setSelectedIds((cur) => cur.filter((sid) => sid !== id));
     });
     s.on("reorder", (newTokens) => setTokens(newTokens));
+
+    // 🎨 DESENHO
+    s.on("drawings_init", (lista) => setStrokes(Array.isArray(lista) ? lista : []));
+    s.on("draw_start", (stroke) => {
+      setStrokes((prev) => (prev.some((x) => x.id === stroke.id) ? prev : [...prev, stroke]));
+    });
+    s.on("draw_update", ({ id, points }) => {
+      setStrokes((prev) => prev.map((x) => (x.id === id ? { ...x, points } : x)));
+    });
+    s.on("draw_clear", () => setStrokes([]));
+
+    // 🎨 CORES
+    s.on("colors_in_use", (map) => setCoresEmUso(map || {}));
+    s.on("color_claim_result", ({ ok, color }) => {
+      if (!ok) {
+        alert("❌ Essa cor já está sendo usada por outro jogador.");
+        setDrawMode(false);
+      }
+    });
 
     return () => {
       s.disconnect();
@@ -435,7 +490,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
 
   const emitUpdate = (token) => {
     const now = Date.now();
-    if (now - lastEmitRef.current > 60) {
+    if (now - lastEmitRef.current > 30) { // 🟢 30ms = ~33fps
       lastEmitRef.current = now;
       socketRef.current?.emit("updateToken", token);
     }
@@ -581,6 +636,74 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     return pasta ? pasta.imagens.map((img) => ({ ...img, _pastaId: pasta.id, _pastaNome: pasta.nome })) : [];
   })();
 
+  // 🎨 HANDLERS DE DESENHO
+  const claimColor = (cor) => {
+    if (socketRef.current) socketRef.current.emit("color_claim", { color: cor });
+    setDrawColor(cor);
+  };
+
+  // 🎨 Clique na cor: se já tá selecionada → deseleciona; senão → seleciona
+  const handleCorClick = (cor) => {
+    const jaSelecionada = drawMode && drawColor === cor;
+    if (jaSelecionada) {
+      // 🟢 Deseleciona e sai do modo desenho
+      releaseColor();
+      setDrawMode(false);
+    } else {
+      setDrawMode(true);
+      claimColor(cor);
+    }
+  };
+
+  const releaseColor = () => {
+    if (!socketRef.current) return;
+    socketRef.current.emit("color_release");
+  };
+
+  const startStroke = (stage) => {
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+    const x = (pointer.x - stage.x()) / stage.scaleX();
+    const y = (pointer.y - stage.y()) / stage.scaleY();
+    const stroke = {
+      id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      color: drawEraser ? "#000" : drawColor,
+      size: drawSize,
+      eraser: drawEraser,
+      points: [x, y],
+    };
+    currentStrokeRef.current = stroke;
+    setStrokes((prev) => [...prev, stroke]);
+    socketRef.current?.emit("draw_start", stroke);
+  };
+
+  const extendStroke = (stage) => {
+    const stroke = currentStrokeRef.current;
+    if (!stroke) return;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+    const x = (pointer.x - stage.x()) / stage.scaleX();
+    const y = (pointer.y - stage.y()) / stage.scaleY();
+    stroke.points = [...stroke.points, x, y];
+    setStrokes((prev) =>
+      prev.map((s) => (s.id === stroke.id ? { ...s, points: stroke.points } : s))
+    );
+    socketRef.current?.emit("draw_update", { id: stroke.id, points: stroke.points });
+  };
+
+  const endStroke = () => {
+    if (!currentStrokeRef.current) return;
+    socketRef.current?.emit("draw_end", { id: currentStrokeRef.current.id });
+    currentStrokeRef.current = null;
+  };
+
+  const limparDesenhos = () => {
+    if (!isMaster) return;
+    if (!window.confirm("Apagar TODOS os desenhos do grid?")) return;
+    socketRef.current?.emit("draw_clear");
+    setStrokes([]);
+  };
+
   if (!visible) return null;
 
   return createPortal(
@@ -686,6 +809,179 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                 )}
               </>
             )}
+            {/* 🎨 PAINEL DE DESENHO */}
+            {drawMode && !minimizado && (
+              <Box
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                sx={{
+                  display: "flex", alignItems: "center", gap: 0.5,
+                  bgcolor: "#0a0a12", border: "1px solid #00e0ff66",
+                  borderRadius: 1, px: 1, py: 0.3,
+                }}
+              >
+                {CORES_PINCEL.map((cor) => {
+                  const dono = coresEmUso[cor];
+                  // 🟢 Local-first: se EU selecionei, é minha, independente do servidor
+                  const minha = drawMode && drawColor === cor;
+                  // 🟢 Bloqueada apenas se OUTRO jogador tem a posse (via servidor)
+                  const bloqueada = dono && dono !== socketRef.current?.id && !minha;
+
+                  return (
+                    <Tooltip
+                      key={cor}
+                      arrow
+                      title={
+                        bloqueada
+                          ? "🔒 Em uso por outro jogador"
+                          : minha
+                          ? "✅ Sua cor"
+                          : `Escolher ${cor}`
+                      }
+                    >
+                      <Box sx={{
+                        position: "relative",
+                        width: 26, height: 26,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}>
+                        {/* 🟢 Anel pulsante na cor selecionada */}
+                        {minha && (
+                          <Box
+                            sx={{
+                              position: "absolute",
+                              width: 22, height: 22,
+                              borderRadius: "50%",
+                              border: `2px solid ${cor}`,
+                              boxShadow: `0 0 10px ${cor}, inset 0 0 6px ${cor}`,
+                              animation: "pulseCorRing 1.5s ease-in-out infinite",
+                              pointerEvents: "none",
+                            }}
+                          />
+                        )}
+
+                        {/* 🟢 Bolinha da cor */}
+                        <Box
+                          onClick={() => !bloqueada && handleCorClick(cor)}
+                          sx={{
+                            width: 18, height: 18,
+                            borderRadius: "50%",
+                            bgcolor: cor,
+                            border: minha ? "2px solid #ffffff" : "1px solid #475569",
+                            cursor: bloqueada ? "not-allowed" : "pointer",
+                            opacity: bloqueada ? 0.45 : 1,
+                            boxShadow: minha
+                              ? `0 0 14px ${cor}, 0 0 24px ${cor}88, inset 0 0 4px #fff`
+                              : "none",
+                            transition: "all 0.2s ease",
+                            filter: bloqueada ? "grayscale(0.6)" : "none",
+                            position: "relative",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            "&:hover": !bloqueada
+                              ? {
+                                  transform: "scale(1.2)",
+                                  boxShadow: `0 0 12px ${cor}, 0 0 22px ${cor}88`,
+                                }
+                              : {},
+                          }}
+                        >
+                          {/* 🔒 Cadeado nas travadas */}
+                          {bloqueada && (
+                            <Box
+                              component="span"
+                              sx={{
+                                fontSize: 9,
+                                lineHeight: 1,
+                                color: "#fff",
+                                textShadow: "0 0 3px #000, 0 0 5px #000",
+                                pointerEvents: "none",
+                                userSelect: "none",
+                              }}
+                            >
+                              🔒
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                    </Tooltip>
+                  );
+                })}
+
+                <Tooltip title={drawEraser ? "Voltar pro pincel" : "Borracha"}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setDrawEraser(!drawEraser)}
+                    sx={{
+                      color: drawEraser ? "#ef4444" : "#94a3b8",
+                      bgcolor: drawEraser ? "#ef444422" : "transparent",
+                      p: 0.4,
+                    }}
+                  >
+                    <AutoFixOffIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+
+                <Box sx={{ width: 80, mx: 0.5 }}>
+                  <Slider
+                    size="small"
+                    min={1}
+                    max={30}
+                    value={drawSize}
+                    onChange={(_, v) => setDrawSize(v)}
+                    sx={{ color: "#00e0ff", py: 0 }}
+                  />
+                </Box>
+                <Typography variant="caption" sx={{ color: "#94a3b8", fontSize: "0.55rem", minWidth: 22 }}>
+                  {drawSize}px
+                </Typography>
+
+                {isMaster && (
+                  <Tooltip title="Apagar todos os desenhos">
+                    <IconButton
+                      size="small"
+                      onClick={limparDesenhos}
+                      sx={{ color: "#ef4444", p: 0.4 }}
+                    >
+                      <ClearIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Box>
+            )}
+
+            {/* 🎨 BOTÃO PINCEL */}
+            {!minimizado && (
+              <Tooltip title={drawMode ? "Sair do modo desenho" : "Ativar pincel"}>
+                <Button
+                  onMouseDown={(e) => e.stopPropagation()}
+                  size="small"
+                  startIcon={<BrushIcon />}
+                  onClick={() => {
+                    if (drawMode) {
+                      endStroke();
+                      releaseColor();
+                      setDrawMode(false);
+                    } else {
+                      setDrawMode(true);
+                      claimColor(drawColor);
+                    }
+                  }}
+                  sx={{
+                    minWidth: "auto", px: 1, fontSize: "0.6rem",
+                    bgcolor: drawMode ? drawColor : "#334155",
+                    color: "#fff",
+                    "&:hover": { bgcolor: drawMode ? drawColor : "#475569" },
+                    border: drawMode ? "2px solid #00e0ff" : "1px solid #334155",
+                  }}
+                >
+                  {drawMode ? "Desenhando" : "Pincel"}
+                </Button>
+              </Tooltip>
+            )}
+
             <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#00e0ff", p: 0.5 }} title={minimizado ? "Expandir" : "Minimizar"}>
               {minimizado ? "□" : "−"}
             </IconButton>
@@ -716,6 +1012,13 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
             onMouseDown={(e) => {
               const stage = stageRef.current;
               if (!stage) return;
+
+              // 🎨 MODO PINCEL: botão esquerdo desenha
+              if (drawMode && e.evt.button === 0) {
+                e.evt.preventDefault();
+                startStroke(stage);
+                return;
+              }
 
               if (e.evt.button === 2) {
                 e.evt.preventDefault();
@@ -764,8 +1067,14 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                 setSelectionRect({ x: stageX, y: stageY, width: 0, height: 0 });
               }
             }}
+            onMouseMove={() => {
+              const stage = stageRef.current;
+              if (!stage) return;
+              if (drawMode && currentStrokeRef.current) extendStroke(stage);
+            }}
             onMouseUp={() => {
               const stage = stageRef.current;
+              if (drawMode && currentStrokeRef.current) endStroke();
               if (stage?.draggable()) {
                 stage.stopDrag();
                 stage.draggable(false);
@@ -783,6 +1092,24 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
               ))}
             </Layer>
 
+            {/* 🎨 DESENHOS */}
+            <Layer listening={false}>
+              {strokes.map((s) => (
+                <Line
+                  key={s.id}
+                  points={s.points}
+                  stroke={s.color}
+                  strokeWidth={s.size}
+                  lineCap="round"
+                  lineJoin="round"
+                  tension={0.4}
+                  globalCompositeOperation={s.eraser ? "destination-out" : "source-over"}
+                  shadowForStrokeEnabled={false}
+                  perfectDrawEnabled={false}
+                />
+              ))}
+            </Layer>
+
             {/* TOKENS */}
             <Layer>
               {tokens.map((token) => (
@@ -795,6 +1122,11 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                   onMoveDuring={(pos) => handleTokenDragMove(token.id, pos)}
                   onDragEnd={(pos) => handleTokenDragEnd(token.id, pos)}
                   onTransformEnd={(attrs) => isMaster && updateTokenFinal({ ...token, ...attrs })}
+                  onTransformDuring={(attrs) => {
+                    if (!isMaster) return;
+                    setTokens((prev) => prev.map((t) => (t.id === token.id ? { ...t, ...attrs } : t)));
+                    emitUpdate({ ...token, ...attrs });
+                  }}
                 />
               ))}
             </Layer>
@@ -1348,7 +1680,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
 // ============================================================
 // TOKEN
 // ============================================================
-function Token({ token, isSelected, canResize, onDragStart, onMoveDuring, onDragEnd, onTransformEnd }) {
+function Token({ token, isSelected, canResize, onDragStart, onMoveDuring, onDragEnd, onTransformEnd, onTransformDuring }) {
   const [image] = useImage(token.src, "anonymous");
   const groupRef = useRef();
   const trRef = useRef();
@@ -1372,6 +1704,17 @@ function Token({ token, isSelected, canResize, onDragStart, onMoveDuring, onDrag
         onDragStart={onDragStart}
         onDragMove={(e) => onMoveDuring?.({ x: e.target.x(), y: e.target.y() })}
         onDragEnd={(e) => onDragEnd?.({ x: e.target.x(), y: e.target.y() })}
+        onTransform={() => {
+          if (!canResize) return;
+          const node = groupRef.current;
+          if (!node) return;
+          onTransformDuring?.({
+            x: node.x(),
+            y: node.y(),
+            width: Math.max(20, token.width * node.scaleX()),
+            height: Math.max(20, token.height * node.scaleY()),
+          });
+        }}
         onTransformEnd={() => {
           if (!canResize) return;
           const node = groupRef.current;
