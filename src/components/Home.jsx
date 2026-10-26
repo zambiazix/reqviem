@@ -139,7 +139,7 @@ const HeaderSection = memo(({
                   textDecoration: 'underline',
                 }}
               >
-                Versão 4.5
+                Versão 5.0
               </span>
               {' '}— By: Zambiazi
             </Typography>

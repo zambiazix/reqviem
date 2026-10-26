@@ -17,6 +17,8 @@ import {
   InputLabel,
   Select,
   Slider,
+  Tooltip,
+  Chip,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";  // 🟢 ADICIONE ESTA LINHA
 import { Popover } from "@mui/material";
@@ -53,6 +55,49 @@ function playSFX(path) {
 const PHASES = ["manhã", "tarde", "noite", "madrugada"];
 const SEASONS = ["Primavera", "Verão", "Outono", "Inverno"];
 
+const TALENTOS_ICONS = {
+    "Regeneração": { icon: "💚", color: "#4caf50", desc: "Regenera 5 PV por ação." },
+    "Sobrecarga": { icon: "⚡", color: "#facc15", desc: "Regenera 2 PE por ação." },
+    "Pós-Choque": { icon: "💥", color: "#ff9800", desc: "Rola dados novamente em caso de crítico." },
+    "Demolidor": { icon: "💪", color: "#ef4444", desc: "Ignora 50% da armadura em ataques desarmados." },
+    "The Flash": { icon: "🏃‍♂️", color: "#3b82f6", desc: "Movimentação dobrada." },
+    "Pé Direito": { icon: "🦶", color: "#22c55e", desc: "Primeira esquiva é perfeita." },
+    "Craft de Cibernética": { icon: "⚙️", color: "#ef4444", desc: "Cria tecnologias." },
+    "Craft de Equipamentos de Combate": { icon: "🗡️", color: "#22c55e", desc: "Cria armas e explosivos." },
+    "Craft das Gambiarras": { icon: "🔧", color: "#3b82f6", desc: "Cria itens diversos." },
+    "Craft de Vestes e Armaduras": { icon: "🛡️", color: "#f97316", desc: "Cria vestes e armaduras." },
+    "Craft de Medicamentos": { icon: "🧪", color: "#e5e5e5", desc: "Cria remédios." },
+    "Mendigo": { icon: "🪙", color: "#facc15", desc: "50% de desconto em lojas." },
+    "Mentalista": { icon: "🧠", color: "#a855f7", desc: "Vê detalhes ocultos." },
+    "Craft de Alimentos Consumíveis": { icon: "🍲", color: "#facc15", desc: "Cria comidas e bebidas." }
+};
+
+const TRACOS_PERICIA = {
+    "Atleta": "Atletismo", "Lutador": "Luta", "Espadachim": "Arma Branca", "Esgrimista": "Arma Branca", "Atirador": "Arma à Distância",
+    "Sombra": "Furtividade", "Sobrevivente": "Sobrevivência", "Erudito": "Conhecimento", "Médico": "Medicina",
+    "Naturalista": "Natureza", "Observador": "Percepção", "Detetive": "Investigação", "Persuasivo": "Lábia",
+    "Artista": "Performance", "Intimidador": "Intimidação", "Auris": "Aura"
+};
+
+const TRACOS_ICONS = {
+    "Atleta": { icon: "🏃‍♂️", color: "#22c55e", desc: "Segunda-Chance: Pode rolar novamente a morte." },
+    "Lutador": { icon: "🥊", color: "#ef4444", desc: "Brigão: Dois golpes de mãos vazias por turno." },
+    "Espadachim": { icon: "⚔️", color: "#c0c0c0", desc: "Espadachim: Dois golpes de lâminas por turno." },
+    "Esgrimista": { icon: "⚔️", color: "#c0c0c0", desc: "Espadachim: Dois golpes de lâminas por turno." },
+    "Atirador": { icon: "🏹", color: "#22c55e", desc: "Franco-Atirador: Dois golpes à distância por turno." },
+    "Sombra": { icon: "🌫️", color: "#3b82f6", desc: "Treva: Não faz som ao se mover." },
+    "Sobrevivente": { icon: "🛡️", color: "#7fff00", desc: "Imunidade: Imune a dano Tóxico." },
+    "Erudito": { icon: "📚", color: "#e5e5e5", desc: "Sabe-Muito: Capaz de inventar novas tecnologias." },
+    "Médico": { icon: "💊", color: "#e5e5e5", desc: "Doutorado: Cirurgias e diagnósticos complexos." },
+    "Naturalista": { icon: "🌿", color: "#22c55e", desc: "Heremitra: A natureza está ao seu favor." },
+    "Observador": { icon: "👁️", color: "#00e0ff", desc: "Terceiro Olho: Imune a golpes de oportunidade." },
+    "Detetive": { icon: "🔍", color: "#e5e5e5", desc: "Detetive: Sempre encontra ao menos uma pista." },
+    "Persuasivo": { icon: "🗣️", color: "#e5e5e5", desc: "Larapio: Pessoas sentem necessidade de te agradar." },
+    "Artista": { icon: "🎭", color: "#e5e5e5", desc: "Astro: Famoso e reconhecido por seu talento." },
+    "Intimidador": { icon: "😠", color: "#facc15", desc: "Presença: Intimida os mais fracos e incomoda os fortes." },
+    "Auris": { icon: "✨", color: "#facc15", desc: "Aurano: Soma Aura com outra perícia em uma ação." }
+};
+
 export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) {
 
   const {
@@ -86,14 +131,14 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
   const [minimizado, setMinimizado] = useState(false);
   // 🟢 TAMANHO INICIAL - PODE SER SOBRESCRITO PELO FIRESTORE
 const [tamanho, setTamanho] = useState(() => {
-  // Tenta carregar do localStorage (fallback)
-  const saved = localStorage.getItem('floatingHUD_tamanho');
+  // 🟢 Mudei para v5 para limpar o cache. Altura 0 força o uso da altura exata dos ícones
+  const saved = localStorage.getItem('floatingHUD_tamanho_v5');
   if (saved) {
     try {
       return JSON.parse(saved);
     } catch {}
   }
-  return { width: 540, height: 600 };
+  return { width: 540, height: 0 }; // 🟢 Altura 0 é a chave!
 });
   // 🟢 POSIÇÃO LOCAL (NÃO RESETA)
 const [posicaoLocal, setPosicaoLocal] = useState({ x: 20, y: 20 });
@@ -117,6 +162,9 @@ const [perfis, setPerfis] = useState([]);
 const [hudBackgrounds, setHudBackgrounds] = useState({ manha: "", tarde: "", noite: "", madrugada: "" });
 const [uploadingBg, setUploadingBg] = useState("");
 const [bgDialogOpen, setBgDialogOpen] = useState(false);
+// 🟢 SISTEMA DE NOTIFICAÇÕES DE FOME/SEDE
+const [notificacoesFomeSede, setNotificacoesFomeSede] = useState([]);
+
 // 🟢 CARREGAR POSIÇÃO SALVA DO FIRESTORE
 useEffect(() => {
   if (!hud?.floatingPos) return;
@@ -188,7 +236,7 @@ const [novoPerfil, setNovoPerfil] = useState({
   };
 // 🟢 SALVAR TAMANHO NO LOCALSTORAGE
 useEffect(() => {
-  localStorage.setItem('floatingHUD_tamanho', JSON.stringify(tamanho));
+  localStorage.setItem('floatingHUD_tamanho_v5', JSON.stringify(tamanho));
 }, [tamanho]);
 // 🟢 SALVAR POSIÇÃO NO LOCALSTORAGE
 useEffect(() => {
@@ -206,6 +254,23 @@ useEffect(() => {
     }
   }
 }, [posicaoSalva]);
+  // 🟢 KEYFRAMES DOS EFEITOS FLUTUANTES
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes floatEffect {
+        0%, 100% { transform: translateY(0px) rotate(-2deg); }
+        50% { transform: translateY(-10px) rotate(2deg); }
+      }
+      @keyframes effectPulse {
+        0%, 100% { box-shadow: 0 0 12px var(--ef-color), inset 0 0 8px var(--ef-color)33; }
+        50% { box-shadow: 0 0 24px var(--ef-color), inset 0 0 14px var(--ef-color)66; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
+
   // 🟢 CARREGAR SORTE/AZAR
 useEffect(() => {
   const unsub = onSnapshot(doc(db, "game", "sorteAzar"), (snap) => {
@@ -354,6 +419,7 @@ useEffect(() => {
         const boundedY = Math.max(8, Math.min(window.innerHeight - refBox.current.offsetHeight - 8, newY));
         refBox.current.style.left = `${boundedX}px`;
         refBox.current.style.top = `${boundedY}px`;
+        setPosicaoLocal({ x: boundedX, y: boundedY }); // 🟢 Atualiza o estado em tempo real
       });
     }
 function onMouseUp() {
@@ -452,7 +518,6 @@ const handleMouseUp = () => {
     try {
       await setTurn({ id: email, nick: nome, email });
       setShowTurnMenu(false);
-      try { playSFX("/musicas/mudou_turno.mp3"); } catch {}
     } catch (e) {
       console.error("handleSelectTurn erro:", e);
     }
@@ -569,44 +634,45 @@ function PortalSelect({ children }) {
     // Também salva o ano separado para usar nas notícias
     localStorage.setItem('reqviem_world_year', `${year} D.C.`);
   }, [hud?.world]);
-// ================================
-// SOM DO CRONÔMETRO: dispara no 1
-// ================================
-const prevRemainingRef = useRef(null);
 
-useEffect(() => {
-  const remaining = hud?.timer?.remaining;
+  // 🟢 FUNÇÃO PARA PASSAR O DIA E GASTAR/RECUPERAR FOME E SEDE
+  const handleMudarDia = async (novoDia) => {
+    if (!isMaster) return;
+    const diaAtual = hud.world?.day || 1;
+    const diferenca = novoDia - diaAtual; // Positivo se avançar, negativo se voltar
+    
+    if (diferenca !== 0) {
+      for (const email of pjEmailsXP) {
+        const ficha = fichasMap[email];
+        if (ficha) {
+          const fomeAtual = ficha.fome ?? 100;
+          const sedeAtual = ficha.sede ?? 100;
+          
+          // Se diferenca > 0 (avançou), subtrai. Se diferenca < 0 (voltou), soma.
+          const novaFome = Math.max(0, Math.min(100, fomeAtual - (20 * diferenca)));
+          const novaSede = Math.max(0, Math.min(100, sedeAtual - (35 * diferenca)));
 
-  // evita tocar várias vezes enquanto o valor repete
-  if (prevRemainingRef.current !== remaining) {
-    if (remaining === 1) {
-      
-      playSFX("/musicas/cronometro_zerou.mp3");
+          let atualizacoes = { fome: novaFome, sede: novaSede };
+
+          // 🟢 APLICA DEBUFF SE CHEGAR A 0%
+          if (novaFome === 0 || novaSede === 0) {
+            let pvAtual = ficha.pontosVida || 0;
+            let dano = 0;
+            if (novaFome === 0) dano += 10; // Perde 10 PV por fome 0
+            if (novaSede === 0) dano += 20; // Perde 20 PV por sede 0
+            atualizacoes.pontosVida = Math.max(0, pvAtual - dano);
+          }
+
+          await setDoc(doc(db, "fichas", email), atualizacoes, { merge: true });
+
+          // Dispara evento em tempo real para a interface atualizar imediatamente
+          window.dispatchEvent(new CustomEvent('atualizarFomeSede', { detail: { email, ...atualizacoes }}));
+        }
+      }
     }
-  }
-
-  prevRemainingRef.current = remaining;
-}, [hud?.timer?.remaining]);
-
-// ======================
-// SOM QUANDO O TURNO MUDA
-// ======================
-const prevTurnRef = useRef(null);
-
-useEffect(() => {
-  const atual = hud?.turn?.id || null;
-
-  if (prevTurnRef.current === null) {
-    prevTurnRef.current = atual;
-    return;
-  }
-
-  if (prevTurnRef.current !== atual) {
-    playSFX("/musicas/mudou_turno.mp3");
-  }
-
-  prevTurnRef.current = atual;
-}, [hud?.turn?.id]);
+    // Atualiza o dia no Firebase
+    setWorldSeasonDayYear({ season: hud.world?.season, day: novoDia, year: hud.world?.year });
+  };
 
   const handleTimerPlay = async () => {
     if (!isMaster) return;
@@ -682,6 +748,34 @@ useEffect(() => {
     };
   }, [fichasMap]);
 
+  // 🟢 MONITORAR FOME/SEDE PARA NOTIFICAÇÕES DISCRETAS
+  useEffect(() => {
+    if (!fichasMap) return;
+    const novasNotificacoes = [];
+    
+    Object.entries(fichasMap).forEach(([email, ficha]) => {
+      const nome = ficha.nome || email;
+      const fome = ficha.fome ?? 100;
+      const sede = ficha.sede ?? 100;
+      const alerts = [];
+      
+      if (fome === 0) alerts.push("FOME ZERO (-10 PV/dia)");
+      else if (fome <= 10) alerts.push(`Fome Baixa (${fome}%)`);
+
+      if (sede === 0) alerts.push("SEDE ZERO (-20 PV/dia)");
+      else if (sede <= 10) alerts.push(`Sede Baixa (${sede}%)`);
+
+      if (alerts.length > 0) {
+        novasNotificacoes.push({
+          text: `${nome}: ${alerts.join(" | ")}`,
+          color: (fome === 0 || sede === 0) ? '#ef4444' : '#ff9800'
+        });
+      }
+    });
+    
+    setNotificacoesFomeSede(novasNotificacoes);
+  }, [fichasMap]);
+
   if (!currentUserEmail) return null;
   if (loading) return null;
 
@@ -695,7 +789,7 @@ useEffect(() => {
         gap: 1,
         px: 1,
         height: 80,
-        width: 360,
+        width: "100%", // 🟢 Mudar para 100% para herdar a largura do HUD
         borderRadius: 2,
         cursor: "grab",
       }}
@@ -748,8 +842,50 @@ const menuRect = (() => {
 
 if (!fichasMap) return null;
 
+  // 🟢 CALCULAR ALTURA MÍNIMA BASEADA NOS ÍCONES
+  const activeEmailForIcons = isMaster ? currentUserEmail : userEmail;
+  const fichaForIcons = fichasMap[activeEmailForIcons] || {};
+  
+  // 🟢 Conta os ícones limpando os espaços em branco para não errar a conta
+  const talentosListCount = fichaForIcons.caracteristicas ? fichaForIcons.caracteristicas.split(";").map(t => t.trim()).filter(Boolean).length : 0;
+  const tracosListCount = fichaForIcons.tracos ? fichaForIcons.tracos.split(";").map(t => t.trim()).filter(Boolean).length : 0;
+  const maxIcons = Math.max(talentosListCount, tracosListCount);
+  
+  // 🟢 O cálculo exato: 48px por ícone (40px do ícone + 8px de margem)
+  const iconColumnHeight = maxIcons > 0 ? (maxIcons * 48) : 0;
+  
+  // 🟢 Se o jogador redimensionar, respeita o tamanho dele. Se não, usa a altura exata dos ícones.
+  const effectiveHeight = Math.max(tamanho.height, iconColumnHeight);
+
   return (
     <>
+      {/* 🟢 NOTIFICAÇÕES DISCRETAS DE FOME/SEDE (CANTO INFERIOR ESQUERDO) */}
+      {notificacoesFomeSede.length > 0 && (
+        <Box sx={{ position: 'fixed', bottom: 20, left: 20, zIndex: 9999999, display: 'flex', flexDirection: 'column', gap: 0.5, pointerEvents: 'none' }}>
+          {notificacoesFomeSede.map((notif, i) => (
+            <Paper 
+              key={i} 
+              elevation={4}
+              sx={{ 
+                p: 0.5, 
+                px: 1.5, 
+                bgcolor: 'rgba(15, 23, 42, 0.85)', 
+                backdropFilter: 'blur(4px)',
+                borderLeft: `3px solid ${notif.color}`, 
+                color: '#cbd5e1', 
+                fontSize: '0.7rem',
+                borderRadius: 1,
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 1 
+              }}
+            >
+              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: notif.color, animation: 'pulse 1.5s infinite' }} />
+              {notif.text}
+            </Paper>
+          ))}
+        </Box>
+      )}
       <Box
   ref={refBox}
   className={`floating-hud ${faseClass}`}
@@ -758,10 +894,13 @@ if (!fichasMap) return null;
     left: posicaoLocal.x,
     top: posicaoLocal.y,
     zIndex: 120000,
-    width: collapsed ? 360 : (minimizado ? 300 : tamanho.width),
-    height: collapsed ? 80 : (minimizado ? 54 : tamanho.height),
-    maxWidth: collapsed ? 360 : (minimizado ? 300 : "95vw"),
-    maxHeight: collapsed ? 80 : (minimizado ? 54 : "90vh"),
+    width: tamanho.width,
+    minWidth: 380,
+    height: collapsed ? 80 : (minimizado ? 75 : effectiveHeight),
+    minHeight: collapsed ? 80 : (minimizado ? 75 : 400), // 🟢 Garante que o conteúdo interno não seja cortado
+    maxWidth: "95vw",
+    maxHeight: collapsed ? 80 : (minimizado ? 75 : "95vh"),
+    transition: (dragging || redimensionando) ? "none" : "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
     borderRadius: 2,
     p: collapsed ? 0.5 : (minimizado ? 0.5 : 1),
     cursor: "grab",
@@ -808,743 +947,367 @@ if (!fichasMap) return null;
           <Box sx={{ display: "flex", alignItems: "center" }}>{CollapsedView}</Box>
         ) : (
           <Paper elevation={0} sx={{ width: "100%", p: 0, bgcolor: "transparent" }}>
-            {minimizado ? (
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%", px: 1, py: 0.4 }}>
-                <DragIndicatorIcon sx={{ color: "inherit", fontSize: 20 }} />
-                <Typography
-                  variant="subtitle2"
+            
+            {/* 🟢 MODO MINIMIZADO */}
+            {minimizado && (() => {
+              const activeEmail = isMaster ? (hud.turn?.id || currentUserEmail) : currentUserEmail;
+              const activeName = isMaster
+                ? (hud.turn?.nick || displayNameFor(currentUserEmail))
+                : displayNameFor(currentUserEmail);
+              const activeStatus = calcularStatus(activeEmail);
+              const activeLevel = hud.xpMap?.[activeEmail]?.level ?? 1;
+              
+              const season = hud.world?.season || "Verão";
+              const year = hud.world?.year ?? "879";
+              const day = hud.world?.day ?? "1";
+              const phase = hud.world?.phase || "manhã";
+              const stationNum = SEASONS.indexOf(season) + 1 || 1;
+
+              return (
+                <Box sx={{ display: "flex", flexDirection: "column", width: "100%", px: 1, py: 0.5, gap: 0.6 }}>
+                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.8, flex: 1, minWidth: 0 }}>
+                      <DragIndicatorIcon sx={{ color: "inherit", fontSize: 18, cursor: "grab" }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800, textShadow, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "0.85rem" }}>
+                        {activeName}
+                      </Typography>
+                      <Chip label={`LV ${activeLevel}`} size="small" sx={{ height: 16, fontSize: "0.55rem", fontWeight: "bold", bgcolor: "rgba(0,0,0,0.4)", color: "#8ecaff", border: "1px solid rgba(142,202,255,0.3)" }} />
+                    </Box>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <Typography variant="caption" sx={{ color: "inherit", opacity: 0.8, textShadow, fontSize: "0.65rem", fontWeight: "bold" }}>
+                        {season} — {day}/{stationNum}/{year} • {phase}
+                      </Typography>
+                      <IconButton size="small" onClick={() => setMinimizado(false)} title="Expandir HUD" sx={{ color: "inherit", p: 0.2 }}>
+                        <ExpandMoreIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </Box>
+                  {activeStatus && (
+                    <Box sx={{ display: "flex", gap: 1, alignItems: "center", width: "100%", px: 2.5 }}>
+                      <Box sx={{ flex: 1, position: "relative" }}>
+                        <LinearProgress variant="determinate" value={activeStatus.pvPercent} sx={{ height: 8, borderRadius: 4, bgcolor: "rgba(0,0,0,0.5)", "& .MuiLinearProgress-bar": { backgroundColor: "#ff3333" } }} />
+                        <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7.5, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>
+                          {activeStatus.pvAtual}/{activeStatus.pvMax}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ flex: 1, position: "relative" }}>
+                        <LinearProgress variant="determinate" value={activeStatus.pePercent} sx={{ height: 8, borderRadius: 4, bgcolor: "rgba(0,0,0,0.5)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} />
+                        <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7.5, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>
+                          {activeStatus.peAtual}/{activeStatus.peMax}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )}
+                </Box>
+              );
+            })()}
+
+            {/* 🟢 MODO EXPANDIDO */}
+            {!minimizado && (
+              <>
+                <Paper
+                  elevation={0}
                   sx={{
-                    fontWeight: 700,
-                    textShadow,
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {hud.turn?.nick ? `Turno: ${hud.turn.nick}` : "Turno: —"}
-                </Typography>
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    if (showTurnMenu) setShowTurnMenu(false);
-                    setMinimizado(false);
-                  }}
-                  title="Expandir HUD"
-                  aria-label="expandir-hud"
-                  sx={{ color: "inherit" }}
-                >
-                  <ExpandMoreIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            ) : (
-              <Paper
-                elevation={0}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1.2,
-                  width: "100%",
-                  mb: 1,
-                  p: 1,
-                  px: 1.4,
-                  borderRadius: 2,
-                  background: "linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  backdropFilter: "blur(8px)",
-                  boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 1.5,
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    background: "rgba(0,0,0,0.14)",
-                    flexShrink: 0,
+                    gap: 1.2,
+                    width: "100%",
+                    mb: 1,
+                    p: 1,
+                    px: 1.4,
+                    borderRadius: 2,
+                    background: "linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    backdropFilter: "blur(8px)",
+                    boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
                   }}
                 >
-                  <DragIndicatorIcon sx={{ color: "inherit", fontSize: 20 }} />
-                </Box>
-                <Box sx={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      opacity: 0.65,
-                      fontSize: "0.55rem",
-                      letterSpacing: 1.6,
-                      textTransform: "uppercase",
-                      fontWeight: 700,
-                      lineHeight: 1,
-                      mb: 0.2,
-                    }}
-                  >
-                    Turno Atual
-                  </Typography>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      fontWeight: 800,
-                      textShadow,
-                      lineHeight: 1.1,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      fontSize: "1.05rem",
-                    }}
-                  >
-                    {hud.turn?.nick ? hud.turn.nick : "—"}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
-                  {isMaster && (
-                    <IconButton
-                      size="small"
-                      onClick={handleTurnClick}
-                      title="Selecionar Turno"
-                      aria-label="selecionar-turno"
-                      sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}
-                    >
-                      <ListIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                  {isMaster && (
-                    <IconButton
-                      size="small"
-                      onClick={() => setBgDialogOpen(true)}
-                      title="Fundos das Fases"
-                      aria-label="fundos-fases"
-                      sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}
-                    >
-                      <CloudUploadIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      if (showTurnMenu) setShowTurnMenu(false);
-                      setMinimizado(true);
-                    }}
-                    title="Minimizar HUD"
-                    aria-label="minimizar-hud"
-                    sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}
-                  >
-                    <ExpandLessIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              </Paper>
-            )}
-
-            {isMaster && showTurnMenu &&
-  createPortal(
-    <Paper
-      elevation={12}
-      sx={{
-        position: "absolute",
-        top:
-          (refBox.current?.getBoundingClientRect()?.top ?? 100) +
-          window.scrollY +
-          60,
-        left:
-          (refBox.current?.getBoundingClientRect()?.left ?? 100) +
-          window.scrollX,
-        zIndex: 999999999,
-        minWidth: 240,
-        maxWidth: 320,
-        p: 2,
-        bgcolor: "rgba(25,25,25,0.95)",
-        backdropFilter: "blur(6px)",
-        color: "inherit",
-        borderRadius: 2,
-      }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      
-      <Typography sx={{ fontWeight: 700, mb: 1 }}>
-        Selecionar turno
-      </Typography>
-
-            {mergedEmails.length === 0 ? (
-        <Typography variant="caption">Nenhuma ficha registrada</Typography>
-      ) : (
-        <Box sx={{ maxHeight: 300, overflowY: 'auto', pr: 1,
-          '&::-webkit-scrollbar': { width: '4px' },
-          '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.2)', borderRadius: '10px' }
-        }}>
-          {(() => {
-            const pj = pjEmails;
-            const pm = pmEmails;
-            const grupos = [];
-            if (pj.length > 0) grupos.push({ titulo: '── PERSONAGENS DO JOGADOR ──', fichas: pj, cor: '#4caf50' });
-            if (pm.length > 0) grupos.push({ titulo: '── PERSONAGENS DO MESTRE ──', fichas: pm, cor: '#ff9800' });
-            return grupos.map((g, gi) => (
-              <Box key={gi} sx={{ mb: 1 }}>
-                <Typography variant="caption" sx={{ color: g.cor, fontWeight: 'bold', display: 'block', mb: 0.5, borderBottom: `1px solid ${g.cor}44`, pb: 0.3 }}>
-                  {g.titulo}
-                </Typography>
-                {g.fichas.map(email => (
-                  <Button key={email} fullWidth
-                    sx={{ justifyContent: "flex-start", textTransform: "none", color: "inherit", mb: 0.3, pl: 1.5, fontSize: '0.8rem' }}
-                    onClick={() => { handleSelectTurn(email); setShowTurnMenu(false); }}>
-                    {displayNameFor(email)}
-                  </Button>
-                ))}
-              </Box>
-            ));
-          })()}
-        </Box>
-      )}
-
-      <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 1 }}>
-        <Button onClick={() => setShowTurnMenu(false)}>Fechar</Button>
-      </Box>
-    </Paper>,
-    document.body
-  )
-}
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 1.2,
-                mt: 1,
-              }}
-            >
-              <Box sx={{ width: "100%", display: "flex", flexDirection: "column", gap: 0.5 }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 1.5,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    {hud.world?.phase === "manhã" && "☀️"}
-                    {hud.world?.phase === "tarde" && "🌤️"}
-                    {hud.world?.phase === "noite" && "🌙"}
-                    {hud.world?.phase === "madrugada" && "✨"}
+                  <Box sx={{ width: 36, height: 36, borderRadius: 1.5, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.14)", flexShrink: 0 }}>
+                    <DragIndicatorIcon sx={{ color: "inherit", fontSize: 20 }} />
                   </Box>
-                  <Box sx={{ display: "flex", flexDirection: "column" }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, textShadow }}>
-                      {(() => {
-                        const season = hud.world?.season || "Verão";
-                        const year = hud.world?.year ?? "—";
-                        const day = hud.world?.day ?? "—";
-                        const stationIndex = SEASONS.indexOf(season);
-                        const stationNum = stationIndex >= 0 ? stationIndex + 1 : 1;
-                        return `${season} — ${day}/${stationNum}/${year}`;
-                      })()}
+                  <Box sx={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
+                    <Typography variant="caption" sx={{ opacity: 0.65, fontSize: "0.55rem", letterSpacing: 1.6, textTransform: "uppercase", fontWeight: 700, lineHeight: 1, mb: 0.2 }}>
+                      Turno Atual
                     </Typography>
-
-                    <Typography variant="caption" sx={{ textShadow }}>
-                      Fase: {hud.world?.phase ?? "—"}
+                    <Typography variant="h6" sx={{ fontWeight: 800, textShadow, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "1.05rem" }}>
+                      {hud.turn?.nick ? hud.turn.nick : "—"}
                     </Typography>
                   </Box>
-                </Box>
+                  <Box sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
+                    {isMaster && (
+                      <IconButton size="small" onClick={handleTurnClick} title="Selecionar Turno" sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}>
+                        <ListIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    {isMaster && (
+                      <IconButton size="small" onClick={() => setBgDialogOpen(true)} title="Fundos das Fases" sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}>
+                        <CloudUploadIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    <IconButton size="small" onClick={() => setMinimizado(true)} title="Minimizar HUD" sx={{ color: "inherit", bgcolor: "rgba(0,0,0,0.14)", "&:hover": { bgcolor: "rgba(0,0,0,0.24)" } }}>
+                      <ExpandLessIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </Paper>
 
-                {/** ———————————————————————————————————————————————— */}
-                {/** AQUI ENTRA A OPÇÃO A (SELECT DE FASE)             */}
-                {/** ———————————————————————————————————————————————— */}
-
-                {isMaster && (
-                  <Box sx={{ display: "flex", gap: 2, mt: 1, flexWrap: "wrap" }}>
-                    <FormControl size="small" sx={{ minWidth: 140 }}>
-                      <InputLabel>Fase</InputLabel>
-                      <Select
-  value={hud.world?.phase || "manhã"}
-  label="Fase"
-  onChange={(e) => setWorldPhase(e.target.value)}
-    MenuProps={{
-    disablePortal: false,
-    container: typeof document !== "undefined" ? document.body : undefined,
-    PaperProps: {
-      sx: {
-        zIndex: 140000,
-        backdropFilter: "blur(4px)",
-        maxHeight: 300,
-        overflowY: 'auto',
-        '&::-webkit-scrollbar': { width: '4px' },
-        '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.3)', borderRadius: '10px' }
-      },
-    },
-    anchorOrigin: { vertical: "bottom", horizontal: "left" },
-    transformOrigin: { vertical: "top", horizontal: "left" },
-  }}
->
-  {PHASES.map((p) => (
-    <MenuItem key={p} value={p}>
-      {p}
-    </MenuItem>
-  ))}
-</Select>
-
-                    </FormControl>
-
-                    <Box sx={{ display: "flex", gap: 1 }}>
-                      <TextField
-                        size="small"
-                        label="Dia"
-                        type="number"
-                        value={hud.world?.day ?? ""}
-                        onChange={(e) =>
-                          setWorldSeasonDayYear({
-                            season: hud.world?.season,
-                            day: Number(e.target.value || 1),
-                            year: hud.world?.year,
-                          })
-                        }
-                        sx={{ width: 70 }}
-                      />
-                      <TextField
-                        size="small"
-                        label="Estação"
-                        type="number"
-                        value={(() => {
-                          const si = SEASONS.indexOf(hud.world?.season);
-                          return si >= 0 ? si + 1 : 1;
+                {isMaster && showTurnMenu && createPortal(
+                  <Paper elevation={12} sx={{ position: "absolute", top: (refBox.current?.getBoundingClientRect()?.top ?? 100) + window.scrollY + 60, left: (refBox.current?.getBoundingClientRect()?.left ?? 100) + window.scrollX, zIndex: 999999999, minWidth: 240, maxWidth: 320, p: 2, bgcolor: "rgba(25,25,25,0.95)", backdropFilter: "blur(6px)", color: "inherit", borderRadius: 2 }} onClick={(e) => e.stopPropagation()}>
+                    <Typography sx={{ fontWeight: 700, mb: 1 }}>Selecionar turno</Typography>
+                    {mergedEmails.length === 0 ? (
+                      <Typography variant="caption">Nenhuma ficha registrada</Typography>
+                    ) : (
+                      <Box sx={{ maxHeight: 300, overflowY: 'auto', pr: 1, '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.2)', borderRadius: '10px' } }}>
+                        {(() => {
+                          const grupos = [];
+                          if (pjEmails.length > 0) grupos.push({ titulo: '── PERSONAGENS DO JOGADOR ──', fichas: pjEmails, cor: '#4caf50' });
+                          if (pmEmails.length > 0) grupos.push({ titulo: '── PERSONAGENS DO MESTRE ──', fichas: pmEmails, cor: '#ff9800' });
+                          return grupos.map((g, gi) => (
+                            <Box key={gi} sx={{ mb: 1 }}>
+                              <Typography variant="caption" sx={{ color: g.cor, fontWeight: 'bold', display: 'block', mb: 0.5, borderBottom: `1px solid ${g.cor}44`, pb: 0.3 }}>{g.titulo}</Typography>
+                              {g.fichas.map(email => (
+                                <Button key={email} fullWidth sx={{ justifyContent: "flex-start", textTransform: "none", color: "inherit", mb: 0.3, pl: 1.5, fontSize: '0.8rem' }} onClick={() => { handleSelectTurn(email); setShowTurnMenu(false); }}>
+                                  {displayNameFor(email)}
+                                </Button>
+                              ))}
+                            </Box>
+                          ));
                         })()}
-                        onChange={(e) => {
-                          let v = Number(e.target.value || 1);
-                          if (v < 1) v = 1;
-                          if (v > 4) v = 4;
-                          setWorldSeasonDayYear({
-                            season: SEASONS[v - 1],
-                            day: hud.world?.day,
-                            year: hud.world?.year,
-                          });
-                        }}
-                        inputProps={{ min: 1, max: 4 }}
-                        sx={{ width: 70 }}
-                      />
-                      <TextField
-                        size="small"
-                        label="Ano"
-                        type="number"
-                        value={hud.world?.year ?? ""}
-                        onChange={(e) =>
-                          setWorldSeasonDayYear({
-                            season: hud.world?.season,
-                            day: hud.world?.day,
-                            year: Number(e.target.value || 1),
-                          })
-                        }
-                        sx={{ width: 90 }}
-                      />
+                      </Box>
+                    )}
+                    <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 1 }}>
+                      <Button onClick={() => setShowTurnMenu(false)}>Fechar</Button>
                     </Box>
-                  </Box>
+                  </Paper>, document.body
                 )}
-              </Box>
 
-              <Divider sx={{ width: "100%", opacity: 0.3 }} />
-
-              <Box sx={{ width: "100%" }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, textShadow, mb: 0.5 }}>
-                  XP
-                </Typography>
-
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  
-
-                  <Box 
-  sx={{ 
-    display: "flex", 
-    flexDirection: "column", 
-    gap: 1,
-    maxHeight: "250px",      // 🟢 ALTURA REDUZIDA PARA 250px
-    overflowY: "auto",       // 🟢 ATIVA SCROLL VERTICAL
-    pr: 1,                   // 🟢 Espaço para a barra de scroll
-    "&::-webkit-scrollbar": {
-      width: "6px",
-    },
-    "&::-webkit-scrollbar-track": {
-      background: "rgba(255,255,255,0.1)",
-      borderRadius: "10px",
-    },
-    "&::-webkit-scrollbar-thumb": {
-      background: "rgba(255,255,255,0.3)",
-      borderRadius: "10px",
-      "&:hover": {
-        background: "rgba(255,255,255,0.5)",
-      },
-    },
-  }}
->
-    {isMaster ? (
-    // 🟢 MESTRE VÊ SEPARADO POR PJ/PM COM CORES DE AURA
-    <>
-      {/* PJ - Personagens dos Jogadores */}
-      {pjEmailsXP.length > 0 && (
-        <Box sx={{ mb: 1 }}>
-          <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', borderBottom: '1px solid #4caf5022', pb: 0.3, mb: 0.5, display: 'block' }}>
-            ── PERSONAGENS DO JOGADOR ──
-          </Typography>
-          {pjEmailsXP.map((email) => {
-            const status = calcularStatus(email);
-            const aura = fichasMap[email]?.tipoAura;
-            const corAura = CORES_AURA_HUD[aura] || '#4caf50';
-            return (
-              <Box key={email} sx={{ width: "100%", mb: 1, pl: 1, borderLeft: `3px solid ${corAura}` }}>
-                <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                  <Typography variant="caption" sx={{ textShadow, color: corAura, fontWeight: 'bold' }}>
-                    {displayNameFor(email)}
-                  </Typography>
-                </Box>
-                {/* BARRAS PV / PE */}
-                {status && (
-                  <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
-                    <Box sx={{ position: "relative", flex: 1 }}>
-                      <LinearProgress variant="determinate" value={status.pvPercent}
-                        sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#ff0000" } }} />
-                      <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                        {status.pvAtual}/{status.pvMax}
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.2, mt: 1 }}>
+                  <Box sx={{ width: "100%", display: "flex", flexDirection: "column", gap: 0.5 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <Box sx={{ width: 44, height: 44, borderRadius: 1.5, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.12)" }}>
+                        {hud.world?.phase === "manhã" && "☀️"}
+                        {hud.world?.phase === "tarde" && "🌤️"}
+                        {hud.world?.phase === "noite" && "🌙"}
+                        {hud.world?.phase === "madrugada" && "✨"}
+                      </Box>
+                      <Box sx={{ display: "flex", flexDirection: "column" }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700, textShadow }}>
+                          {(() => {
+                            const season = hud.world?.season || "Verão";
+                            const year = hud.world?.year ?? "—";
+                            const day = hud.world?.day ?? "—";
+                            const stationNum = SEASONS.indexOf(season) >= 0 ? SEASONS.indexOf(season) + 1 : 1;
+                            return `${season} — ${day}/${stationNum}/${year}`;
+                          })()}
+                        </Typography>
+                        <Typography variant="caption" sx={{ textShadow }}>Fase: {hud.world?.phase ?? "—"}</Typography>
                       </Box>
                     </Box>
-                    <Box sx={{ position: "relative", flex: 1 }}>
-                      <LinearProgress variant="determinate" value={status.pePercent}
-                        sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} />
-                      <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                        {status.peAtual}/{status.peMax}
-                      </Box>
-                    </Box>
-                  </Box>
-                )}
-                {/* XP */}
-                <Box sx={{ position: "relative", mt: 0.5 }}>
-                  <LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0}
-                    sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} />
-                  <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                    LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
-                  </Box>
-                </Box>
-              </Box>
-            );
-          })}
-        </Box>
-      )}
 
-      {/* PM - Personagens do Mestre */}
-      {pmEmailsXP.length > 0 && (
-        <Box sx={{ mb: 1 }}>
-          <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold', borderBottom: '1px solid #ff980022', pb: 0.3, mb: 0.5, display: 'block' }}>
-            ── PERSONAGENS DO MESTRE ──
-          </Typography>
-          {pmEmailsXP.map((email) => {
-            const status = calcularStatus(email);
-            const aura = fichasMap[email]?.tipoAura;
-            const corAura = CORES_AURA_HUD[aura] || '#ff9800';
-            return (
-              <Box key={email} sx={{ width: "100%", mb: 1, pl: 1, borderLeft: `3px solid ${corAura}` }}>
-                <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                  <Typography variant="caption" sx={{ textShadow, color: corAura, fontWeight: 'bold' }}>
-                    {displayNameFor(email)}
-                  </Typography>
-                </Box>
-                {status && (
-                  <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
-                    <Box sx={{ position: "relative", flex: 1 }}>
-                      <LinearProgress variant="determinate" value={status.pvPercent}
-                        sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#ff0000" } }} />
-                      <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                        {status.pvAtual}/{status.pvMax}
+                    {isMaster && (
+                      <Box sx={{ display: "flex", gap: 2, mt: 1, flexWrap: "wrap" }}>
+                        <FormControl size="small" sx={{ minWidth: 140 }}>
+                          <InputLabel>Fase</InputLabel>
+                          <Select value={hud.world?.phase || "manhã"} label="Fase" onChange={(e) => setWorldPhase(e.target.value)} MenuProps={{ disablePortal: false, container: typeof document !== "undefined" ? document.body : undefined, PaperProps: { sx: { zIndex: 140000, backdropFilter: "blur(4px)", maxHeight: 300, overflowY: 'auto', '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.3)', borderRadius: '10px' } } }, anchorOrigin: { vertical: "bottom", horizontal: "left" }, transformOrigin: { vertical: "top", horizontal: "left" } }}>
+                            {PHASES.map((p) => (<MenuItem key={p} value={p}>{p}</MenuItem>))}
+                          </Select>
+                        </FormControl>
+                        <Box sx={{ display: "flex", gap: 1 }}>
+                          <TextField size="small" label="Dia" type="number" value={hud.world?.day ?? ""} onChange={(e) => handleMudarDia(Number(e.target.value || 1))} sx={{ width: 70 }} />
+                          <TextField size="small" label="Estação" type="number" value={SEASONS.indexOf(hud.world?.season) >= 0 ? SEASONS.indexOf(hud.world?.season) + 1 : 1} onChange={(e) => { let v = Number(e.target.value || 1); if (v < 1) v = 1; if (v > 4) v = 4; setWorldSeasonDayYear({ season: SEASONS[v - 1], day: hud.world?.day, year: hud.world?.year }); }} inputProps={{ min: 1, max: 4 }} sx={{ width: 70 }} />
+                          <TextField size="small" label="Ano" type="number" value={hud.world?.year ?? ""} onChange={(e) => setWorldSeasonDayYear({ season: hud.world?.season, day: hud.world?.day, year: Number(e.target.value || 1) })} sx={{ width: 90 }} />
+                        </Box>
                       </Box>
-                    </Box>
-                    <Box sx={{ position: "relative", flex: 1 }}>
-                      <LinearProgress variant="determinate" value={status.pePercent}
-                        sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} />
-                      <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                        {status.peAtual}/{status.peMax}
-                      </Box>
-                    </Box>
+                    )}
                   </Box>
-                )}
-                <Box sx={{ position: "relative", mt: 0.5 }}>
-                  <LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0}
-                    sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} />
-                  <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                    LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
-                  </Box>
-                </Box>
-              </Box>
-            );
-          })}
-        </Box>
-      )}
-    </>
-  ) : (
-    // 🟢 JOGADOR VÊ APENAS A SI MESMO
-    (() => {
-      const email = currentUserEmail;
-      const status = calcularStatus(email);
-      const aura = fichasMap[email]?.tipoAura;
-      const corAura = CORES_AURA_HUD[aura] || '#00e0ff';
-      return (
-        <Box key={email} sx={{ width: "100%" }}>
-          <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-            <Typography variant="caption" sx={{ textShadow, color: corAura }}>
-              {displayNameFor(email)}
-            </Typography>
-          </Box>
-          {status && (
-            <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
-              <Box sx={{ position: "relative", flex: 1 }}>
-                <LinearProgress variant="determinate" value={status.pvPercent}
-                  sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#ff0000" } }} />
-                <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                  {status.pvAtual}/{status.pvMax}
-                </Box>
-              </Box>
-              <Box sx={{ position: "relative", flex: 1 }}>
-                <LinearProgress variant="determinate" value={status.pePercent}
-                  sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} />
-                <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-                  {status.peAtual}/{status.peMax}
-                </Box>
-              </Box>
-            </Box>
-          )}
-          <Box sx={{ position: "relative", mt: 0.5 }}>
-            <LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0}
-              sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} />
-            <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111", textShadow: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "0 0 4px rgba(0,0,0,0.9)" : "0 0 4px rgba(255,255,255,0.9)" }}>
-              LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100
-            </Box>
-          </Box>
-        </Box>
-      );
-    })()
-  )}
+                  <Divider sx={{ width: "100%", opacity: 0.3 }} />
+                  <Box sx={{ width: "100%" }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, textShadow, mb: 0.5 }}>XP</Typography>
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, maxHeight: "250px", overflowY: "auto", pr: 1, "&::-webkit-scrollbar": { width: "6px" }, "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.1)", borderRadius: "10px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.3)", borderRadius: "10px", "&:hover": { background: "rgba(255,255,255,0.5)" } } }}>
+                        {isMaster ? (
+                          <>
+                            {pjEmailsXP.length > 0 && (
+                              <Box sx={{ mb: 1 }}>
+                                <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold', borderBottom: '1px solid #4caf5022', pb: 0.3, mb: 0.5, display: 'block' }}>── PERSONAGENS DO JOGADOR ──</Typography>
+                                {pjEmailsXP.map((email) => {
+                                  const status = calcularStatus(email);
+                                  const corAura = CORES_AURA_HUD[fichasMap[email]?.tipoAura] || '#4caf50';
+                                  return (
+                                    <Box key={email} sx={{ width: "100%", mb: 1, pl: 1, borderLeft: `3px solid ${corAura}` }}>
+                                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                        <Typography variant="caption" sx={{ textShadow, color: corAura, fontWeight: 'bold' }}>{displayNameFor(email)}</Typography>
+                                        {Array.isArray(fichasMap[email]?.efeitosAtivos) && fichasMap[email].efeitosAtivos.length > 0 && (
+                                          <Box sx={{ display: "flex", gap: 0.3, alignItems: "center" }}>
+                                            {fichasMap[email].efeitosAtivos.map((ef) => (
+                                              <Tooltip key={ef.id} arrow title={<Box sx={{ p: 0.5 }}><Typography sx={{ fontWeight: "bold", fontSize: "0.75rem", color: ef.cor || "#fff" }}>{ef.icone} {ef.tipo}</Typography><Typography sx={{ fontSize: "0.65rem", color: "#cbd5e1" }}>{ef.descricao || ""}</Typography><Typography sx={{ fontSize: "0.6rem", color: "#94a3b8", mt: 0.3 }}>Restam: {ef.turnosRestantes ?? "?"} turno(s)</Typography></Box>}>
+                                                <Box sx={{ width: 18, height: 18, borderRadius: "50%", bgcolor: "rgba(0,0,0,0.5)", border: `1px solid ${ef.cor || "#fff"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, boxShadow: `0 0 5px ${ef.cor || "#fff"}88`, cursor: "help" }}>{ef.icone}</Box>
+                                              </Tooltip>
+                                            ))}
+                                          </Box>
+                                        )}
+                                      </Box>
+                                      {status && (
+                                        <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
+                                          <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pvPercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#ff0000" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.pvAtual}/{status.pvMax}</Box></Box>
+                                          <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pePercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.peAtual}/{status.peMax}</Box></Box>
+                                        </Box>
+                                      )}
+                                      <Box sx={{ position: "relative", mt: 0.5 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: "inherit", textShadow }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
+{/* 🟢 BARRAS DE FOME E SEDE */}
+<Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
+  <Tooltip title={`Fome: ${fichasMap[email]?.fome ?? 100}%`} arrow>
+    <Box sx={{ position: "relative", flex: 1, height: 8, bgcolor: "rgba(0,0,0,0.5)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(255,152,0,0.3)" }}>
+      <Box sx={{ width: `${fichasMap[email]?.fome ?? 100}%`, height: "100%", bgcolor: "#ff9800", transition: "width 0.3s" }} />
+      <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>🍖 {fichasMap[email]?.fome ?? 100}%</Typography>
+    </Box>
+  </Tooltip>
+  <Tooltip title={`Sede: ${fichasMap[email]?.sede ?? 100}%`} arrow>
+    <Box sx={{ position: "relative", flex: 1, height: 8, bgcolor: "rgba(0,0,0,0.5)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(59,130,246,0.3)" }}>
+      <Box sx={{ width: `${fichasMap[email]?.sede ?? 100}%`, height: "100%", bgcolor: "#3b82f6", transition: "width 0.3s" }} />
+      <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>💧 {fichasMap[email]?.sede ?? 100}%</Typography>
+    </Box>
+  </Tooltip>
 </Box>
-                  {/** ———————————————————————————————————————————————— */}
-                  {/** AQUI ENTRA A OPÇÃO A (SELECT DE JOGADOR XP)      */}
-                  {/** ———————————————————————————————————————————————— */}
+                                    </Box>
+                                  );
+                                })}
+                              </Box>
+                            )}
+                            {pmEmailsXP.length > 0 && (
+                              <Box sx={{ mb: 1 }}>
+                                <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold', borderBottom: '1px solid #ff980022', pb: 0.3, mb: 0.5, display: 'block' }}>── PERSONAGENS DO MESTRE ──</Typography>
+                                {pmEmailsXP.map((email) => {
+                                  const status = calcularStatus(email);
+                                  const corAura = CORES_AURA_HUD[fichasMap[email]?.tipoAura] || '#ff9800';
+                                  return (
+                                    <Box key={email} sx={{ width: "100%", mb: 1, pl: 1, borderLeft: `3px solid ${corAura}` }}>
+                                      <Box sx={{ display: "flex", justifyContent: "space-between" }}><Typography variant="caption" sx={{ textShadow, color: corAura, fontWeight: 'bold' }}>{displayNameFor(email)}</Typography></Box>
+                                      {status && (
+                                        <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
+                                          <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pvPercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#ff0000" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.pvAtual}/{status.pvMax}</Box></Box>
+                                          <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pePercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.peAtual}/{status.peMax}</Box></Box>
+                                        </Box>
+                                      )}
+                                      <Box sx={{ position: "relative", mt: 0.5 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: "inherit", textShadow }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
+{/* 🟢 BARRAS DE FOME E SEDE */}
+<Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
+  <Tooltip title={`Fome: ${fichasMap[email]?.fome ?? 100}%`} arrow>
+    <Box sx={{ position: "relative", flex: 1, height: 8, bgcolor: "rgba(0,0,0,0.5)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(255,152,0,0.3)" }}>
+      <Box sx={{ width: `${fichasMap[email]?.fome ?? 100}%`, height: "100%", bgcolor: "#ff9800", transition: "width 0.3s" }} />
+      <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>🍖 {fichasMap[email]?.fome ?? 100}%</Typography>
+    </Box>
+  </Tooltip>
+  <Tooltip title={`Sede: ${fichasMap[email]?.sede ?? 100}%`} arrow>
+    <Box sx={{ position: "relative", flex: 1, height: 8, bgcolor: "rgba(0,0,0,0.5)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(59,130,246,0.3)" }}>
+      <Box sx={{ width: `${fichasMap[email]?.sede ?? 100}%`, height: "100%", bgcolor: "#3b82f6", transition: "width 0.3s" }} />
+      <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>💧 {fichasMap[email]?.sede ?? 100}%</Typography>
+    </Box>
+  </Tooltip>
+</Box>
+                                    </Box>
+                                  );
+                                })}
+                              </Box>
+                            )}
+                          </>
+                        ) : (
+                          (() => {
+                            const email = currentUserEmail;
+                            const status = calcularStatus(email);
+                            const corAura = CORES_AURA_HUD[fichasMap[email]?.tipoAura] || '#00e0ff';
+                            return (
+                              <Box key={email} sx={{ width: "100%" }}>
+                                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <Typography variant="caption" sx={{ textShadow, color: corAura }}>{displayNameFor(email)}</Typography>
+                                  {Array.isArray(fichasMap[email]?.efeitosAtivos) && fichasMap[email].efeitosAtivos.length > 0 && (
+                                    <Box sx={{ display: "flex", gap: 0.3 }}>
+                                      {fichasMap[email].efeitosAtivos.map((ef) => (
+                                        <Tooltip key={ef.id} arrow title={`${ef.icone} ${ef.tipo} — ${ef.turnosRestantes ?? "?"} turnos`}>
+                                          <Box sx={{ width: 16, height: 16, borderRadius: "50%", bgcolor: "rgba(0,0,0,0.5)", border: `1px solid ${ef.cor}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, boxShadow: `0 0 4px ${ef.cor}88` }}>{ef.icone}</Box>
+                                        </Tooltip>
+                                      ))}
+                                    </Box>
+                                  )}
+                                </Box>
+                                {status && (
+                                  <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
+                                    <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pvPercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#ff0000" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.pvAtual}/{status.pvMax}</Box></Box>
+                                    <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pePercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.peAtual}/{status.peMax}</Box></Box>
+                                  </Box>
+                                )}
+                                <Box sx={{ position: "relative", mt: 0.5 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: "inherit", textShadow }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
+{/* 🟢 BARRAS DE FOME E SEDE */}
+<Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
+  <Tooltip title={`Fome: ${fichasMap[email]?.fome ?? 100}%`} arrow>
+    <Box sx={{ position: "relative", flex: 1, height: 8, bgcolor: "rgba(0,0,0,0.5)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(255,152,0,0.3)" }}>
+      <Box sx={{ width: `${fichasMap[email]?.fome ?? 100}%`, height: "100%", bgcolor: "#ff9800", transition: "width 0.3s" }} />
+      <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>🍖 {fichasMap[email]?.fome ?? 100}%</Typography>
+    </Box>
+  </Tooltip>
+  <Tooltip title={`Sede: ${fichasMap[email]?.sede ?? 100}%`} arrow>
+    <Box sx={{ position: "relative", flex: 1, height: 8, bgcolor: "rgba(0,0,0,0.5)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(59,130,246,0.3)" }}>
+      <Box sx={{ width: `${fichasMap[email]?.sede ?? 100}%`, height: "100%", bgcolor: "#3b82f6", transition: "width 0.3s" }} />
+      <Typography sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 900, color: "#fff", textShadow: "0 0 2px #000" }}>💧 {fichasMap[email]?.sede ?? 100}%</Typography>
+    </Box>
+  </Tooltip>
+</Box>
+                              </Box>
+                            );
+                          })()
+                        )}
+                      </Box>
 
-                  {isMaster && (
-                    <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
-                      <TextField
-                        size="small"
-                        label="Valor"
-                        type="number"
-                        value={xpEditValue}
-                        onChange={(e) => setXpEditValue(Number(e.target.value))}
-                        sx={{ width: 80 }}
-                      />
-
-                      <FormControl size="small" sx={{ minWidth: 150 }}>
-                        <InputLabel>Jogador</InputLabel>
-                        <Select
-  value={selectedPlayerForXP || ""}
-  label="Jogador"
-  onChange={(e) => setSelectedPlayerForXP(e.target.value)}
-  renderValue={(selected) => {
-    if (!selected) return <em style={{ color: "#94a3b8" }}>-- selecione --</em>;
-    return displayNameFor(selected);
-  }}
-  sx={{
-    color: "#fff",
-    bgcolor: "rgba(0,0,0,0.25)",
-    borderRadius: 1.5,
-    fontSize: "0.8rem",
-    ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.18)" },
-    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.35)" },
-    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#8ecaff" },
-  }}
-  MenuProps={{
-    disablePortal: false,
-    container: typeof document !== "undefined" ? document.body : undefined,
-    PaperProps: {
-      sx: {
-        zIndex: 140000,
-        bgcolor: "rgba(20,20,20,0.98)",
-        backdropFilter: "blur(10px)",
-        color: "#fff",
-        borderRadius: 2,
-        border: "1px solid rgba(255,255,255,0.12)",
-        boxShadow: "0 12px 40px rgba(0,0,0,0.7)",
-        maxHeight: 340,
-        mt: 0.5,
-        overflowY: "auto",
-        "&::-webkit-scrollbar": { width: "5px" },
-        "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.25)", borderRadius: "10px" },
-      },
-    },
-    anchorOrigin: { vertical: "bottom", horizontal: "left" },
-    transformOrigin: { vertical: "top", horizontal: "left" },
-  }}
->
-  <MenuItem value="" sx={{ fontSize: "0.8rem" }}>
-    <em style={{ color: "#94a3b8" }}>-- selecione --</em>
-  </MenuItem>
-  <MenuItem disabled sx={{ opacity: 1, borderBottom: "1px solid #4caf5044", mt: 0.5, py: 0.3 }}>
-    <Typography variant="caption" sx={{ color: "#4caf50", fontWeight: 800, fontSize: "0.6rem", letterSpacing: 1 }}>
-      ── PERSONAGENS DO JOGADOR ──
-    </Typography>
-  </MenuItem>
-  {pjEmailsXP.map((email) => (
-    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(76,175,80,0.15)" } }}>
-      {displayNameFor(email)}
-    </MenuItem>
-  ))}
-  {pmEmailsXP.length > 0 && (
-    <MenuItem disabled sx={{ opacity: 1, borderBottom: "1px solid #ff980044", mt: 0.5, py: 0.3 }}>
-      <Typography variant="caption" sx={{ color: "#ff9800", fontWeight: 800, fontSize: "0.6rem", letterSpacing: 1 }}>
-        ── PERSONAGENS DO MESTRE ──
-      </Typography>
-    </MenuItem>
-  )}
-  {pmEmailsXP.map((email) => (
-    <MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(255,152,0,0.15)" } }}>
-      {displayNameFor(email)}
-    </MenuItem>
-  ))}
-</Select>
-
-                      </FormControl>
-
-                      <IconButton color="primary" onClick={handleGiveXP}>
-                        <AddIcon />
-                      </IconButton>
-
-                      <IconButton color="secondary" onClick={handleRemoveXP}>
-                        <RemoveIcon />
-                      </IconButton>
-                      <IconButton 
-  onClick={() => setSorteAzarOpen(true)}
-  title="Sorte/Azar"
-  sx={{ color: '#ff9800' }}
->
-  <span style={{ fontSize: '1.2rem' }}>🎲</span>
-</IconButton>
+                      {isMaster && (
+                        <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                          <TextField size="small" label="Valor" type="number" value={xpEditValue} onChange={(e) => setXpEditValue(Number(e.target.value))} sx={{ width: 80 }} />
+                          <FormControl size="small" sx={{ minWidth: 150 }}>
+                            <InputLabel>Jogador</InputLabel>
+                            <Select value={selectedPlayerForXP || ""} label="Jogador" onChange={(e) => setSelectedPlayerForXP(e.target.value)} renderValue={(selected) => !selected ? <em style={{ color: "#94a3b8" }}>-- selecione --</em> : displayNameFor(selected)} sx={{ color: "#fff", bgcolor: "rgba(0,0,0,0.25)", borderRadius: 1.5, fontSize: "0.8rem", ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.18)" }, "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.35)" }, "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#8ecaff" } }} MenuProps={{ disablePortal: false, container: typeof document !== "undefined" ? document.body : undefined, PaperProps: { sx: { zIndex: 140000, bgcolor: "rgba(20,20,20,0.98)", backdropFilter: "blur(10px)", color: "#fff", borderRadius: 2, border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 12px 40px rgba(0,0,0,0.7)", maxHeight: 340, mt: 0.5, overflowY: "auto", "&::-webkit-scrollbar": { width: "5px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.25)", borderRadius: "10px" } } }, anchorOrigin: { vertical: "bottom", horizontal: "left" }, transformOrigin: { vertical: "top", horizontal: "left" } }}>
+                              <MenuItem value="" sx={{ fontSize: "0.8rem" }}><em style={{ color: "#94a3b8" }}>-- selecione --</em></MenuItem>
+                              <MenuItem disabled sx={{ opacity: 1, borderBottom: "1px solid #4caf5044", mt: 0.5, py: 0.3 }}><Typography variant="caption" sx={{ color: "#4caf50", fontWeight: 800, fontSize: "0.6rem", letterSpacing: 1 }}>── PERSONAGENS DO JOGADOR ──</Typography></MenuItem>
+                              {pjEmailsXP.map((email) => (<MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(76,175,80,0.15)" } }}>{displayNameFor(email)}</MenuItem>))}
+                              {pmEmailsXP.length > 0 && (<MenuItem disabled sx={{ opacity: 1, borderBottom: "1px solid #ff980044", mt: 0.5, py: 0.3 }}><Typography variant="caption" sx={{ color: "#ff9800", fontWeight: 800, fontSize: "0.6rem", letterSpacing: 1 }}>── PERSONAGENS DO MESTRE ──</Typography></MenuItem>)}
+                              {pmEmailsXP.map((email) => (<MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(255,152,0,0.15)" } }}>{displayNameFor(email)}</MenuItem>))}
+                            </Select>
+                          </FormControl>
+                          <IconButton color="primary" onClick={handleGiveXP}><AddIcon /></IconButton>
+                          <IconButton color="secondary" onClick={handleRemoveXP}><RemoveIcon /></IconButton>
+                          <IconButton onClick={() => setSorteAzarOpen(true)} title="Sorte/Azar" sx={{ color: '#ff9800' }}><span style={{ fontSize: '1.2rem' }}>🎲</span></IconButton>
+                        </Box>
+                      )}
                     </Box>
-                  )}
-                </Box>
-              </Box>
-
-              <Divider sx={{ width: "100%", opacity: 0.3 }} />
-
-              <Box
-                sx={{
-                  width: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  pb: 1,
-                  position: "relative",
-                }}
-              >
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Paper
-                    elevation={2}
-                    sx={{
-                      px: 2,
-                      py: 1,
-                      borderRadius: 1,
-                      background: "rgba(0,0,0,0.25)",
-                    }}
-                  >
-                    <Typography
-                      variant="h5"
-                      sx={{
-                        fontWeight: 800,
-                        fontFamily: "monospace",
-                        textAlign: "center",
-                        minWidth: 96,
-                      }}
-                    >
-                      {displayTime(remaining)}
-                    </Typography>
-                  </Paper>
-                  
-                                    {/* 🟢 BOTÕES FLUTUANTES */}
-                  <IconButton 
-                    onClick={() => { if (window.__toggleChat) window.__toggleChat(); }}
-                    title="Chat Flutuante"
-                    sx={{ color: '#00e0ff', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}
-                  >
-                    <span style={{ fontSize: '1.1rem' }}>💬</span>
-                  </IconButton>
-                  <IconButton 
-                    onClick={() => { if (window.__toggleFicha) window.__toggleFicha(); }}
-                    title="Ficha Flutuante"
-                    sx={{ color: '#ff9800', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}
-                  >
-                    <span style={{ fontSize: '1.1rem' }}>📋</span>
-                       
-                  </IconButton>
-                </Box>
-                
-
-                {isMaster && (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      gap: 1,
-                      alignItems: "center",
-                      mt: 0.5,
-                    }}
-                  >
-                    <TextField
-                      size="small"
-                      label="Min"
-                      type="number"
-                      inputProps={{ min: 0 }}
-                      value={minutesInput}
-                      onChange={(e) =>
-                        setMinutesInput(Math.max(0, Number(e.target.value || 0)))
-                      }
-                      sx={{ width: 84 }}
-                    />
-
-                    <TextField
-                      size="small"
-                      label="Seg"
-                      type="number"
-                      inputProps={{ min: 0, max: 59 }}
-                      value={secondsInput}
-                      onChange={(e) => {
-                        let v = Number(e.target.value || 0);
-                        if (v < 0) v = 0;
-                        if (v > 59) v = 59;
-                        setSecondsInput(v);
-                      }}
-                      sx={{ width: 84 }}
-                    />
                   </Box>
-                )}
 
-                {isMaster && (
-                  <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 1 }}>
-                    <IconButton
-                      onClick={runningLocal ? handleTimerPause : handleTimerPlay}
-                      title={runningLocal ? "Pausar" : "Iniciar"}
-                      size="small"
-                      aria-label={runningLocal ? "pausar" : "iniciar"}
-                    >
-                      {runningLocal ? <PauseIcon /> : <PlayArrowIcon />}
-                    </IconButton>
+                  <Divider sx={{ width: "100%", opacity: 0.3 }} />
 
-                    <IconButton
-                      onClick={handleTimerReset}
-                      title="Resetar"
-                      size="small"
-                      aria-label="resetar"
-                    >
-                      <RestartAltIcon />
-                    </IconButton>
+                  <Box sx={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", pb: 1, position: "relative" }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Paper elevation={2} sx={{ px: 2, py: 1, borderRadius: 1, background: "rgba(0,0,0,0.25)" }}>
+                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: "monospace", textAlign: "center", minWidth: 96 }}>{displayTime(remaining)}</Typography>
+                      </Paper>
+                      <IconButton onClick={() => { if (window.__toggleChat) window.__toggleChat(); }} title="Chat Flutuante" sx={{ color: '#00e0ff', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}><span style={{ fontSize: '1.1rem' }}>💬</span></IconButton>
+                      <IconButton onClick={() => { if (window.__toggleFicha) window.__toggleFicha(); }} title="Ficha Flutuante" sx={{ color: '#ff9800', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}><span style={{ fontSize: '1.1rem' }}>📋</span></IconButton>
+                    </Box>
+                    
+                    {isMaster && (
+                      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 0.5 }}>
+                        <TextField size="small" label="Min" type="number" inputProps={{ min: 0 }} value={minutesInput} onChange={(e) => setMinutesInput(Math.max(0, Number(e.target.value || 0)))} sx={{ width: 84 }} />
+                        <TextField size="small" label="Seg" type="number" inputProps={{ min: 0, max: 59 }} value={secondsInput} onChange={(e) => { let v = Number(e.target.value || 0); if (v < 0) v = 0; if (v > 59) v = 59; setSecondsInput(v); }} sx={{ width: 84 }} />
+                      </Box>
+                    )}
+
+                    {isMaster && (
+                      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 1 }}>
+                        <IconButton onClick={runningLocal ? handleTimerPause : handleTimerPlay} title={runningLocal ? "Pausar" : "Iniciar"} size="small">{runningLocal ? <PauseIcon /> : <PlayArrowIcon />}</IconButton>
+                        <IconButton onClick={handleTimerReset} title="Resetar" size="small"><RestartAltIcon /></IconButton>
+                      </Box>
+                    )}
                   </Box>
-                )}
-              </Box>
-            </Box>
+                </Box>
+              </>
+            )}
           </Paper>
         )}
-
         {/* 🟢 ALÇA DE REDIMENSIONAMENTO */}
         {!collapsed && !minimizado && (
           <Box
@@ -1571,6 +1334,171 @@ if (!fichasMap) return null;
           />
         )}
       </Box>
+      {/* 🟢 PAINEL ESQUERDO: EFEITOS ATIVOS */}
+      {(() => {
+        const activeEmail = isMaster ? (hud.turn?.id || currentUserEmail) : currentUserEmail;
+        const efeitosAtivos = fichasMap?.[activeEmail]?.efeitosAtivos || [];
+        if (efeitosAtivos.length === 0) return null;
+        
+        return (
+          <Box sx={{ 
+            position: "fixed", 
+            top: 0,
+            left: 0,
+            transform: `translate(${Math.max(8, posicaoLocal.x - 62)}px, ${posicaoLocal.y}px)`,
+            zIndex: 119999, 
+            display: "flex", 
+            flexDirection: "column", 
+            gap: 0.8, 
+            pointerEvents: "none",
+            transition: dragging ? "none" : "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}>
+            {efeitosAtivos.map((ef, i) => (
+              <Tooltip
+                key={ef.id || i}
+                arrow
+                placement="right"
+                slotProps={{ tooltip: { sx: { bgcolor: "#0f172a", border: `1px solid ${ef.cor || "#fff"}`, maxWidth: 220 } } }}
+                title={
+                  <Box sx={{ p: 0.5 }}>
+                    <Typography sx={{ fontWeight: "bold", color: ef.cor || "#fff", fontSize: "0.8rem" }}>{ef.icone} {ef.tipo}</Typography>
+                    <Typography sx={{ fontSize: "0.7rem", color: "#cbd5e1" }}>{ef.descricao || ""}</Typography>
+                    <Typography sx={{ fontSize: "0.65rem", color: "#94a3b8", mt: 0.3 }}>⏳ {ef.turnosRestantes ?? "?"} turno(s)</Typography>
+                  </Box>
+                }
+              >
+                <Box
+                  sx={{
+                    "--ef-color": ef.cor || "#fff",
+                    width: 48, height: 48, borderRadius: "50%",
+                    bgcolor: "rgba(0,0,0,0.75)",
+                    border: `2px solid ${ef.cor || "#fff"}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 24, position: "relative",
+                    pointerEvents: (collapsed || minimizado) ? "none" : "auto",
+                    cursor: "help",
+                    animation: `floatEffect ${2.4 + i * 0.2}s ease-in-out infinite, effectPulse 2s ease-in-out infinite`,
+                    animationDelay: `${i * 0.25}s`,
+                    backdropFilter: "blur(4px)",
+                    // 🟢 Animação de Sugar para dentro do HUD
+                    opacity: (collapsed || minimizado) ? 0 : 1,
+                    transform: (collapsed || minimizado) ? "translateX(40px) scale(0.5)" : "translateX(0) scale(1)",
+                    transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+                  }}
+                >
+                  {ef.icone}
+                  <Box
+                    sx={{
+                      position: "absolute", bottom: -6, right: -6,
+                      bgcolor: "#0f172a", color: ef.cor || "#fff",
+                      fontSize: "0.62rem", fontWeight: 900, borderRadius: "50%",
+                      minWidth: 20, height: 20, px: 0.4,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      border: `2px solid ${ef.cor || "#fff"}`,
+                      boxShadow: `0 0 8px ${ef.cor || "#fff"}88`,
+                    }}
+                  >
+                    {ef.turnosRestantes === 999 ? "∞" : ef.turnosRestantes ?? "?"}
+                  </Box>
+                </Box>
+              </Tooltip>
+            ))}
+          </Box>
+        );
+      })()}
+
+      {/* 🟢 PAINEL DIREITO 1: TRAÇOS (VISÍVEL APENAS PARA O JOGADOR) */}
+      {!isMaster && userEmail !== "mestre@reqviemrpg.com" && (() => {
+        const playerFicha = fichasMap[userEmail] || {};
+        // 🟢 Correção: .split(";").map(t => t.trim()) limpa os espaços extras que impediam de achar o ícone
+        const tracosList = playerFicha.tracos ? playerFicha.tracos.split(";").map(t => t.trim()).filter(Boolean) : [];
+        if (tracosList.length === 0) return null;
+
+        return (
+          <Box sx={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            transform: `translate(${posicaoLocal.x + tamanho.width + 10}px, ${posicaoLocal.y}px)`,
+            zIndex: 119999,
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.8,
+            pointerEvents: "none",
+            transition: dragging ? "none" : "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}>
+            {tracosList.map(t => {
+              const info = TRACOS_ICONS[t] || { icon: "❓", color: "#888", desc: "Traço Desconhecido." };
+              const periciaOrigem = TRACOS_PERICIA[t] || "Desconhecida";
+              return (
+                <Tooltip key={t} arrow placement="right" title={
+                  <Box sx={{ p: 0.5 }}>
+                    <Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{t}</Typography>
+                    <Typography sx={{ fontSize: '0.65rem', color: '#4caf50', fontWeight: 'bold', mb: 0.3 }}>De: {periciaOrigem}</Typography>
+                    <Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography>
+                  </Box>
+                }>
+                  <Box sx={{ 
+                    width: 40, height: 40, borderRadius: 2, bgcolor: 'rgba(0,0,0,0.75)', border: `2px solid ${info.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: `0 0 10px ${info.color}88`, pointerEvents: (collapsed || minimizado) ? 'none' : 'auto', cursor: 'help',
+                    // 🟢 Animação de Sugar
+                    opacity: (collapsed || minimizado) ? 0 : 1,
+                    transform: (collapsed || minimizado) ? "translateX(-40px) scale(0.5)" : "translateX(0) scale(1)",
+                    transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+                  }}>
+                    {info.icon}
+                  </Box>
+                </Tooltip>
+              );
+            })}
+          </Box>
+        );
+      })()}
+
+      {/* 🟢 PAINEL DIREITO 2: TALENTOS (VISÍVEL APENAS PARA O JOGADOR) */}
+      {!isMaster && userEmail !== "mestre@reqviemrpg.com" && (() => {
+        const playerFicha = fichasMap[userEmail] || {};
+        // 🟢 Correção: .split(";").map(t => t.trim()) limpa os espaços extras
+        const talentosList = playerFicha.caracteristicas ? playerFicha.caracteristicas.split(";").map(t => t.trim()).filter(Boolean) : [];
+        if (talentosList.length === 0) return null;
+
+        return (
+          <Box sx={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            transform: `translate(${posicaoLocal.x + tamanho.width + 55}px, ${posicaoLocal.y}px)`,
+            zIndex: 119999,
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.8,
+            pointerEvents: "none",
+            transition: dragging ? "none" : "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}>
+            {talentosList.map(t => {
+              const info = TALENTOS_ICONS[t] || { icon: "❓", color: "#888", desc: "Talento Desconhecido." };
+              return (
+                <Tooltip key={t} arrow placement="right" title={
+                  <Box sx={{ p: 0.5 }}>
+                    <Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{t}</Typography>
+                    <Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography>
+                  </Box>
+                }>
+                  <Box sx={{ 
+                    width: 40, height: 40, borderRadius: 2, bgcolor: 'rgba(0,0,0,0.75)', border: `2px solid ${info.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: `0 0 10px ${info.color}88`, pointerEvents: (collapsed || minimizado) ? 'none' : 'auto', cursor: 'help',
+                    // 🟢 Animação de Sugar
+                    opacity: (collapsed || minimizado) ? 0 : 1,
+                    transform: (collapsed || minimizado) ? "translateX(-40px) scale(0.5)" : "translateX(0) scale(1)",
+                    transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+                  }}>
+                    {info.icon}
+                  </Box>
+                </Tooltip>
+              );
+            })}
+          </Box>
+        );
+      })()}
+
       {/* 🟢 MODAL SORTE/AZAR */}
       <Dialog 
         open={sorteAzarOpen} 

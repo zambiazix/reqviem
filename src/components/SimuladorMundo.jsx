@@ -68,6 +68,19 @@ const CATEGORIAS_IMPOSTO_LABEL = { residencial: "🏠 Residencial", comercial: "
 
 function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
   const { meusCargos, temPoderNoEscopo } = useSimulador();
+  
+  // 🟢 MECÂNICA DE SELEÇÃO DE PERSONAGEM
+  const [jogadorSelecionadoEmail, setJogadorSelecionadoEmail] = useState(userEmail);
+  
+  // Sincroniza com o seletor do Chat
+  useEffect(() => {
+    const handleJogador = (e) => {
+      if (e.detail) setJogadorSelecionadoEmail(e.detail);
+    };
+    window.addEventListener("jogadorSelecionadoChat", handleJogador);
+    return () => window.removeEventListener("jogadorSelecionadoChat", handleJogador);
+  }, []);
+
   const [aba, setAba] = useState(0);
   const [config, setConfig] = useState({
     initialized: false,
@@ -102,7 +115,18 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
   const [buscaEmpresa, setBuscaEmpresa] = useState("");
   const [bolsaEmpresas, setBolsaEmpresas] = useState([]);
   const [fichasDisponiveis, setFichasDisponiveis] = useState({});
+  const [fichasParaSeletor, setFichasParaSeletor] = useState({});
   const [lightboxSrc, setLightboxSrc] = useState(null);
+
+  // 🟢 CARREGA TODAS AS FICHAS ASSIM QUE O SIMULADOR ABRE
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "fichas"), (snap) => {
+      const m = {};
+      snap.forEach((d) => { m[d.id] = { email: d.id, ...d.data() }; });
+      setFichasParaSeletor(m);
+    });
+    return () => unsub();
+  }, []);
   const [uploadandoImg, setUploadandoImg] = useState(false);
   const [formEmpresa, setFormEmpresa] = useState({
     nome: "",
@@ -147,8 +171,8 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
   });
   const autoMinimizouRef = useRef(false);
   useEffect(() => {
-    if (!modalNegociacaoOpen || !userEmail) return;
-    const cargos = meusCargos(userEmail);
+    if (!modalNegociacaoOpen || !jogadorSelecionadoEmail) return;
+    const cargos = meusCargos(jogadorSelecionadoEmail);
     const cargosPais = cargos.filter((c) => (c.escopoNivel === "pais" || c.escopo?.nivel === "pais"));
     if (cargosPais.length > 0) {
       const c = cargosPais[0];
@@ -156,7 +180,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
         nivel: "pais",
         id: c.paisId,
         nome: c.paisNome || c.paisId,
-        holderEmail: userEmail,
+        holderEmail: jogadorSelecionadoEmail,
       });
     }
   }, [modalNegociacaoOpen, userEmail]);
@@ -1110,6 +1134,68 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
         >
           {minimizado ? "SIMULADOR" : "SIMULADOR DO MUNDO"}
         </Typography>
+        
+        {/* 🟢 SELETOR DE PERSONAGEM */}
+        {!minimizado && (
+          <FormControl size="small" sx={{ minWidth: 200, ml: 2 }}>
+            <Select
+              value={jogadorSelecionadoEmail}
+              onChange={(e) => {
+                const novoEmail = e.target.value;
+                setJogadorSelecionadoEmail(novoEmail);
+                // Notifica o Chat e outros componentes
+                window.dispatchEvent(new CustomEvent('jogadorSelecionadoChat', { detail: novoEmail }));
+              }}
+              displayEmpty
+              sx={{
+                color: '#fff',
+                fontSize: '0.75rem',
+                bgcolor: `${V3.gold}22`,
+                '& .MuiOutlinedInput-notchedOutline': { borderColor: `${V3.gold}66` },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: V3.gold },
+                '& .MuiSelect-icon': { color: V3.gold },
+                '& .MuiSelect-select': { display: 'flex', alignItems: 'center', gap: 0.5, py: 1 },
+              }}
+              MenuProps={{
+                PaperProps: { sx: { bgcolor: '#1a1512', color: '#fff', maxHeight: 400 } },
+              }}
+            >
+              <MenuItem value="mestre@reqviemrpg.com" sx={{ color: '#FFD700', fontWeight: 'bold' }}>
+                👑 Mestre (sem ficha)
+              </MenuItem>
+
+              <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
+                <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                  ── PERSONAGENS DO JOGADOR ──
+                </Typography>
+              </MenuItem>
+
+              {Object.entries(fichasParaSeletor)
+                .filter(([email, data]) => (data.tipoFicha || "PJ") === "PJ")
+                .map(([email, data]) => (
+                  <MenuItem key={email} value={email} sx={{ pl: 3 }}>
+                    📋 {data.nome || email}
+                  </MenuItem>
+                ))}
+
+              {Object.entries(fichasParaSeletor).some(([email, data]) => data.tipoFicha === "PM") && (
+                <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
+                  <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
+                    ── PERSONAGENS DO MESTRE ──
+                  </Typography>
+                </MenuItem>
+              )}
+
+              {Object.entries(fichasParaSeletor)
+                .filter(([email, data]) => data.tipoFicha === "PM")
+                .map(([email, data]) => (
+                  <MenuItem key={email} value={email} sx={{ pl: 3 }}>
+                    📋 {data.nome || email}
+                  </MenuItem>
+                ))}
+            </Select>
+          </FormControl>
+        )}
         {!minimizado && config.initialized && (
           <Chip
             label="MUNDO ATIVO"
@@ -1338,8 +1424,8 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                   if (isMaster) return true;
                   const cidade = cidades[a.entidadeId];
                   if (!cidade) return false;
-                  const temMeuCargo = (cidade.cargosLocais || []).some((c) => c.holderEmail === userEmail) ||
-                    (paises[cidade.paisId]?.cargos || []).some((c) => c.holderEmail === userEmail);
+                  const temMeuCargo = (cidade.cargosLocais || []).some((c) => c.holderEmail === jogadorSelecionadoEmail) ||
+                    (paises[cidade.paisId]?.cargos || []).some((c) => c.holderEmail === jogadorSelecionadoEmail);
                   return temMeuCargo;
                 })
                 .sort((a, b) => {
@@ -1447,13 +1533,16 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
 
         {aba === 1 && (
           <Box>
+            <BarraBuscaAba valor={buscasPorAba[1] || ""} onChange={(v) => setTermoAba(1, v)} placeholder="🔍 Buscar país..." />
             {Object.values(paises).length === 0 ? (
               <Typography sx={{ color: V3.paper, textAlign: "center", py: 4 }}>
                 {config.initialized ? "Nenhum país." : "Mundo não inicializado."}
               </Typography>
             ) : (
               <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5 }}>
-                {Object.values(paises).map((p) => (
+                {Object.values(paises)
+                  .filter((p) => filtrar([p], ["nome", "id"]).length > 0)
+                  .map((p) => (
                   <Paper
                     key={p.id}
                     sx={{
@@ -1941,7 +2030,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                         pais: cidadeAlvo.paisId,
                         noticia: crise.noticia(cidadeAlvo, paisAlvo),
                         criadoEm: new Date().toISOString(),
-                        criadoPor: userEmail,
+                        criadoPor: jogadorSelecionadoEmail,
                       });
                       alert(`⚡ ${crise.nome} aplicada em ${cidadeAlvo.nome}!`);
                     }}
@@ -2014,15 +2103,15 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                 if (!alvo) return false;
                 if (alvo.nivel === "pais") {
                   const p = paises[alvo.id];
-                  return p?.cargos?.some((c) => c.holderEmail === userEmail);
+                  return p?.cargos?.some((c) => c.holderEmail === jogadorSelecionadoEmail);
                 }
                 if (alvo.nivel === "provincia") {
                   const p = provincias[alvo.id];
-                  return p?.cargos?.some((c) => c.holderEmail === userEmail);
+                  return p?.cargos?.some((c) => c.holderEmail === jogadorSelecionadoEmail);
                 }
                 if (alvo.nivel === "cidade") {
                   const c = cidades[alvo.id];
-                  return c?.cargosLocais?.some((cg) => cg.holderEmail === userEmail);
+                  return c?.cargosLocais?.some((cg) => cg.holderEmail === jogadorSelecionadoEmail);
                 }
                 return false;
               });
@@ -2042,7 +2131,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                   {lista.map((n) => {
                     const tipo = TIPOS_NEGOCIACAO.find((t) => t.id === n.tipo) || TIPOS_NEGOCIACAO[0];
                     const ehRecebida = recebidas.some((r) => r.id === n.id);
-                    const ehEnviada = n.de?.holderEmail === userEmail;
+                    const ehEnviada = n.de?.holderEmail === jogadorSelecionadoEmail;
                     const podeResponder = isMaster || ehRecebida;
 
                     return (
@@ -2124,7 +2213,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                                     await setDoc(doc(db, "sim_negociacoes", n.id), {
                                       status: novoStatus,
                                       respondidoEm: new Date().toISOString(),
-                                      respondidoPor: userEmail,
+                                      respondidoPor: jogadorSelecionadoEmail,
                                       resultadoRolagem: Math.round(r),
                                     }, { merge: true });
 
@@ -3027,7 +3116,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                   estoqueOrigem: empresaEditando?.estoqueOrigem ?? {},
                   instrucaoBonusEmpresa: empresaEditando?.instrucaoBonusEmpresa ?? 0,
                   pesquisaEmpresa: empresaEditando?.pesquisaEmpresa ?? { tecnologias: [], pesquisaAtual: null },
-                  criadoPor: userEmail,
+                  criadoPor: jogadorSelecionadoEmail,
                   criadoEm: empresaEditando?.criadoEm || new Date().toISOString(),
                   atualizadoEm: new Date().toISOString(),
                 }, { merge: true });
@@ -3057,12 +3146,12 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
         {empresaAberta && (() => {
           const empLive = empresas[empresaAberta.id] || empresaAberta;
           const donoEmail = empLive.donoEmail || "";
-          const ehDono = donoEmail && donoEmail === userEmail;
+          const ehDono = donoEmail && donoEmail === jogadorSelecionadoEmail;
           const podeEditar = isMaster || ehDono;
           const podeNaAba = (aba) => {
             if (isMaster) return true;
             if (ehDono) return true;
-            const membro = (empLive.equipe || []).find((m) => m.holderEmail === userEmail);
+            const membro = (empLive.equipe || []).find((m) => m.holderEmail === jogadorSelecionadoEmail);
             return !!(membro && (membro.acessos || []).includes(aba));
           };
           const sedesArr = Array.isArray(empLive.sedes) ? empLive.sedes : (empLive.sede ? [empLive.sede] : []);
@@ -4449,7 +4538,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                     )}
 
                     {!isMaster && !ehDono && (() => {
-                      const meu = equipe.find((m) => m.holderEmail === userEmail);
+                      const meu = equipe.find((m) => m.holderEmail === jogadorSelecionadoEmail);
                       if (!meu) return null;
                       return (
                         <Paper sx={{ p: 1.2, bgcolor: `${V3.green}15`, border: `2px solid ${V3.green}66`, borderRadius: 1 }}>
@@ -5173,7 +5262,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                 ? {
                     ...c,
                     holderEmail: novoEmail,
-                    atribuidoPor: userEmail,
+                    atribuidoPor: jogadorSelecionadoEmail,
                     atribuidoEm: novoEmail ? new Date().toISOString() : "",
                   }
                 : c
@@ -5322,7 +5411,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                   const custoProximo = podeSubir ? custoUp(nivelAtual) : 0;
                   const cofrePais = pais?.cofre || 0;
                   const temDinheiro = cofrePais >= custoProximo;
-                  const podeEditar = isMaster || temPoderNoEscopo(userEmail, "ajustarSliders", "cidade", cidadeLive.id);
+                  const podeEditar = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "ajustarSliders", "cidade", cidadeLive.id);
 
                   const alterarNivel = async (novoNivel) => {
                     if (!podeEditar) return;
@@ -5444,7 +5533,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
               </Paper>
 
               {(() => {
-                const podeEditarSliders = isMaster || temPoderNoEscopo(userEmail, "ajustarSliders", "cidade", cidadeLive.id);
+                const podeEditarSliders = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "ajustarSliders", "cidade", cidadeLive.id);
                 if (!podeEditarSliders) return null;
                 const setCidadeCampo = async (campo, valor) => {
                   await setDoc(doc(db, "sim_cidades", cidadeLive.id), { [campo]: valor }, { merge: true });
@@ -5484,7 +5573,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
               })()}
 
               {(() => {
-                const podeEditarImpostos = isMaster || temPoderNoEscopo(userEmail, "ajustarSliders", "cidade", cidadeLive.id);
+                const podeEditarImpostos = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "ajustarSliders", "cidade", cidadeLive.id);
                 const impostos = cidadeLive.impostos || {
                   residencial: { pobre: 10, medio: 15, rico: 20 },
                   comercial: { pobre: 10, medio: 15, rico: 20 },
@@ -5585,7 +5674,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                 const edificios = cidadeLive.edificios || {};
                 const edificiosDonos = cidadeLive.edificiosDonos || {};
                 const cofrePais = pais?.cofre || 0;
-                const podeEditar = isMaster || temPoderNoEscopo(userEmail, "ajustarSliders", "cidade", cidadeLive.id);
+                const podeEditar = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "ajustarSliders", "cidade", cidadeLive.id);
 
                 const categoriasOrdem = ["basico", "luxo", "industria", "militar"];
                 const porCategoria = {};
@@ -6082,7 +6171,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                 paises={paises}
                 isMaster={isMaster}
                 userEmail={userEmail}
-                podeEditar={isMaster || temPoderNoEscopo(userEmail, "mudarLei", "cidade", cidadeLive.id)}
+                podeEditar={isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "mudarLei", "cidade", cidadeLive.id)}
               />
             </>
           );
@@ -6273,7 +6362,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                 paises={paises}
                 isMaster={isMaster}
                 userEmail={userEmail}
-                podeEditar={isMaster || temPoderNoEscopo(userEmail, "mudarLei", "provincia", provinciaLive.id)}
+                podeEditar={isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "mudarLei", "provincia", provinciaLive.id)}
               />
             </>
           );
@@ -6291,8 +6380,8 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
       >
         {paisAberto && (() => {
           const paisLive = paises[paisAberto.id] || paisAberto;
-          const podeEditarLeis = isMaster || temPoderNoEscopo(userEmail, "mudarLei", "pais", paisLive.id);
-          const podeEditarCofre = isMaster || temPoderNoEscopo(userEmail, "editarOrcamento", "pais", paisLive.id);
+         const podeEditarLeis = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "mudarLei", "pais", paisLive.id);
+          const podeEditarCofre = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "editarOrcamento", "pais", paisLive.id);
           const cofreAtual = paisLive.cofre || 0;
 
           return (
@@ -6428,7 +6517,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                 </Typography>
                 {(() => {
                   const taxasInd = paisLive.taxaProvinciasIndividual || {};
-                  const podeEditar = isMaster || temPoderNoEscopo(userEmail, "ajustarSliders", "pais", paisLive.id);
+                  const podeEditar = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "ajustarSliders", "pais", paisLive.id);
                   const provsDoPais = Object.values(provincias).filter((pv) => pv.paisId === paisLive.id);
                   return (
                     <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
@@ -6504,7 +6593,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                   Taxa ADICIONAL cobrada sobre negociações que este país RECEBE de outros países. Soma-se ao imposto de importação das leis.
                 </Typography>
                 {(() => {
-                  const podeEditar = isMaster || temPoderNoEscopo(userEmail, "ajustarSliders", "pais", paisLive.id);
+                  const podeEditar = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "ajustarSliders", "pais", paisLive.id);
                   return podeEditar ? (
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                       <input
@@ -6643,7 +6732,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
           const pesquisando = paisTech.pesquisaAtual?.id || null;
           const progresso = paisTech.pesquisaAtual?.progresso || 0;
           const cofre = paisTech.cofre || 0;
-          const podeEditar = isMaster || temPoderNoEscopo(userEmail, "editarOrcamento", "pais", paisTech.id);
+          const podeEditar = isMaster || temPoderNoEscopo(jogadorSelecionadoEmail, "editarOrcamento", "pais", paisTech.id);
 
           const iniciarPesquisa = async (tec) => {
             if (!podeEditar) return;
@@ -7365,7 +7454,7 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                     nivel: "pais",
                     id: origemNeg.id,
                     nome: pDe?.nome || origemNeg.id,
-                    holderEmail: userEmail,
+                    holderEmail: jogadorSelecionadoEmail,
                   },
                   para: {
                     nivel: formNegociacao.destinoNivel,

@@ -54,10 +54,14 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const [drawMode, setDrawMode] = useState(false);
   const [drawEraser, setDrawEraser] = useState(false);
   const [drawColor, setDrawColor] = useState(CORES_PINCEL[2]);
-  const [drawSize, setDrawSize] = useState(4);
+  const [drawSize, setDrawSize] = useState(6);        // 🖌️ tamanho do pincel
+  const [eraserSize, setEraserSize] = useState(40);    // 🧽 tamanho da borracha (novo)
   const [strokes, setStrokes] = useState([]);
   const [coresEmUso, setCoresEmUso] = useState({});
   const currentStrokeRef = useRef(null);
+  const strokesRef = useRef([]);                        // 🆕 espelho dos strokes pra Ctrl+Z
+  const undoTimeoutRef = useRef(null);                  // 🆕
+  const undoIntervalRef = useRef(null);                 // 🆕
 
   const fileInputRef = useRef();
   const stageRef = useRef();
@@ -70,6 +74,7 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
   const selRectRef = useRef(null);
   const tokensRef = useRef([]);
   useEffect(() => { tokensRef.current = tokens; }, [tokens]);
+  useEffect(() => { strokesRef.current = strokes; }, [strokes]); // 🆕
 
   // Multi-drag
   const multiDragRef = useRef(null);
@@ -150,6 +155,16 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     });
     s.on("draw_update", ({ id, points }) => {
       setStrokes((prev) => prev.map((x) => (x.id === id ? { ...x, points } : x)));
+    });
+    // 🧹 Apagar traço por id (recebido dos outros)
+    s.on("draw_erase", ({ id }) => {
+      setStrokes((prev) => prev.filter((x) => x.id !== id));
+    });
+    // ↩️ Undo em lote (recebido dos outros)
+    s.on("draw_undo", ({ ids }) => {
+      if (!Array.isArray(ids)) return;
+      const setIds = new Set(ids);
+      setStrokes((prev) => prev.filter((x) => !setIds.has(x.id)));
     });
     s.on("draw_clear", () => setStrokes([]));
 
@@ -667,8 +682,9 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     const y = (pointer.y - stage.y()) / stage.scaleY();
     const stroke = {
       id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      author: socketRef.current?.id || "anon",          // 🆕 quem desenhou
       color: drawEraser ? "#000" : drawColor,
-      size: drawSize,
+      size: drawEraser ? eraserSize : drawSize,          // 🆕 tamanho separado
       eraser: drawEraser,
       points: [x, y],
     };
@@ -703,6 +719,79 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
     socketRef.current?.emit("draw_clear");
     setStrokes([]);
   };
+
+  // ↩️ Ctrl+Z SEGURADO — apaga o último traço do PRÓPRIO usuário, e vai apagando sem soltar
+  useEffect(() => {
+    if (!visible) return;
+
+    const fazerUndo = () => {
+      const meuId = socketRef.current?.id;
+      if (!meuId) return;
+      const lista = strokesRef.current;
+      let alvo = null;
+      // Procura o último stroke que EU desenhei
+      for (let i = lista.length - 1; i >= 0; i--) {
+        if (lista[i].author === meuId) { alvo = lista[i]; break; }
+      }
+      if (!alvo) return;
+      setStrokes((prev) => prev.filter((s) => s.id !== alvo.id));
+      socketRef.current?.emit("draw_undo", { ids: [alvo.id] });
+    };
+
+    const handleKeyDown = (e) => {
+      const isZ = e.key === "z" || e.key === "Z";
+      const ctrl = e.ctrlKey || e.metaKey; // Ctrl no Win/Linux, Cmd no Mac
+      if (!ctrl || !isZ) return;
+
+      // Não rouba Ctrl+Z se o usuário estiver digitando em input/textarea
+      const t = e.target;
+      const emInput =
+        t?.tagName === "INPUT" ||
+        t?.tagName === "TEXTAREA" ||
+        t?.isContentEditable;
+      if (emInput) return;
+
+      e.preventDefault();
+
+      // Se já está rodando a repetição, ignora keydowns extras (do auto-repeat do SO)
+      if (undoIntervalRef.current || undoTimeoutRef.current) return;
+
+      // 1) Faz o primeiro undo NA HORA
+      fazerUndo();
+
+      // 2) Depois de 350ms segurando, começa a repetir a cada 100ms
+      undoTimeoutRef.current = setTimeout(() => {
+        undoIntervalRef.current = setInterval(() => {
+          fazerUndo();
+        }, 100);
+      }, 350);
+    };
+
+    const handleKeyUp = (e) => {
+      const isZ = e.key === "z" || e.key === "Z";
+      const isCtrl = e.key === "Control" || e.key === "Meta";
+      if (!isZ && !isCtrl) return;
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+        undoTimeoutRef.current = null;
+      }
+      if (undoIntervalRef.current) {
+        clearInterval(undoIntervalRef.current);
+        undoIntervalRef.current = null;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+      if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+      undoTimeoutRef.current = null;
+      undoIntervalRef.current = null;
+    };
+  }, [visible]);
 
   if (!visible) return null;
 
@@ -924,18 +1013,18 @@ export default function BattleMap({ visible = false, onClose = () => {} }) {
                   </IconButton>
                 </Tooltip>
 
-                <Box sx={{ width: 80, mx: 0.5 }}>
+                <Box sx={{ width: 120, mx: 0.5 }}>
                   <Slider
                     size="small"
                     min={1}
-                    max={30}
-                    value={drawSize}
-                    onChange={(_, v) => setDrawSize(v)}
-                    sx={{ color: "#00e0ff", py: 0 }}
+                    max={drawEraser ? 300 : 150}
+                    value={drawEraser ? eraserSize : drawSize}
+                    onChange={(_, v) => (drawEraser ? setEraserSize(v) : setDrawSize(v))}
+                    sx={{ color: drawEraser ? "#ef4444" : "#00e0ff", py: 0 }}
                   />
                 </Box>
-                <Typography variant="caption" sx={{ color: "#94a3b8", fontSize: "0.55rem", minWidth: 22 }}>
-                  {drawSize}px
+                <Typography variant="caption" sx={{ color: "#94a3b8", fontSize: "0.55rem", minWidth: 34, textAlign: "center" }}>
+                  {drawEraser ? eraserSize : drawSize}px
                 </Typography>
 
                 {isMaster && (

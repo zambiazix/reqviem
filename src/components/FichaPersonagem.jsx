@@ -35,7 +35,6 @@ import { Checkbox, FormControlLabel, Tooltip, Collapse } from "@mui/material";
   import { CircularProgress } from "@mui/material";
   import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
 // 🟢 CARD DE ITEM EXPANSÍVEL (usado no inventário principal e nos secundários)
 function ItemCard({
   item,
@@ -53,6 +52,7 @@ function ItemCard({
   TIPOS_DANO = [],
   TIPOS_CONSUMIVEL = [],
   TIPOS_INSUMIVEL = [],
+  onConsumirItem, // 🟢 NOVO PARÂMETRO
 }) {
   const durabilidadePercent = Math.max(0, Math.min(100, item.durabilidade ?? 100)) / 100;
   const barColor = durabilidadePercent > 0.66 ? '#4caf50' : durabilidadePercent > 0.33 ? '#ff9800' : '#f44336';
@@ -160,6 +160,20 @@ function ItemCard({
                 sx={{ height: 20, fontSize: '0.62rem', bgcolor: `${insumivelInfo.cor}18`, color: insumivelInfo.cor, border: `1px solid ${insumivelInfo.cor}55`, fontWeight: 600 }}
               />
             )}
+            {item.isComida && (
+              <Chip
+                label={`🍽️ Comida (+${item.recuperacaoFome || 0}% Fome)`}
+                size="small"
+                sx={{ height: 20, fontSize: '0.62rem', bgcolor: '#ff980022', color: '#ff9800', border: '1px solid #ff980055', fontWeight: 700 }}
+              />
+            )}
+            {item.isBebida && (
+              <Chip
+                label={`🥤 Bebida (+${item.recuperacaoSede || 0}% Sede)`}
+                size="small"
+                sx={{ height: 20, fontSize: '0.62rem', bgcolor: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f655', fontWeight: 700 }}
+              />
+            )}
           </Box>
         </Box>
 
@@ -202,6 +216,28 @@ function ItemCard({
               <KeyboardArrowDownIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Box>
+        )}
+
+        {/* 🟢 BOTÃO CONSUMIR (VISÍVEL NO ITEM RECOLHIDO) */}
+        {(item.isComida || item.isBebida) && (
+          <Tooltip title="Consumir Item">
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConsumirItem(categoria, index, item);
+              }}
+              sx={{
+                color: '#4caf50',
+                bgcolor: 'rgba(76, 175, 80, 0.1)',
+                border: '1px solid rgba(76, 175, 80, 0.3)',
+                mr: 0.5,
+                '&:hover': { bgcolor: 'rgba(76, 175, 80, 0.25)', boxShadow: '0 0 12px rgba(76, 175, 80, 0.5)' }
+              }}
+            >
+              🍽️
+            </IconButton>
+          </Tooltip>
         )}
 
         {/* Seta animada */}
@@ -412,14 +448,26 @@ function ItemCard({
           </Grid>
 
           {/* Ações */}
-          {mostrarAcoes && isMestre && (
+          {mostrarAcoes && (
             <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 1.5 }}>
+              {(item.isComida || item.isBebida) && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="success"
+                  onClick={(e) => { e.stopPropagation(); onConsumirItem(categoria, index, item); }}
+                >
+                  🍽️ Consumir
+                </Button>
+              )}
               <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => onAbrirEditar(categoria, index, item)} sx={{ color: '#ff9800', borderColor: '#ff9800' }}>
                 Editar Item
               </Button>
-              <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => { if (window.confirm(`Remover "${item.nome || "item"}"?`)) onRemoverItem(categoria, index); }}>
-                Remover
-              </Button>
+              {isMestre && (
+                <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => { if (window.confirm(`Remover "${item.nome || "item"}"?`)) onRemoverItem(categoria, index); }}>
+                  Remover
+                </Button>
+              )}
             </Box>
           )}
         </Box>
@@ -441,6 +489,11 @@ useEffect(() => {
     @keyframes glow {
       0%, 100% { box-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--glow-color); }
       50% { box-shadow: 0 0 20px var(--glow-color), 0 0 40px var(--glow-color); }
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
     }
   `;
   document.head.appendChild(styleSheet);
@@ -482,6 +535,8 @@ const nivel = hud?.xpMap?.[fichaId]?.level ?? 1;
       pontosVida: 0,
   pontosEnergia: 0,
   armadura: 0,
+  fome: 100,
+  sede: 100,
       caracteristicas: "",
       imagemPersonagem: "",
       imagens: [],
@@ -525,10 +580,11 @@ const nivel = hud?.xpMap?.[fichaId]?.level ?? 1;
             inventariosSecundarios: [],  // 🟢 NOVO
       anotacoes: "",
       dono: user?.email || "",
+      carteiras: [{ nome: "Bolso", valor: 0 }], // 🟢 CARTEIRA FIXA OBRIGATÓRIA
 
       ignorarLimitePeso: false,
       ignorarLimiteHabilidades: false,
-      permitirRedistribuirPontos: false, // 🟢 NOVO CAMPO
+      permitirRedistribuirPontos: false,
     };
 
     const LABELS = {
@@ -884,7 +940,62 @@ const pontosPericiaExtras = defeitosSelecionados.reduce((total, defeito) => {
   const defeitoInfo = DEFEITOS_DISPONIVEIS.find(d => d.nome === defeito);
   return total + (defeitoInfo?.pontos || 0);
 }, 0);
+// 🟢 DICIONÁRIOS DE ÍCONES (Copiados do FloatingHUD + Defeitos)
+const TALENTOS_ICONS = {
+  "Regeneração": { icon: "💚", color: "#4caf50", desc: "Regenera 5 PV por ação." },
+  "Sobrecarga": { icon: "⚡", color: "#facc15", desc: "Regenera 2 PE por ação." },
+  "Pós-Choque": { icon: "💥", color: "#ff9800", desc: "Rola dados novamente em caso de crítico." },
+  "Demolidor": { icon: "💪", color: "#ef4444", desc: "Ignora 50% da armadura em ataques desarmados." },
+  "The Flash": { icon: "🏃‍♂️", color: "#3b82f6", desc: "Movimentação dobrada." },
+  "Pé Direito": { icon: "🦶", color: "#22c55e", desc: "Primeira esquiva é perfeita." },
+  "Craft de Cibernética": { icon: "⚙️", color: "#ef4444", desc: "Cria tecnologias." },
+  "Craft de Equipamentos de Combate": { icon: "🗡️", color: "#22c55e", desc: "Cria armas e explosivos." },
+  "Craft das Gambiarras": { icon: "🔧", color: "#3b82f6", desc: "Cria itens diversos." },
+  "Craft de Vestes e Armaduras": { icon: "🛡️", color: "#f97316", desc: "Cria vestes e armaduras." },
+  "Craft de Medicamentos": { icon: "🧪", color: "#e5e5e5", desc: "Cria remédios." },
+  "Mendigo": { icon: "🪙", color: "#facc15", desc: "50% de desconto em lojas." },
+  "Mentalista": { icon: "🧠", color: "#a855f7", desc: "Vê detalhes ocultos." },
+  "Craft de Alimentos Consumíveis": { icon: "🍲", color: "#facc15", desc: "Cria comidas e bebidas." }
+};
 
+const TRACOS_ICONS = {
+  "Atleta": { icon: "🏃‍♂️", color: "#22c55e", desc: "Segunda-Chance: Pode rolar novamente a morte." },
+  "Lutador": { icon: "🥊", color: "#ef4444", desc: "Brigão: Dois golpes de mãos vazias por turno." },
+  "Espadachim": { icon: "⚔️", color: "#c0c0c0", desc: "Espadachim: Dois golpes de lâminas por turno." },
+  "Esgrimista": { icon: "⚔️", color: "#c0c0c0", desc: "Espadachim: Dois golpes de lâminas por turno." },
+  "Atirador": { icon: "🏹", color: "#22c55e", desc: "Franco-Atirador: Dois golpes à distância por turno." },
+  "Sombra": { icon: "🌫️", color: "#3b82f6", desc: "Treva: Não faz som ao se mover." },
+  "Sobrevivente": { icon: "🛡️", color: "#7fff00", desc: "Imunidade: Imune a dano Tóxico." },
+  "Erudito": { icon: "📚", color: "#e5e5e5", desc: "Sabe-Muito: Capaz de inventar novas tecnologias." },
+  "Médico": { icon: "💊", color: "#e5e5e5", desc: "Doutorado: Cirurgias e diagnósticos complexos." },
+  "Naturalista": { icon: "🌿", color: "#22c55e", desc: "Heremitra: A natureza está ao seu favor." },
+  "Observador": { icon: "👁️", color: "#00e0ff", desc: "Terceiro Olho: Imune a golpes de oportunidade." },
+  "Detetive": { icon: "🔍", color: "#e5e5e5", desc: "Detetive: Sempre encontra ao menos uma pista." },
+  "Persuasivo": { icon: "🗣️", color: "#e5e5e5", desc: "Larapio: Pessoas sentem necessidade de te agradar." },
+  "Artista": { icon: "🎭", color: "#e5e5e5", desc: "Astro: Famoso e reconhecido por seu talento." },
+  "Intimidador": { icon: "😠", color: "#facc15", desc: "Presença: Intimida os mais fracos e incomoda os fortes." },
+  "Auris": { icon: "✨", color: "#facc15", desc: "Aurano: Soma Aura com outra perícia em uma ação." }
+};
+
+const DEFEITOS_ICONS = {
+  "Fobia": { icon: "🕷️", color: "#ef4444", desc: "Medo extremo de algo." },
+  "Compulsão": { icon: "🎲", color: "#ff9800", desc: "Necessidade incontrolável de fazer algo." },
+  "Cabeça Quente": { icon: "🤬", color: "#ef4444", desc: "Perde a paciência facilmente." },
+  "Infâmia": { icon: "👎", color: "#94a3b8", desc: "Tem uma má reputação." },
+  "Honesto": { icon: "🫡", color: "#00e0ff", desc: "Não consegue mentir." },
+  "Insônia": { icon: "🦉", color: "#a855f7", desc: "Dificuldade para dormir." },
+  "Sono Pesado": { icon: "🛌", color: "#3b82f6", desc: "Difícil de acordar." },
+  "Sonambulismo": { icon: "🚶‍♂️", color: "#94a3b8", desc: "Anda dormindo." },
+  "Alergia": { icon: "🤧", color: "#22c55e", desc: "Reação alérgica a algo." },
+  "Vício": { icon: "🚬", color: "#facc15", desc: "Dependência de algo." },
+  "7 Pecados Capitais": { icon: "😈", color: "#ef4444", desc: "Movido por um dos 7 pecados." },
+  "5 Sentidos": { icon: "👁️", color: "#00e0ff", desc: "Falta de um dos 5 sentidos." },
+  "Amnésia": { icon: "❓", color: "#94a3b8", desc: "Esqueceu parte do passado." },
+  "Enfermo": { icon: "🤒", color: "#22c55e", desc: "Doença crônica." },
+  "Deficiência": { icon: "🦽", color: "#facc15", desc: "Limitação física." },
+  "Alucinação": { icon: "🌀", color: "#a855f7", desc: "Vê coisas que não existem." },
+  "TDI": { icon: "🎭", color: "#e5e5e5", desc: "Transtorno Dissociativo de Identidade." }
+};
 // Lista de Talentos disponíveis por atributo
 const TALENTOS_POR_ATRIBUTO = {
   forca: [
@@ -1115,7 +1226,7 @@ const [descansoPreview, setDescansoPreview] = useState(null);
 const TRACOS_POR_PERICIA = {
   atletismo: "Atleta",
   luta: "Lutador",
-  armaBranca: "Esgrimista",
+  armaBranca: "Espadachim",
   armaDistancia: "Atirador",
   furtividade: "Sombra",
   sobrevivencia: "Sobrevivente",
@@ -1435,6 +1546,48 @@ useEffect(() => {
   
   migrarTodasFichas();
 }, [isMestre]);
+// 🟢 MIGRAÇÃO GLOBAL: garante carteira "Bolso" em TODAS as fichas (1x por navegador)
+useEffect(() => {
+  if (!isMestre) return;
+
+  const CHAVE_BOLSO = "carteiras_bolso_migradas_v1";
+  if (localStorage.getItem(CHAVE_BOLSO) === "ok") {
+    console.log("✅ Migração de Bolso já foi executada.");
+    return;
+  }
+
+  const migrarBolsoEmTodasFichas = async () => {
+    console.log("🔧 Iniciando migração GLOBAL de carteira 'Bolso'...");
+    try {
+      const snap = await getDocs(collection(db, "fichas"));
+      let corrigidas = 0;
+      let totalFichas = 0;
+
+      for (const d of snap.docs) {
+        totalFichas++;
+        const dados = d.data();
+        const carteiras = Array.isArray(dados.carteiras) ? dados.carteiras : [];
+        const temBolso = carteiras.some((c) => c.nome === "Bolso");
+
+        if (!temBolso) {
+          // Adiciona Bolso com saldo 0, preserva as outras carteiras intactas
+          await updateDoc(doc(db, "fichas", d.id), {
+            carteiras: [{ nome: "Bolso", valor: 0 }, ...carteiras],
+          });
+          console.log(`✅ Bolso adicionada em: ${dados.nome || d.id}`);
+          corrigidas++;
+        }
+      }
+
+      console.log(`🎉 Migração Bolso: ${corrigidas}/${totalFichas} fichas corrigidas.`);
+      localStorage.setItem(CHAVE_BOLSO, "ok");
+    } catch (err) {
+      console.error("❌ Erro na migração de Bolso:", err);
+    }
+  };
+
+  migrarBolsoEmTodasFichas();
+}, [isMestre]);
 // 🟢 Event listeners para arrastar e redimensionar anotações (IGUAL COMMERCEHUD)
 useEffect(() => {
   const handleMouseMove = (e) => {
@@ -1618,6 +1771,11 @@ const unsub = onSnapshot(ref, (snap) => {
         insumivelValor: item.insumivelValor || 0,
         descricao: item.descricao || "",
         nomeOriginal: item.nomeOriginal || "",
+        isComida: item.isComida || false,
+        isBebida: item.isBebida || false,
+        recuperacaoFome: item.recuperacaoFome || 0,
+        recuperacaoSede: item.recuperacaoSede || 0,
+        validadeDias: item.validadeDias || 15,
       }));
     };
 
@@ -1642,6 +1800,8 @@ if (temAtributoInvalido) {
     const combinado = {
       ...modelo,
       ...dados,
+      fome: dados.fome ?? 100,
+      sede: dados.sede ?? 100,
       atributos: atributosNormalizados,
       pericias: { ...modelo.pericias, ...(dados.pericias || {}) },
       habilidades: Array.isArray(dados.habilidades)
@@ -2377,26 +2537,41 @@ const abrirModalDado = (item, tipo) => {
   setItemDadoModalOpen(true);
 };
 
-    async function salvarFicha() {
+async function salvarFicha() {
   if (!fichaId) return alert("FichaId inválido.");
   setSaving(true);
   try {
     const ref = doc(db, "fichas", fichaId);
+
+    // 🟢 Garante que "Bolso" sempre exista antes de salvar
+    const carteirasFinal = Array.isArray(ficha.carteiras)
+      ? ficha.carteiras.some((c) => c.nome === "Bolso")
+        ? ficha.carteiras
+        : [{ nome: "Bolso", valor: 0 }, ...ficha.carteiras]
+      : [{ nome: "Bolso", valor: 0 }];
+
     const toSave = {
       ...ficha,
-atributos: Object.fromEntries(
-  Object.entries(ficha.atributos || {}).map(([k, v]) => [k, Math.max(1, Math.min(Number(v || 1), 5))])
-),
+      carteiras: carteirasFinal,
+      atributos: Object.fromEntries(
+        Object.entries(ficha.atributos || {}).map(([k, v]) => [
+          k,
+          Math.max(1, Math.min(Number(v || 1), 5)),
+        ])
+      ),
       pericias: Object.fromEntries(
-        Object.entries(ficha.pericias || {}).map(([k, v]) => [k, Math.min(Number(v || 0), 5)])
+        Object.entries(ficha.pericias || {}).map(([k, v]) => [
+          k,
+          Math.min(Number(v || 0), 5),
+        ])
       ),
       moedas: Number(ficha.moedas || 0),
-        atributosXP: atributosXP,
-  periciasXP: periciasXP,
-  habilidadesXP: habilidadesXP,
+      atributosXP: atributosXP,
+      periciasXP: periciasXP,
+      habilidadesXP: habilidadesXP,
     };
     await setDoc(ref, toSave, { merge: true });
-    dirtyFieldsRef.current = {};   // 🟢 limpa o rastro de campos alterados, agora já salvos
+    dirtyFieldsRef.current = {};
     alert("Ficha salva com sucesso!");
   } catch (err) {
     console.error(err);
@@ -2512,7 +2687,30 @@ atributos: Object.fromEntries(
   }
 
 
-// 🟢 ADICIONE AQUI (LINHA 524):
+  const consumirItem = async (categoria, index, item) => {
+    if (!ficha) return;
+    const campo = item.isComida ? 'fome' : 'sede';
+    const valorRecuperado = item.isComida ? (Number(item.recuperacaoFome) || 0) : (Number(item.recuperacaoSede) || 0);
+    const valorAtual = ficha[campo] ?? 100;
+    const novoValor = Math.min(100, valorAtual + valorRecuperado);
+
+    // Atualiza Fome/Sede no Firebase
+    await setDoc(doc(db, "fichas", fichaId), { [campo]: novoValor }, { merge: true });
+    setFicha(prev => ({ ...prev, [campo]: novoValor }));
+
+    // Subtrai 1 da quantidade
+    const novaQtd = (item.quantidade || 1) - 1;
+    let novosItens;
+    if (novaQtd > 0) {
+      novosItens = ficha[categoria].map((it, idx) => idx === index ? { ...it, quantidade: novaQtd } : it);
+    } else {
+      novosItens = ficha[categoria].filter((_, idx) => idx !== index);
+    }
+    await setDoc(doc(db, "fichas", fichaId), { [categoria]: novosItens }, { merge: true });
+    setFicha(prev => ({ ...prev, [categoria]: novosItens }));
+    
+    alert(`Você consumiu ${item.nome} e recuperou ${valorRecuperado}% de ${item.isComida ? 'Fome' : 'Sede'}!`);
+  };
 // Função para abrir o modal de defeitos e carregar existentes
 const abrirModalDefeitos = () => {
   if (ficha?.defeitos) {
@@ -2525,12 +2723,37 @@ const abrirModalDefeitos = () => {
 };
 
 useEffect(() => {
-  if (ficha?.carteiras && Array.isArray(ficha.carteiras)) {
-    setCarteiras(ficha.carteiras);
-  } else {
-    setCarteiras([{ nome: "Bolso", valor: 0 }]);
-  }
-}, [ficha?.carteiras]);
+  const garantirBolso = async () => {
+    if (!ficha) return;
+
+    const carteirasAtuais = Array.isArray(ficha.carteiras) ? ficha.carteiras : [];
+    const temBolso = carteirasAtuais.some((c) => c.nome === "Bolso");
+
+    if (!temBolso) {
+      // 🟢 Adiciona "Bolso" com saldo 0 SEM apagar as outras
+      const novasCarteiras = [{ nome: "Bolso", valor: 0 }, ...carteirasAtuais];
+      setCarteiras(novasCarteiras);
+
+      // Persiste só se tivermos fichaId (evita erro antes do load)
+      if (fichaId) {
+        try {
+          await setDoc(
+            doc(db, "fichas", fichaId),
+            { carteiras: novasCarteiras },
+            { merge: true }
+          );
+        } catch (e) {
+          console.warn("⚠️ Falha ao persistir Bolso:", e);
+        }
+      }
+    } else {
+      // 🟢 Já tem Bolso → usa como está, preserva saldo
+      setCarteiras(carteirasAtuais);
+    }
+  };
+
+  garantirBolso();
+}, [ficha?.carteiras, fichaId]);
 // 🟢 CARREGAR INVENTÁRIOS SECUNDÁRIOS
 useEffect(() => {
   if (ficha?.inventariosSecundarios) {
@@ -2583,6 +2806,20 @@ useEffect(() => {
     setDefeitosSelecionados(defeitosArray);
   }
 }, [ficha?.defeitos]);
+
+// 🟢 OUVIR EVENTO DE COMPRA PARA LIMPAR TRAVAS E ACEITAR O ITEM DA LOJA
+useEffect(() => {
+  const handleItemComprado = (e) => {
+    const { fichaId: fId, categoria } = e.detail;
+    if (fId === fichaId) {
+      // Limpa a trava local para que o item vindo do Firestore seja aplicado
+      delete dirtyFieldsRef.current[categoria];
+    }
+  };
+  window.addEventListener('itemComprado', handleItemComprado);
+  return () => window.removeEventListener('itemComprado', handleItemComprado);
+}, [fichaId]);
+
 // Carregar lista de jogadores para transferência (COM TIPO FICHA E AURA)
 useEffect(() => {
   const carregarJogadores = async () => {
@@ -3891,333 +4128,387 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
     />
   </Box>
 </Paper>
+      {/* 🟢 GRID DOS CAMPOS — visual premium e polido */}
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={9}>
+          <Paper sx={{
+            p: 3,
+            bgcolor: 'rgba(10, 10, 18, 0.5)',
+            background: 'linear-gradient(135deg, rgba(15,23,42,0.8) 0%, rgba(10,10,18,0.9) 100%)',
+            border: '1px solid rgba(168, 85, 247, 0.25)',
+            borderRadius: 4,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.6), inset 0 0 20px rgba(168,85,247,0.05)',
+            backdropFilter: 'blur(12px)',
+            transition: 'all 0.3s ease',
+            '&:hover': {
+              boxShadow: '0 10px 40px rgba(0,0,0,0.6), inset 0 0 30px rgba(168,85,247,0.1)',
+              border: '1px solid rgba(168, 85, 247, 0.4)',
+            }
+          }}>
+            <Grid container spacing={2.5}>
+              
+              {/* COLUNA ESQUERDA */}
+              <Grid item xs={12} md={6}>
+                {/* NOME */}
+                <Box sx={{ mb: 1.5 }}>
+                  <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
+                    📝 {LABEL_MAP["nome"]}
+                  </Typography>
+                  <Box sx={{ position: 'relative' }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      value={ficha.nome || ""}
+                      onChange={(e) => setCampo("nome", e.target.value)}
+                      InputProps={{ sx: { pr: 5, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2 } }}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                          '&:hover fieldset': { borderColor: 'rgba(168,85,247,0.5)' },
+                          '&.Mui-focused fieldset': { borderColor: '#a855f7', borderWidth: 2, boxShadow: '0 0 10px rgba(168,85,247,0.3)' },
+                        }
+                      }}
+                    />
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        const nomesMasculinos = ["Cassius", "Elias", "Oliver", "Morgan", "Isaiah", "Aldric", "Thorne", "Cedric"];
+                        const nomesFemininos = ["Agatha", "Katherine", "Nuxia", "Anna", "Lyra", "Seraphine", "Morgana", "Elara"];
+                        const sobrenomes = ["D'Hollow", "Aktreniz", "Sawsky", "Thorne", "Oigres", "Severus", "Fields", "Maha"];
+                        const genero = ficha.genero || "Feminino";
+                        const listaNomes = genero === "Masculino" ? nomesMasculinos : nomesFemininos;
+                        const nomeAleatorio = listaNomes[Math.floor(Math.random() * listaNomes.length)];
+                        const sobrenomeAleatorio = sobrenomes[Math.floor(Math.random() * sobrenomes.length)];
+                        setCampo("nome", `${nomeAleatorio} ${sobrenomeAleatorio}`);
+                      }}
+                      sx={{
+                        position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                        minWidth: 'auto', p: 0.5, color: '#a855f7', '&:hover': { bgcolor: 'rgba(168,85,247,0.1)' }
+                      }}
+                    >
+                      🎲
+                    </IconButton>
+                  </Box>
+                </Box>
 
-{/* 🟢 GRID DOS CAMPOS — visual mais limpo */}
-<Grid container spacing={2}>
-  <Grid item xs={12} md={9}>
-    <Paper sx={{
-      p: 2,
-      bgcolor: 'rgba(10, 10, 18, 0.6)',
-      border: '1px solid #9c27b044',
-      borderRadius: 3,
-      mb: 2,
-    }}>
-      <Grid container spacing={2}>
-        <Grid item xs={12} md={6}>
-          {/* CAMPO NOME */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["nome"]}
-            </Typography>
-            <Box sx={{ position: 'relative' }}>
-              <TextField
-                fullWidth
-                size="small"
-                value={ficha.nome || ""}
-                onChange={(e) => setCampo("nome", e.target.value)}
-                InputProps={{ sx: { pr: 5 } }}
-              />
-              <IconButton
-                size="small"
-                onClick={() => {
-                  const nomesMasculinos = ["Cassius", "Elias", "Oliver", "Morgan", "Isaiah", "Aldric", "Thorne", "Cedric"];
-                  const nomesFemininos = ["Agatha", "Katherine", "Nuxia", "Anna", "Lyra", "Seraphine", "Morgana", "Elara"];
-                  const sobrenomes = ["D'Hollow", "Aktreniz", "Sawsky", "Thorne", "Oigres", "Severus", "Fields", "Maha"];
+                {/* GÊNERO E IDADE */}
+                <Grid container spacing={2} sx={{ mb: 1.5 }}>
+                  <Grid item xs={6}>
+                    <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
+                      ⚧ {LABEL_MAP["genero"]}
+                    </Typography>
+                    <TextField
+                      select fullWidth size="small"
+                      value={ficha.genero || "Feminino"}
+                      onChange={(e) => setCampo("genero", e.target.value)}
+                      SelectProps={{ native: true }}
+                      InputProps={{ sx: { bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2 } }}
+                      sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover fieldset': { borderColor: 'rgba(168,85,247,0.5)' }, '&.Mui-focused fieldset': { borderColor: '#a855f7' } } }}
+                    >
+                      <option value="Feminino">Feminino</option>
+                      <option value="Masculino">Masculino</option>
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
+                      🎂 {LABEL_MAP["idade"]}
+                    </Typography>
+                    <Box sx={{ position: 'relative' }}>
+                      <TextField
+                        fullWidth size="small"
+                        value={ficha.idade ? `${calcularIdade()} anos` : ""}
+                        InputProps={{ 
+                          readOnly: true, 
+                          sx: { pr: 5, bgcolor: 'rgba(0,0,0,0.1)', borderRadius: 2 },
+                          endAdornment: ficha.idade && (
+                            <InputAdornment position="end" sx={{ mr: 3 }}>
+                              <Typography sx={{ fontSize: '0.65rem', color: '#94a3b8' }}>({ficha.idade})</Typography>
+                            </InputAdornment>
+                          )
+                        }}
+                        placeholder="Data"
+                        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' } } }}
+                      />
+                      <IconButton
+                        size="small"
+                        onClick={() => setCalendarioOpen(true)}
+                        sx={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', minWidth: 'auto', p: 0.5, color: '#00e0ff', '&:hover': { bgcolor: 'rgba(0,224,255,0.1)' } }}
+                      >
+                        📅
+                      </IconButton>
+                    </Box>
+                  </Grid>
+                </Grid>
 
-                  const genero = ficha.genero || "Feminino";
-                  const listaNomes = genero === "Masculino" ? nomesMasculinos : nomesFemininos;
-                  const nomeAleatorio = listaNomes[Math.floor(Math.random() * listaNomes.length)];
-                  const sobrenomeAleatorio = sobrenomes[Math.floor(Math.random() * sobrenomes.length)];
+                {/* ALTURA E PESO */}
+                <Grid container spacing={2} sx={{ mb: 1.5 }}>
+                  <Grid item xs={6}>
+                    <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
+                      📏 {LABEL_MAP["altura"]}
+                    </Typography>
+                    <TextField
+                      fullWidth size="small" type="number" value={ficha.altura || "0.00"}
+                      onChange={(e) => setCampo("altura", e.target.value)}
+                      InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment>, inputProps: { step: 0.01, min: 0 }, sx: { bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2 } }}
+                      sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover fieldset': { borderColor: 'rgba(168,85,247,0.5)' }, '&.Mui-focused fieldset': { borderColor: '#a855f7' } } }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
+                      ⚖️ {LABEL_MAP["peso"]}
+                    </Typography>
+                    <TextField
+                      fullWidth size="small" type="number" value={ficha.peso || "0"}
+                      onChange={(e) => setCampo("peso", e.target.value)}
+                      InputProps={{ endAdornment: <InputAdornment position="end">kg</InputAdornment>, inputProps: { step: 1, min: 0 }, sx: { bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2 } }}
+                      sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover fieldset': { borderColor: 'rgba(168,85,247,0.5)' }, '&.Mui-focused fieldset': { borderColor: '#a855f7' } } }}
+                    />
+                  </Grid>
+                </Grid>
 
-                  setCampo("nome", `${nomeAleatorio} ${sobrenomeAleatorio}`);
-                }}
-                sx={{
-                  position: 'absolute',
-                  right: 4,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  minWidth: 'auto',
-                  p: 0.5
-                }}
-              >
-                🎲
-              </IconButton>
-            </Box>
-          </Box>
-
-          {/* CAMPO GÊNERO */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["genero"]}
-            </Typography>
-            <TextField
-              select
-              fullWidth
-              size="small"
-              value={ficha.genero || "Feminino"}
-              onChange={(e) => setCampo("genero", e.target.value)}
-              SelectProps={{ native: true }}
-            >
-              <option value="Feminino">Feminino</option>
-              <option value="Masculino">Masculino</option>
-            </TextField>
-          </Box>
-
-          {/* CAMPO IDADE */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["idade"]}
-            </Typography>
-            <Box sx={{ position: 'relative' }}>
-              <TextField
-                fullWidth
-                size="small"
-                value={ficha.idade ? `${calcularIdade()} - ${ficha.idade}` : ""}
-                InputProps={{ readOnly: true, sx: { pr: 5 } }}
-                placeholder="Selecione a data de nascimento"
-              />
-              <IconButton
-                size="small"
-                onClick={() => setCalendarioOpen(true)}
-                sx={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', minWidth: 'auto', p: 0.5 }}
-              >
-                📅
-              </IconButton>
-            </Box>
-          </Box>
-
-          {/* CAMPO ALTURA */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["altura"]}
-            </Typography>
-            <TextField
-              fullWidth
-              size="small"
-              type="number"
-              value={ficha.altura || "0.00"}
-              onChange={(e) => setCampo("altura", e.target.value)}
-              InputProps={{
-                endAdornment: <InputAdornment position="end">m</InputAdornment>,
-                inputProps: { step: 0.01, min: 0 }
-              }}
-            />
-          </Box>
-
-          {/* CAMPO PESO */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["peso"]}
-            </Typography>
-            <TextField
-              fullWidth
-              size="small"
-              type="number"
-              value={ficha.peso || "0"}
-              onChange={(e) => setCampo("peso", e.target.value)}
-              InputProps={{
-                endAdornment: <InputAdornment position="end">kg</InputAdornment>,
-                inputProps: { step: 1, min: 0 }
-              }}
-            />
-          </Box>
-
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              Movimentação
-            </Typography>
-            <TextField
-              fullWidth
-              size="small"
-              value={`${movimentacaoCalculada} m/t`}
-              InputProps={{ readOnly: true }}
-            />
-          </Box>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          {/* Campo de Defeitos */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["defeitos"]}
-            </Typography>
-            <Box sx={{ position: 'relative' }}>
-              <TextField
-                fullWidth
-                size="small"
-                value={ficha.defeitos || ""}
-                InputProps={{ readOnly: true, sx: { pr: 7 } }}
-                placeholder="Nenhum defeito selecionado"
-              />
-              <Button
-                variant="contained"
-                size="small"
-                onClick={() => {
-                  if (ficha?.defeitos) {
-                    const defeitosArray = ficha.defeitos.split('; ').filter(d => d.trim() !== '');
-                    setDefeitosSelecionados(defeitosArray);
-                  } else {
-                    setDefeitosSelecionados([]);
-                  }
-                  setModalDefeitosOpen(true);
-                }}
-                sx={{
-                  position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
-                  minWidth: 'auto', px: 1, py: 0.5, fontSize: '0.7rem', height: 28,
-                  bgcolor: '#1976d2', '&:hover': { bgcolor: '#115293' }
-                }}
-              >
-                Defeitos
-              </Button>
-            </Box>
-          </Box>
-
-          {/* Campo de Traços */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["tracos"]}
-            </Typography>
-            <TextField
-              fullWidth
-              size="small"
-              value={ficha.tracos || ""}
-              InputProps={{ readOnly: true }}
-              placeholder="Traços serão desbloqueados ao atingir nível 5 nas perícias"
-            />
-          </Box>
-
-          {/* Campo de Talentos */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              {LABEL_MAP["caracteristicas"]}
-            </Typography>
-            <Box sx={{ position: 'relative' }}>
-              <TextField
-                fullWidth
-                size="small"
-                value={ficha.caracteristicas || ""}
-                InputProps={{ readOnly: true, sx: { pr: 7 } }}
-                placeholder="Nenhum talento selecionado"
-              />
-              <Button
-                variant="contained"
-                size="small"
-                onClick={() => setModalTalentosOpen(true)}
-                sx={{
-                  position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
-                  minWidth: 'auto', px: 1, py: 0.5, fontSize: '0.7rem', height: 28,
-                  bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' }
-                }}
-              >
-                Talentos
-              </Button>
-            </Box>
-          </Box>
-
-          {/* Pontos de Vida */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              Pontos de Vida
-            </Typography>
-            <Grid container spacing={1} alignItems="center">
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  value={ficha.pontosVida}
-                  onChange={async (e) => {
-                    const valor = Math.min(Number(e.target.value), pontosVidaMax);
-                    setCampo("pontosVida", valor);
-                    const ref = doc(db, "fichas", fichaId);
-                    await setDoc(ref, { pontosVida: valor }, { merge: true });
-                  }}
-                />
+                {/* MOVIMENTAÇÃO */}
+                <Box>
+                  <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
+                    🏃 {LABEL_MAP["movimentacao"]}
+                  </Typography>
+                  <TextField
+                    fullWidth size="small" value={`${movimentacaoCalculada} m/t`}
+                    InputProps={{ readOnly: true, sx: { bgcolor: 'rgba(168,85,247,0.1)', color: '#e9d5ff', fontWeight: 'bold', borderRadius: 2 } }}
+                    sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(168,85,247,0.3)' } } }}
+                  />
+                </Box>
               </Grid>
-              <Grid item xs={6}>
-                <Typography>
-                  / <span style={{ color: "#ff4d4f", fontWeight: 600 }}>{pontosVidaMax}</span>
-                </Typography>
+
+              {/* COLUNA DIREITA */}
+              <Grid item xs={12} md={6}>
+                {/* DEFEITOS (COM ÍCONES) */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                    <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', letterSpacing: 0.5 }}>
+                      🎭 {LABEL_MAP["defeitos"]}
+                    </Typography>
+<Tooltip title="Editar Defeitos" arrow placement="top">
+  <IconButton
+    size="small"
+    onClick={() => { setDefeitosSelecionados((ficha.defeitos || "").split('; ').filter(Boolean)); setModalDefeitosOpen(true); }}
+    sx={{
+      color: '#1976d2',
+      bgcolor: 'rgba(25, 118, 210, 0.1)',
+      border: '1px solid rgba(25, 118, 210, 0.3)',
+      p: 0.6,
+      transition: 'all 0.2s',
+      '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.25)', boxShadow: '0 0 12px rgba(25, 118, 210, 0.5)' }
+    }}
+  >
+    <EditIcon sx={{ fontSize: 18 }} />
+  </IconButton>
+</Tooltip>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2, minHeight: 48, border: '1px solid rgba(255,255,255,0.1)' }}>
+                    {(!ficha.defeitos || ficha.defeitos.trim() === "") ? (
+                      <Typography sx={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', alignSelf: 'center' }}>Nenhum defeito selecionado</Typography>
+                    ) : (
+                      ficha.defeitos.split(";").map(d => d.trim()).filter(Boolean).map(defeitoNome => {
+                        const info = DEFEITOS_ICONS[defeitoNome] || { icon: "❓", color: "#888", desc: "Desconhecido" };
+                        return (
+                          <Tooltip key={defeitoNome} arrow placement="top" title={<Box sx={{ p: 0.5 }}><Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{defeitoNome}</Typography><Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography></Box>}>
+                            <Box sx={{ width: 36, height: 36, borderRadius: 1.5, border: `1px solid ${info.color}`, bgcolor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: `0 0 8px ${info.color}44`, cursor: 'help', transition: 'transform 0.2s', '&:hover': { transform: 'scale(1.15)' } }}>
+                              {info.icon}
+                            </Box>
+                          </Tooltip>
+                        );
+                      })
+                    )}
+                  </Box>
+                </Box>
+
+                {/* TRAÇOS (COM ÍCONES) */}
+                <Box sx={{ mb: 2 }}>
+                  <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
+                    🏅 {LABEL_MAP["tracos"]}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2, minHeight: 48, border: '1px solid rgba(255,255,255,0.1)' }}>
+                    {(!ficha.tracos || ficha.tracos.trim() === "") ? (
+                      <Typography sx={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', alignSelf: 'center' }}>Desbloqueados ao atingir nível 5</Typography>
+                    ) : (
+                      ficha.tracos.split(";").map(t => t.trim()).filter(Boolean).map(tracoNome => {
+                        const info = TRACOS_ICONS[tracoNome] || { icon: "❓", color: "#888", desc: "Desconhecido" };
+                        return (
+                          <Tooltip key={tracoNome} arrow placement="top" title={<Box sx={{ p: 0.5 }}><Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{tracoNome}</Typography><Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography></Box>}>
+                            <Box sx={{ width: 36, height: 36, borderRadius: 1.5, border: `1px solid ${info.color}`, bgcolor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: `0 0 8px ${info.color}44`, cursor: 'help', transition: 'transform 0.2s', '&:hover': { transform: 'scale(1.15)' } }}>
+                              {info.icon}
+                            </Box>
+                          </Tooltip>
+                        );
+                      })
+                    )}
+                  </Box>
+                </Box>
+
+                {/* TALENTOS (COM ÍCONES) */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                    <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', letterSpacing: 0.5 }}>
+                      🌟 {LABEL_MAP["caracteristicas"]}
+                    </Typography>
+<Tooltip title="Editar Talentos" arrow placement="top">
+  <IconButton
+    size="small"
+    onClick={() => setModalTalentosOpen(true)}
+    sx={{
+      color: '#9c27b0',
+      bgcolor: 'rgba(156, 39, 176, 0.1)',
+      border: '1px solid rgba(156, 39, 176, 0.3)',
+      p: 0.6,
+      transition: 'all 0.2s',
+      '&:hover': { bgcolor: 'rgba(156, 39, 176, 0.25)', boxShadow: '0 0 12px rgba(156, 39, 176, 0.5)' }
+    }}
+  >
+    <EditIcon sx={{ fontSize: 18 }} />
+  </IconButton>
+</Tooltip>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2, minHeight: 48, border: '1px solid rgba(255,255,255,0.1)' }}>
+                    {(!ficha.caracteristicas || ficha.caracteristicas.trim() === "") ? (
+                      <Typography sx={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', alignSelf: 'center' }}>Nenhum talento selecionado</Typography>
+                    ) : (
+                      ficha.caracteristicas.split(";").map(t => t.trim()).filter(Boolean).map(talentoNome => {
+                        const info = TALENTOS_ICONS[talentoNome] || { icon: "❓", color: "#888", desc: "Desconhecido" };
+                        return (
+                          <Tooltip key={talentoNome} arrow placement="top" title={<Box sx={{ p: 0.5 }}><Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{talentoNome}</Typography><Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography></Box>}>
+                            <Box sx={{ width: 36, height: 36, borderRadius: 1.5, border: `1px solid ${info.color}`, bgcolor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: `0 0 8px ${info.color}44`, cursor: 'help', transition: 'transform 0.2s', '&:hover': { transform: 'scale(1.15)' } }}>
+                              {info.icon}
+                            </Box>
+                          </Tooltip>
+                        );
+                      })
+                    )}
+                  </Box>
+                </Box>
+                {/* STATUS (VIDA, ENERGIA, ARMADURA, FOME, SEDE) */}
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6} sm={4}>
+                    <Typography component="div" sx={{ color: '#ff4d4f', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>❤️ VIDA</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,77,79,0.3)', borderRadius: 2, p: 0.5 }}>
+                      <TextField
+                        size="small" type="number" value={ficha.pontosVida}
+                        onChange={async (e) => {
+                          const valor = Math.min(Number(e.target.value), pontosVidaMax);
+                          setCampo("pontosVida", valor);
+                          await setDoc(doc(db, "fichas", fichaId), { pontosVida: valor }, { merge: true });
+                        }}
+                        InputProps={{ sx: { color: '#ff4d4f', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } }}
+                        sx={{ width: 60, '& fieldset': { border: 'none' } }}
+                      />
+                      <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>/ {pontosVidaMax}</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={6} sm={4}>
+                    <Typography component="div" sx={{ color: '#facc15', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>⚡ ENERGIA</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(250,204,21,0.3)', borderRadius: 2, p: 0.5 }}>
+                      <TextField
+                        size="small" type="number" value={ficha.pontosEnergia}
+                        onChange={async (e) => {
+                          const valor = Math.min(Number(e.target.value), pontosEnergiaMax);
+                          setCampo("pontosEnergia", valor);
+                          await setDoc(doc(db, "fichas", fichaId), { pontosEnergia: valor }, { merge: true });
+                        }}
+                        InputProps={{ sx: { color: '#facc15', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } }}
+                        sx={{ width: 60, '& fieldset': { border: 'none' } }}
+                      />
+                      <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>/ {pontosEnergiaMax}</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <Typography component="div" sx={{ color: '#00e0ff', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>🛡️ ARMADURA</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(0,224,255,0.3)', borderRadius: 2, p: 0.5 }}>
+                      <TextField
+                        size="small" type="number" value={ficha.armadura} disabled={!isMestre}
+                        onChange={(e) => { if (isMestre) setCampo("armadura", Math.min(Number(e.target.value), 50)); }}
+                        InputProps={{ readOnly: !isMestre, sx: { color: '#00e0ff', fontSize: '1rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } }}
+                        sx={{ width: 80, '& fieldset': { border: 'none' } }}
+                      />
+                    </Box>
+                  </Grid>
+
+                  {/* 🟢 FOME E SEDE (BLOQUEADO PARA JOGADORES) */}
+                  <Grid item xs={6} sm={6}>
+                    <Typography component="div" sx={{ color: '#ff9800', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>🍖 FOME</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,152,0,0.3)', borderRadius: 2, p: 0.5 }}>
+                      <TextField
+                        size="small" type="number" value={ficha.fome ?? 100}
+                        disabled={!isMestre}
+                        onChange={async (e) => {
+                          if (!isMestre) return;
+                          const valor = Math.min(100, Math.max(0, Number(e.target.value)));
+                          setFicha(prev => ({ ...prev, fome: valor }));
+                          await setDoc(doc(db, "fichas", fichaId), { fome: valor }, { merge: true });
+                        }}
+                        InputProps={{ 
+                          readOnly: !isMestre,
+                          sx: { color: (ficha.fome ?? 100) === 0 ? '#ef4444' : '#ff9800', fontSize: '0.85rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } 
+                        }}
+                        sx={{ width: 75, '& fieldset': { border: 'none' } }}
+                      />
+                      <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>%</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={6} sm={6}>
+                    <Typography component="div" sx={{ color: '#3b82f6', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>💧 SEDE</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 2, p: 0.5 }}>
+                      <TextField
+                        size="small" type="number" value={ficha.sede ?? 100}
+                        disabled={!isMestre}
+                        onChange={async (e) => {
+                          if (!isMestre) return;
+                          const valor = Math.min(100, Math.max(0, Number(e.target.value)));
+                          setFicha(prev => ({ ...prev, sede: valor }));
+                          await setDoc(doc(db, "fichas", fichaId), { sede: valor }, { merge: true });
+                        }}
+                        InputProps={{ 
+                          readOnly: !isMestre,
+                          sx: { color: '#3b82f6', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } 
+                        }}
+                        sx={{ width: 75, '& fieldset': { border: 'none' } }}
+                      />
+                      <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>%</Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+                {/* BOTÃO DESCANSO */}
+                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+<Button
+  variant="contained"
+  onClick={() => setModalDescansoOpen(true)}
+  startIcon={<span style={{ fontSize: '1.3rem', animation: 'float 2s ease-in-out infinite' }}>🛌</span>}
+  sx={{
+    background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%)',
+    color: '#e9d5ff',
+    borderRadius: 3, 
+    py: 1.2, 
+    px: 3, 
+    fontSize: '0.9rem',
+    fontWeight: 'bold', 
+    width: '100%', 
+    letterSpacing: 1,
+    boxShadow: '0 4px 15px rgba(168,85,247,0.3), inset 0 0 10px rgba(233,213,255,0.1)',
+    border: '1px solid #a855f7',
+    transition: 'all 0.3s',
+    position: 'relative',
+    overflow: 'hidden',
+    '&:hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 6px 25px rgba(168,85,247,0.6), inset 0 0 15px rgba(233,213,255,0.2)',
+      background: 'linear-gradient(135deg, #2e1065 0%, #6d28d9 100%)',
+    }
+  }}
+>
+  Descansar
+</Button>
+                </Box>
               </Grid>
             </Grid>
-          </Box>
-
-          {/* Pontos de Energia */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              Pontos de Energia
-            </Typography>
-            <Grid container spacing={1} alignItems="center">
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  value={ficha.pontosEnergia}
-                  onChange={async (e) => {
-                    const valor = Math.min(Number(e.target.value), pontosEnergiaMax);
-                    setCampo("pontosEnergia", valor);
-                    const ref = doc(db, "fichas", fichaId);
-                    await setDoc(ref, { pontosEnergia: valor }, { merge: true });
-                  }}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <Typography>
-                  / <span style={{ color: "#facc15", fontWeight: 600 }}>{pontosEnergiaMax}</span>
-                </Typography>
-              </Grid>
-            </Grid>
-          </Box>
-
-          {/* Armadura */}
-          <Box sx={{ mb: 1 }}>
-            <Typography component="div" sx={{ color: '#a855f7', fontWeight: 700, fontSize: '0.8rem', mb: 0.5 }}>
-              Armadura
-            </Typography>
-            <Grid container spacing={1} alignItems="center">
-              <Grid item xs={6}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  value={ficha.armadura}
-                  disabled={!isMestre}
-                  onChange={(e) => {
-                    if (!isMestre) return;
-                    const valor = Math.min(Number(e.target.value), armaduraMax);
-                    setCampo("armadura", valor);
-                  }}
-                  InputProps={{ readOnly: !isMestre, sx: { color: '#fff' } }}
-                  helperText={!isMestre ? "Calculado pelas vestimentas" : ""}
-                  FormHelperTextProps={{ sx: { color: '#00e0ff', fontSize: '0.7rem' } }}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <Typography>/ {armaduraMax}</Typography>
-              </Grid>
-            </Grid>
-          </Box>
-
-          {/* Botão Descanso */}
-          <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
-            <Button
-              variant="contained"
-              onClick={() => setModalDescansoOpen(true)}
-              sx={{
-                bgcolor: '#2e7d32',
-                '&:hover': { bgcolor: '#1b5e20' },
-                borderRadius: 2, py: 0.5, px: 2, fontSize: '0.8rem',
-                fontWeight: 'bold', minWidth: 'auto', width: '100%',
-              }}
-            >
-              🛌 Descansar
-            </Button>
-          </Box>
-        </Grid>
-      </Grid>
-    </Paper>
-
+          </Paper>
     {/* ATRIBUTOS e PERÍCIAS continuam aqui embaixo, sem alteração */}
             <Box mt={2} sx={{
   p: 2,
@@ -4467,7 +4758,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   const emojisPericias = {
     atletismo: '🏋️', luta: '🥊', armaBranca: '⚔️',
     armaDistancia: '🏹',
-    furtividade: '🥷',
+    furtividade: '🌫️',
     sobrevivencia: '🏕️',
     conhecimento: '📚', medicina: '💊', natureza: '🌿',
     percepcao: '👁️', investigacao: '🔍', labia: '🗣️', performance: '🎭',
@@ -5261,11 +5552,20 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   </Button>
 </DialogActions>
       </Dialog>
-            {/* Modal Calendário */}
-      <Dialog open={calendarioOpen} onClose={() => setCalendarioOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Data de Nascimento</DialogTitle>
+      {/* Modal Calendário */}
+      <Dialog 
+        open={calendarioOpen} 
+        onClose={() => setCalendarioOpen(false)} 
+        maxWidth="xs" 
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1a1a2e', border: '2px solid #00e0ff', borderRadius: 3, background: 'linear-gradient(145deg, #0f172a, #1a1a2e)' } }}
+      >
+        <DialogTitle sx={{ color: '#00e0ff', textAlign: 'center', borderBottom: '1px solid rgba(0,224,255,0.2)', pb: 2 }}>
+          <span style={{ fontSize: '1.5rem', marginRight: 8 }}>📅</span>
+          Data de Nascimento
+        </DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 2 }}>
             <TextField
               label="Dia"
               type="number"
@@ -5273,20 +5573,29 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
               onChange={(e) => setNascimentoDia(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
               inputProps={{ min: 1, max: 100 }}
               fullWidth
+              InputProps={{ 
+                startAdornment: <InputAdornment position="start">☀️</InputAdornment>,
+                sx: { bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2 } 
+              }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover fieldset': { borderColor: '#00e0ff' }, '&.Mui-focused fieldset': { borderColor: '#00e0ff' } } }}
             />
+            
             <FormControl fullWidth>
-              <InputLabel>Estação</InputLabel>
+              <InputLabel sx={{ color: '#94a3b8' }}>Estação</InputLabel>
               <Select
                 value={nascimentoEstacao}
                 label="Estação"
                 onChange={(e) => setNascimentoEstacao(e.target.value)}
+                sx={{ bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#00e0ff' }, '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#00e0ff' } }}
+                MenuProps={{ PaperProps: { sx: { bgcolor: '#0f172a', color: '#fff' } } }}
               >
-                <MenuItem value={1}>Primavera (84 dias)</MenuItem>
-                <MenuItem value={2}>Verão (100 dias)</MenuItem>
-                <MenuItem value={3}>Outono (84 dias)</MenuItem>
-                <MenuItem value={4}>Inverno (100 dias)</MenuItem>
+                <MenuItem value={1}>🌸 Primavera (84 dias)</MenuItem>
+                <MenuItem value={2}>☀️ Verão (100 dias)</MenuItem>
+                <MenuItem value={3}>🍂 Outono (84 dias)</MenuItem>
+                <MenuItem value={4}>❄️ Inverno (100 dias)</MenuItem>
               </Select>
             </FormControl>
+            
             <TextField
               label="Ano"
               type="number"
@@ -5294,20 +5603,30 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
               onChange={(e) => setNascimentoAno(Math.min(hud?.world?.year || 879, Math.max(1, parseInt(e.target.value) || 1)))}
               inputProps={{ min: 1, max: hud?.world?.year || 879 }}
               fullWidth
+              InputProps={{ 
+                startAdornment: <InputAdornment position="start">⏳</InputAdornment>,
+                sx: { bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2 } 
+              }}
+              sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' }, '&:hover fieldset': { borderColor: '#00e0ff' }, '&.Mui-focused fieldset': { borderColor: '#00e0ff' } } }}
             />
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCalendarioOpen(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={() => {
-            setCampo("idade", `${nascimentoDia}/${nascimentoEstacao}/${nascimentoAno}`);
-            setCalendarioOpen(false);
-          }}>
-            Confirmar
+        <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(0,224,255,0.2)' }}>
+          <Button onClick={() => setCalendarioOpen(false)} sx={{ color: '#94a3b8' }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={() => {
+              setCampo("idade", `${nascimentoDia}/${nascimentoEstacao}/${nascimentoAno}`);
+              setCalendarioOpen(false);
+            }}
+            sx={{ bgcolor: '#00e0ff', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#00bcd4' } }}
+          >
+            Confirmar Data
           </Button>
         </DialogActions>
       </Dialog>
-
       {/* Modal Dinheiro */}
       <Dialog open={modalDinheiroOpen} onClose={() => setModalDinheiroOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -5381,35 +5700,46 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                 <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 'bold' }}>{c.nome}</Typography>
                 <Box>
                   <IconButton size="small" onClick={() => {
-                    const novoNome = prompt("Novo nome:", c.nome);
-                    if (novoNome) {
-                      const novasCarteiras = [...carteiras];
-                      novasCarteiras[index].nome = novoNome;
-                      setCarteiras(novasCarteiras);
-                    }
-                  }}>✏️</IconButton>
+  // 🟢 Bloqueia renomear "Bolso"
+  if (c.nome === "Bolso") {
+    alert("🔒 A carteira 'Bolso' é permanente e não pode ser renomeada!");
+    return;
+  }
+  const novoNome = prompt("Novo nome:", c.nome);
+  if (novoNome && novoNome.trim() && novoNome !== "Bolso") {
+    const novasCarteiras = [...carteiras];
+    novasCarteiras[index].nome = novoNome.trim();
+    setCarteiras(novasCarteiras);
+  } else if (novoNome === "Bolso") {
+    alert("🔒 Esse nome é reservado e não pode ser usado para outra carteira.");
+  }
+}}>✏️</IconButton>
                   <IconButton size="small" onClick={() => {
   const carteiraParaExcluir = carteiras[index];
+
+  // 🟢 Bloqueia excluir "Bolso"
+  if (carteiraParaExcluir.nome === "Bolso") {
+    alert("🔒 A carteira 'Bolso' é permanente e não pode ser excluída!");
+    return;
+  }
+
   const outrasCarteiras = carteiras.filter((_, i) => i !== index);
-  
-  // Se tem dinheiro e existem outras carteiras
+
   if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length > 0) {
-    // Pergunta para qual carteira transferir
     const destino = prompt(
       `A carteira "${carteiraParaExcluir.nome}" tem ${carteiraParaExcluir.valor} 💰.\n` +
       `Digite o nome da carteira para transferir o saldo:\n` +
       `Opções: ${outrasCarteiras.map(c => c.nome).join(', ')}`
     );
-    
+
     if (destino) {
-      const carteiraDestino = outrasCarteiras.find(c => 
+      const carteiraDestino = outrasCarteiras.find(c =>
         c.nome.toLowerCase() === destino.toLowerCase()
       );
-      
+
       if (carteiraDestino) {
-        // Transfere o valor
-        const novasCarteiras = outrasCarteiras.map(c => 
-          c.nome === carteiraDestino.nome 
+        const novasCarteiras = outrasCarteiras.map(c =>
+          c.nome === carteiraDestino.nome
             ? { ...c, valor: c.valor + carteiraParaExcluir.valor }
             : c
         );
@@ -5419,14 +5749,12 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
         return;
       }
     } else {
-      return; // Cancelou
+      return;
     }
   } else if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length === 0) {
-    // Última carteira com dinheiro - não pode excluir
     alert('Não é possível excluir a última carteira com dinheiro!');
     return;
   } else {
-    // Sem dinheiro, exclui normalmente
     setCarteiras(outrasCarteiras);
   }
 }}>🗑️</IconButton>
@@ -5469,12 +5797,19 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
         <DialogActions sx={{ bgcolor: '#1a1a2e' }}>
           <Button onClick={() => setModalDinheiroOpen(false)} sx={{ color: '#fff' }}>Fechar</Button>
           <Button variant="contained" onClick={async () => {
+  // 🟢 Garante que "Bolso" existe antes de salvar
+  const carteirasFinal = Array.isArray(carteiras)
+    ? carteiras.some((c) => c.nome === "Bolso")
+      ? carteiras
+      : [{ nome: "Bolso", valor: 0 }, ...carteiras]
+    : [{ nome: "Bolso", valor: 0 }];
+
   const ref = doc(db, "fichas", fichaId);
-  await setDoc(ref, { carteiras }, { merge: true });
-  
-  // Atualiza a ficha local
-  setFicha(p => ({ ...p, carteiras }));
-  
+  await setDoc(ref, { carteiras: carteirasFinal }, { merge: true });
+
+  setFicha(p => ({ ...p, carteiras: carteirasFinal }));
+  setCarteiras(carteirasFinal);
+
   setModalDinheiroOpen(false);
 }} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
         </DialogActions>
@@ -6091,6 +6426,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       onMoverItem={moverItem}
       onAbrirImagem={(src) => { setLightboxSrc(src); setZoom(1); setLightboxOpen(true); }}
       onAbrirEditar={(cat, idx, it) => { setItemEditando({ categoria: cat, index: idx, item: it }); setModalEditarItemOpen(true); }}
+      onConsumirItem={consumirItem}
       TIPOS_DANO={TIPOS_DANO}
       TIPOS_CONSUMIVEL={TIPOS_CONSUMIVEL}
       TIPOS_INSUMIVEL={TIPOS_INSUMIVEL}
@@ -9135,7 +9471,7 @@ const novosDiversos = [...diversosAtuais, novoItem];
     </Button>
   </DialogActions>
 </Dialog>
-      {/* 🟢 MODAL DE DESCANSO */}
+      {/* 🟢 MODAL DE DESCANSO PREMIUM */}
       <Dialog
         open={modalDescansoOpen}
         onClose={() => {
@@ -9149,31 +9485,51 @@ const novosDiversos = [...diversosAtuais, novoItem];
         PaperProps={{
           sx: {
             bgcolor: "#0f172a",
-            border: "2px solid #2e7d32",
-            borderRadius: 2,
+            border: "2px solid #9c27b0",
+            borderRadius: 3,
+            background: "linear-gradient(145deg, #0f172a, #1a1a2e)",
+            boxShadow: "0 0 40px rgba(156, 39, 176, 0.3)",
+            overflow: 'hidden'
           }
         }}
       >
-        <DialogTitle sx={{ color: '#4caf50', textAlign: 'center', borderBottom: '1px solid #2e7d32' }}>
-          🛌 Descanso
+        <DialogTitle sx={{ 
+          color: '#e9d5ff', 
+          textAlign: 'center', 
+          borderBottom: '1px solid rgba(156, 39, 176, 0.3)',
+          background: 'linear-gradient(90deg, rgba(156,39,176,0.15), transparent)',
+          py: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 1
+        }}>
+          <span style={{ fontSize: '1.5rem', animation: 'float 2s ease-in-out infinite' }}>🛌</span>
+          <Typography variant="h6" sx={{ fontWeight: 'bold', letterSpacing: 1 }}>Descanso</Typography>
         </DialogTitle>
         
         <DialogContent sx={{ pt: 3 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {[
-              { id: 'curto', label: 'Descanso Curto', tempo: '0-3 horas', pe: 5, pv: 1, cor: '#4caf50' },
-              { id: 'medio', label: 'Descanso Médio', tempo: '4-7 horas', pe: 12, pv: 5, cor: '#ff9800' },
-              { id: 'longo', label: 'Descanso Longo', tempo: '8-12 horas', pe: 30, pv: 10, cor: '#f44336' },
+              { id: 'curto', label: 'Descanso Curto', tempo: '0-3 horas', pe: 5, pv: 1, cor: '#4caf50', icone: '☕' },
+              { id: 'medio', label: 'Descanso Médio', tempo: '4-7 horas', pe: 12, pv: 5, cor: '#ff9800', icone: '⛺' },
+              { id: 'longo', label: 'Descanso Longo', tempo: '8-12 horas', pe: 30, pv: 10, cor: '#f44336', icone: '🌙' },
             ].map((opcao) => (
               <Paper
                 key={opcao.id}
                 sx={{
                   p: 2,
-                  bgcolor: descansoSelecionado === opcao.id ? '#1e3a5f' : '#1a1a2e',
+                  bgcolor: descansoSelecionado === opcao.id ? `rgba(${opcao.cor === '#4caf50' ? '76,175,80' : opcao.cor === '#ff9800' ? '255,152,0' : '244,67,54'}, 0.15)` : 'rgba(0,0,0,0.3)',
                   border: descansoSelecionado === opcao.id ? `2px solid ${opcao.cor}` : '1px solid #334155',
+                  borderRadius: 2,
                   cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  '&:hover': { borderColor: opcao.cor, bgcolor: '#1e293b' },
+                  transition: 'all 0.3s ease',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  '&:hover': { borderColor: opcao.cor, bgcolor: 'rgba(255,255,255,0.05)', transform: 'translateX(4px)' },
+                  ...(descansoSelecionado === opcao.id && {
+                    boxShadow: `0 0 15px ${opcao.cor}44`
+                  })
                 }}
                 onClick={() => {
                   setDescansoSelecionado(opcao.id);
@@ -9182,24 +9538,32 @@ const novosDiversos = [...diversosAtuais, novoItem];
                 }}
               >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Box>
-                    <Typography variant="subtitle1" sx={{ color: opcao.cor, fontWeight: 'bold' }}>
-                      {opcao.label}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Typography sx={{ fontSize: '1.8rem', filter: descansoSelecionado === opcao.id ? 'drop-shadow(0 0 8px '+opcao.cor+')' : 'none' }}>
+                      {opcao.icone}
                     </Typography>
-                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                      ⏱️ {opcao.tempo} • ❤️ +{opcao.pv} PV • ⚡ +{opcao.pe} PE
-                    </Typography>
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ color: descansoSelecionado === opcao.id ? opcao.cor : '#fff', fontWeight: 'bold' }}>
+                        {opcao.label}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'flex', gap: 1 }}>
+                        <span>⏱️ {opcao.tempo}</span>
+                        <span style={{ color: '#ff4d4f' }}>❤️ +{opcao.pv}</span>
+                        <span style={{ color: '#facc15' }}>⚡ +{opcao.pe}</span>
+                      </Typography>
+                    </Box>
                   </Box>
                   {descansoSelecionado === opcao.id && (
-                    <Typography sx={{ color: opcao.cor, fontSize: '1.5rem' }}>✅</Typography>
+                    <Typography sx={{ color: opcao.cor, fontSize: '1.5rem', animation: 'pulse 1.5s infinite' }}>✅</Typography>
                   )}
                 </Box>
               </Paper>
             ))}
           </Box>
-          <Box sx={{ mt: 3, p: 2, bgcolor: '#1a1a2e', borderRadius: 2, border: '1px solid #334155' }}>
-            <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
-              ⚠️ Condições Adicionais:
+
+          <Box sx={{ mt: 3, p: 2, bgcolor: 'rgba(0,0,0,0.4)', borderRadius: 2, border: '1px dashed #334155' }}>
+            <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <span>⚠️</span> Condições Adicionais
             </Typography>
             <FormControlLabel
               control={
@@ -9207,25 +9571,16 @@ const novosDiversos = [...diversosAtuais, novoItem];
                   checked={descansoCheckboxes.desconfortavel}
                   onChange={(e) => {
                     const novoValor = e.target.checked;
-                    // 🟢 ATUALIZA O ESTADO PRIMEIRO
-                    setDescansoCheckboxes(prev => ({
-                      ...prev,
-                      desconfortavel: novoValor,
-                    }));
-                    // 🟢 DEPOIS RECALCULA COM O NOVO VALOR
+                    setDescansoCheckboxes(prev => ({ ...prev, desconfortavel: novoValor }));
                     if (descansoSelecionado) {
-                      // Usa o novo valor diretamente
-                      const resultado = calcularDescansoComCheckboxes(descansoSelecionado, {
-                        ...descansoCheckboxes,
-                        desconfortavel: novoValor,
-                      });
+                      const resultado = calcularDescansoComCheckboxes(descansoSelecionado, { ...descansoCheckboxes, desconfortavel: novoValor });
                       setDescansoPreview(resultado);
                     }
                   }}
-                  sx={{ color: '#94a3b8' }}
+                  sx={{ color: '#facc15', '&.Mui-checked': { color: '#facc15' } }}
                 />
               }
-              label={<Typography variant="body2" sx={{ color: '#94a3b8' }}>🛏️ Descanso Desconfortável (-2%)</Typography>}
+              label={<Typography variant="body2" sx={{ color: '#cbd5e1' }}>🛏️ Descanso Desconfortável <span style={{color: '#ef4444'}}>(-2%)</span></Typography>}
             />
             <FormControlLabel
               control={
@@ -9233,53 +9588,60 @@ const novosDiversos = [...diversosAtuais, novoItem];
                   checked={descansoCheckboxes.desabrigado}
                   onChange={(e) => {
                     const novoValor = e.target.checked;
-                    // 🟢 ATUALIZA O ESTADO PRIMEIRO
-                    setDescansoCheckboxes(prev => ({
-                      ...prev,
-                      desabrigado: novoValor,
-                    }));
-                    // 🟢 DEPOIS RECALCULA COM O NOVO VALOR
+                    setDescansoCheckboxes(prev => ({ ...prev, desabrigado: novoValor }));
                     if (descansoSelecionado) {
-                      const resultado = calcularDescansoComCheckboxes(descansoSelecionado, {
-                        ...descansoCheckboxes,
-                        desabrigado: novoValor,
-                      });
+                      const resultado = calcularDescansoComCheckboxes(descansoSelecionado, { ...descansoCheckboxes, desabrigado: novoValor });
                       setDescansoPreview(resultado);
                     }
                   }}
-                  sx={{ color: '#94a3b8' }}
+                  sx={{ color: '#facc15', '&.Mui-checked': { color: '#facc15' } }}
                 />
               }
-              label={<Typography variant="body2" sx={{ color: '#94a3b8' }}>🏚️ Descanso Desabrigado (-2%)</Typography>}
+              label={<Typography variant="body2" sx={{ color: '#cbd5e1' }}>🏚️ Descanso Desabrigado <span style={{color: '#ef4444'}}>(-2%)</span></Typography>}
             />
           </Box>
 
           {descansoPreview && (
-            <Box sx={{ mt: 3, p: 2, bgcolor: '#1e3a5f', borderRadius: 2, border: '1px solid #2e7d32' }}>
-              <Typography variant="subtitle1" sx={{ color: '#4caf50', fontWeight: 'bold', mb: 1 }}>
-                📊 Resumo do Descanso:
+            <Box sx={{ 
+              mt: 3, p: 2, 
+              bgcolor: 'rgba(156, 39, 176, 0.1)', 
+              borderRadius: 2, 
+              border: '1px solid #9c27b0',
+              boxShadow: 'inset 0 0 15px rgba(156, 39, 176, 0.1)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              <Box sx={{ position: 'absolute', top: -10, right: -10, fontSize: '4rem', opacity: 0.05 }}>🛌</Box>
+              <Typography variant="subtitle1" sx={{ color: '#e9d5ff', fontWeight: 'bold', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                📊 Resumo do Descanso
               </Typography>
-              <Typography variant="body2" sx={{ color: '#fff' }}>
-                ❤️ PV: <strong style={{ color: '#ff4d4f' }}>+{descansoPreview.pvRecuperado}</strong>
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#fff' }}>
-                ⚡ PE: <strong style={{ color: '#facc15' }}>+{descansoPreview.peRecuperado}</strong>
-              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Box sx={{ bgcolor: 'rgba(0,0,0,0.4)', p: 1, borderRadius: 1, textAlign: 'center', border: '1px solid rgba(255,77,79,0.3)' }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>Vida (PV)</Typography>
+                    <Typography variant="h6" sx={{ color: '#ff4d4f', fontWeight: 'bold' }}>+{descansoPreview.pvRecuperado}</Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={6}>
+                  <Box sx={{ bgcolor: 'rgba(0,0,0,0.4)', p: 1, borderRadius: 1, textAlign: 'center', border: '1px solid rgba(250,204,21,0.3)' }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>Energia (PE)</Typography>
+                    <Typography variant="h6" sx={{ color: '#facc15', fontWeight: 'bold' }}>+{descansoPreview.peRecuperado}</Typography>
+                  </Box>
+                </Grid>
+              </Grid>
               {descansoPreview.multiplicador < 100 && (
-                <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mt: 1 }}>
-                  ⚠️ Multiplicador: {descansoPreview.multiplicador}%
-                  <br />
-                  {descansoPreview.penalidades.join(', ')}
+                <Typography variant="caption" sx={{ color: '#ff9800', display: 'flex', alignItems: 'center', gap: 0.5, mt: 1.5 }}>
+                  <span>⚠️</span> Multiplicador: {descansoPreview.multiplicador}% ({descansoPreview.penalidades.join(', ')})
                 </Typography>
               )}
-              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 1 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 1.5, textAlign: 'center', fontStyle: 'italic' }}>
                 ⚠️ O jogador não deve alterar seu P.V e P.E sozinho!
               </Typography>
             </Box>
           )}
         </DialogContent>
 
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155', bgcolor: 'rgba(0,0,0,0.2)' }}>
           <Button
             onClick={() => {
               setModalDescansoOpen(false);
@@ -9287,7 +9649,7 @@ const novosDiversos = [...diversosAtuais, novoItem];
               setDescansoSelecionado(null);
               setDescansoCheckboxes({ desconfortavel: false, desabrigado: false });
             }}
-            sx={{ color: '#94a3b8' }}
+            sx={{ color: '#94a3b8', '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } }}
           >
             Cancelar
           </Button>
@@ -9296,18 +9658,23 @@ const novosDiversos = [...diversosAtuais, novoItem];
             disabled={!descansoPreview}
             onClick={aplicarDescanso}
             sx={{
-              bgcolor: '#2e7d32',
-              '&:hover': { bgcolor: '#1b5e20' },
-              '&.Mui-disabled': { bgcolor: '#334155' },
+              background: descansoPreview ? 'linear-gradient(135deg, #6d28d9, #9c27b0)' : '#334155',
+              color: '#fff',
+              fontWeight: 'bold',
+              px: 3,
+              boxShadow: descansoPreview ? '0 0 15px rgba(156, 39, 176, 0.4)' : 'none',
+              transition: 'all 0.3s',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #4c1d95, #7e22ce)',
+                boxShadow: '0 0 25px rgba(156, 39, 176, 0.6)'
+              },
+              '&.Mui-disabled': { bgcolor: '#334155', color: '#64748b' },
             }}
           >
             ✅ Aplicar Descanso
           </Button>
         </DialogActions>
       </Dialog>
-
-
-
     </Paper>
     );
   }

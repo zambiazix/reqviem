@@ -5,6 +5,7 @@ import {
   Box, Paper, Typography, IconButton, Button, TextField,
   FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle,
   DialogContent, DialogActions, Grid, Chip, InputAdornment,
+  FormControlLabel, Checkbox // 🟢 ADICIONADO AQUI
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -464,7 +465,13 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       consumivelPercentual: editandoItem.consumivelPercentual || 100,
       insumivel: editandoItem.insumivel || "Nenhum",
       insumivelValor: editandoItem.insumivelValor || 0,
-      variedades: editandoItem.variedades || [], // 🟢 NOVO
+      variedades: editandoItem.variedades || [],
+      // 🟢 NOVOS CAMPOS DE COMIDA/BEBIDA
+      isComida: editandoItem.isComida || false,
+      isBebida: editandoItem.isBebida || false,
+      recuperacaoFome: editandoItem.recuperacaoFome || 0,
+      recuperacaoSede: editandoItem.recuperacaoSede || 0,
+      validadeDias: editandoItem.validadeDias || 15,
     };
     
     await setDoc(doc(db, "comercio_paises", selectedPais.id, "cidades", selectedCidade.id, "lojas", selectedLoja.id, "itens", id), payload);
@@ -555,6 +562,11 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
         travado: true,
         origem: "loja",
         variedade: variedade?.nome || null,
+        isComida: comprandoItem.isComida || false,
+        isBebida: comprandoItem.isBebida || false,
+        recuperacaoFome: comprandoItem.recuperacaoFome || 0,
+        recuperacaoSede: comprandoItem.recuperacaoSede || 0,
+        validadeDias: comprandoItem.validadeDias || 15,
       };
       categoriaItens = [...categoriaAtual, novoItem];
     }
@@ -592,6 +604,8 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
 
     try {
       await setDoc(doc(db, "fichas", currentUserEmail), { carteiras: novasCarteiras, [categoriaDestinoCompra]: categoriaItens }, { merge: true });
+      // 🟢 DISPARA EVENTO PARA O INVENTÁRIO LIMPAR TRAVAS E ACEITAR O ITEM
+      window.dispatchEvent(new CustomEvent('itemComprado', { detail: { fichaId: currentUserEmail, categoria: categoriaDestinoCompra } }));
     } catch (err) {
       console.error("Erro ao salvar compra:", err);
       alert("Erro ao salvar a compra: " + err.message + "\n\nVerifique se você tem permissão para editar esta ficha.");
@@ -970,6 +984,13 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                                   <Chip label={`⚔️ ${item.dado || 1}`} size="small" sx={{ bgcolor: "#1e3a5f", fontSize: "0.55rem", height: 18, width: "100%" }} />
                                   <Chip label={`📦 ${item.estoque || 0}`} size="small" sx={{ bgcolor: "#1e293b", color: '#94a3b8', fontSize: "0.55rem", height: 18, width: "100%" }} />
                                   <Chip label={`🔧 ${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: "#1e293b", color: '#94a3b8', fontSize: "0.55rem", height: 18, width: "100%" }} />
+                                  {/* 🟢 CHIP DE COMIDA/BEBIDA */}
+                                  {item.isComida && (
+                                    <Chip label={`🍽️ +${item.recuperacaoFome || 0}%`} size="small" sx={{ bgcolor: "#ff980022", color: "#ff9800", fontSize: "0.55rem", height: 18, width: "100%", fontWeight: 'bold' }} />
+                                  )}
+                                  {item.isBebida && (
+                                    <Chip label={`🥤 +${item.recuperacaoSede || 0}%`} size="small" sx={{ bgcolor: "#3b82f622", color: "#3b82f6", fontSize: "0.55rem", height: 18, width: "100%", fontWeight: 'bold' }} />
+                                  )}
                                   {/* 🟢 CHIP DE VARIEDADES */}
                                   {item.variedades && item.variedades.length > 0 && (
                                     <Chip label={`🎨 ${item.variedades.length}`} size="small" sx={{ bgcolor: "#1e3a5f", color: '#a855f7', fontSize: "0.55rem", height: 18, width: "100%", fontWeight: 'bold' }} />
@@ -1233,28 +1254,63 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                   InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
               </Grid>
             </Grid>
-            <FormControl fullWidth size="small">
+            {/* 🟢 NOVOS CHECKBOXES DE COMIDA/BEBIDA */}
+            <Box sx={{ display: 'flex', gap: 2, p: 1.5, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 2, border: '1px dashed #555' }}>
+              <FormControlLabel
+                control={<Checkbox checked={editandoItem?.isComida || false} onChange={(e) => setEditandoItem(prev => ({ ...prev, isComida: e.target.checked, isBebida: false, tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" }))} sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }} />}
+                label={<Typography sx={{ color: '#fff', fontWeight: 'bold' }}>🍽️ É Comida?</Typography>}
+              />
+              <FormControlLabel
+                control={<Checkbox checked={editandoItem?.isBebida || false} onChange={(e) => setEditandoItem(prev => ({ ...prev, isBebida: e.target.checked, isComida: false, tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" }))} sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }} />}
+                label={<Typography sx={{ color: '#fff', fontWeight: 'bold' }}>🥤 É Bebida?</Typography>}
+              />
+            </Box>
+
+            {(editandoItem?.isComida || editandoItem?.isBebida) && (
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TextField
+                  label="Recupera (%)"
+                  type="number"
+                  value={editandoItem?.isComida ? (editandoItem?.recuperacaoFome || 0) : (editandoItem?.recuperacaoSede || 0)}
+                  onChange={(e) => {
+                    const val = Math.max(0, Number(e.target.value) || 0);
+                    setEditandoItem(prev => ({ ...prev, [prev.isComida ? 'recuperacaoFome' : 'recuperacaoSede']: val }));
+                  }}
+                  fullWidth size="small"
+                  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }}
+                />
+                <TextField
+                  label="Validade (Dias)"
+                  type="number"
+                  value={editandoItem?.validadeDias || 15}
+                  onChange={(e) => setEditandoItem(prev => ({ ...prev, validadeDias: Math.max(1, Number(e.target.value) || 15) }))}
+                  fullWidth size="small"
+                  InputProps={{ style: { color: '#fff' } }} InputLabelProps={{ style: { color: '#94a3b8' } }}
+                />
+              </Box>
+            )}
+
+            <FormControl fullWidth size="small" disabled={editandoItem?.isComida || editandoItem?.isBebida}>
               <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Dano</InputLabel>
               <Select value={editandoItem?.tipoDano || "Nenhum"} onChange={(e) => setEditandoItem(prev => ({ ...prev, tipoDano: e.target.value }))}
                 sx={{ color: '#fff' }} label="Tipo de Dano">
                 {TIPOS_DANO.map(td => <MenuItem key={td.valor} value={td.valor} sx={{ color: td.cor }}>{td.label}</MenuItem>)}
               </Select>
             </FormControl>
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth size="small" disabled={editandoItem?.isComida || editandoItem?.isBebida}>
               <InputLabel sx={{ color: '#94a3b8' }}>Consumível</InputLabel>
               <Select value={editandoItem?.consumivel || "Nenhum"} onChange={(e) => setEditandoItem(prev => ({ ...prev, consumivel: e.target.value }))}
                 sx={{ color: '#fff' }} label="Consumível">
                 {TIPOS_CONSUMIVEL.map(tc => <MenuItem key={tc.valor} value={tc.valor} sx={{ color: tc.cor }}>{tc.label}</MenuItem>)}
               </Select>
             </FormControl>
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth size="small" disabled={editandoItem?.isComida || editandoItem?.isBebida}>
               <InputLabel sx={{ color: '#94a3b8' }}>Insumível</InputLabel>
               <Select value={editandoItem?.insumivel || "Nenhum"} onChange={(e) => setEditandoItem(prev => ({ ...prev, insumivel: e.target.value }))}
                 sx={{ color: '#fff' }} label="Insumível">
                 {TIPOS_INSUMIVEL.map(ti => <MenuItem key={ti.valor} value={ti.valor} sx={{ color: ti.cor }}>{ti.label}</MenuItem>)}
               </Select>
             </FormControl>
-
             {/* 🟢 SISTEMA DE VARIEDADES */}
             <Paper sx={{ p: 1.5, bgcolor: '#0f172a', border: '1px solid #a855f766', borderRadius: 2 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>

@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   IconButton,
+  InputAdornment,
   TextField,
   List,
   ListItem,
@@ -28,6 +29,7 @@ import {
   FormControlLabel,
   Chip,   // 🟢 ADICIONE
   Slider,
+  Tooltip,
 } from "@mui/material";
 import ImageIcon from "@mui/icons-material/Image";
 import GifBoxIcon from "@mui/icons-material/GifBox";
@@ -43,6 +45,17 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 
 const GIPHY_API_KEY = "PBsoFISvy4OFVTNfZbpB5yF79ODJyTsc";
+
+// 🟢 FUNÇÃO QUE TRANSFORMA TEXTO EM CORES NO CHAT
+const renderCombatText = (text) => {
+  if (!text) return "";
+  let safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Substitui quebras de linha reais por <br>
+  safe = safe.replace(/\n/g, "<br/>");
+  // Converte as tags [C:#cor]texto[/C] em HTML
+  safe = safe.replace(/\[C:(#[a-fA-F0-9]{3,6})\](.*?)\[\/C\]/g, '<span style="color: $1; font-weight: bold;">$2</span>');
+  return safe;
+};
 
 function LightboxImage({ src, zoom, setZoom }) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -192,14 +205,27 @@ const MessageItem = memo(({
 
         <Box
           sx={{
-            maxWidth: "75%",
-            bgcolor: m.userEmail === userEmail ? "#1e3a5f" : "#2a2a2a",
-            borderRadius: 2,
-            p: 1.5,
-            boxShadow: 2,
+            maxWidth: "80%",
+            bgcolor: ["acao", "dice", "dice_morte", "dice_morte_result"].includes(m.type) 
+              ? (m.userEmail === userEmail ? "rgba(156, 39, 176, 0.15)" : "rgba(0, 224, 255, 0.08)") // Fundo diferente para Ações/Dados
+              : (m.userEmail === userEmail ? "rgba(30, 58, 95, 0.8)" : "rgba(42, 42, 42, 0.8)"), // Fundo padrão
+            border: ["acao", "dice", "dice_morte", "dice_morte_result"].includes(m.type)
+              ? `1px solid ${m.userEmail === userEmail ? "rgba(156, 39, 176, 0.5)" : "rgba(0, 224, 255, 0.4)"}`
+              : "1px solid rgba(255, 255, 255, 0.05)",
+            backdropFilter: "blur(10px)",
+            borderRadius: 3,
+            p: 2,
+            boxShadow: ["acao", "dice"].includes(m.type) ? "0 4px 15px rgba(0,0,0,0.4)" : 1,
             wordBreak: "break-word",
             contentVisibility: 'auto',
             containIntrinsicSize: 'auto 100px',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              boxShadow: ["acao", "dice"].includes(m.type) 
+                ? `0 0 15px ${m.userEmail === userEmail ? "rgba(156, 39, 176, 0.3)" : "rgba(0, 224, 255, 0.3)"}`
+                : '0 4px 12px rgba(0,0,0,0.5)',
+              transform: 'translateY(-2px)'
+            }
           }}
         >
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 0.5 }}>
@@ -328,11 +354,7 @@ const MessageItem = memo(({
               }}>
                 {!isMaster && m.secretText ? m.secretText : m.text}
               </Typography>
-              {m.dadosRolados && m.dadosRolados.length > 0 && !m.secretText && (
-                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
-                  🎲 Dados: [{m.dadosRolados.join(", ")}]
-                </Typography>
-              )}
+
               {isMaster && m.secretText && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
                   <Typography variant="caption" sx={{ color: '#ef4444', fontSize: '0.65rem' }}>🔒 SECRETO</Typography>
@@ -411,12 +433,16 @@ if (typeof document !== 'undefined') {
       100% { box-shadow: 0 0 5px #4caf50; }
     }
     @keyframes slideInLeft {
-      from { opacity: 0; transform: translateX(-15px); }
-      to { opacity: 1; transform: translateX(0); }
+      from { opacity: 0; transform: translateY(20px) scale(0.9); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
     @keyframes slideInRight {
-      from { opacity: 0; transform: translateX(15px); }
-      to { opacity: 1; transform: translateX(0); }
+      from { opacity: 0; transform: translateY(20px) scale(0.9); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes typingBounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-5px); }
     }
     @keyframes floatUp {
       from { opacity: 0; transform: translateY(8px); }
@@ -429,6 +455,33 @@ if (typeof document !== 'undefined') {
   `;
   document.head.appendChild(styleSheet);
 }
+
+const ORDEM_ATRIBUTOS = ["forca", "destreza", "agilidade", "constituicao", "inteligencia", "vontade"];
+const ORDEM_PERICIAS = ["atletismo", "luta", "armaBranca", "armaDistancia", "furtividade", "sobrevivencia", "conhecimento", "medicina", "natureza", "percepcao", "investigacao", "labia", "performance", "intimidacao", "aura"];
+
+// 🟢 FUNÇÃO PARA DEIXAR OS NOMES COM MAIÚSCULA E ACENTO
+const formatarNome = (nome) => {
+  const mapa = {
+    forca: "Força", destreza: "Destreza", agilidade: "Agilidade", constituicao: "Constituição", inteligencia: "Inteligência", vontade: "Vontade",
+    atletismo: "Atletismo", luta: "Luta", armaBranca: "Arma Branca", armaDistancia: "Arma à Distância", furtividade: "Furtividade",
+    sobrevivencia: "Sobrevivência", conhecimento: "Conhecimento", medicina: "Medicina", natureza: "Natureza", percepcao: "Percepção",
+    investigacao: "Investigação", labia: "Lábia", performance: "Performance", intimidacao: "Intimidação", aura: "Aura"
+  };
+  return mapa[nome] || (nome ? nome.charAt(0).toUpperCase() + nome.slice(1) : nome);
+};
+
+const CORES_ATRIBUTOS = {
+  forca: "#ef4444", destreza: "#22c55e", agilidade: "#3b82f6",
+  constituicao: "#f97316", inteligencia: "#e5e5e5", vontade: "#facc15",
+};
+
+const CORES_PERICIA = {
+  atletismo: "#ef4444", luta: "#ef4444", armaBranca: "#ef4444",
+  armaDistancia: "#22c55e", furtividade: "#3b82f6", sobrevivencia: "#f97316",
+  conhecimento: "#e5e5e5", medicina: "#e5e5e5", natureza: "#e5e5e5",
+  percepcao: "#e5e5e5", investigacao: "#e5e5e5", labia: "#e5e5e5",
+  performance: "#e5e5e5", intimidacao: "#facc15", aura: "#facc15",
+};
 
 export default function Chat({ userNick, userEmail }) {
   const [text, setText] = useState("");
@@ -510,6 +563,7 @@ const [modoMorte, setModoMorte] = useState(false);
 const [dadosMorte, setDadosMorte] = useState([]);
 const [resultadoMorte, setResultadoMorte] = useState(null);
 const [rolagemMorteIndex, setRolagemMorteIndex] = useState(-1);
+const [deathSegundaChanceAtiva, setDeathSegundaChanceAtiva] = useState(false);
 
 // 🟢 DADO SECRETO
 const [modoSecreto, setModoSecreto] = useState(false);
@@ -526,12 +580,84 @@ const [tituloSessaoTemp, setTituloSessaoTemp] = useState("");
 
 const chatTravado = !!travaSessao?.travados?.chat;
 // 🟢 OTIMIZAÇÃO: SCROLL INFINITO COM PAGINAÇÃO NO FIRESTORE
+// 🟢 PRESENÇA ONLINE
+const [onlinePlayers, setOnlinePlayers] = useState([]);
+const [typingUsers, setTypingUsers] = useState([]);
 const [todasMensagens, setTodasMensagens] = useState([]); // Todas as mensagens carregadas
 const [quantidadeMensagens, setQuantidadeMensagens] = useState(50); // Começa com 50
 const [carregandoAntigas, setCarregandoAntigas] = useState(false);
 const [ultimoDocumento, setUltimoDocumento] = useState(null); // Para paginação
 const [temMaisMensagens, setTemMaisMensagens] = useState(true); // Se há mais no Firestore
 const [carregamentoInicial, setCarregamentoInicial] = useState(true); // Primeira carga
+
+// 🟢 HEARTBEAT: registra presença a cada 20s
+useEffect(() => {
+  if (!userEmail) return;
+  const ref = doc(db, "online", userEmail);
+
+  const updateHeartbeat = async () => {
+    try {
+      await setDoc(ref, {
+        email: userEmail,
+        nickname: userNick || userEmail,
+        lastSeen: Date.now(),
+        isMaster: userEmail === "mestre@reqviemrpg.com",
+      }, { merge: true });
+    } catch {}
+  };
+
+  updateHeartbeat();
+  const interval = setInterval(updateHeartbeat, 20000);
+
+  const handleUnload = () => {
+    setDoc(ref, { lastSeen: 0 }, { merge: true }).catch(() => {});
+  };
+  window.addEventListener("beforeunload", handleUnload);
+
+  return () => {
+    clearInterval(interval);
+    window.removeEventListener("beforeunload", handleUnload);
+  };
+}, [userEmail, userNick]);
+
+// 🟢 LISTENER: quem está online (lastSeen < 90s)
+useEffect(() => {
+  const col = collection(db, "online");
+  const unsub = onSnapshot(col, (snap) => {
+    const agora = Date.now();
+    const LIMITE = 90000;
+    const lista = [];
+    snap.forEach((docSnap) => {
+      const d = docSnap.data() || {};
+      if (d.lastSeen && agora - d.lastSeen < LIMITE) {
+        lista.push({
+          email: docSnap.id,
+          nickname: d.nickname || docSnap.id,
+          isMaster: !!d.isMaster,
+        });
+      }
+    });
+    setOnlinePlayers(lista);
+  }, (err) => console.warn("online listener:", err));
+  return () => unsub();
+}, []);
+
+// 🟢 LISTENER: quem está digitando
+useEffect(() => {
+  const unsub = onSnapshot(collection(db, "typing"), (snap) => {
+    const agora = Date.now();
+    const lista = [];
+    snap.forEach((docSnap) => {
+      const d = docSnap.data() || {};
+      // Se digitou nos últimos 3 segundos e não é eu mesmo
+      if (d.lastTyping && (agora - d.lastTyping < 3000) && docSnap.id !== userEmail) {
+        lista.push({ email: docSnap.id, nickname: d.nickname });
+      }
+    });
+    setTypingUsers(lista);
+  }, (err) => console.warn("typing listener:", err));
+  return () => unsub();
+}, [userEmail]);
 
 useEffect(() => {
   const ref = doc(db, "game", "travaSessao");
@@ -598,7 +724,7 @@ const iniciarSessao = async () => {
     userNick: "SISTEMA",
     userEmail: "sistema@reqviemrpg.com",
     type: "sistema",
-    text: `🎬 **SESSÃO INICIADA:** ${titulo}\nBom jogo a todos!`,
+    text: `🎬 SESSÃO INICIADA: ${titulo}\nBom jogo a todos!`,
     timestamp: serverTimestamp(),
   });
 };
@@ -627,7 +753,7 @@ const encerrarSessao = async () => {
     userNick: "SISTEMA",
     userEmail: "sistema@reqviemrpg.com",
     type: "sistema",
-    text: `⏹️ **SESSÃO ENCERRADA:** ${registro.titulo}\nDuração: ${registro.duracao}`,
+    text: `⏹️ SESSÃO ENCERRADA: ${registro.titulo}\nDuração: ${registro.duracao}`,
     timestamp: serverTimestamp(),
   });
 };
@@ -639,19 +765,31 @@ const apagarRegistroSessao = async (index) => {
   setTravaSessao((prev) => ({ ...prev, historico: novoHistorico }));
   await setDoc(doc(db, "game", "travaSessao"), { historico: novoHistorico }, { merge: true });
 };
-// 🟢 EFEITOS DE TIPO DE DANO
+// 🟢 EFEITOS DE TIPO DE DANO - CONFORME DOCUMENTO
 const EFEITOS_DANO = {
-  "Ácido": { ignoraArmadura: 1.0, desc: "🧪 Ácido: Ignora 100% da armadura!" },
-  "Contundente": { chanceSoltarItens: 0.5, desc: "💥 Contundente: 50% chance de soltar itens" },
-  "Cortante": { eficazTecidos: 0.5, desc: "🔪 Cortante: 50% eficaz contra tecidos" },
-  "Elétrico": { chanceParalisia: 0.5, desc: "⚡ Elétrico: 50% chance de paralisar" },
-  "Aurano": { desc: "✨ Aurano: Dano puro de Aura" },
-  "Gélido": { chanceNecrose: 0.2, desc: "❄️ Gélido: 20% chance de necrose" },
-  "Térmico": { menosCura: 0.5, desc: "🔥 Térmico: 50% menos cura/regeneração" },
-  "Perfurante": { ignoraArmadura: 0.5, desc: "🏹 Perfurante: Ignora 50% da armadura" },
-  "Psíquico": { chancePerderAura: 0.5, desc: "🧠 Psíquico: 50% chance de perder Aura no próximo turno" },
-  "Trovejante": { chanceDesorientar: 0.5, desc: "📢 Trovejante: 50% chance de desorientar por 1 turno" },
-  "Tóxico": { danoTurnos: 5, duracao: 6, desc: "☠️ Tóxico: Perde 5 PV por 6 turnos" },
+  "Ácido":       { ignoraArmadura: 1.0,  desc: "🧪 Ácido: Ignora 100% da armadura!" },
+  "Contundente": { chanceSoltar: 0.5,    desc: "💥 Contundente: 50% chance de soltar item" },
+  "Cortante":    { ignoraArmadura: 0.5, armaduraMax: 25, desc: "🔪 Cortante: Ignora 50% armadura (≤25)" },
+  "Elétrico":    { chanceParalisia: 0.25, duracao: 1, desc: "⚡ Elétrico: 25% paralisia" },
+  "Digital":     { chanceCorromper: 0.5,  duracao: 1, desc: "🔌 Digital: 50% corromper equipamento" },
+  "Aurano":      { bonusDano: 0.5,        desc: "✨ Aurano: +50% de dano" },
+  "Gélido":      { chanceNecrose: 0.05,   desc: "❄️ Gélido: 5% chance de necrose" },
+  "Térmico":     { reducaoCura: 0.5, duracao: 1, desc: "🔥 Térmico: -50% cura por 1 turno" },
+  "Perfurante":  { ignoraArmadura: 0.5, armaduraMin: 26, desc: "🏹 Perfurante: Ignora 50% armadura (≥26)" },
+  "Psíquico":    { chancePerderAura: 0.10, duracao: 1, desc: "🧠 Psíquico: 10% perder Aura" },
+  "Trovejante":  { chanceDesorientar: 0.5, duracao: 1, desc: "💥 Trovejante: 50% desorientar (G.O)" },
+  "Tóxico":      { danoPorTurno: 5, duracao: 10, desc: "☠️ Tóxico: -5 PV/turno por 10 turnos" },
+};
+
+// 🟢 EFEITOS ATIVOS PERSISTENTES - CONFORME DOCUMENTO
+const EFEITOS_ATIVOS_MAP = {
+  "Elétrico":   { tipo: "Paralisado",   icone: "⚡",  cor: "#facc15", descricao: "Local paralisado por 1 turno",     duracao: 1,  chance: 0.25 },
+  "Digital":    { tipo: "Corrompido",   icone: "🔌",  cor: "#00ff41", descricao: "Equipamento corrompido",          duracao: 1,  chance: 0.50 },
+  "Gélido":     { tipo: "Necrosado",    icone: "❄️",  cor: "#87ceeb", descricao: "Necrose - requer tratamento",     duracao: 999, chance: 0.05, permanente: true },
+  "Térmico":    { tipo: "Queimado",     icone: "🔥",  cor: "#ff4500", descricao: "-50% cura por 1 turno",           duracao: 1 },
+  "Psíquico":   { tipo: "SemAura",      icone: "🧠",  cor: "#ff69b4", descricao: "Perdeu conexão com Aura",         duracao: 1,  chance: 0.10 },
+  "Trovejante": { tipo: "Desorientado", icone: "💥",  cor: "#4169e1", descricao: "Perde turno + oponente tem G.O",   duracao: 1,  chance: 0.50 },
+  "Tóxico":     { tipo: "Envenenado",   icone: "☠️",  cor: "#8b008b", descricao: "-5 PV por turno",                duracao: 10 },
 };
 
 // 🟢 ESTADO PARA TOXINAS ATIVAS
@@ -664,6 +802,14 @@ const CORES_AURA_CHAT = {
   "Fundador": "#00ff88",
   "Déspota": "#a855f7",
   "Ás": "#e5e5e5",
+};
+
+// (CORES_ATRIBUTOS já definido no topo do arquivo)
+
+// Normaliza acentos (força → forca)
+const getCorAtributo = (nome) => {
+  const n = (nome || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return CORES_ATRIBUTOS[n] || "#94a3b8";
 };
 
   const openDiceMenu = Boolean(diceAnchor);
@@ -986,24 +1132,45 @@ useEffect(() => {
 }, [userNick, userEmail, chatCol]);
 
 // 🟢 OUVIR AÇÕES PENDENTES (contra o jogador selecionado ou logado)
+// Reações expiram automaticamente em 1 hora
 useEffect(() => {
   const emailAlvo = isMaster ? jogadorSelecionadoEmail : userEmail;
   
-  console.log("🔍 DEBUG AÇÕES PENDENTES:", {
-    isMaster,
-    userEmail,
-    jogadorSelecionadoEmail,
-    emailAlvo,
-    condicao: !emailAlvo || emailAlvo === "mestre@reqviemrpg.com"
-  });
-  
   if (!emailAlvo || emailAlvo === "mestre@reqviemrpg.com") {
-    console.log("⏭️ Pulando - sem alvo válido");
     setAcoesPendentes([]);
     return;
   }
   
-  console.log("👂 Ouvindo ações para:", emailAlvo);
+  // 🟢 Normaliza o timestamp (Timestamp do Firestore / {seconds} / number / ausente)
+  const pegarTimestampMs = (item) => {
+    if (item?.timestamp?.toMillis) return item.timestamp.toMillis();
+    if (item?.timestamp?.seconds) return item.timestamp.seconds * 1000;
+    if (typeof item?.timestamp === "number") return item.timestamp;
+    return Date.now(); // se não tem timestamp, considera recém-criada (evita apagar por engano)
+  };
+  
+  // 🟢 Separa válidas x expiradas, apaga as expiradas do Firestore
+  const processarLista = (lista) => {
+    const agora = Date.now();
+    const validas = [];
+    const expiradas = [];
+    
+    lista.forEach(item => {
+      const idade = agora - pegarTimestampMs(item);
+      if (idade > TEMPO_EXPIRACAO_REACAO_MS) {
+        expiradas.push(item.id);
+      } else {
+        validas.push(item);
+      }
+    });
+    
+    // Apaga as expiradas no Firestore (silencioso)
+    expiradas.forEach(id => {
+      deleteDoc(doc(db, "acoesPendentes", id)).catch(() => {});
+    });
+    
+    return validas;
+  };
   
   const q = query(
     collection(db, "acoesPendentes"),
@@ -1012,17 +1179,40 @@ useEffect(() => {
   );
   
   const unsub = onSnapshot(q, (snap) => {
-    const pendentes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    console.log("📬 Ações pendentes recebidas:", pendentes.length, pendentes);
-    setAcoesPendentes(pendentes);
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const validas = processarLista(lista);
     
-    if (pendentes.length > 0) {
+    setAcoesPendentes(validas);
+    
+    if (validas.length > 0) {
       setAcaoModo("reacao");
-      setAcaoPendenteId(pendentes[0].id);
+      setAcaoPendenteId(validas[0].id);
+    } else {
+      // 🟢 Volta ao normal quando não tem mais nada pendente
+      setAcaoModo("acao");
+      setAcaoPendenteId(null);
     }
   });
   
-  return () => unsub();
+  // 🟢 Verificação periódica (a cada 60s) — expira mesmo se o Firestore não emitir mudança
+  const interval = setInterval(() => {
+    setAcoesPendentes(prev => {
+      const validas = processarLista(prev);
+      // Se zerou depois de ter algo, volta ao normal
+      if (prev.length > 0 && validas.length === 0) {
+        setTimeout(() => {
+          setAcaoModo("acao");
+          setAcaoPendenteId(null);
+        }, 0);
+      }
+      return validas.length === prev.length ? prev : validas;
+    });
+  }, 60000);
+  
+  return () => {
+    unsub();
+    clearInterval(interval);
+  };
 }, [userEmail, jogadorSelecionadoEmail, isMaster]);
 
   function tryParseDice(cmd) {
@@ -1133,12 +1323,19 @@ async function rolarDadoMorte() {
     mensagemResultado = `💚 **${nomePersonagem} SOBREVIVEU!**\n` +
       `Sucessos: ${sucessos.length} | Fracassos: ${fracassos.length}\n` +
       `Dados: [${[...sucessos, ...fracassos].join(", ")}]`;
+    setDeathSegundaChanceAtiva(false);
   } else {
     mensagemResultado = `💀 **${nomePersonagem} MORREU!**\n` +
       `Sucessos: ${sucessos.length} | Fracassos: ${fracassos.length}\n` +
       `Dados: [${[...sucessos, ...fracassos].join(", ")}]`;
     
-    await setDoc(doc(db, "fichas", jogadorSelecionadoEmail), { pontosVida: 0 }, { merge: true });
+    if (fichaJogador?.tracos?.includes("Atleta") && !deathSegundaChanceAtiva) {
+        setDeathSegundaChanceAtiva(true);
+        mensagemResultado += `\n\n🏃‍♂️ **SEGUNDA-CHANCE (Traço Atleta):** Você pode rolar novamente!`;
+    } else {
+        await setDoc(doc(db, "fichas", jogadorSelecionadoEmail), { pontosVida: 0 }, { merge: true });
+        setDeathSegundaChanceAtiva(false);
+    }
   }
   
   await addDoc(chatCol, {
@@ -1211,6 +1408,9 @@ async function rolarDadoMorte() {
   e?.preventDefault();
   if (!text && !filePreview && filePreviews.length === 0) return;
   setLastSender(userEmail);
+  
+  // Remove o status de digitando
+  deleteDoc(doc(db, "typing", userEmail)).catch(() => {});
     // 🟢 BLOQUEAR ENVIO SE CHAT TRAVADO (jogadores)
   if (chatTravado && !isMaster) {
     alert("🔒 O chat está travado pelo Mestre. Aguarde a sessão começar!");
@@ -1357,22 +1557,24 @@ async function rolarDadoMorte() {
   }
 
   // 🟢 FUNÇÃO PARA CARREGAR GALERIA DE IMAGENS
-const carregarGaleria = () => {
+const carregarGaleria = async () => {
   const mapaImagens = new Map();
 
-  
-  // Função para normalizar URL (remove parâmetros)
   const normalizarUrl = (url) => {
     try {
       const u = new URL(url);
-      return u.origin + u.pathname; // Remove query strings
+      return u.origin + u.pathname; 
     } catch {
-      return url.split('?')[0]; // Fallback simples
+      return url.split('?')[0]; 
     }
   };
 
+  try {
+    // 🟢 Busca TODAS as mensagens do banco de dados para não perder as antigas
+    const snap = await getDocs(query(collection(db, "chat")));
+    const allMessages = snap.docs.map(d => d.data());
 
-  messages.forEach(msg => {
+    allMessages.forEach(msg => {
     const processarImagem = (url, nick, timestamp) => {
       if (!url) return;
       const chave = normalizarUrl(url);
@@ -1385,12 +1587,15 @@ const carregarGaleria = () => {
       processarImagem(msg.text, msg.userNick, msg.timestamp);
     }
     
-    if (msg.type === "image-group" && msg.images) {
-      msg.images.forEach(img => {
-        processarImagem(img, msg.userNick, msg.timestamp);
-      });
-    }
-  });
+      if (msg.type === "image-group" && msg.images) {
+        msg.images.forEach(img => {
+          processarImagem(img, msg.userNick, msg.timestamp);
+        });
+      }
+    });
+  } catch (err) {
+    console.error("Erro ao carregar galeria:", err);
+  }
   
   const imagensUnicas = Array.from(mapaImagens.values())
     .sort((a, b) => {
@@ -1537,27 +1742,65 @@ async function rolarAcaoConjunta() {
     const somaTotal = resultados.reduce((s, r) => s + r.total, 0);
     const nomePrincipal = fichaJogador?.nome || userNick;
 
-    let mensagem = `🎭 **AÇÃO EM CONJUNTO** 🎭\n`;
-    mensagem += `${resultados.length} participante(s)\n\n`;
+    let mensagem = `${montarCaixa("🎭 AÇÃO EM CONJUNTO 🎭", 37)}\n\n`;
+    mensagem += `👥 ${resultados.length} participante(s)\n\n`;
 
     for (const r of resultados) {
-      mensagem += `🎲 **${r.nome}**: ${r.totalD10}d10 => [${r.rolls.join(", ")}] = **${r.total}**`;
-      if (r.descricao) mensagem += `\n   _${r.descricao}_`;
-      if (r.isCrit) mensagem += ` 🌟 **CRÍTICO!**`;
-      if (r.isErro) mensagem += ` 💥 **ERRO CRÍTICO!**`;
+      mensagem += `🎲 ${r.nome}: ${r.totalD10}d10 => [${r.rolls.join(", ")}] = ${r.total}`;
+      if (r.descricao) mensagem += `\n   📋 ${r.descricao}`;
+      if (r.isCrit) mensagem += ` 🌟 CRÍTICO!`;
+      if (r.isErro) mensagem += ` 💥 ERRO CRÍTICO!`;
       mensagem += `\n\n`;
     }
 
-    mensagem += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    mensagem += `🎯 **TOTAL COMBINADO:** **${somaTotal}**\n`;
+    mensagem += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    mensagem += `🎯 TOTAL COMBINADO: ${somaTotal}\n`;
 
     if (acaoValorDificuldade) {
       const vd = Number(acaoValorDificuldade);
-      mensagem += `\n${somaTotal >= vd ? '✅ **SUCESSO!**' : '❌ **FRACASSO!**'} (VD ${vd})`;
+      mensagem += `\n${somaTotal >= vd ? '✅ SUCESSO!' : '❌ FRACASSO!'} (VMS ${vd})`;
     }
 
     if (acaoAlvo) {
-      mensagem += `\n\n🎯 Alvo: **${fichasMap[acaoAlvo]?.nome || acaoAlvo}**`;
+      mensagem += `\n\n🎯 Alvo: ${fichasMap[acaoAlvo]?.nome || acaoAlvo}`;
+    }
+
+    // 🟢 SE TEM ALVO + DANO, CRIA AÇÃO PENDENTE (mesma lógica da individual)
+    if (acaoModo === "acao" && acaoAlvo && acaoTipo === "dano") {
+      let tipoDanoAcao = "Nenhum";
+      if (acaoHabilidadeSelecionada && fichaJogador?.habilidades) {
+        const hab = fichaJogador.habilidades.find(h => h.nome === acaoHabilidadeSelecionada);
+        if (hab?.tipoDano && hab.tipoDano !== "Nenhum") tipoDanoAcao = hab.tipoDano;
+      }
+      if (tipoDanoAcao === "Nenhum" && acaoItem) {
+        const todosItens = [
+          ...(fichaJogador?.equipamentos || []),
+          ...(fichaJogador?.vestes || []),
+          ...(fichaJogador?.diversos || [])
+        ];
+        const itemEncontrado = todosItens.find(it => it.nome === acaoItem);
+        if (itemEncontrado?.tipoDano && itemEncontrado.tipoDano !== "Nenhum") tipoDanoAcao = itemEncontrado.tipoDano;
+      }
+
+      const pendenteRef = doc(collection(db, "acoesPendentes"));
+      await setDoc(pendenteRef, {
+        atacante: jogadorSelecionadoEmail,
+        alvo: acaoAlvo,
+        tipo: "dano",
+        valorAtaque: somaTotal,
+        dadosRolados: resultados.flatMap(r => r.rolls),
+        itemUsado: acaoItem || null,
+        habilidadeUsada: acaoHabilidadeSelecionada || null,
+        tipoDanoAtaque: tipoDanoAcao,
+        isCritico: resultados.some(r => r.isCrit),
+        isErroCritico: resultados.every(r => r.isErro),
+        ignorarArmaduraDemolidor: false,
+        conjunto: true,
+        participantes: resultados.map(r => r.email),
+        timestamp: serverTimestamp(),
+        resolvida: false,
+      });
+      mensagem += `\n\n⚠️ Aguardando reação do alvo...`;
     }
 
     const isDadoSecreto = modoSecreto;
@@ -1596,15 +1839,35 @@ async function rolarAcaoConjunta() {
 async function rolarAcao() {
   if (rolagemEmAndamento) return;
   
+  // 🟢 Se está reagindo, verifica se a ação ainda existe (pode ter expirado)
+  if (acaoModo === "reacao" && acaoPendenteId) {
+    const snapPendente = await getDoc(doc(db, "acoesPendentes", acaoPendenteId));
+    if (!snapPendente.exists()) {
+      alert("⚠️ Esta reação expirou (mais de 1h) ou já foi resolvida. Voltando ao normal.");
+      setAcaoModo("acao");
+      setAcaoPendenteId(null);
+      setAcaoOpen(false);
+      setRolagemEmAndamento(false);
+      return;
+    }
+  }
+  
     // 🟢 Só atributo é obrigatório (ou perícia)
   if (!acaoAtributo && !acaoPericia && !acaoItemConsumivel) {
     alert("Selecione pelo menos um Atributo ou uma Perícia!");
     return;
   }
   
-  // 🟢 Consumível sozinho é permitido (sem atributo/perícia)
-  
-    // 🟢 Só valida se NÃO for consumível (consumível não precisa de tipo de dano)
+     // 🟢 Consumível sozinho é permitido (sem atributo/perícia)
+    
+    // 🟢 NOVA LÓGICA: VMS só é obrigatório se NÃO tiver alvo, dano, furtividade ou for reação
+    const requiresVMS = acaoModo !== "reacao" && !acaoAlvo && acaoTipo !== "dano" && acaoTipo !== "furtividade";
+    if (requiresVMS && !acaoValorDificuldade) {
+      alert("Preencha o VMS (Valor Mínimo de Sucesso)!");
+      return;
+    }
+
+  // 🟢 Só valida se NÃO for consumível (consumível não precisa de tipo de dano)
   if (acaoModo === "acao" && acaoAlvo && !acaoTipo && !acaoItemConsumivel) {
     alert("Selecione o tipo: ☠️ Dano");
     return;
@@ -1616,6 +1879,51 @@ async function rolarAcao() {
   }
   
     setRolagemEmAndamento(true);
+    
+    // 🟢 CONSUMO DE FOME E SEDE POR AÇÃO
+    try {
+      const refConsumo = doc(db, "fichas", jogadorSelecionadoEmail);
+      const snapConsumo = await getDoc(refConsumo);
+      if (snapConsumo.exists()) {
+        const dadosConsumo = snapConsumo.data();
+        const fomeAtual = dadosConsumo.fome ?? 100;
+        const sedeAtual = dadosConsumo.sede ?? 100;
+        // Ação gasta 1% de fome e 2% de sede
+        await setDoc(refConsumo, {
+          fome: Math.max(0, fomeAtual - 5),
+          sede: Math.max(0, sedeAtual - 8)
+        }, { merge: true });
+      }
+    } catch (err) { console.error("Erro ao consumir fome/sede", err); }
+    
+    // 🟢 CHECAR E APLICAR EFEITOS ATIVOS
+    const temEfeitos = fichaJogador?.efeitosAtivos || [];
+    let penalidadeDados = 0;
+    let bloquearAcao = false;
+    let msgEfeitos = "";
+
+    temEfeitos.forEach(ef => {
+      if (ef.tipo === "Paralisado") { bloquearAcao = true; msgEfeitos += `⚡ Você está PARALISADO e não pode agir!\n`; }
+      if (ef.tipo === "Desorientado" || ef.tipo === "Atordoado") { penalidadeDados += 2; msgEfeitos += `📢 Você está ${ef.tipo} (-2 dados)!\n`; }
+      if (ef.tipo === "Confusão") { penalidadeDados += 1; msgEfeitos += `🧠 Você está Confuso (-1 dado)!\n`; }
+    });
+
+    if (bloquearAcao) {
+      alert(msgEfeitos);
+      setRolagemEmAndamento(false);
+      return;
+    }
+
+    if (penalidadeDados > 0) {
+      alert(msgEfeitos + `\nSua rolagem terá uma penalidade de ${penalidadeDados} dados.`);
+    }
+
+    // 🟢 DECREMENTAR TURNOS DOS EFEITOS E SALVAR NA FICHA
+    if (temEfeitos.length > 0) {
+      const novosEfeitos = temEfeitos.map(ef => ({ ...ef, turnosRestantes: ef.turnosRestantes - 1 })).filter(ef => ef.turnosRestantes > 0);
+      await setDoc(doc(db, "fichas", jogadorSelecionadoEmail), { efeitosAtivos: novosEfeitos }, { merge: true });
+    }
+
         // 🟢 TALENTO REGENERAÇÃO: +5 PV
     const temRegeneracao = fichaJogador?.caracteristicas?.includes("Regeneração") || false;
     const temSobrecarga = fichaJogador?.caracteristicas?.includes("Sobrecarga") || false;
@@ -1718,25 +2026,29 @@ const confirmarPosChoque = async () => {
   try {
     let totalD10 = 0;
     let descricao = [];
+    if (typeof penalidadeDados !== 'undefined' && penalidadeDados > 0) {
+      totalD10 -= penalidadeDados; // Aplica a penalidade
+      descricao.push(`Penalidade de Efeitos: -${penalidadeDados} dados`);
+    }
     let custoTotalEnergia = 0;
     
 if (acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] !== undefined) {
   const valor = Math.max(1, Number(fichaJogador.atributos[acaoAtributo]) || 1);
   totalD10 += valor;
-  descricao.push(`Atributo: ${acaoAtributo} (${valor})`);
+  descricao.push(`Atributo: ${formatarNome(acaoAtributo)} (${valor})`); // 🟢 NOME BONITO
 }
     
     if (acaoPericia && fichaJogador?.pericias?.[acaoPericia]) {
       const valor = fichaJogador.pericias[acaoPericia];
       totalD10 += valor;
-      descricao.push(`Perícia: ${acaoPericia} (${valor})`);
+      descricao.push(`Perícia: ${formatarNome(acaoPericia)} (${valor})`); // 🟢 NOME BONITO
       if (acaoPericia === "aura") custoTotalEnergia += 1;
     }
 
     if (acaoPericia2 && fichaJogador?.pericias?.[acaoPericia2]) {
       const valor2 = fichaJogador.pericias[acaoPericia2];
       totalD10 += valor2;
-      descricao.push(`2ª Perícia: ${acaoPericia2} (${valor2})`);
+      descricao.push(`2ª Perícia: ${formatarNome(acaoPericia2)} (${valor2})`); // 🟢 NOME BONITO
       if (acaoPericia2 === "aura") custoTotalEnergia += 1;
     }
     
@@ -1804,18 +2116,41 @@ if (acaoHabilidadeSelecionada) {
     setEnergiaAtual(novaEnergia);
     await setDoc(doc(db, "fichas", jogadorSelecionadoEmail), { pontosEnergia: novaEnergia }, { merge: true });
     
+    let numGolpes = 1;
+    let nomeTracoGolpe = "";
+    const todosItens = [
+        ...(fichaJogador?.equipamentos || []),
+        ...(fichaJogador?.vestes || []),
+        ...(fichaJogador?.diversos || [])
+    ];
+    const itemEncontradoGolpe = todosItens.find(it => it.nome === acaoItem);
+
+    if (fichaJogador?.tracos?.includes("Lutador") && acaoPericia === "luta" && !acaoItem && !acaoHabilidadeSelecionada) {
+        numGolpes = 2; nomeTracoGolpe = "Brigão";
+    } else if (fichaJogador?.tracos?.includes("Espadachim") && (acaoPericia === "armaBranca" || itemEncontradoGolpe?.tipoDano === "Cortante")) {
+        numGolpes = 2; nomeTracoGolpe = "Espadachim";
+    } else if (fichaJogador?.tracos?.includes("Atirador") && (acaoPericia === "armaDistancia" || itemEncontradoGolpe?.tipoDano === "Perfurante")) {
+        numGolpes = 2; nomeTracoGolpe = "Franco-Atirador";
+    }
+
+    if (numGolpes > 1) {
+        descricao.push(`⚔️ Golpe Duplo (Traço ${nomeTracoGolpe})`);
+    }
+
     const rolls = [];
     let total = 0;
     const fatorSorte = sorteAzarMap[userEmail];
+    for (let g = 0; g < numGolpes; g++) {
         for (let i = 0; i < totalD10; i++) {
-      let valor;
-      if (fatorSorte !== undefined) {
-        valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
-      } else {
-        valor = Math.floor(Math.random() * 10) + 1;
-      }
-      rolls.push(valor);
-      total += valor;
+            let valor;
+            if (fatorSorte !== undefined) {
+                valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
+            } else {
+                valor = Math.floor(Math.random() * 10) + 1;
+            }
+            rolls.push(valor);
+            total += valor;
+        }
     }
     
     // 🟢 APLICAR DEBUFFS (subtrai do total)
@@ -1897,32 +2232,29 @@ if (acaoHabilidadeSelecionada) {
       if (itemEncontrado?.tipoDano && itemEncontrado.tipoDano !== "Nenhum") tipoDanoMensagem = itemEncontrado.tipoDano;
     }
     
-        let mensagem = `⚔️ **AÇÃO** ⚔️\n` +
-      `O personagem **${nomePersonagem}** rodou sua Ação${partesDescricao ? ` com:\n${partesDescricao}` : "!"}\n\n` +
-      `${totalD10}d10 => [${rolls.join(", ")}] = **${total}**`;
+        let mensagem = `${montarCaixa("⚔️ AÇÃO DE COMBATE ⚔️", 37)}\n\n🎭 ${nomePersonagem}\n${partesDescricao ? `📋 ${partesDescricao}\n` : ""}\n🎲 DADOS: [${rolls.join(", ")}] = ${total}\n`;
     
-    // 🟢 ADICIONAR FLAG DE CRÍTICO/ERRO CRÍTICO
     if (isCritico) {
-      mensagem += `\n\n🌟 **CRÍTICO!** Dano direto! O valor total ignora a defesa do oponente.`;
+      mensagem += `\n🌟 CRÍTICO!\nDano direto! O valor total ignora a defesa do oponente.`;
     }
     if (isErroCritico) {
-      mensagem += `\n\n💥 **ERRO CRÍTICO!** Fracasso total na ação!`;
+      mensagem += `\n💥 ERRO CRÍTICO!\nFracasso total na ação!`;
     }
     
     if (tipoDanoMensagem !== "Nenhum") {
-      mensagem += `\n\n🗡️ **Tipo de Dano:** ${tipoDanoMensagem}`;
+      mensagem += `\n🗡️ Tipo de Dano: ${tipoDanoMensagem}`;
     }
     
     if (custoTotalEnergia > 0) {
-      mensagem += `\n\n⚡ Energia gasta: ${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
+      mensagem += `\n⚡ Energia: -${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
     }
-        // 🟢 VERIFICAR SUCESSO/FRACASSO (VD)
+    
     if (acaoValorDificuldade) {
       const vd = Number(acaoValorDificuldade);
       if (total >= vd) {
-        mensagem += `\n\n✅ **SUCESSO!** Resultado ${total} ≥ ${vd} (VD)`;
+        mensagem += `\n✅ SUCESSO! (Resultado ${total} ≥ VMS ${vd})`;
       } else {
-        mensagem += `\n\n❌ **FRACASSO!** Resultado ${total} < ${vd} (VD)`;
+        mensagem += `\n❌ FRACASSO! (Resultado ${total} < VMS ${vd})`;
       }
     }
 
@@ -1944,13 +2276,16 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
   const fichaAlvo = fichasMap[acaoAlvo];
   const percepcaoAlvo = fichaAlvo?.pericias?.percepcao || 0;
   const inteligenciaAlvo = fichaAlvo?.atributos?.inteligencia || 0;
-  let mensagem = `🥷 **Ação de Furtividade**\n\n`;
+  let mensagem = `🌫️ Ação de Furtividade\n\n`;
   
-  // 🟢 Se alvo não tem Percepção (0), falha garantida do atacante
-  if (percepcaoAlvo < 1) {
-    mensagem += `👁️ **${fichaAlvo?.nome || acaoAlvo}** NÃO tem Percepção!\n`;
-    mensagem += `✅ **FURTIVIDADE BEM-SUCEDIDA!**\n`;
-    mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será **CRÍTICO AUTOMÁTICO**!`;
+  // 🟢 Verifica Terceiro Olho (Traço)
+  if (fichaAlvo?.tracos?.includes("Observador")) {
+    mensagem += `👁️ ${fichaAlvo?.nome || acaoAlvo} tem **TERCEIRO OLHO** (Traço)!\n`;
+    mensagem += `❌ FURTIVIDADE FALHOU! O alvo é imune a golpes de oportunidade.`;
+  } else if (percepcaoAlvo < 1) {
+    mensagem += `👁️ ${fichaAlvo?.nome || acaoAlvo} NÃO tem Percepção!\n`;
+    mensagem += `✅ FURTIVIDADE BEM-SUCEDIDA!\n`;
+    mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será CRÍTICO AUTOMÁTICO!`;
     
     // Marca próximo ataque como crítico
     await setDoc(doc(db, "game", "combate"), {
@@ -1961,37 +2296,37 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
       }
     }, { merge: true });
     
-  } else if (percepcaoAlvo >= 5) {
-    // 🟢 Alvo com Percepção nível 5 - atacante NÃO consegue
-    mensagem += `👁️ **${fichaAlvo?.nome || acaoAlvo}** tem PERCEPÇÃO NÍVEL 5!\n`;
-    mensagem += `❌ **FALHA!** O alvo percebeu sua movimentação!\n`;
-    mensagem += `🛡️ Você foi detectado! Nenhum efeito adicional.`;
+} else if (percepcaoAlvo >= 5) {
+  // 🟢 Alvo com Percepção nível 5 - atacante NÃO consegue
+  mensagem += `👁️ ${fichaAlvo?.nome || acaoAlvo} tem PERCEPÇÃO NÍVEL 5!\n`;
+  mensagem += `❌ FALHA! O alvo percebeu sua movimentação!\n`;
+  mensagem += `🛡️ Você foi detectado! Nenhum efeito adicional.`;
+  
+} else {
+  // 🟢 Testa contra Percepção do alvo
+  const ataqueFurtivo = total;
+  const defesaPercepcao = inteligenciaAlvo + percepcaoAlvo;
+  
+  mensagem += `🎯 Seu resultado: ${ataqueFurtivo}\n`;
+  mensagem += `👁️ Percepção do alvo: ${defesaPercepcao}\n\n`;
+  
+  if (ataqueFurtivo > defesaPercepcao) {
+    mensagem += `✅ FURTIVIDADE BEM-SUCEDIDA!\n`;
+    mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será CRÍTICO AUTOMÁTICO!`;
+    
+    await setDoc(doc(db, "game", "combate"), {
+      [`proximoCritico.${userEmail}`]: {
+        alvo: acaoAlvo,
+        atacante: userEmail,
+        timestamp: serverTimestamp(),
+      }
+    }, { merge: true });
     
   } else {
-    // 🟢 Testa contra Percepção do alvo
-    const ataqueFurtivo = total;
-    const defesaPercepcao = inteligenciaAlvo + percepcaoAlvo;
-    
-    mensagem += `🎯 Seu resultado: ${ataqueFurtivo}\n`;
-    mensagem += `👁️ Percepção do alvo: ${defesaPercepcao}\n\n`;
-    
-    if (ataqueFurtivo > defesaPercepcao) {
-      mensagem += `✅ **FURTIVIDADE BEM-SUCEDIDA!**\n`;
-      mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será **CRÍTICO AUTOMÁTICO**!`;
-      
-      await setDoc(doc(db, "game", "combate"), {
-        [`proximoCritico.${userEmail}`]: {
-          alvo: acaoAlvo,
-          atacante: userEmail,
-          timestamp: serverTimestamp(),
-        }
-      }, { merge: true });
-      
-    } else {
-      mensagem += `❌ **FURTIVIDADE FALHOU!**\n`;
-      mensagem += `👁️ O alvo está alerta. Nenhum efeito adicional.`;
-    }
+    mensagem += `❌ FURTIVIDADE FALHOU!\n`;
+    mensagem += `👁️ O alvo está alerta. Nenhum efeito adicional.`;
   }
+}
   
   // Envia mensagem de furtividade
   await addDoc(chatCol, {
@@ -2288,112 +2623,75 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
       isErroCriticoDefensor = true;
     }
   }
-  
   // 🟢 Nomes dos personagens
   const nomeAtacante = fichasMap[atacante]?.nome || atacante;
   const nomeDefensor = fichasMap[alvo]?.nome || alvo;
+  
+  const corAtacante = "#4caf50"; // Verde para quem ataca
+  const corDefensor = "#ffd700"; // Amarelo para quem defende
   
   let mensagem = "";
   let danoBrutoAtacante = 0;
   let danoBrutoAlvo = 0;
   
-    // ============= LÓGICA DE CRÍTICO E ERRO CRÍTICO =============
-  
-    // ============= LÓGICA DE CRÍTICO E ERRO CRÍTICO (ATACANTE + DEFENSOR) =============
-  
+  const _cabecalhoCombate = `${montarCaixa("⚔️ RESOLUÇÃO DE COMBATE ⚔️", 37)}\n\n🗡️ Atacante: [C:${corAtacante}]${nomeAtacante}[/C] ➔ 🛡️ Defensor: [C:${corDefensor}]${nomeDefensor}[/C]\n`;
+  const _rolagemAtacante = `🎲 ATAQUE: [C:${corAtacante}][${dadosAtacante.join(", ")}] = ${valorAtaque}[/C]`;
+  const _rolagemDefensor = `🛡️ DEFESA: [C:${corDefensor}][${dadosDefesa.join(", ")}] = ${valorDefesa}[/C]`;
+  const _sep = `━━━━━━━━━━━━━━━━━━━━━━━━`;
+
   if (tipoDefesa === "esquiva") {
-    // 🟢 DEFENSOR com ERRO CRÍTICO: Toma dano cheio
     if (isErroCriticoDefensor) {
       danoBrutoAlvo = valorAtaque;
-      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar, mas...\n\n`;
-      mensagem += `💥 **ERRO CRÍTICO NA ESQUIVA!** ${nomeDefensor} falhou completamente!\n`;
-      mensagem += `🎲 **Dados da Esquiva FALHA** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
-      mensagem += `💔 Dano cheio do atacante: **${valorAtaque}** aplicado!\n`;
+      mensagem = `${_cabecalhoCombate}🛡️ Esquiva tentada...\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n💥 ERRO CRÍTICO NA ESQUIVA!\n💔 Dano cheio aplicado: ${valorAtaque}\n`;
     }
-    // 🟢 ATACANTE com ERRO CRÍTICO: Esquiva automática
     else if (isErroCritico) {
       danoBrutoAlvo = 0;
-      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar...\n\n`;
-      mensagem += `💥 **ERRO CRÍTICO DO ATACANTE!** Ação falhou completamente!\n`;
-      mensagem += `✅ Esquiva automática! Nenhum dano recebido.\n`;
+      mensagem = `${_cabecalhoCombate}🛡️ Esquiva tentada...\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n💥 ERRO CRÍTICO DO ATACANTE!\n✅ Esquiva automática — NENHUM DANO.\n`;
     }
-    // 🟢 DEFENSOR com CRÍTICO: Esquiva perfeita
     else if (isCriticoDefensor) {
       danoBrutoAlvo = 0;
-      mensagem = `🛡️ **${nomeDefensor}** esquivou perfeitamente!\n\n`;
-      mensagem += `🌟 **CRÍTICO NA ESQUIVA!** ${nomeDefensor} desviou de tudo!\n`;
-      mensagem += `🎲 **Dados da Esquiva PERFEITA** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
-      mensagem += `✅ Nenhum dano recebido!\n`;
+      mensagem = `${_cabecalhoCombate}🛡️ Esquiva tentada...\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n🌟 CRÍTICO NA ESQUIVA!\n✅ NENHUM DANO.\n`;
     }
-    // 🟢 ATACANTE com CRÍTICO: Dano direto
     else if (isCritico) {
       danoBrutoAlvo = valorAtaque;
-      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar, mas...\n\n`;
-      mensagem += `🌟 **CRÍTICO DO ATACANTE!** A esquiva foi ignorada!\n`;
-      mensagem += `🎲 **Dados do Ataque CRÍTICO** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
-      mensagem += `💥 Dano direto: **${valorAtaque}** aplicado!\n`;
+      mensagem = `${_cabecalhoCombate}🛡️ Esquiva tentada...\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n🌟 CRÍTICO DO ATACANTE!\n💥 Dano direto: ${valorAtaque}\n`;
     }
-    // ⚔️ NORMAL
     else {
       danoBrutoAlvo = Math.max(0, valorAtaque - valorDefesa);
-      mensagem = `🛡️ **${nomeDefensor}** tentou esquivar!\n\n`;
-      mensagem += `🎲 **Dados do Ataque** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
-      mensagem += `🎲 **Dados da Esquiva** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n\n`;
-      
+      mensagem = `${_cabecalhoCombate}${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n`;
       if (danoBrutoAlvo > 0) {
-        mensagem += `💥 **${valorAtaque}** - **${valorDefesa}** = **${danoBrutoAlvo}** de dano bruto\n`;
+        mensagem += `💥 [C:${corAtacante}]${valorAtaque}[/C] − [C:${corDefensor}]${valorDefesa}[/C] = [C:${corAtacante}]${danoBrutoAlvo}[/C] de dano bruto\n`;
       } else {
-        mensagem += `✅ **Esquiva bem-sucedida!** Nenhum dano recebido.\n`;
+        mensagem += `✅ Esquiva bem-sucedida! Nenhum dano recebido.\n`;
       }
     }
   }
   
   if (tipoDefesa === "contragolpe") {
-    // 🟢 DEFENSOR com ERRO CRÍTICO: Toma dano cheio do atacante
     if (isErroCriticoDefensor) {
       danoBrutoAlvo = valorAtaque;
-      mensagem = `⚔️ **${nomeDefensor}** tentou contra-golpear, mas...\n\n`;
-      mensagem += `💥 **ERRO CRÍTICO NO CONTRAGOLPE!** ${nomeDefensor} falhou completamente!\n`;
-      mensagem += `🎲 **Dados do Contragolpe FALHO** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
-      mensagem += `💔 Dano cheio do atacante: **${valorAtaque}** aplicado!\n`;
+      mensagem = `${_cabecalhoCombate}⚔️ Contragolpe tentado...\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n💥 ERRO CRÍTICO NO CONTRAGOLPE!\n💔 Dano cheio aplicado: ${valorAtaque}\n`;
     }
-    // 🟢 ATACANTE com ERRO CRÍTICO: Contragolpe acerta com dano CHEIO
     else if (isErroCritico) {
-      danoBrutoAtacante = valorDefesa; // Dano inteiro do contragolpe
-      mensagem = `⚔️ **${nomeDefensor}** contra-golpeou!\n\n`;
-      mensagem += `💥 **ERRO CRÍTICO DO ATACANTE!** O contragolpe acertou em cheio!\n`;
-      mensagem += `🎲 **Dados do Contragolpe** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
-      mensagem += `⚡ Dano total do contragolpe: **${valorDefesa}** (mitigado por armadura)!\n`;
+      danoBrutoAtacante = valorDefesa;
+      mensagem = `${_cabecalhoCombate}⚔️ Contragolpe!\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n💥 ERRO CRÍTICO DO ATACANTE!\n⚡ Contragolpe acertou em cheio: ${valorDefesa}\n`;
     }
-    // 🟢 DEFENSOR com CRÍTICO: Contragolpe devolve dano CHEIO
     else if (isCriticoDefensor) {
-      danoBrutoAtacante = valorDefesa; // Dano inteiro do contragolpe
-      mensagem = `⚔️ **${nomeDefensor}** contra-golpeou perfeitamente!\n\n`;
-      mensagem += `🌟 **CRÍTICO NO CONTRAGOLPE!** ${nomeDefensor} devolveu o ataque com tudo!\n`;
-      mensagem += `🎲 **Dados do Contragolpe CRÍTICO** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n`;
-      mensagem += `⚡ Dano total devolvido: **${valorDefesa}** (mitigado por armadura)!\n`;
+      danoBrutoAtacante = valorDefesa;
+      mensagem = `${_cabecalhoCombate}⚔️ Contragolpe!\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n🌟 CRÍTICO NO CONTRAGOLPE!\n⚡ Dano devolvido: ${valorDefesa}\n`;
     }
-    // 🟢 ATACANTE com CRÍTICO: Contragolpe ignorado
     else if (isCritico) {
       danoBrutoAlvo = valorAtaque;
-      mensagem = `⚔️ **${nomeDefensor}** tentou contra-golpear, mas...\n\n`;
-      mensagem += `🌟 **CRÍTICO DO ATACANTE!** O contragolpe foi ignorado!\n`;
-      mensagem += `🎲 **Dados do Ataque CRÍTICO** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
-      mensagem += `💥 Dano direto: **${valorAtaque}** aplicado!\n`;
+      mensagem = `${_cabecalhoCombate}⚔️ Contragolpe tentado...\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n🌟 CRÍTICO DO ATACANTE!\n💥 Dano direto: ${valorAtaque}\n`;
     }
-    // ⚔️ NORMAL
     else {
-      mensagem = `⚔️ **${nomeDefensor}** tentou contra-golpear!\n\n`;
-      mensagem += `🎲 **Dados do Ataque** (${nomeAtacante}): [${dadosAtacante.join(", ")}] = **${valorAtaque}**\n`;
-      mensagem += `🎲 **Dados do Contragolpe** (${nomeDefensor}): [${dadosDefesa.join(", ")}] = **${valorDefesa}**\n\n`;
-      
+      mensagem = `${_cabecalhoCombate}${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n`;
       if (valorDefesa > valorAtaque) {
         danoBrutoAtacante = valorDefesa - valorAtaque;
-        mensagem += `⚡ **${valorDefesa}** - **${valorAtaque}** = **${danoBrutoAtacante}** de dano devolvido!\n`;
+        mensagem += `⚡ [C:${corDefensor}]${valorDefesa}[/C] − [C:${corAtacante}]${valorAtaque}[/C] = [C:${corDefensor}]${danoBrutoAtacante}[/C] devolvido!\n`;
       } else {
         danoBrutoAlvo = valorAtaque - valorDefesa;
-        mensagem += `⚠️ Contragolpe falhou!\n`;
-        mensagem += `💥 **${valorAtaque}** - **${valorDefesa}** = **${danoBrutoAlvo}** de dano bruto\n`;
+        mensagem += `⚠️ Contragolpe falhou!\n💥 [C:${corAtacante}]${valorAtaque}[/C] − [C:${corDefensor}]${valorDefesa}[/C] = [C:${corAtacante}]${danoBrutoAlvo}[/C] de dano bruto\n`;
       }
     }
   }
@@ -2435,20 +2733,23 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   // Aplica dano no ALVO
   if (danoBrutoAlvo > 0) {
     const resultado = await aplicarDano(alvo, danoBrutoAlvo, tipoDanoAtacante, atacante, pendente.ignorarArmaduraDemolidor || false);
-    mensagem += `\n🛡️ **Armadura de ${nomeDefensor}:** ${resultado.armadura}\n`;
+    mensagem += `\n${_sep}\n`;
+    mensagem += `📊 RESULTADO DO DANO EM [C:${corDefensor}]${nomeDefensor.toUpperCase()}[/C]\n`;
+    mensagem += `   💥 Dano Bruto: [C:${corAtacante}]${resultado.danoAplicado ?? danoBrutoAlvo}[/C]\n`;
+    mensagem += `   🛡️ Armadura: [C:${corDefensor}]${resultado.armadura}[/C]\n`;
     if (resultado.armadura > 0 && danoBrutoAlvo > resultado.armadura) {
-      const absorvido = Math.min(resultado.armadura, danoBrutoAlvo);
-      mensagem += `🔄 Absorveu: **${absorvido}** de dano\n`;
+      mensagem += `   🔄 Absorvido: [C:${corDefensor}]${Math.min(resultado.armadura, danoBrutoAlvo)}[/C]\n`;
     }
-    mensagem += `💔 **Dano Final em ${nomeDefensor}:** **${resultado.danoFinal}**\n`;
-    mensagem += `❤️ PV restante: **${resultado.pvRestante}**\n`;
-    
-    // 🟢 Mostrar tipo de dano e efeitos
+    mensagem += `   💔 DANO FINAL: [C:${corAtacante}]${resultado.danoFinal}[/C]\n`;
+    mensagem += `   ❤️ PV Restante: [C:${corDefensor}]${resultado.pvRestante}[/C]\n`;
+    mensagem += `${_sep}\n`;
+
     if (tipoDanoAtacante !== "Nenhum") {
-      mensagem += `\n🗡️ **Tipo de Dano:** ${tipoDanoAtacante}\n`;
+      mensagem += `\n🗡️ TIPO DE DANO: ${tipoDanoAtacante}\n`;
     }
     if (resultado.efeitos && resultado.efeitos.length > 0) {
-      mensagem += `\n${resultado.efeitos.join("\n")}\n`;
+      mensagem += `\n📋 EFEITOS APLICADOS:\n`;
+      resultado.efeitos.forEach(ef => { mensagem += `   ${ef}\n`; });
     }
   }
     // 🟢 VERIFICAR SE O ALVO MORREU (VITÓRIA)
@@ -2474,13 +2775,15 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   // Aplica dano no ATACANTE (contragolpe bem-sucedido)
   if (danoBrutoAtacante > 0) {
     const resultado = await aplicarDano(atacante, danoBrutoAtacante);
-    mensagem += `\n🛡️ **Armadura de ${nomeAtacante}:** ${resultado.armadura}\n`;
+    mensagem += `\n${_sep}\n`;
+    mensagem += `📊 CONTRAGOLPE EM [C:${corAtacante}]${nomeAtacante.toUpperCase()}[/C]\n`;
+    mensagem += `   🛡️ Armadura: [C:${corAtacante}]${resultado.armadura}[/C]\n`;
     if (resultado.armadura > 0 && danoBrutoAtacante > resultado.armadura) {
-      const absorvido = Math.min(resultado.armadura, danoBrutoAtacante);
-      mensagem += `🔄 Absorveu: **${absorvido}** de dano\n`;
+      mensagem += `   🔄 Absorvido: [C:${corAtacante}]${Math.min(resultado.armadura, danoBrutoAtacante)}[/C]\n`;
     }
-    mensagem += `💔 **Dano Final em ${nomeAtacante}:** **${resultado.danoFinal}**\n`;
-    mensagem += `❤️ PV restante: **${resultado.pvRestante}**\n`;
+    mensagem += `   💔 DANO FINAL: [C:${corDefensor}]${resultado.danoFinal}[/C]\n`;
+    mensagem += `   ❤️ PV Restante: [C:${corAtacante}]${resultado.pvRestante}[/C]\n`;
+    mensagem += `${_sep}\n`;
   }
 
   // Desgasta vestimentas de quem defendeu
@@ -2533,188 +2836,168 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   
   return { mensagem, isCriticoDefensor, isErroCriticoDefensor };
 }
+// 🟢 APLICAR EFEITO ATIVO PERSISTENTE AO ALVO (usado por aplicarDano)
+async function aplicarEfeitoAtivo(email, tipoDano, aplicadoPorEmail) {
+  const info = EFEITOS_ATIVOS_MAP[tipoDano];
+  if (!info) return null;
+  if (info.chance && Math.random() > info.chance) return null;
+
+  const fichaRef = doc(db, "fichas", email);
+  const snap = await getDoc(fichaRef);
+  if (!snap.exists()) return null;
+
+  const ficha = snap.data();
+  const efeitos = Array.isArray(ficha.efeitosAtivos) ? [...ficha.efeitosAtivos] : [];
+
+  const idx = efeitos.findIndex(e => e.tipo === info.tipo);
+  const novo = {
+    id: `ef_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    tipo: info.tipo,
+    icone: info.icone,
+    cor: info.cor,
+    descricao: info.descricao,
+    duracao: info.duracao,
+    turnosRestantes: info.duracao,
+    aplicadoPor: aplicadoPorEmail || "desconhecido",
+    aplicadoEm: new Date().toISOString(),
+  };
+  if (idx >= 0) {
+    efeitos[idx] = { ...efeitos[idx], turnosRestantes: info.duracao, aplicadoEm: novo.aplicadoEm, aplicadoPor: aplicadoPorEmail };
+  } else {
+    efeitos.push(novo);
+  }
+
+  await setDoc(fichaRef, { efeitosAtivos: efeitos }, { merge: true });
+  return novo;
+}
+
 // 🟢 FUNÇÃO PARA APLICAR DANO COM EFEITOS REAIS DE TIPO DE DANO
+// 🟢 APLICAR DANO COM EFEITOS REAIS DE TIPO DE DANO (versão doc oficial)
 async function aplicarDano(email, danoBruto, tipoDano = "Nenhum", atacanteEmail = null, ignorarArmaduraDemolidor = false) {
   const fichaRef = doc(db, "fichas", email);
   const snap = await getDoc(fichaRef);
   if (!snap.exists()) return { danoFinal: 0, armadura: 0, pvRestante: 0, efeitos: [] };
-  
+
   const ficha = snap.data();
   let armaduraOriginal = Number(ficha.armadura || 0);
   let armadura = armaduraOriginal;
   const efeitos = [];
-  
-  // 🟢 DEMOLIDOR: Ignora 50% da armadura
+  let danoAplicado = Number(danoBruto) || 0;
+
+  if (tipoDano === "Tóxico" && ficha.tracos?.includes("Sobrevivente")) {
+    efeitos.push("🛡️ Imunidade: Imune a dano Tóxico (Traço Sobrevivente)!");
+    danoAplicado = 0;
+  }
+
+  // 💪 DEMOLIDOR (talento): ignora 50% da armadura
   if (ignorarArmaduraDemolidor) {
     armadura = Math.floor(armadura * 0.5);
-    efeitos.push("💪 **Demolidor:** Ignorou 50% da armadura do alvo!");
+    efeitos.push("💪 Demolidor: Ignorou 50% da armadura!");
   }
-  
-  // ==================== PROCESSAR EFEITOS REAIS ====================
-  
-  // 🧪 ÁCIDO: Ignora 100% da armadura (dano vai direto no PV)
+
+  // ============================================================
+  // 1) AURANO — +50% ANTES da armadura
+  // ============================================================
+  if (tipoDano === "Aurano") {
+    const bonus = Math.ceil(danoAplicado * 0.5);
+    const danoOriginal = danoAplicado;
+    danoAplicado = danoAplicado + bonus;
+    efeitos.push(`✨ Aurano: Canalização de Aura (+50%) → ${danoOriginal} ➜ ${danoAplicado}`);
+  }
+
+  // ============================================================
+  // 2) MODIFICADORES DE ARMADURA
+  // ============================================================
   if (tipoDano === "Ácido") {
     armadura = 0;
-    efeitos.push("🧪 **Ácido:** Ignorou 100% da armadura! Dano aplicado diretamente nos PV.");
+    efeitos.push("🧪 Ácido: Ignorou 100% da armadura! (dano direto nos PV)");
   }
-  
-  // 🏹 PERFURANTE: Ignora 50% de TODAS as armaduras (0 a 50)
+
   if (tipoDano === "Perfurante") {
-    armadura = Math.floor(armadura * 0.5);
-    efeitos.push(`🏹 **Perfurante:** Ignorou 50% da armadura! (${armaduraOriginal} → ${armadura})`);
+    if (armaduraOriginal >= 26) {
+      armadura = Math.ceil(armadura * 0.5);
+      efeitos.push(`🏹 Perfurante: Penetrou armadura pesada! (${armaduraOriginal} ➜ ${armadura})`);
+    } else {
+      efeitos.push(`🏹 Perfurante: Armadura leve (${armaduraOriginal} < 26) - sem efeito extra.`);
+    }
   }
-  
-  // 🔪 CORTANTE: Ignora 50% da armadura SE for tecido (armadura ≤ 25)
+
   if (tipoDano === "Cortante") {
     if (armaduraOriginal <= 25) {
-      // Armaduras até 25 são consideradas de tecido
-      armadura = Math.floor(armadura * 0.5);
-      efeitos.push(`🔪 **Cortante:** Armadura de tecido (≤25)! Eficácia reduzida em 50% (${armaduraOriginal} → ${armadura})`);
+      armadura = Math.ceil(armadura * 0.5);
+      efeitos.push(`🔪 Cortante: Cortou tecido! Armadura (${armaduraOriginal} ➜ ${armadura})`);
     } else {
-      // Armaduras 26+ são de metal - sem efeito
-      efeitos.push(`🔪 **Cortante:** Armadura de metal (${armaduraOriginal}>25) - sem efeito adicional.`);
+      efeitos.push(`🔪 Cortante: Armadura pesada (${armaduraOriginal} > 25) - sem corte.`);
     }
   }
-  
-  // ⚡ ELÉTRICO: 20% de chance de paralisar
-  if (tipoDano === "Elétrico") {
-    const paralisou = Math.random() < 0.2; // 20% de chance
-    if (paralisou) {
-      efeitos.push("⚡ **Elétrico:** O local atingido foi PARALISADO por 1 turno!");
-    } else {
-      efeitos.push("⚡ **Elétrico:** Dano elétrico aplicado. Paralisia não ocorreu.");
-    }
-  }
-  
-  // ✨ AURANO: Apenas informativo
-  if (tipoDano === "Aurano") {
-    efeitos.push("✨ **Aurano:** Dano puro de Aura aplicado.");
-  }
-  
-  // ❄️ GÉLIDO: 20% de chance de necrose
-  if (tipoDano === "Gélido") {
-    const necrose = Math.random() < 0.2; // 20% de chance
-    if (necrose) {
-      efeitos.push("❄️ **Gélido:** NECROSE causada no local atingido!");
-    } else {
-      efeitos.push("❄️ **Gélido:** Dano gélido aplicado. Necrose não ocorreu.");
-    }
-  }
-  
-  // 🔥 TÉRMICO: 50% menos cura/regeneração (mensagem apenas, efeito futuro)
-  if (tipoDano === "Térmico") {
-    efeitos.push("🔥 **Térmico:** 50% menos cura/regeneração na área afetada até se curar completamente!");
-  }
-  
-  // 🧠 PSÍQUICO: 50% chance de perder Aura no próximo turno
-  if (tipoDano === "Psíquico") {
-    const perdeuAura = Math.random() < 0.5;
-    if (perdeuAura) {
-      efeitos.push("🧠 **Psíquico:** O alvo perderá a Aura no próximo turno! (Perícia Aura travada)");
-    } else {
-      efeitos.push("🧠 **Psíquico:** Dano psíquico aplicado. Aura mantida.");
-    }
-  }
-  
-  // 📢 TROVEJANTE: 50% chance de desorientar (apenas se NÃO tiver Percepção Nv.5)
-  if (tipoDano === "Trovejante") {
-    const periciasAlvo = ficha.pericias || {};
-    const temPercepcao5 = (periciasAlvo.percepcao || 0) >= 5;
-    
-    if (!temPercepcao5) {
-      const desorientou = Math.random() < 0.5;
-      if (desorientou) {
-        efeitos.push("📢 **Trovejante:** O alvo foi DESORIENTADO por 1 turno! (Sem esquiva no próximo turno)");
-      } else {
-        efeitos.push("📢 **Trovejante:** Dano trovejante aplicado. Desorientação não ocorreu.");
-      }
-    } else {
-      efeitos.push("📢 **Trovejante:** Alvo IMUNE a desorientação (Percepção Nv.5)!");
-    }
-  }
-  
-  // 💥 CONTUNDENTE: 50% chance de soltar itens (apenas mensagem)
-  if (tipoDano === "Contundente") {
-    const soltou = Math.random() < 0.5;
-    if (soltou) {
-      efeitos.push("💥 **Contundente:** O alvo SOLTOU os itens empunhados!");
-    } else {
-      efeitos.push("💥 **Contundente:** Impacto aplicado. Itens mantidos.");
-    }
-  }
-  
-  // ☠️ TÓXICO: Perde 5 PV por 6 turnos (imune se Sobrevivência Nv.5)
-  if (tipoDano === "Tóxico") {
-    const periciasAlvo = ficha.pericias || {};
-    const temImunidade = (periciasAlvo.sobrevivencia || 0) >= 5;
-    
-    if (!temImunidade) {
-      const toxinaId = `${email}_${Date.now()}`;
-      setToxinasAtivas(prev => ({
-        ...prev,
-        [toxinaId]: {
-          email,
-          dano: 5,
-          turnosRestantes: 6,
-          turnosAplicados: 0,
-        }
-      }));
-      efeitos.push("☠️ **Tóxico:** O alvo perderá 5 PV por turno durante 6 turnos!");
-    } else {
-      efeitos.push("☠️ **Tóxico:** O alvo é IMUNE (Sobrevivência Nv.5)!");
-    }
-  }
-  
-  // ==================== CALCULAR DANO FINAL ====================
-  // Armadura absorve dano (já modificada pelos efeitos acima)
-  const danoFinal = Math.max(0, danoBruto - armadura);
-  
-  console.log(`🛡️ APLICAR DANO: ${email}`, { 
-    danoBruto, 
-    armaduraOriginal, 
-    armaduraEfetiva: armadura, 
-    danoFinal, 
-    tipoDano, 
-    efeitos 
-  });
-  
-  // Desgasta durabilidade das vestes (proporcional ao dano absorvido)
+
+  // ============================================================
+  // 3) DANO FINAL (arredondamento para cima já feito no ceil)
+  // ============================================================
+  const danoFinal = Math.max(0, danoAplicado - armadura);
+
+  // ============================================================
+  // 4) DESGASTE DAS VESTES (proporcional ao dano absorvido)
+  // ============================================================
   const vestes = ficha.vestes || [];
-  if (vestes.length > 0 && armadura > 0 && danoBruto > 0) {
-    const danoAbsorvido = Math.min(armadura, danoBruto);
+  if (vestes.length > 0 && armadura > 0 && danoAplicado > 0) {
+    const danoAbsorvido = Math.min(armadura, danoAplicado);
     const desgastePorItem = danoAbsorvido / vestes.length;
-    
     const novasVestes = vestes.map(item => ({
       ...item,
-      durabilidade: Math.max(0, (item.durabilidade || 100) - desgastePorItem)
+      durabilidade: Math.max(0, (item.durabilidade || 100) - desgastePorItem),
     }));
-    
     await setDoc(fichaRef, { vestes: novasVestes }, { merge: true });
   }
-  
-  // Atualiza PV
+
+  // ============================================================
+  // 5) ATUALIZA PV
+  // ============================================================
   const pvAtual = Number(ficha.pontosVida || 0);
   const novoPV = Math.max(0, pvAtual - danoFinal);
-  
   await setDoc(fichaRef, { pontosVida: novoPV }, { merge: true });
-  
-  // 🟢 CONQUISTA: Sobrevivente (ficou com exatamente 1 PV)
-  if (novoPV === 1) {
-    window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'sobrevivente' } }));
-  }
-  
-  // 🟢 Se morreu, marcar para verificar Renascido
-  if (novoPV === 0) {
-    localStorage.setItem(`morreu_${email}`, Date.now());
-  }
-  
-  // 🟢 Se voltou à vida (tinha morrido antes e agora tem PV > 0)
+
+  // Conquistas
+  if (novoPV === 1) window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'sobrevivente' } }));
+  if (novoPV === 0) localStorage.setItem(`morreu_${email}`, Date.now());
   if (novoPV > 0 && localStorage.getItem(`morreu_${email}`)) {
     window.dispatchEvent(new CustomEvent('desbloquearConquista', { detail: { conquistaId: 'renascido' } }));
     localStorage.removeItem(`morreu_${email}`);
   }
-  
-  return { danoFinal, armadura, pvRestante: novoPV, efeitos };
+
+  // ============================================================
+  // 6) EFEITOS PROBABILÍSTICOS / PERSISTENTES
+  // ============================================================
+  let efeitoAplicado = null;
+  if (tipoDano && tipoDano !== "Nenhum" && EFEITOS_ATIVOS_MAP[tipoDano]) {
+    // 🟢 Contundente é instantâneo (só mensagem, sem efeito persistente)
+    if (tipoDano === "Contundente") {
+      if (Math.random() < 0.5) {
+        efeitos.push("💥 Contundente: O alvo SOLTOU o item empunhado!");
+      } else {
+        efeitos.push("💥 Contundente: Impacto absorvido. Item mantido.");
+      }
+    } else {
+      try {
+        efeitoAplicado = await aplicarEfeitoAtivo(email, tipoDano, atacanteEmail);
+        if (efeitoAplicado) {
+          const nomeAlvo = (fichasMap?.[email]?.nome) || email;
+          const nomeAtacante = (fichasMap?.[atacanteEmail]?.nome) || atacanteEmail || "atacante";
+          efeitos.push(`📌 EFEITO ATIVO: ${efeitoAplicado.icone} ${efeitoAplicado.tipo} em ${nomeAlvo} por ${nomeAtacante} (${efeitoAplicado.duracao === 999 ? "permanente" : `${efeitoAplicado.duracao} turno(s)`})`);
+        } else {
+          // resistiu
+          const info = EFEITOS_ATIVOS_MAP[tipoDano];
+          if (info?.chance) {
+            efeitos.push(`🛡️ ${tipoDano}: Alvo resistiu (${Math.round(info.chance * 100)}% de chance).`);
+          }
+        }
+      } catch (e) {
+        console.error("Erro aplicar efeito ativo:", e);
+      }
+    }
+  }
+
+  return { danoFinal, armadura, pvRestante: novoPV, efeitos, efeitoAplicado, danoAplicado };
 }
 
 // 🟢 FUNÇÃO PARA ADICIONAR XP AO JOGADOR
@@ -2899,7 +3182,7 @@ async function aplicarDanoToxico() {
           userNick: "SISTEMA",
           userEmail: "sistema@reqviemrpg.com",
           type: "acao",
-          text: `☠️ **Tóxico:** ${fichasMap[toxina.email]?.nome || toxina.email} perdeu **${toxina.dano} PV**! (Turno ${toxina.turnosAplicados + 1}/6)\n❤️ PV restante: **${novoPV}**`,
+          text: `☠️ Tóxico: ${fichasMap[toxina.email]?.nome || toxina.email} perdeu ${toxina.dano} PV! (Turno ${toxina.turnosAplicados + 1}/10)\n❤️ PV restante: ${novoPV}`,
           timestamp: serverTimestamp(),
         });
         
@@ -2942,9 +3225,137 @@ useEffect(() => {
   const mensagensVisiveis = messages.slice(-quantidadeMensagens);
 
   return (
-    <Paper elevation={2} sx={{ height: "100%", display: "flex", flexDirection: "column", p: 1, position: "relative", bgcolor: "#07121a" }}>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-  <Typography variant="h6">💬 Chat</Typography>
+    <Paper elevation={6} sx={{ 
+      height: "100%", 
+      display: "flex", 
+      flexDirection: "column", 
+      p: 0, 
+      position: "relative", 
+      background: "linear-gradient(180deg, #07121a 0%, #0f172a 100%)",
+      border: "1px solid #1e293b",
+      borderRadius: 3,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+      overflow: "hidden"
+    }}>
+      {/* 🟢 CABEÇALHO ESTILOSO (Glassmorphism) */}
+      <Box sx={{ 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "space-between", 
+        p: 1.5,
+        px: 2,
+        background: "linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95))",
+        borderBottom: "1px solid rgba(0, 224, 255, 0.2)",
+        backdropFilter: "blur(10px)",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+        zIndex: 10
+      }}>
+  {/* 🟢 TÍTULO + ONLINE */}
+  <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0, flexWrap: "wrap" }}>
+    <Typography variant="h6" sx={{ 
+      fontWeight: 900, 
+      background: "linear-gradient(90deg, #00e0ff, #a855f7)", 
+      WebkitBackgroundClip: "text", 
+      WebkitTextFillColor: "transparent",
+      letterSpacing: 1
+    }}>
+      💬 Chat
+    </Typography>
+    {Array.isArray(fichaJogador?.efeitosAtivos) && fichaJogador.efeitosAtivos.length > 0 && (
+      <Box sx={{ display: "flex", gap: 0.4, alignItems: "center", bgcolor: "rgba(0,0,0,0.35)", borderRadius: 2, px: 0.8, py: 0.3, border: "1px solid #334155" }}>
+        <Typography variant="caption" sx={{ color: "#94a3b8", fontSize: "0.6rem", fontWeight: "bold", mr: 0.3 }}>
+          EFEITOS:
+        </Typography>
+        {fichaJogador.efeitosAtivos.map((ef) => (
+          <Tooltip
+            key={ef.id}
+            arrow
+            title={
+              <Box sx={{ p: 0.5 }}>
+                <Typography sx={{ fontWeight: "bold", fontSize: "0.75rem", color: ef.cor || "#fff" }}>
+                  {ef.icone} {ef.tipo}
+                </Typography>
+                <Typography sx={{ fontSize: "0.65rem", color: "#cbd5e1" }}>
+                  {ef.descricao || ""}
+                </Typography>
+                <Typography sx={{ fontSize: "0.6rem", color: "#94a3b8", mt: 0.3 }}>
+                  Restam: {ef.turnosRestantes ?? "?"} turno(s)
+                </Typography>
+              </Box>
+            }
+          >
+            <Box
+              sx={{
+                width: 22, height: 22,
+                borderRadius: "50%",
+                bgcolor: "rgba(0,0,0,0.6)",
+                border: `1.5px solid ${ef.cor || "#fff"}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 12,
+                boxShadow: `0 0 6px ${ef.cor || "#fff"}88`,
+                cursor: "help",
+                position: "relative",
+              }}
+            >
+              {ef.icone}
+              <Box
+                sx={{
+                  position: "absolute",
+                  bottom: -3, right: -3,
+                  bgcolor: "#0f172a",
+                  color: ef.cor || "#fff",
+                  fontSize: "0.5rem",
+                  fontWeight: "bold",
+                  borderRadius: "50%",
+                  width: 12, height: 12,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  border: `1px solid ${ef.cor || "#fff"}`,
+                }}
+              >
+                {ef.turnosRestantes ?? "?"}
+              </Box>
+            </Box>
+          </Tooltip>
+        ))}
+      </Box>
+    )}
+    {onlinePlayers.filter(p => !p.isMaster && p.email !== "mestre@reqviemrpg.com").length > 0 && (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, ml: 1 }}>
+        <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "#22c55e", boxShadow: "0 0 6px #22c55e", animation: "pulse 1.5s infinite" }} />
+        <Typography variant="caption" sx={{ color: "#22c55e", fontWeight: "bold", fontSize: "0.65rem", mr: 0.5 }}>
+          {onlinePlayers.filter(p => !p.isMaster && p.email !== "mestre@reqviemrpg.com").length} online
+        </Typography>
+        <Box sx={{ display: "flex", gap: 0.3, overflow: "hidden" }}>
+          {onlinePlayers.filter(p => !p.isMaster && p.email !== "mestre@reqviemrpg.com").slice(0, 6).map((p) => {
+            const avatar = fichasMap[p.email]?.imagemPersonagem || "";
+            const nome = p.isMaster ? "👑 Mestre" : (fichasMap[p.email]?.nome || p.nickname);
+            return (
+              <Tooltip key={p.email} arrow placement="bottom" title={nome}>
+                <Avatar
+                  src={avatar}
+                  sx={{
+                    width: 26, height: 26, fontSize: 11,
+                    bgcolor: p.isMaster ? "#FFD700" : "#3b82f6",
+                    color: p.isMaster ? "#000" : "#fff",
+                    border: "2px solid " + (p.isMaster ? "#FFD700" : "#22c55e"),
+                    boxShadow: "0 0 6px rgba(34,197,94,0.5)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {!avatar && (nome[0] || "?").toUpperCase()}
+                </Avatar>
+              </Tooltip>
+            );
+          })}
+          {onlinePlayers.length > 6 && (
+            <Avatar sx={{ width: 26, height: 26, fontSize: 10, bgcolor: "#334155", color: "#94a3b8", border: "2px solid #22c55e" }}>
+              +{onlinePlayers.length - 6}
+            </Avatar>
+          )}
+        </Box>
+      </Box>
+    )}
+  </Box>
    {/* 🟢 SELETOR DE JOGADOR ATIVO PARA O MESTRE */}
     {isMaster && (
       <FormControl size="small" sx={{ minWidth: 180, ml: 2 }}>
@@ -3070,10 +3481,15 @@ useEffect(() => {
           overflowY: "auto", 
           position: "relative", 
           scrollBehavior: "smooth", 
-          pb: 1,
+          p: 2, // 🟢 Dá respiro para as mensagens não colarem nas bordas
+          backgroundColor: "rgba(7, 18, 26, 0.6)", // 🟢 Fundo mais escuro para contraste
           WebkitOverflowScrolling: 'touch',
           transform: 'translateZ(0)',
           willChange: 'transform',
+          "&::-webkit-scrollbar": { width: "6px" },
+          "&::-webkit-scrollbar-track": { background: "transparent" },
+          "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.1)", borderRadius: "10px" },
+          "&:hover::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.25)" },
           // 🟢 BLOQUEIO VISUAL PARA JOGADORES QUANDO TRAVADO
           ...(chatTravado && !isMaster && {
             filter: 'blur(10px)',
@@ -3189,19 +3605,22 @@ useEffect(() => {
                   <Box
                     sx={{
                       maxWidth: "75%",
-                      bgcolor: m.userEmail === userEmail ? "#1e3a5f" : "#2a2a2a",
+                      // 🟢 CORREÇÃO: Fundo dinâmico baseado no tipo de mensagem
+                      bgcolor: ["acao", "dice", "dice_morte", "dice_morte_result"].includes(m.type) 
+                        ? (m.userEmail === userEmail ? "rgba(156, 39, 176, 0.15)" : "rgba(0, 224, 255, 0.08)")
+                        : (m.userEmail === userEmail ? "#1e3a5f" : "#2a2a2a"),
                       borderRadius: 2,
                       p: 1.5,
                       boxShadow: 2,
                       wordBreak: "break-word",
                       contentVisibility: 'auto',
                       containIntrinsicSize: 'auto 100px',
-                      transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+                      transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease',
                       '&:hover': {
-                        transform: 'translateY(-1px)',
+                        transform: 'translateY(-3px) scale(1.02)',
                         boxShadow: m.userEmail === userEmail
-                          ? '0 6px 22px rgba(30, 58, 95, 0.55)'
-                          : '0 6px 22px rgba(0, 0, 0, 0.5)',
+                          ? '0 8px 25px rgba(30, 58, 95, 0.6)'
+                          : '0 8px 25px rgba(0, 0, 0, 0.6)',
                       },
                     }}
                   >
@@ -3364,23 +3783,22 @@ useEffect(() => {
                         {m.text}
                       </Typography>
                     )}
-{m.type === "acao" && (
-  <Box>
-    <Typography sx={{ 
-      color: m.text?.includes('Furtividade') || m.text?.includes('furtividade') 
-        ? '#3b82f6' 
-        : '#00bcd4', 
-      whiteSpace: 'pre-line', 
-      fontWeight: 'bold' 
-    }}>
-      {!isMaster && m.secretText ? m.secretText : m.text}
-    </Typography>
+                    {m.type === "acao" && (
+                      <Box>
+                        <Typography component="div" sx={{ 
+                          color: m.text?.includes('Furtividade') || m.text?.includes('furtividade') 
+                            ? '#3b82f6' 
+                            : '#00bcd4', 
+                          fontFamily: 'monospace', 
+                          fontWeight: 'bold',
+                          wordBreak: 'break-word'
+                        }}>
+                          {/* 🟢 AQUI ELE USA A FUNÇÃO QUE TRANSFORMA AS TAGS EM CORES */}
+                          <div dangerouslySetInnerHTML={{ 
+                            __html: renderCombatText(!isMaster && m.secretText ? m.secretText : m.text) 
+                          }} />
+                        </Typography>
     {/* 🟢 Mostra os dados rolados se existirem e não for secreto */}
-    {m.dadosRolados && m.dadosRolados.length > 0 && !m.secretText && (
-      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
-        🎲 Dados: [{m.dadosRolados.join(", ")}]
-      </Typography>
-    )}
     {/* 🟢 Se for secreto, mostra indicador */}
     {isMaster && m.secretText && (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
@@ -3462,201 +3880,228 @@ useEffect(() => {
           <div ref={endRef} />
         </List>
       </Box>
+      {/* 🟢 RODAPÉ DO CHAT (Área de digitação, botões e avisos) */}
+      <Box sx={{ 
+        display: "flex", 
+        flexDirection: "column", 
+        p: 2, 
+        gap: 1.5, 
+        background: "linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, #07121a 100%)",
+        borderTop: "1px solid rgba(0, 224, 255, 0.15)",
+        borderBottomLeftRadius: 12,
+        borderBottomRightRadius: 12,
+        zIndex: 10
+      }}>
 
-      {filePreviews.length > 0 && (
-        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
-          {filePreviews.map((img, i) => (
-            <Box key={i} sx={{ position: "relative" }}>
-              <img src={img} style={{ width: 64, height: 64, borderRadius: 8 }} />
-              <IconButton
-                size="small"
-                onClick={() => setFilePreviews((p) => p.filter((_, idx) => idx !== i))}
-                sx={{
-                  position: "absolute",
-                  top: -6,
-                  right: -6,
-                  bgcolor: "rgba(0,0,0,0.7)",
+        {/* 🟢 INDICADOR DE DIGITANDO */}
+        {typingUsers.length > 0 && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1, pb: 0.5, animation: 'floatUp 0.3s ease-out' }}>
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              {typingUsers.map((u, i) => {
+                const avatar = fichasMap[u.email]?.imagemPersonagem || "";
+                return (
+                  <Avatar key={u.email} src={avatar} sx={{ width: 20, height: 20, fontSize: 9, border: "2px solid #0f172a", ml: i > 0 ? -1.5 : 0, zIndex: 10 - i, bgcolor: "#00e0ff", color: "#000" }}>
+                    {!avatar && (u.nickname || "?")[0].toUpperCase()}
+                  </Avatar>
+                );
+              })}
+            </Box>
+            <Typography variant="caption" sx={{ color: '#00e0ff', fontSize: '0.7rem', fontWeight: 'bold' }}>digitando...</Typography>
+          </Box>
+        )}
+
+        {/* 🟢 MINIATURAS DE IMAGENS */}
+        {filePreviews.length > 0 && (
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", p: 1, bgcolor: "rgba(0,0,0,0.3)", borderRadius: 2, border: "1px dashed rgba(0, 224, 255, 0.2)" }}>
+            {filePreviews.map((img, i) => (
+              <Box key={i} sx={{ position: "relative", transition: "transform 0.2s", "&:hover": { transform: "scale(1.05)" } }}>
+                <img src={img} onClick={() => { setLightboxImage(img); setZoom(1); }} style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", border: "1px solid #00e0ff", cursor: "pointer" }} />
+                <IconButton size="small" onClick={() => setFilePreviews((p) => p.filter((_, idx) => idx !== i))} sx={{ position: "absolute", top: -6, right: -6, bgcolor: "rgba(239, 68, 68, 0.9)", color: "#fff", width: 20, height: 20, "&:hover": { bgcolor: "#dc2626" } }}>
+                  <CloseIcon sx={{ fontSize: 12 }} />
+                </IconButton>
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {/* 🟢 ÁREA DE DIGITAÇÃO COM BOTÃO ENVIAR DENTRO */}
+        <Box component="form" onSubmit={sendMessage} sx={{ width: "100%", flexShrink: 0 }}>
+          <TextField
+            placeholder={chatTravado && !isMaster ? '🔒 Chat travado pelo Mestre' : 'O que você deseja fazer?...'}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (e.target.value.trim() !== "") {
+                setDoc(doc(db, "typing", userEmail), { nickname: userNick, lastTyping: Date.now() }, { merge: true }).catch(() => {});
+              }
+            }}
+            disabled={chatTravado && !isMaster}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }}
+            size="medium"
+            multiline
+            minRows={2}
+            maxRows={6}
+            fullWidth
+            sx={{ flex: 1, minWidth: 0 }} // 🟢 AQUI: Impede que o campo de texto seja esmagado
+            InputProps={{
+              sx: { 
+                color: "#fff", 
+                fontSize: "0.95rem",
+                alignItems: "flex-start",
+                padding: "12px 60px 12px 16px", // Espaço extra à direita para o botão
+                bgcolor: "rgba(0, 0, 0, 0.4)",
+                borderRadius: 3,
+                backdropFilter: "blur(5px)",
+                transition: "all 0.3s ease",
+                "& fieldset": { borderColor: "rgba(0, 224, 255, 0.2)" },
+                "&:hover fieldset": { borderColor: "rgba(0, 224, 255, 0.5)" },
+                "&.Mui-focused fieldset": { borderColor: "#00e0ff", borderWidth: 2, boxShadow: "0 0 15px rgba(0, 224, 255, 0.15)" },
+              },
+              endAdornment: (
+                <InputAdornment position="end" sx={{ position: "absolute", right: 12, top: '50%', transform: 'translateY(-50%)' }}>
+                  <IconButton 
+                    type="submit" 
+                    sx={{ 
+                      bgcolor: "#00e0ff", 
+                      color: "#000", 
+                      width: 40, height: 40, 
+                      boxShadow: "0 0 15px rgba(0, 224, 255, 0.4)",
+                      "&:hover": { bgcolor: "#22d3ee", transform: "scale(1.05)" },
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <SendIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              )
+            }}
+          />
+        </Box>
+
+        {/* 🟢 LINHA DE BOTÕES UNIFICADOS (Imagem, GIF, Mestre, D10, AÇÃO) */}
+        <Box sx={{ display: "flex", gap: 0.5, flexWrap: "nowrap", alignItems: "center", justifyContent: "space-between", width: "100%", opacity: chatTravado && !isMaster ? 0.5 : 1, pointerEvents: chatTravado && !isMaster ? 'none' : 'auto' }}>
+          
+          {/* Lado Esquerdo: Mídia e Botões do Mestre */}
+          <Box sx={{ display: "flex", gap: 0.5, alignItems: "center", flexWrap: "nowrap" }}>
+            <Tooltip title="Enviar Imagem">
+              <IconButton component="label" sx={{ color: "#00e0ff", bgcolor: "rgba(0, 224, 255, 0.1)", border: "1px solid rgba(0, 224, 255, 0.2)", borderRadius: 2, p: 1, "&:hover": { bgcolor: "rgba(0, 224, 255, 0.2)", boxShadow: "0 0 10px rgba(0,224,255,0.3)" } }}>
+                <ImageIcon fontSize="small" />
+                <input hidden type="file" accept="image/*" multiple onChange={handleFileChange} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Buscar GIF">
+              <IconButton onClick={() => { setGifResults([]); setGifOffset(0); setGifHasMore(true); setGifSearch(""); setGifOpen(true); searchGifs("", 0); }} sx={{ color: "#a855f7", bgcolor: "rgba(168, 85, 247, 0.1)", border: "1px solid rgba(168, 85, 247, 0.2)", borderRadius: 2, p: 1, "&:hover": { bgcolor: "rgba(168, 85, 247, 0.2)", boxShadow: "0 0 10px rgba(168,85,247,0.3)" } }}>
+                <GifBoxIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+
+            {/* BOTÕES DO MESTRE AQUI */}
+            {isMaster && (
+              <>
+                <FormControlLabel
+                  control={<Checkbox checked={modoSecreto} onChange={(e) => setModoSecreto(e.target.checked)} size="small" sx={{ color: '#ef4444', '&.Mui-checked': { color: '#ef4444' } }} />}
+                  label={<Typography variant="caption" sx={{ color: '#ef4444', fontWeight: 'bold' }}>🔒 Secreto</Typography>}
+                  sx={{ m: 0, ml: 1 }}
+                />
+                <Button variant="outlined" size="small" onClick={() => setSessaoDialogOpen(true)}
+                  sx={{
+                    bgcolor: travaSessao.sessaoAtiva ? 'rgba(76, 175, 80, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                    color: travaSessao.sessaoAtiva ? '#4caf50' : '#ef4444',
+                    border: `1px solid ${travaSessao.sessaoAtiva ? '#4caf50' : '#ef4444'}`,
+                    fontWeight: 'bold', fontSize: '0.7rem', height: 40,
+                    animation: travaSessao.sessaoAtiva ? 'pulseGreen 2s infinite' : 'none',
+                    "&:hover": { bgcolor: travaSessao.sessaoAtiva ? 'rgba(76, 175, 80, 0.2)' : 'rgba(239, 68, 68, 0.2)' }
+                  }}>
+                  {travaSessao.sessaoAtiva ? `🟢 SESSÃO (${tempoDecorrido})` : '⏹️ SEM SESSÃO'}
+                </Button>
+              </>
+            )}
+          </Box>
+
+          {/* Lado Direito: Dados e Ação */}
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "nowrap", flexShrink: 0 }}> {/* 🟢 ALINHAMENTO CENTRAL E SEM ENCOLHER */}
+            <Tooltip title="Rolar D10">
+              <Button variant="outlined" size="small" onClick={(e) => setDiceAnchor(e.currentTarget)} sx={{ color: "#e2e8f0", borderColor: "rgba(255,255,255,0.2)", borderRadius: 2, height: 40, px: 2, bgcolor: "rgba(255,255,255,0.05)", "&:hover": { borderColor: "#00e0ff", bgcolor: "rgba(0,224,255,0.1)" } }}>
+                D10
+              </Button>
+            </Tooltip>
+            <Tooltip title="Rolar 1D100">
+              <Button variant="outlined" size="small" onClick={() => quickRollDice(1, 100)} sx={{ color: "#e2e8f0", borderColor: "rgba(255,255,255,0.2)", borderRadius: 2, height: 40, px: 2, bgcolor: "rgba(255,255,255,0.05)", "&:hover": { borderColor: "#00e0ff", bgcolor: "rgba(0,224,255,0.1)" } }}>
+                1D100
+              </Button>
+            </Tooltip>
+            {/* 🟢 BOTÃO COM BOLINHA MANUAL (ALINHAMENTO GARANTIDO) */}
+            <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', height: 40, flexShrink: 0, width: '150px', justifyContent: 'center' }}>
+              <Button 
+                variant="contained" 
+                size="medium" 
+                onClick={() => { 
+                  setAcaoPericia2(""); 
+                  if (acoesPendentes.length > 0) {
+                    setAcaoModo("reacao"); setAcaoPendenteId(acoesPendentes[0].id); setAcaoTipo("");
+                  } else {
+                    setAcaoModo("acao"); setAcaoPendenteId(null); setAcaoAlvo(""); setAcaoTipo("");
+                  }
+                  setAcaoOpen(true); 
+                }}
+                sx={{ 
+                  bgcolor: acoesPendentes.length > 0 ? '#ef4444' : '#9c27b0', 
+                  boxShadow: acoesPendentes.length > 0 ? '0 0 15px rgba(239, 68, 68, 0.5)' : '0 0 15px rgba(156, 39, 176, 0.4)',
+                  borderRadius: 2, 
+                  height: 40, 
+                  width: "100%", // 🟢 Força o botão a respeitar os 130px do container
+                  padding: 0, // 🟢 Remove o espaço vazio nas laterais
+                  fontWeight: "bold", 
                   color: "#fff",
+                  whiteSpace: "nowrap", 
+                  flexShrink: 0,
+                  minWidth: "0px", // 🟢 REMOVIDO O "max-content" QUE FURAVA O LAYOUT
+                  fontSize: acoesPendentes.length > 0 ? "0.75rem" : "0.875rem", // 🟢 Fonte menor para caber REAÇÃO
+                  "&:hover": { bgcolor: acoesPendentes.length > 0 ? '#dc2626' : '#7b1fa2', transform: "scale(1.02)" },
+                  transition: "all 0.2s"
                 }}
               >
-                <CloseIcon fontSize="small" />
-              </IconButton>
+                {acoesPendentes.length > 0 ? `⚔️ REAÇÃO` : '⚔️ AÇÃO'}
+              </Button>
+
+              {/* Bolinha Vermelha manual (Não ocupa espaço no layout) */}
+              {acoesPendentes.length > 0 && (
+                <Box sx={{
+                  position: 'absolute',
+                  top: -8, // 🟢 Posição correta no topo direito
+                  right: -8, // 🟢 Posição correta no topo direito
+                  bgcolor: '#ef4444',
+                  color: '#fff',
+                  borderRadius: '50%',
+                  width: 20, 
+                  height: 20,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.7rem',
+                  fontWeight: 'bold',
+                  pointerEvents: 'none',
+                  zIndex: 10,
+                  border: '2px solid #0f172a'
+                }}>
+                  {acoesPendentes.length}
+                </Box>
+              )}
             </Box>
-          ))}
-        </Box>
-      )}
-
-      <Box component="form" onSubmit={sendMessage} sx={{ display: "flex", gap: 1, mt: 1, opacity: chatTravado && !isMaster ? 0.5 : 1, pointerEvents: chatTravado && !isMaster ? 'none' : 'auto' }}>
-        <TextField
-  placeholder={chatTravado && !isMaster ? '🔒 Chat travado pelo Mestre' : 'Mensagem ou "1d20+3" (Shift+Enter para nova linha)'}
-  value={text}
-  onChange={(e) => setText(e.target.value)}
-  disabled={chatTravado && !isMaster}
-  onKeyDown={(e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(e);
-    }
-  }}
-  size="small"
-  fullWidth
-  multiline
-  minRows={1}
-  maxRows={4}
-  sx={{
-    '& .MuiInputBase-root': {
-      maxHeight: '100px',
-      overflowY: 'auto',
-    }
-  }}
-/>
-        <IconButton component="label">
-          <ImageIcon />
-          <input hidden type="file" accept="image/*" multiple onChange={handleFileChange} />
-        </IconButton>
-        <IconButton
-          color="primary"
-          onClick={() => {
-            setGifResults([]);
-            setGifOffset(0);
-            setGifHasMore(true);
-            setGifSearch("");
-            setGifOpen(true);
-            searchGifs("", 0);
-          }}
-        >
-          <GifBoxIcon />
-        </IconButton>
-        <Button type="submit" variant="contained" endIcon={<SendIcon />}>
-          Enviar
-        </Button>
-      </Box>
-            <Box sx={{ mt: 1, display: "flex", gap: 1, flexWrap: 'wrap', alignItems: 'center', opacity: chatTravado && !isMaster ? 0.5 : 1, pointerEvents: chatTravado && !isMaster ? 'none' : 'auto' }}>
-  <Button variant="outlined" size="small" onClick={(e) => setDiceAnchor(e.currentTarget)} disabled={chatTravado && !isMaster}>
-    D10
-  </Button>
-  <Button variant="outlined" size="small" onClick={() => quickRollDice(1, 100)} disabled={chatTravado && !isMaster}>
-    1D100
-  </Button>
-  {/* 🟢 CHECKBOX DADO SECRETO - SÓ MESTRE */}
-  {isMaster && (
-    <FormControlLabel
-      control={
-        <Checkbox
-          checked={modoSecreto}
-          onChange={(e) => setModoSecreto(e.target.checked)}
-          size="small"
-          sx={{ 
-            color: '#ef4444',
-            '&.Mui-checked': { color: '#ef4444' }
-          }}
-        />
-      }
-      label={
-        <Typography variant="caption" sx={{ color: '#ef4444', fontWeight: 'bold' }}>
-          🔒 Secreto
-        </Typography>
-      }
-      sx={{ mr: 1 }}
-    />
-  )}
-  {/* 🟢 CONTROLE DE SESSÃO - SÓ MESTRE */}
-  {isMaster && (
-    <Button
-      variant="contained"
-      size="small"
-      onClick={() => setSessaoDialogOpen(true)}
-      sx={{
-        bgcolor: travaSessao.sessaoAtiva ? '#4caf50' : '#ef4444',
-        color: '#fff',
-        fontWeight: 'bold',
-        fontSize: '0.7rem',
-        animation: travaSessao.sessaoAtiva ? 'pulseGreen 2s infinite' : 'none',
-        '&:hover': { bgcolor: travaSessao.sessaoAtiva ? '#388e3c' : '#dc2626' },
-      }}
-    >
-      {travaSessao.sessaoAtiva ? `🟢 SESSÃO ATIVA (${tempoDecorrido})` : '⏹️ SEM SESSÃO'}
-    </Button>
-  )}
-
-  {/* 🟢 BOTÃO AÇÃO */}
-  <Badge 
-  badgeContent={acoesPendentes.length} 
-  color="error"
-  invisible={acoesPendentes.length === 0}
->
-  <Button 
-    variant="contained" 
-    size="small" 
-    onClick={() => { 
-      setAcaoPericia2(""); 
-      // Se tem ação pendente, abre em modo reação
-      if (acoesPendentes.length > 0) {
-        setAcaoModo("reacao");
-        setAcaoPendenteId(acoesPendentes[0].id);
-        setAcaoTipo(""); // limpa tipo para forçar escolha
-      } else {
-        setAcaoModo("acao");
-        setAcaoPendenteId(null);
-        setAcaoAlvo("");
-        setAcaoTipo("");
-      }
-      setAcaoOpen(true); 
-    }}
-    sx={{ 
-      bgcolor: acoesPendentes.length > 0 ? '#ef4444' : '#9c27b0', 
-      '&:hover': { bgcolor: acoesPendentes.length > 0 ? '#dc2626' : '#7b1fa2' } 
-    }}
-  >
-    {acoesPendentes.length > 0 ? `⚔️ REAGIR (${acoesPendentes.length})` : '⚔️ AÇÃO'}
-  </Button>
-</Badge>
-  {/* 🟢 BOTÃO DADO DE MORTE - Aparece quando PV <= 1 */}
-  {(Number(fichaJogador?.pontosVida) <= 1 && fichaJogador?.pontosVida !== undefined && !isMaster) && (
-    <Button
-      variant="contained"
-      size="small"
-      onClick={() => setModoMorte(true)}
-      sx={{
-        bgcolor: '#000',
-        color: '#ef4444',
-        border: '2px solid #ef4444',
-        fontWeight: 'bold',
-        '&:hover': {
-          bgcolor: '#1a0000',
-          border: '2px solid #ff0000',
-        }
-      }}
-    >
-      💀 Dado de Morte
-    </Button>
-  )}
-        <Menu
-          anchorEl={diceAnchor}
-          open={openDiceMenu}
-          onClose={() => setDiceAnchor(null)}
-          PaperProps={{ sx: { maxHeight: 320, width: 220 } }}
-        >
-          <Grid container spacing={1} sx={{ p: 1 }}>
-            {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
-              <Grid item xs={4} key={n}>
-                <Button
-                  fullWidth
-                  size="small"
-                  variant="outlined"
-                  onClick={() => {
-                    quickRollDice(n, 10);
-                    setDiceAnchor(null);
-                  }}
-                >
-                  {n}D10
-                </Button>
+            <Menu anchorEl={diceAnchor} open={openDiceMenu} onClose={() => setDiceAnchor(null)} PaperProps={{ sx: { maxHeight: 320, width: 220 } }}>
+              <Grid container spacing={1} sx={{ p: 1 }}>
+                {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
+                  <Grid item xs={4} key={n}>
+                    <Button fullWidth size="small" variant="outlined" onClick={() => { quickRollDice(n, 10); setDiceAnchor(null); }}>
+                      {n}D10
+                    </Button>
+                  </Grid>
+                ))}
               </Grid>
-            ))}
-          </Grid>
-        </Menu>
+            </Menu>
+          </Box>
+        </Box>
       </Box>
-
       <Dialog open={gifOpen} onClose={() => setGifOpen(false)} fullWidth maxWidth="md">
         <DialogTitle>Buscar GIF</DialogTitle>
         <DialogContent>
@@ -3761,7 +4206,7 @@ useEffect(() => {
             setUnreadCount(0);
             setAutoScroll(true);
           }}
-          sx={{ position: "absolute", bottom: 90, right: 16, zIndex: 2000 }}
+          sx={{ position: "absolute", bottom: 160, right: 16, zIndex: 2000 }} // 🟢 CORREÇÃO: Subido mais um pouco
         >
           <Badge badgeContent={unreadCount} color="error">
             <ArrowDownwardIcon />
@@ -3794,10 +4239,10 @@ useEffect(() => {
           background: 'linear-gradient(90deg, rgba(156,39,176,0.2), transparent)',
         }}>
           <span style={{ fontSize: '1.8rem' }}>{acaoModo === "reacao" ? '🛡️' : '⚔️'}</span>
-          <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#9c27b0' }}>
+          <Typography component="div" variant="h5" sx={{ fontWeight: 'bold', color: '#9c27b0' }}>
             {acaoModo === "reacao" ? 'REAGIR' : 'AÇÃO'}
           </Typography>
-          <Typography variant="subtitle1" sx={{ color: '#94a3b8', ml: 1 }}>
+          <Typography component="div" variant="subtitle1" sx={{ color: '#94a3b8', ml: 1 }}>
             - {fichaJogador?.nome || userNick}
           </Typography>
           {acoesPendentes.length > 0 && acaoModo === "reacao" && (
@@ -4015,12 +4460,28 @@ useEffect(() => {
     }}
   >
 <MenuItem value="">Nenhum</MenuItem>
-{fichaJogador?.atributos && Object.entries(fichaJogador.atributos).map(([k, v]) => {
-  // 🟢 Atributos nunca são 0. Se vier 0/undefined, trata como 1.
+{fichaJogador?.atributos && ORDEM_ATRIBUTOS.map((k) => {
+  const v = fichaJogador.atributos[k] || 1;
   const valorSeguro = Math.max(1, Number(v) || 1);
+  const cor = getCorAtributo(k);
   return (
-    <MenuItem key={k} value={k} disabled={valorSeguro < 1}>
-      {k.charAt(0).toUpperCase() + k.slice(1)} ({valorSeguro})
+    <MenuItem
+      key={k}
+      value={k}
+      disabled={valorSeguro < 1}
+      sx={{ color: `${cor} !important`, fontWeight: 'bold' }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{
+          width: 10, height: 10, borderRadius: '50%',
+          bgcolor: cor,
+          boxShadow: `0 0 6px ${cor}`,
+          flexShrink: 0,
+        }} />
+        <Typography sx={{ color: cor, fontWeight: 'bold', fontSize: '0.85rem' }}>
+          {k.charAt(0).toUpperCase() + k.slice(1)} ({valorSeguro})
+        </Typography>
+      </Box>
     </MenuItem>
   );
 })}
@@ -4065,11 +4526,53 @@ useEffect(() => {
     }}
   >
     <MenuItem value="">Nenhuma</MenuItem>
-    {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
-      <MenuItem key={k} value={k} disabled={v <= 0}>
-        {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
-      </MenuItem>
-    ))}
+    {fichaJogador?.pericias && ORDEM_PERICIAS.map((k) => {
+      const v = fichaJogador.pericias[k] || 0;
+      const temNivel = Number(v) >= 1;
+      const cor = temNivel ? (CORES_PERICIA[k] || "#22c55e") : "#64748b";
+      return (
+        <MenuItem
+          key={k}
+          value={k}
+          disabled={!temNivel}
+          sx={{
+            color: `${cor} !important`,
+            fontWeight: temNivel ? 'bold' : 'normal',
+            '&.Mui-disabled': { color: `${cor} !important`, opacity: temNivel ? 1 : 0.5 },
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+            <Box sx={{
+              width: 10, height: 10, borderRadius: '50%',
+              bgcolor: cor,
+              boxShadow: temNivel ? `0 0 6px ${cor}` : 'none',
+              flexShrink: 0,
+            }} />
+            <Typography sx={{
+              color: cor,
+              fontWeight: temNivel ? 'bold' : 'normal',
+              fontSize: '0.85rem',
+            }}>
+              {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+            </Typography>
+            {temNivel && (
+              <Chip
+                label="✓ ATIVA"
+                size="small"
+                sx={{
+                  bgcolor: '#22c55e22',
+                  color: '#22c55e',
+                  height: 16,
+                  fontSize: '0.55rem',
+                  fontWeight: 'bold',
+                  ml: 'auto',
+                }}
+              />
+            )}
+          </Box>
+        </MenuItem>
+      );
+    })}
   </Select>
 </FormControl>
 {/* 🟢 Segunda Perícia (aparece se Aura = nível 5 E perícia principal for Aura) */}
@@ -4112,11 +4615,39 @@ useEffect(() => {
       }}
     >
       <MenuItem value="">Nenhuma</MenuItem>
-    {fichaJogador?.pericias && Object.entries(fichaJogador.pericias).map(([k, v]) => (
-      <MenuItem key={k} value={k} disabled={v <= 0 || k === acaoPericia}>
-        {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
-      </MenuItem>
-    ))}
+    {fichaJogador?.pericias && ORDEM_PERICIAS.map((k) => {
+      const v = fichaJogador.pericias[k] || 0;
+      const temNivel = Number(v) >= 1 && k !== acaoPericia;
+      const cor = temNivel ? (CORES_PERICIA[k] || "#22c55e") : "#64748b";
+      return (
+        <MenuItem
+          key={k}
+          value={k}
+          disabled={!temNivel}
+          sx={{
+            color: `${cor} !important`,
+            fontWeight: temNivel ? 'bold' : 'normal',
+            '&.Mui-disabled': { color: `${cor} !important`, opacity: temNivel ? 1 : 0.5 },
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{
+              width: 10, height: 10, borderRadius: '50%',
+              bgcolor: cor,
+              boxShadow: temNivel ? `0 0 6px ${cor}` : 'none',
+              flexShrink: 0,
+            }} />
+            <Typography sx={{
+              color: cor,
+              fontWeight: temNivel ? 'bold' : 'normal',
+              fontSize: '0.85rem',
+            }}>
+              {k.charAt(0).toUpperCase() + k.slice(1)} ({v})
+            </Typography>
+          </Box>
+        </MenuItem>
+      );
+    })}
     </Select>
   </FormControl>
 )}
@@ -4375,7 +4906,7 @@ useEffect(() => {
                       sx={{ color: '#3b82f6' }}
                     />
                   }
-                  label="🥷 Furtividade"
+                  label="🌫️ Furtividade"
                   sx={{ color: '#fff' }}
                 />
               </Box>
@@ -4692,7 +5223,7 @@ useEffect(() => {
 
             {/* VD */}
             <TextField
-              label="🎯 Valor Mínimo para Sucesso (VD)"
+              label="🎯 VMS (Valor Mínimo de Sucesso)"
               type="number"
               size="small"
               value={acaoValorDificuldade}
@@ -5251,6 +5782,20 @@ useEffect(() => {
                 }}>
                   {resultadoMorte === 'sobreviveu' ? '💚 SOBREVIVEU!' : '💀 MORREU!'}
                 </Typography>
+                {deathSegundaChanceAtiva && (
+                  <Button
+                    variant="contained"
+                    onClick={() => {
+                      setDeathSegundaChanceAtiva(false);
+                      setDadosMorte([]);
+                      setResultadoMorte(null);
+                      rolarDadoMorte();
+                    }}
+                    sx={{ mt: 2, bgcolor: '#4caf50', '&:hover': { bgcolor: '#388e3c' } }}
+                  >
+                    🏃‍♂️ Usar Segunda-Chance
+                  </Button>
+                )}
               </Box>
             )}
             
