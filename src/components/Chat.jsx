@@ -57,6 +57,17 @@ const renderCombatText = (text) => {
   return safe;
 };
 
+// 🟢 FUNÇÃO AUXILIAR: MONTA UMA CAIXA ASCII COM O TÍTULO CENTRALIZADO
+// Usada em: rolarAcao, rolarAcaoConjunta, resolverCombate
+const montarCaixa = (texto, largura = 37) => {
+  const conteudo = " " + String(texto || "") + " ";
+  const preenchimento = Math.max(0, largura - 2 - conteudo.length);
+  const esquerda = Math.floor(preenchimento / 2);
+  const direita = preenchimento - esquerda;
+  const linha = "║" + " ".repeat(esquerda) + conteudo + " ".repeat(direita) + "║";
+  return `╔${"═".repeat(largura - 2)}╗\n${linha}\n╚${"═".repeat(largura - 2)}╝`;
+};
+
 function LightboxImage({ src, zoom, setZoom }) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -2175,48 +2186,18 @@ if (acaoHabilidadeSelecionada) {
     let isCritico = false;
     let isErroCritico = false;
     
-    // Só verifica se tiver mais de 1 dado
     if (rolls.length >= 1) {
-      const temDez = rolls.some(r => r === 10);  // Pelo menos um 10
-      const temUm = rolls.some(r => r === 1);     // Pelo menos um 1
-      const todosPositivos = rolls.every(r => r >= 6);  // Todos 6-10
-      const todosNegativos = rolls.every(r => r <= 5);  // Todos 1-5
+      const temDez = rolls.some(r => r === 10);
+      const temUm = rolls.some(r => r === 1);
+      const todosPositivos = rolls.every(r => r >= 6);
+      const todosNegativos = rolls.every(r => r <= 5);
       
-      // CRÍTICO: um ou mais 10 E todos os outros são positivos (6-10)
-      if (temDez && todosPositivos) {
-        isCritico = true;
-      }
-      
-      // ERRO CRÍTICO: um ou mais 1 E todos os outros são negativos (1-5)
-      if (temUm && todosNegativos) {
-        isErroCritico = true;
-      }
+      if (temDez && todosPositivos) isCritico = true;
+      if (temUm && todosNegativos) isErroCritico = true;
     }
     // =============================================================
     
-    // 🟢 TALENTO PÓS-CHOQUE: Se crítico e tem o talento, permite rolar novamente
-    const temPosChoque = fichaJogador?.caracteristicas?.includes("Pós-Choque") || false;
-    if (isCritico && temPosChoque && !acaoPendenteId) {
-      // Guarda os dados da rolagem para a segunda rolagem
-      const dadosPrimeiraRolagem = {
-        rolls,
-        total,
-        totalD10,
-        descricao,
-        nomePersonagem,
-        tipoDanoMensagem,
-        custoTotalEnergia,
-        novaEnergia,
-        mensagem,
-      };
-      
-      // Abre modal de segunda rolagem
-      setPosChoquePendente(dadosPrimeiraRolagem);
-      setRolagemEmAndamento(false);
-      return;
-    }
-    
-        // 🟢 DETERMINAR TIPO DE DANO PARA A MENSAGEM
+    // 🟢 DETERMINAR TIPO DE DANO PARA A MENSAGEM (ANTES do Pós-Choque)
     let tipoDanoMensagem = "Nenhum";
     if (acaoHabilidadeSelecionada && fichaJogador?.habilidades) {
       const hab = fichaJogador.habilidades.find(h => h.nome === acaoHabilidadeSelecionada);
@@ -2232,30 +2213,38 @@ if (acaoHabilidadeSelecionada) {
       if (itemEncontrado?.tipoDano && itemEncontrado.tipoDano !== "Nenhum") tipoDanoMensagem = itemEncontrado.tipoDano;
     }
     
-        let mensagem = `${montarCaixa("⚔️ AÇÃO DE COMBATE ⚔️", 37)}\n\n🎭 ${nomePersonagem}\n${partesDescricao ? `📋 ${partesDescricao}\n` : ""}\n🎲 DADOS: [${rolls.join(", ")}] = ${total}\n`;
+    // 🟢 MONTAR MENSAGEM (ANTES do Pós-Choque)
+    let mensagem = `${montarCaixa("⚔️ AÇÃO DE COMBATE ⚔️", 37)}\n\n🎭 ${nomePersonagem}\n${partesDescricao ? `📋 ${partesDescricao}\n` : ""}\n🎲 DADOS: [${rolls.join(", ")}] = ${total}\n`;
     
-    if (isCritico) {
-      mensagem += `\n🌟 CRÍTICO!\nDano direto! O valor total ignora a defesa do oponente.`;
-    }
-    if (isErroCritico) {
-      mensagem += `\n💥 ERRO CRÍTICO!\nFracasso total na ação!`;
-    }
-    
-    if (tipoDanoMensagem !== "Nenhum") {
-      mensagem += `\n🗡️ Tipo de Dano: ${tipoDanoMensagem}`;
-    }
-    
-    if (custoTotalEnergia > 0) {
-      mensagem += `\n⚡ Energia: -${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
-    }
+    if (isCritico) mensagem += `\n🌟 CRÍTICO!\nDano direto! O valor total ignora a defesa do oponente.`;
+    if (isErroCritico) mensagem += `\n💥 ERRO CRÍTICO!\nFracasso total na ação!`;
+    if (tipoDanoMensagem !== "Nenhum") mensagem += `\n🗡️ Tipo de Dano: ${tipoDanoMensagem}`;
+    if (custoTotalEnergia > 0) mensagem += `\n⚡ Energia: -${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
     
     if (acaoValorDificuldade) {
       const vd = Number(acaoValorDificuldade);
-      if (total >= vd) {
-        mensagem += `\n✅ SUCESSO! (Resultado ${total} ≥ VMS ${vd})`;
-      } else {
-        mensagem += `\n❌ FRACASSO! (Resultado ${total} < VMS ${vd})`;
-      }
+      if (total >= vd) mensagem += `\n✅ SUCESSO! (Resultado ${total} ≥ VMS ${vd})`;
+      else mensagem += `\n❌ FRACASSO! (Resultado ${total} < VMS ${vd})`;
+    }
+    
+    // 🟢 TALENTO PÓS-CHOQUE (agora tipoDanoMensagem e mensagem JÁ existem)
+    const temPosChoque = fichaJogador?.caracteristicas?.includes("Pós-Choque") || false;
+    if (isCritico && temPosChoque && !acaoPendenteId) {
+      const dadosPrimeiraRolagem = {
+        rolls,
+        total,
+        totalD10,
+        descricao,
+        nomePersonagem,
+        tipoDanoMensagem,
+        custoTotalEnergia,
+        novaEnergia,
+        mensagem,
+      };
+      
+      setPosChoquePendente(dadosPrimeiraRolagem);
+      setRolagemEmAndamento(false);
+      return;
     }
 
                 if (acaoModo === "acao" && acaoAlvo && acaoTipo === "dano") {
