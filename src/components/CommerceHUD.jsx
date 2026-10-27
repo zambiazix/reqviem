@@ -132,8 +132,6 @@ function LightboxImage({ src, zoom, setZoom }) {
 
 function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, currentUserEmail = null }) {
 
-  if (!visible) return null;
-
   const [paises, setPaises] = useState([]);
   const [cidades, setCidades] = useState([]);
   const [lojas, setLojas] = useState([]);
@@ -197,6 +195,29 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       setFichasMap(map);
     });
     return () => unsub();
+  }, [currentUserEmail]);
+
+  // 🟢 RESET DIÁRIO DE ESTOQUE — fallback client-side
+  // Se o server dormiu no Render e o cron não rodou, qualquer jogador que abrir
+  // o HUD após o horário dispara o reset (só roda uma vez por dia).
+  useEffect(() => {
+    if (!currentUserEmail) return;
+    const apiBase = window.location.hostname === 'localhost'
+      ? 'http://localhost:5000'
+      : 'https://reqviem.onrender.com';
+
+    fetch(`${apiBase}/api/resetar-estoque-se-necessario`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: currentUserEmail }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.executado) {
+          console.log(`✅ Reset diário executado: ${data.totalAtualizados} itens em ${data.totalLojas} lojas`);
+        }
+      })
+      .catch((err) => console.warn('⚠️ Falha ao verificar reset de estoque:', err));
   }, [currentUserEmail]);
 
   const carregarPaises = useCallback(async () => {
@@ -686,6 +707,9 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
     };
   }, [arrastando, redimensionando]);
 
+  // 🟢 NÃO desmonta o componente — só esconde o HUD quando invisível
+  if (!visible) return null;
+
   return createPortal(
     <>
       <Paper
@@ -724,6 +748,36 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
             </Typography>
           </Box>
           <Box sx={{ display: "flex", gap: 0.5 }}>
+            {isMaster && !minimizado && (
+              <IconButton
+                size="small"
+                title="Forçar reset de estoque agora"
+                onClick={async () => {
+                  if (!window.confirm('🔄 Forçar reset de TODO o estoque agora?\n\nTodos os itens de todas as lojas terão estoque sorteado entre 0 e 50.')) return;
+                  try {
+                    const apiBase = window.location.hostname === 'localhost'
+                      ? 'http://localhost:5000'
+                      : 'https://reqviem.onrender.com';
+                    const resp = await fetch(`${apiBase}/api/admin/resetar-estoque-agora`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ mestreEmail: 'mestre@reqviemrpg.com' }),
+                    });
+                    const data = await resp.json();
+                    if (data?.ok) {
+                      alert(`✅ Reset concluído!\n${data.totalAtualizados} itens em ${data.totalLojas} lojas.`);
+                    } else {
+                      alert('❌ Erro: ' + (data?.error || 'desconhecido'));
+                    }
+                  } catch (err) {
+                    alert('❌ Erro ao chamar o servidor: ' + err.message);
+                  }
+                }}
+                sx={{ color: '#ff9800', p: 0.5 }}
+              >
+                🔄
+              </IconButton>
+            )}
             <IconButton size="small" onClick={() => setMinimizado(!minimizado)} sx={{ color: "#fff", p: 0.5 }}>
               {minimizado ? "□" : "−"}
             </IconButton>
@@ -978,9 +1032,39 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                             <Paper sx={{ p: 1.5, bgcolor: "#0f172a", border: demandaAtiva ? "1px solid #ff9800" : "1px solid #334155" }}>
                               <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
                                 <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, minWidth: 65 }}>
-                                  {item.imagem ? <img src={normalizarUrlImagem(item.imagem)} alt="" loading="lazy" decoding="async" style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", cursor: "pointer" }}
-                                    onClick={() => { setLightboxImage(normalizarUrlImagem(item.imagem)); setZoom(1); }} /> :
-                                    <Box sx={{ width: 60, height: 60, borderRadius: 2, bgcolor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>📦</Box>}
+                                  <Box sx={{ position: 'relative', width: 60, height: 60 }}>
+                                    {item.imagem ? <img src={normalizarUrlImagem(item.imagem)} alt="" loading="lazy" decoding="async" style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", cursor: "pointer" }}
+                                      onClick={() => { setLightboxImage(normalizarUrlImagem(item.imagem)); setZoom(1); }} /> :
+                                      <Box sx={{ width: 60, height: 60, borderRadius: 2, bgcolor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>📦</Box>}
+                                    {(item.estoque || 0) <= 0 && (
+                                      <Box sx={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        bgcolor: 'rgba(0,0,0,0.72)',
+                                        borderRadius: 2,
+                                        overflow: 'hidden',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        pointerEvents: 'none',
+                                      }}>
+                                        <Typography sx={{
+                                          color: '#ef4444',
+                                          fontWeight: 900,
+                                          fontSize: '0.6rem',
+                                          letterSpacing: 1,
+                                          transform: 'rotate(-45deg)',
+                                          textShadow: '0 0 6px rgba(239,68,68,0.8), 0 1px 2px rgba(0,0,0,0.9)',
+                                          border: '1px solid #ef4444',
+                                          px: 0.5,
+                                          py: 0.2,
+                                          borderRadius: 0.5,
+                                        }}>
+                                          ESGOTADO
+                                        </Typography>
+                                      </Box>
+                                    )}
+                                  </Box>
                                   <Chip label={`⚔️ ${item.dado || 1}`} size="small" sx={{ bgcolor: "#1e3a5f", fontSize: "0.55rem", height: 18, width: "100%" }} />
                                   <Chip label={`📦 ${item.estoque || 0}`} size="small" sx={{ bgcolor: "#1e293b", color: '#94a3b8', fontSize: "0.55rem", height: 18, width: "100%" }} />
                                   <Chip label={`🔧 ${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: "#1e293b", color: '#94a3b8', fontSize: "0.55rem", height: 18, width: "100%" }} />

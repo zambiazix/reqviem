@@ -66,6 +66,15 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
   const [motivoAjuste, setMotivoAjuste] = useState("");
   const [ajusteTipo, setAjusteTipo] = useState("mesmo"); // "mesmo" | "bonus" | "penalidade" | "custom"
 
+  // 🟢 REPUTAÇÃO / RANKING
+  const [reputacoes, setReputacoes] = useState({});
+  const [reputacaoCarregada, setReputacaoCarregada] = useState(false);
+  const [minhaReputacao, setMinhaReputacao] = useState(null);
+  const [modalNickOpen, setModalNickOpen] = useState(false);
+  const [nickTemp, setNickTemp] = useState("");
+  const [salvandoNick, setSalvandoNick] = useState(false);
+  const [seedando, setSeedando] = useState(false);
+
   const [formServico, setFormServico] = useState({});
   const [formOperador, setFormOperador] = useState({});
 
@@ -91,10 +100,40 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       setCidades(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (error) => console.error("Erro cidades:", error));
 
+    // 🟢 REPUTAÇÃO
+    const unsubRep = onSnapshot(collection(db, "comercio_reputacao"), (snap) => {
+      const map = {};
+      snap.forEach((d) => {
+        const data = d.data() || {};
+        map[d.id] = {
+          email: d.id,
+          nick: data.nick || "",
+          xp: Number(data.xp) || 0,
+          contratosConcluidos: Number(data.contratosConcluidos) || 0,
+          criadoEm: data.criadoEm || null,
+        };
+      });
+      setReputacoes(map);
+      setReputacaoCarregada(true);
+    }, (error) => console.error("Erro reputação:", error));
+
     return () => {
-      unsubServicos(); unsubOperadores(); unsubContratos(); unsubPaises(); unsubCidades();
+      unsubServicos(); unsubOperadores(); unsubContratos(); unsubPaises(); unsubCidades(); unsubRep();
     };
   }, []);
+
+  // 🟢 SINCRONIZA MINHA REPUTAÇÃO + ABRE MODAL SE NÃO TIVER NICK
+  useEffect(() => {
+    if (!reputacaoCarregada) return;
+    if (!userEmail || isMaster) return;
+    const rep = reputacoes[userEmail];
+    setMinhaReputacao(rep || null);
+    if (!rep?.nick) {
+      setModalNickOpen(true);
+    } else {
+      setModalNickOpen(false);
+    }
+  }, [reputacoes, reputacaoCarregada, userEmail, isMaster]);
 
   // 🟢 BUSCA E FILTRO
   const servicosFiltrados = useMemo(() => {
@@ -125,9 +164,128 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     return contratosAtivos.filter(c => c.jogadorEmail === userEmail);
   }, [contratosAtivos, isMaster, userEmail]);
 
+  // 🟢 SALVAR NICK
+  const salvarNick = async () => {
+    const nickLimpo = nickTemp.trim();
+    if (nickLimpo.length < 3) return alert("O nick precisa ter pelo menos 3 caracteres.");
+    if (nickLimpo.length > 20) return alert("O nick pode ter no máximo 20 caracteres.");
+    const duplicado = Object.values(reputacoes).some(
+      (r) => r.email !== userEmail && r.nick?.toLowerCase() === nickLimpo.toLowerCase()
+    );
+    if (duplicado) return alert("❌ Este nick já está em uso. Escolha outro.");
+    setSalvandoNick(true);
+    try {
+      await setDoc(doc(db, "comercio_reputacao", userEmail), {
+        nick: nickLimpo,
+        xp: 0,
+        contratosConcluidos: 0,
+        criadoEm: new Date().toISOString(),
+      }, { merge: true });
+      alert(`✅ Nick "${nickLimpo}" registrado! Você está no ranking.`);
+      setModalNickOpen(false);
+      setNickTemp("");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao salvar nick: " + err.message);
+    } finally {
+      setSalvandoNick(false);
+    }
+  };
+
+  // 🟢 ADICIONAR XP À REPUTAÇÃO
+  const adicionarXPReputacao = async (emailJogador, xpGanho, contratosAdicionais = 1) => {
+    if (!emailJogador) return;
+    try {
+      const ref = doc(db, "comercio_reputacao", emailJogador);
+      const snap = await getDoc(ref);
+      const atual = snap.exists() ? snap.data() : { xp: 0, contratosConcluidos: 0 };
+      await setDoc(ref, {
+        xp: (Number(atual.xp) || 0) + xpGanho,
+        contratosConcluidos: (Number(atual.contratosConcluidos) || 0) + contratosAdicionais,
+      }, { merge: true });
+    } catch (err) {
+      console.error("Erro XP reputação:", err);
+    }
+  };
+
+  // 🟢 GERAR OPERADORES (1 POR CIDADE)
+  const NOMES_OP_POOL = [
+    "Vex", "Kaida", "Rook", "Sable", "Nyx", "Dax", "Jinx", "Lyra", "Onyx", "Vesper",
+    "Kael", "Ryder", "Iris", "Vane", "Saskia", "Nero", "Halle", "Crow", "Wren", "Ashe",
+    "Zane", "Mira", "Thorn", "Corvin", "Selene", "Dante", "Aria", "Kova", "Ember", "Flint",
+    "Silas", "Nova", "Rainer", "Wynne", "Holt", "Astra", "Kaelen", "Lorne", "Saber", "Echo",
+    "Rhea", "Cyrus", "Vale", "Ivo", "Azael", "Ryn", "Tess", "Odin", "Maeve", "Kai",
+  ];
+  const SOBRENOMES_OP_POOL = [
+    "Hollow", "Vex", "Crimson", "Steel", "Mercer", "Kade", "Sable", "Vayne", "Locke", "Ashford",
+    "Grey", "Blackwood", "Cross", "Kane", "Voss", "Riddle", "Korvus", "Haze", "Frost", "Slate",
+    "Draven", "Sparrow", "Reyne", "Castellan", "Wolfe", "Reed", "Monroe", "Sloane", "Knox", "Marsh",
+  ];
+  const TITULOS_OP_POOL = [
+    "O Fixer", "O Corretor", "A Sombra", "O Contato", "A Raposa", "O Olho", "A Mão", "O Gato",
+    "O Fantasma", "O Arquivista", "A Voz", "O Guardião",
+  ];
+
+  const gerarOperadores = async () => {
+    if (!isMaster) return;
+    if (cidades.length === 0) return alert("Inicialize o Simulador do Mundo primeiro (precisa de cidades).");
+    if (!window.confirm(`Gerar operadores para ${cidades.length} cidade(s)?\n\n1 operador por cidade. Operadores já existentes NÃO serão sobrescritos.`)) return;
+    setSeedando(true);
+    try {
+      const existentesPorCidade = new Set(
+        operadores.filter(o => o.cidadeOrigemId).map(o => o.cidadeOrigemId)
+      );
+      const cidadesFaltando = cidades.filter(c => !existentesPorCidade.has(c.id));
+      if (cidadesFaltando.length === 0) {
+        alert("✅ Todas as cidades já têm operador. Nada a fazer.");
+        setSeedando(false);
+        return;
+      }
+      const nomesUsados = new Set(operadores.map(o => o.nome));
+      let criados = 0;
+      for (let i = 0; i < cidadesFaltando.length; i++) {
+        const cidade = cidadesFaltando[i];
+        let tentativas = 0;
+        let nomeGerado;
+        do {
+          const primeiro = NOMES_OP_POOL[Math.floor(Math.random() * NOMES_OP_POOL.length)];
+          const ultimo = SOBRENOMES_OP_POOL[Math.floor(Math.random() * SOBRENOMES_OP_POOL.length)];
+          const titulo = Math.random() > 0.6 ? `, ${TITULOS_OP_POOL[Math.floor(Math.random() * TITULOS_OP_POOL.length)]}` : "";
+          nomeGerado = `${primeiro} ${ultimo}${titulo}`;
+          tentativas++;
+        } while (nomesUsados.has(nomeGerado) && tentativas < 30);
+        if (nomesUsados.has(nomeGerado)) nomeGerado = `${nomeGerado} ${Math.floor(Math.random() * 99)}`;
+        nomesUsados.add(nomeGerado);
+        const id = `op_auto_${cidade.id}`;
+        await setDoc(doc(db, "comercio_operadores", id), {
+          id,
+          nome: nomeGerado,
+          descricao: `Operador de ${cidade.nome}. Especialista em contratos locais.`,
+          cor: CORES_OPERADOR[Math.floor(Math.random() * CORES_OPERADOR.length)],
+          cidadeOrigemId: cidade.id,
+          cidadeOrigemNome: cidade.nome,
+          paisOrigemId: cidade.paisId || "",
+          criadoEm: new Date().toISOString(),
+        });
+        criados++;
+      }
+      alert(`✅ ${criados} operador(es) gerado(s)!`);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao gerar operadores: " + err.message);
+    } finally {
+      setSeedando(false);
+    }
+  };
+
   // 🟢 AÇÕES
   const aceitarServico = async () => {
     if (!servicoSelecionado || !userEmail) return;
+    // 🟢 Bloqueia se não tem nick (anonimato no ranking)
+    if (!isMaster && !minhaReputacao?.nick) {
+      setModalNickOpen(true);
+      return alert("Você precisa registrar um nick antes de aceitar contratos.");
+    }
     try {
       const contratoId = `${servicoSelecionado.id}_${userEmail}_${Date.now()}`;
       const prazoFinal = servicoSelecionado.prazoDias > 0
@@ -230,6 +388,11 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
         concluidoEm: new Date().toISOString(),
         concluidoPor: userEmail || "mestre",
       }, { merge: true });
+
+      // 🟢 XP DE REPUTAÇÃO (números fixos)
+      const xpMap = { mesmo: 10, bonus: 15, penalidade: 5, custom: 10 };
+      const xpGanho = xpMap[ajusteTipo] ?? 10;
+      await adicionarXPReputacao(contratoSelecionado.jogadorEmail, xpGanho, 1);
 
       // 3) 🟢 EMPURRAR O DINHEIRO NO HUD EM TEMPO REAL (se o jogador estiver online)
       try {
@@ -437,6 +600,7 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       >
         <Tab label="📋 Catálogo" />
         <Tab label={`⏳ Ativos (${contratosVisiveis.length})`} />
+        <Tab label="🏆 Ranking" />
         {isMaster && <Tab label="⚙️ Gerenciar" />}
       </Tabs>
 
@@ -652,8 +816,165 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
         </Box>
       )}
 
-      {/* ABA 2: GERENCIAR (MESTRE) */}
-      {aba === 2 && isMaster && (
+      {/* ABA 2: RANKING */}
+      {aba === 2 && (() => {
+        const reputacaoList = Object.values(reputacoes)
+          .filter(r => r.nick)
+          .sort((a, b) => b.xp - a.xp);
+        const meuRank = reputacaoList.findIndex(r => r.email === userEmail) + 1;
+
+        // 🟢 Ranking de operadores (por contratos concluídos)
+        const xpPorOperador = {};
+        contratosAtivos.forEach(ctr => {
+          if (ctr.status !== "concluido") return;
+          const opId = ctr.detalhes?.operadorId;
+          if (!opId) return;
+          const xpGanho = { mesmo: 10, bonus: 15, penalidade: 5, custom: 10 }[ctr.ajusteTipo] ?? 10;
+          if (!xpPorOperador[opId]) {
+            xpPorOperador[opId] = {
+              operadorId: opId,
+              xp: 0,
+              contratos: 0,
+              nome: ctr.detalhes?.operadorNome || "—",
+              cor: ctr.detalhes?.operadorCor || T.neon,
+            };
+          }
+          xpPorOperador[opId].xp += xpGanho;
+          xpPorOperador[opId].contratos += 1;
+        });
+        const rankingOperadores = Object.values(xpPorOperador).sort((a, b) => b.xp - a.xp);
+
+        const medalha = (pos) => pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : `#${pos}`;
+
+        return (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {/* RANKING DE JOGADORES */}
+            <Box>
+              <Typography variant="caption" sx={{ color: T.gold, fontWeight: 900, letterSpacing: 1.5, fontSize: "0.75rem", display: "block", mb: 1 }}>
+                🏆 RANKING DE REPUTAÇÃO — CONTRATANTES
+              </Typography>
+              <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem", display: "block", mb: 1.5, fontStyle: "italic" }}>
+                {isMaster
+                  ? "🔓 Modo Mestre: você vê o nick E o personagem real."
+                  : "🎭 Anonimato ativo: você vê apenas os nicks."}
+                {" "}XP: +10 (normal), +15 (bônus), +5 (penalidade).
+              </Typography>
+
+              {reputacaoList.length === 0 ? (
+                <Paper sx={{ p: 4, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
+                  <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace" }}>
+                    Ninguém no ranking ainda. Conclua contratos para aparecer aqui.
+                  </Typography>
+                </Paper>
+              ) : (
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  {reputacaoList.map((r, idx) => {
+                    const pos = idx + 1;
+                    const isMeu = r.email === userEmail;
+                    const fichaNome = isMaster ? (fichasMap[r.email]?.nome || r.email) : null;
+                    const corBorda = pos === 1 ? "#fbbf24" : pos === 2 ? "#c0c0c0" : pos === 3 ? "#cd7f32" : T.border;
+                    return (
+                      <Paper
+                        key={r.email}
+                        sx={{
+                          p: 1.5, bgcolor: isMeu ? `${T.neon}11` : T.card,
+                          border: `1px solid ${isMeu ? T.neon : corBorda}`,
+                          borderRadius: 2,
+                          display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap",
+                          boxShadow: isMeu ? `0 0 12px ${T.neon}44` : pos <= 3 ? `0 0 8px ${corBorda}44` : "none",
+                        }}
+                      >
+                        <Typography sx={{ fontSize: "1.3rem", minWidth: 40, textAlign: "center", fontWeight: 900, color: corBorda }}>
+                          {medalha(pos)}
+                        </Typography>
+                        <Box sx={{ flex: 1, minWidth: 140 }}>
+                          <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "0.95rem" }}>
+                            {r.nick}
+                            {isMeu && <Chip label="VOCÊ" size="small" sx={{ ml: 1, bgcolor: T.neon, color: "#000", fontWeight: 900, fontSize: "0.55rem", height: 16 }} />}
+                          </Typography>
+                          {isMaster && fichaNome && (
+                            <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem" }}>
+                              🎭 Personagem: <strong style={{ color: T.pink }}>{fichaNome}</strong>
+                            </Typography>
+                          )}
+                        </Box>
+                        <Chip label={`${r.contratosConcluidos} contrato(s)`} size="small" sx={{ bgcolor: `${T.neon}22`, color: T.neon, fontWeight: 800, fontSize: "0.6rem" }} />
+                        <Chip label={`⭐ ${r.xp} XP`} size="small" sx={{ bgcolor: `${T.gold}22`, color: T.gold, fontWeight: 900, fontSize: "0.65rem", border: `1px solid ${T.gold}66` }} />
+                      </Paper>
+                    );
+                  })}
+                </Box>
+              )}
+
+              {!isMaster && minhaReputacao?.nick && meuRank > 0 && (
+                <Paper sx={{ p: 1.5, mt: 1.5, bgcolor: `${T.neon}15`, border: `1px solid ${T.neon}66`, borderRadius: 2 }}>
+                  <Typography sx={{ color: T.neon, fontWeight: 900, fontSize: "0.8rem" }}>
+                    🎯 Sua posição: #{meuRank} de {reputacaoList.length} · Nick: <strong>{minhaReputacao.nick}</strong> · ⭐ {minhaReputacao.xp} XP
+                  </Typography>
+                </Paper>
+              )}
+            </Box>
+
+            {/* RANKING DE OPERADORES */}
+            <Box>
+              <Typography variant="caption" sx={{ color: T.pink, fontWeight: 900, letterSpacing: 1.5, fontSize: "0.75rem", display: "block", mb: 1 }}>
+                📡 RANKING DE OPERADORES — MAIS CONFIÁVEIS
+              </Typography>
+              <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem", display: "block", mb: 1.5, fontStyle: "italic" }}>
+                Baseado em contratos concluídos com sucesso.
+              </Typography>
+
+              {rankingOperadores.length === 0 ? (
+                <Paper sx={{ p: 4, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
+                  <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace" }}>
+                    Nenhum operador com contratos concluídos ainda.
+                  </Typography>
+                </Paper>
+              ) : (
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  {rankingOperadores.map((op, idx) => {
+                    const pos = idx + 1;
+                    const opInfo = operadores.find(o => o.id === op.operadorId);
+                    const cor = opInfo?.cor || op.cor || T.neon;
+                    return (
+                      <Paper
+                        key={op.operadorId}
+                        sx={{
+                          p: 1.5, bgcolor: T.card,
+                          border: `1px solid ${pos <= 3 ? cor : T.border}`,
+                          borderLeft: `4px solid ${cor}`,
+                          borderRadius: 2,
+                          display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap",
+                          boxShadow: pos <= 3 ? `0 0 8px ${cor}44` : "none",
+                        }}
+                      >
+                        <Typography sx={{ fontSize: "1.3rem", minWidth: 40, textAlign: "center", fontWeight: 900, color: cor }}>
+                          {medalha(pos)}
+                        </Typography>
+                        <Box sx={{ flex: 1, minWidth: 140 }}>
+                          <Typography sx={{ color: cor, fontWeight: 900, fontSize: "0.95rem" }}>
+                            📡 {op.nome}
+                          </Typography>
+                          {opInfo?.descricao && (
+                            <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.6rem", display: "block" }}>
+                              {opInfo.descricao.slice(0, 80)}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Chip label={`${op.contratos} contrato(s)`} size="small" sx={{ bgcolor: `${cor}22`, color: cor, fontWeight: 800, fontSize: "0.6rem" }} />
+                        <Chip label={`⭐ ${op.xp} XP`} size="small" sx={{ bgcolor: `${T.gold}22`, color: T.gold, fontWeight: 900, fontSize: "0.65rem", border: `1px solid ${T.gold}66` }} />
+                      </Paper>
+                    );
+                  })}
+                </Box>
+              )}
+            </Box>
+          </Box>
+        );
+      })()}
+
+      {/* ABA 3: GERENCIAR (MESTRE) */}
+      {aba === 3 && isMaster && (
         <Box>
           <Box sx={{ display: "flex", gap: 2, mb: 4, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setFormServico({}); setModalServicoOpen(true); }} sx={{ bgcolor: T.neon, color: "#000", fontWeight: 900, boxShadow: `0 0 10px ${T.neon}44` }}>
@@ -661,6 +982,15 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setFormOperador({}); setModalOperadorOpen(true); }} sx={{ bgcolor: T.pink, color: "#fff", fontWeight: 900, boxShadow: `0 0 10px ${T.pink}44` }}>
               Novo Operador
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<span>⚙️</span>}
+              onClick={gerarOperadores}
+              disabled={seedando}
+              sx={{ bgcolor: '#a855f7', color: '#fff', fontWeight: 900, boxShadow: `0 0 10px #a855f744` }}
+            >
+              {seedando ? "Gerando..." : `Gerar Operadores (${cidades.length} cidades)`}
             </Button>
             <Button variant="contained" startIcon={<AutoAwesomeIcon />} onClick={gerarServicosComIA} sx={{ bgcolor: T.gold, color: "#000", fontWeight: 900, ml: "auto", boxShadow: `0 0 15px ${T.gold}66`, animation: "pulse 2s infinite" }}>
               Gerar com I.A. (Massa)
@@ -954,6 +1284,79 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
         <DialogActions sx={{ borderTop: `1px solid ${T.border}`, p: 2 }}>
           <Button onClick={() => setModalServicoOpen(false)} sx={{ color: T.textDim, fontWeight: 900 }}>CANCELAR</Button>
           <Button variant="contained" onClick={salvarServico} sx={{ bgcolor: T.green, color: "#000", fontWeight: 900, "&:hover": { bgcolor: T.green, boxShadow: `0 0 15px ${T.green}` } }}>SALVAR SERVIÇO</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🟢 MODAL NICK (OBRIGATÓRIO ANTES DE ACEITAR CONTRATOS) */}
+      <Dialog
+        open={modalNickOpen}
+        onClose={() => {}}
+        maxWidth="xs"
+        fullWidth
+        disableEscapeKeyDown
+        PaperProps={{
+          sx: {
+            bgcolor: T.bg2,
+            border: `2px solid ${T.neon}`,
+            borderRadius: 2,
+            boxShadow: `0 0 40px ${T.neon}66`,
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: T.neon, borderBottom: `1px solid ${T.border}`, fontFamily: "'Courier New', monospace", fontWeight: 900 }}>
+          🎭 ESCOLHA SEU NICK
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <Typography sx={{ color: T.text, fontSize: "0.85rem", lineHeight: 1.6 }}>
+              Para manter o <strong style={{ color: T.neon }}>anonimato no ranking</strong>, você precisa escolher um nick.
+              Os outros jogadores verão <strong>apenas seu nick</strong>. Apenas o Mestre vê qual personagem está por trás.
+            </Typography>
+
+            <TextField
+              label="Seu Nick de Ranking"
+              fullWidth
+              size="small"
+              value={nickTemp}
+              onChange={(e) => setNickTemp(e.target.value.slice(0, 20))}
+              placeholder="Ex: Fantasma, Corvo, Lâmina..."
+              helperText={`${nickTemp.length}/20 caracteres (mínimo 3)`}
+              InputLabelProps={{ sx: { color: T.textDim } }}
+              InputProps={{ sx: { color: T.neon, fontWeight: 900, fontSize: "1rem", letterSpacing: 1 } }}
+              sx={{
+                "& .MuiOutlinedInput-notchedOutline": { borderColor: T.neonDark },
+                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: T.neon },
+                "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: T.neon, borderWidth: 2 },
+              }}
+            />
+
+            <Paper sx={{ p: 1.5, bgcolor: `${T.gold}11`, border: `1px dashed ${T.gold}66`, borderRadius: 1 }}>
+              <Typography variant="caption" sx={{ color: T.gold, fontSize: "0.65rem", display: "block", lineHeight: 1.6 }}>
+                💡 O nick é <strong>permanente</strong>. Escolha com cuidado.
+              </Typography>
+            </Paper>
+
+            <Paper sx={{ p: 1.5, bgcolor: `${T.neon}11`, border: `1px dashed ${T.neon}66`, borderRadius: 1 }}>
+              <Typography variant="caption" sx={{ color: T.neon, fontSize: "0.65rem", display: "block", lineHeight: 1.6 }}>
+                🏆 Cada contrato concluído rende XP de reputação. Maior XP = mais confiável.
+              </Typography>
+            </Paper>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: `1px solid ${T.border}`, p: 2 }}>
+          <Button
+            variant="contained"
+            fullWidth
+            onClick={salvarNick}
+            disabled={salvandoNick || nickTemp.trim().length < 3}
+            sx={{
+              bgcolor: T.neon, color: "#000", fontWeight: 900,
+              "&:hover": { bgcolor: T.neon, boxShadow: `0 0 15px ${T.neon}` },
+              "&.Mui-disabled": { bgcolor: "#334155", color: "#64748b" }
+            }}
+          >
+            {salvandoNick ? "Salvando..." : "✅ Confirmar Nick"}
+          </Button>
         </DialogActions>
       </Dialog>
 

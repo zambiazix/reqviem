@@ -1630,30 +1630,27 @@ useEffect(() => {
   }
 }, [ficha]); // Dependência apenas de ficha, não de ficha.caracteristicas
 // 🟢 OUVIR EVENTO DE XP ATUALIZADO EM TEMPO REAL
+// Aceita AMBOS formatos: { atributosXP: {...} } ou { data: {...} }
 useEffect(() => {
   const handleXpAtualizado = (event) => {
-    const { email, atributosXP } = event.detail;
+    const { email, atributosXP, data } = event.detail || {};
     if (email !== fichaId) return;
     
-    console.log('📥 EVENTO RECEBIDO - dados:', atributosXP);
+    const payload = atributosXP || data || {};
+    console.log('📥 EVENTO XP RECEBIDO:', payload);
     
-    // Atualiza os estados locais SOMANDO ao valor atual
-    Object.entries(atributosXP).forEach(([key, valor]) => {
+    Object.entries(payload).forEach(([key, valor]) => {
       if (key.startsWith('atributosXP.')) {
         const atributo = key.replace('atributosXP.', '');
-        setAtributosXP(prev => {
-          const novo = { ...prev, [atributo]: valor };
-          console.log(`📥 Atributo ${atributo}: ${prev[atributo] || 0} → ${valor}`);
-          return novo;
-        });
+        setAtributosXP(prev => ({ ...prev, [atributo]: valor }));
       }
       if (key.startsWith('periciasXP.')) {
         const pericia = key.replace('periciasXP.', '');
-        setPericiasXP(prev => {
-          const novo = { ...prev, [pericia]: valor };
-          console.log(`📥 Perícia ${pericia}: ${prev[pericia] || 0} → ${valor}`);
-          return novo;
-        });
+        setPericiasXP(prev => ({ ...prev, [pericia]: valor }));
+      }
+      if (key.startsWith('habilidadesXP.')) {
+        const habKey = key.replace('habilidadesXP.', '');
+        setHabilidadesXP(prev => ({ ...prev, [habKey]: valor }));
       }
     });
   };
@@ -4397,8 +4394,21 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                           setCampo("pontosVida", valor);
                           await setDoc(doc(db, "fichas", fichaId), { pontosVida: valor }, { merge: true });
                         }}
-                        InputProps={{ sx: { color: '#ff4d4f', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } }}
-                        sx={{ width: 60, '& fieldset': { border: 'none' } }}
+      InputProps={{ 
+        sx: { 
+          color: '#ff4d4f', 
+          fontSize: '0.9rem', 
+          fontWeight: 'bold', 
+          height: 30, 
+          '& input': { textAlign: 'center' },
+          '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': { 
+            WebkitAppearance: 'none', 
+            margin: 0 
+          },
+          '& input[type=number]': { MozAppearance: 'textfield' }
+        } 
+      }}
+      sx={{ width: 72, '& fieldset': { border: 'none' } }}
                       />
                       <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>/ {pontosVidaMax}</Typography>
                     </Box>
@@ -4413,8 +4423,21 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                           setCampo("pontosEnergia", valor);
                           await setDoc(doc(db, "fichas", fichaId), { pontosEnergia: valor }, { merge: true });
                         }}
-                        InputProps={{ sx: { color: '#facc15', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } }}
-                        sx={{ width: 60, '& fieldset': { border: 'none' } }}
+      InputProps={{ 
+        sx: { 
+          color: '#facc15', 
+          fontSize: '0.9rem', 
+          fontWeight: 'bold', 
+          height: 30, 
+          '& input': { textAlign: 'center' },
+          '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': { 
+            WebkitAppearance: 'none', 
+            margin: 0 
+          },
+          '& input[type=number]': { MozAppearance: 'textfield' }
+        } 
+      }}
+      sx={{ width: 72, '& fieldset': { border: 'none' } }}
                       />
                       <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>/ {pontosEnergiaMax}</Typography>
                     </Box>

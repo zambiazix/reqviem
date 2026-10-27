@@ -46,6 +46,10 @@ import MenuItem from "@mui/material/MenuItem";
 
 const GIPHY_API_KEY = "PBsoFISvy4OFVTNfZbpB5yF79ODJyTsc";
 
+// 🟢 TEMPO DE EXPIRAÇÃO DE UMA REAÇÃO PENDENTE (1 HORA)
+// Depois disso, a ação é apagada do Firestore e o defensor não pode mais reagir
+const TEMPO_EXPIRACAO_REACAO_MS = 60 * 60 * 1000;
+
 // 🟢 FUNÇÃO QUE TRANSFORMA TEXTO EM CORES NO CHAT
 const renderCombatText = (text) => {
   if (!text) return "";
@@ -519,31 +523,30 @@ const [acaoOpen, setAcaoOpen] = useState(false);
 const [acaoAtributo, setAcaoAtributo] = useState("");
 const [acaoPericia, setAcaoPericia] = useState("");
 const [acaoPericia2, setAcaoPericia2] = useState("");
-const [acaoItem, setAcaoItem] = useState("");
-const [acaoItemDado, setAcaoItemDado] = useState(0);
+const [acaoItens, setAcaoItens] = useState([]);
+// 🟢 LEGACY DERIVADOS (compatibilidade com lógica existente)
+const acaoItem = acaoItens[0]?.nome || "";
+const acaoItemDado = acaoItens
+  .filter(it => !it?.consumivel || it.consumivel === "Nenhum")
+  .reduce((s, it) => s + (Number(it?.dado) || 0), 0);
+const _consumivelItem = acaoItens.find(it => it.consumivel && it.consumivel !== "Nenhum");
+const acaoItemConsumivel = !!_consumivelItem;
+const acaoConsumivelTipo = _consumivelItem?.consumivel || "";
+const acaoConsumivelValor = _consumivelItem?.consumivelValor || 0;
+const acaoConsumivelPercentual = _consumivelItem?.consumivelPercentual || 100;
 const [acaoCasting, setAcaoCasting] = useState(0);
 const [acaoEmbuicao, setAcaoEmbuicao] = useState(0);
 const [acaoHabilidadeSelecionada, setAcaoHabilidadeSelecionada] = useState("");
 const [acaoHabilidadeDado, setAcaoHabilidadeDado] = useState(0);
-// 🟢 CUSTO DE PE DA HABILIDADE
 const [acaoHabilidadeCustoPE, setAcaoHabilidadeCustoPE] = useState(0);
-// 🟢 DEBUFFS (múltiplos valores para subtrair do dado final)
 const [acaoDebuffs, setAcaoDebuffs] = useState([]);
-// 🟢 VALOR MÍNIMO DE SUCESSO (VD - Valor de Dificuldade)
 const [acaoValorDificuldade, setAcaoValorDificuldade] = useState("");
-// 🟢 BÔNUS VARIÁVEL (valor positivo adicionado ao resultado)
 const [acaoBonusVariavel, setAcaoBonusVariavel] = useState(0);
 const [acaoBonusVariavelLista, setAcaoBonusVariavelLista] = useState([]);
-// 🟢 TALENTO PÓS-CHOQUE
 const [posChoquePendente, setPosChoquePendente] = useState(null);
 const [posChoqueOpen, setPosChoqueOpen] = useState(false);
 const [posChoqueRolls, setPosChoqueRolls] = useState([]);
 const [posChoqueTotal, setPosChoqueTotal] = useState(0);
-// 🟢 CONSUMÍVEL
-const [acaoItemConsumivel, setAcaoItemConsumivel] = useState(false); // É consumível?
-const [acaoConsumivelTipo, setAcaoConsumivelTipo] = useState(""); // PV, PE, RE
-const [acaoConsumivelValor, setAcaoConsumivelValor] = useState(0); // Valor máximo
-const [acaoConsumivelPercentual, setAcaoConsumivelPercentual] = useState(100); // % a usar
 // 🟢 ESTADOS DO SISTEMA DE COMBATE
 const [acaoModo, setAcaoModo] = useState("acao"); // "acao" = normal, "reacao" = respondendo ataque
 // 🟢 JOGADA EM CONJUNTO
@@ -699,6 +702,27 @@ useEffect(() => {
   return () => unsub();
 }, []);
 
+// 🟢 RESETA PÉ DIREITO DE TODOS OS PJs QUANDO UMA NOVA SESSÃO INICIA
+const sessaoAtivaRef = useRef(false);
+const fichasMapRef = useRef({});
+useEffect(() => {
+  fichasMapRef.current = fichasMap || {};
+}, [fichasMap]);
+
+useEffect(() => {
+  const prev = sessaoAtivaRef.current;
+  const curr = !!travaSessao?.sessaoAtiva;
+  sessaoAtivaRef.current = curr;
+  
+  if (!prev && curr) {
+    Object.entries(fichasMapRef.current).forEach(([email, ficha]) => {
+      if ((ficha?.tipoFicha || "PJ") === "PJ") {
+        setDoc(doc(db, "fichas", email), { peDireitoUsado: false }, { merge: true }).catch(() => {});
+      }
+    });
+  }
+}, [travaSessao?.sessaoAtiva]);
+
 useEffect(() => {
   if (!travaSessao.sessaoAtiva || !travaSessao.sessaoInicio) {
     setTempoDecorrido("00:00:00");
@@ -822,6 +846,21 @@ const getCorAtributo = (nome) => {
   const n = (nome || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return CORES_ATRIBUTOS[n] || "#94a3b8";
 };
+
+  // 🟢 CATEGORIA DA AÇÃO: trava depois do primeiro item
+  const categoriaAcao = useMemo(() => {
+    if (acaoItens.length === 0) return null;
+    const first = acaoItens[0];
+    if (!first?.nome) return null;
+    if (first.consumivel && first.consumivel !== "Nenhum") return "consumivel";
+    return "normal";
+  }, [acaoItens]);
+
+  const podeAdicionarItemAcao = () => {
+    if (acaoItens.length >= 10) return { ok: false, motivo: "Máximo de 10 itens por ação" };
+    if (categoriaAcao === "consumivel") return { ok: false, motivo: "Só 1 consumível por ação" };
+    return { ok: true };
+  };
 
   const openDiceMenu = Boolean(diceAnchor);
 
@@ -1157,36 +1196,42 @@ useEffect(() => {
     if (item?.timestamp?.toMillis) return item.timestamp.toMillis();
     if (item?.timestamp?.seconds) return item.timestamp.seconds * 1000;
     if (typeof item?.timestamp === "number") return item.timestamp;
-    return Date.now(); // se não tem timestamp, considera recém-criada (evita apagar por engano)
+    return Date.now();
   };
   
-  // 🟢 Separa válidas x expiradas, apaga as expiradas do Firestore
+  // 🟢 Separa válidas x expiradas/resolvidas, apaga as inválidas do Firestore
   const processarLista = (lista) => {
     const agora = Date.now();
     const validas = [];
-    const expiradas = [];
+    const paraDeletar = [];
     
     lista.forEach(item => {
+      if (item.resolvida === true) {
+        paraDeletar.push(item.id);
+        return;
+      }
+      
       const idade = agora - pegarTimestampMs(item);
       if (idade > TEMPO_EXPIRACAO_REACAO_MS) {
-        expiradas.push(item.id);
+        paraDeletar.push(item.id);
       } else {
         validas.push(item);
       }
     });
     
-    // Apaga as expiradas no Firestore (silencioso)
-    expiradas.forEach(id => {
+    paraDeletar.forEach(id => {
       deleteDoc(doc(db, "acoesPendentes", id)).catch(() => {});
     });
     
     return validas;
   };
   
+  // 🟢 QUERY SIMPLIFICADA — só filtra por `alvo` (single-field index)
+  // Filtro de `resolvida` é feito client-side em processarLista
   const q = query(
     collection(db, "acoesPendentes"),
     where("alvo", "==", emailAlvo),
-    where("resolvida", "==", false)
+    limit(20)
   );
   
   const unsub = onSnapshot(q, (snap) => {
@@ -1199,17 +1244,20 @@ useEffect(() => {
       setAcaoModo("reacao");
       setAcaoPendenteId(validas[0].id);
     } else {
-      // 🟢 Volta ao normal quando não tem mais nada pendente
       setAcaoModo("acao");
       setAcaoPendenteId(null);
     }
+  }, (error) => {
+    console.error("❌ Erro no listener de ações pendentes:", error);
+    if (error?.code === 'failed-precondition' || error?.message?.includes('index')) {
+      console.error("⚠️ FIREBASE INDEX NECESSÁRIO! Crie um índice composto em 'acoesPendentes' para (alvo, resolvida).");
+    }
   });
   
-  // 🟢 Verificação periódica (a cada 60s) — expira mesmo se o Firestore não emitir mudança
+  // 🟢 Verificação periódica (a cada 60s)
   const interval = setInterval(() => {
     setAcoesPendentes(prev => {
       const validas = processarLista(prev);
-      // Se zerou depois de ter algo, volta ao normal
       if (prev.length > 0 && validas.length === 0) {
         setTimeout(() => {
           setAcaoModo("acao");
@@ -1637,8 +1685,53 @@ const ocultarImagemGaleria = (url) => {
     setGifOpen(false);
   }
 
-  // 🟢 DESGASTAR DURABILIDADE DO ITEM
-async function desgastarItem(email, nomeItem, quantidade = 1) {
+  // 🟢 PÓS-CHOQUE: Segunda rolagem (reroll no crítico)
+const rolarPosChoque = () => {
+  if (!posChoquePendente) return;
+  const fatorSorte = sorteAzarMap[userEmail];
+  const rolls = [];
+  let total = 0;
+  for (let i = 0; i < posChoquePendente.totalD10; i++) {
+    let valor;
+    if (fatorSorte !== undefined) {
+      valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
+    } else {
+      valor = Math.floor(Math.random() * 10) + 1;
+    }
+    rolls.push(valor);
+    total += valor;
+  }
+  setPosChoqueRolls(rolls);
+  setPosChoqueTotal(total);
+};
+
+const confirmarPosChoque = async () => {
+  if (!posChoquePendente) return;
+  const totalFinal = posChoquePendente.total + posChoqueTotal;
+  const mensagemFinal = posChoquePendente.mensagem + 
+    `\n\n⚡ **PÓS-CHOQUE:** Segunda rolagem! [${posChoqueRolls.join(", ")}] = ${posChoqueTotal}` +
+    `\n\n🎯 **DANO TOTAL:** ${posChoquePendente.total} + ${posChoqueTotal} = **${totalFinal}**`;
+  const isDadoSecreto = modoSecreto;
+  await addDoc(chatCol, {
+    userNick: posChoquePendente.nomePersonagem,
+    userEmail: jogadorSelecionadoEmail,
+    type: "acao",
+    text: isDadoSecreto ? mensagemFinal.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagemFinal,
+    dadosRolados: [...posChoquePendente.rolls, ...posChoqueRolls],
+    secretRolls: isDadoSecreto ? [...posChoquePendente.rolls, ...posChoqueRolls] : null,
+    secretText: isDadoSecreto ? mensagemFinal.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
+    timestamp: serverTimestamp(),
+  });
+  await adicionarXpAcao(jogadorSelecionadoEmail, 2);
+  setPosChoquePendente(null);
+  setPosChoqueOpen(false);
+  setPosChoqueRolls([]);
+  setPosChoqueTotal(0);
+  setAcaoOpen(false);
+};
+
+// 🟢 DESGASTAR DURABILIDADE DO ITEM (por _uid, com fallback por nome)
+async function desgastarItem(email, itemUidOrNome, quantidade = 1) {
   const fichaRef = doc(db, "fichas", email);
   const snap = await getDoc(fichaRef);
   if (!snap.exists()) return;
@@ -1648,7 +1741,12 @@ async function desgastarItem(email, nomeItem, quantidade = 1) {
   
   for (const cat of categorias) {
     const itens = ficha[cat] || [];
-    const index = itens.findIndex(item => item.nome === nomeItem);
+    
+    // 🟢 Prioriza _uid (item exato). Fallback por nome para itens antigos.
+    let index = itens.findIndex(item => item._uid && item._uid === itemUidOrNome);
+    if (index === -1) {
+      index = itens.findIndex(item => item.nome === itemUidOrNome);
+    }
     
     if (index !== -1) {
       const novosItens = itens.map((item, i) => {
@@ -1682,6 +1780,14 @@ async function rolarAcaoConjunta() {
       alert("Nenhum participante válido.");
       setRolagemEmAndamento(false);
       return;
+    }
+
+    // 🟢 DEGRADAR ITENS DO JOGADOR PRINCIPAL (uma vez por item, não por participante)
+    const itensParaDegradar = acaoItens.filter(
+      (it) => it?.nome && (!it.consumivel || it.consumivel === "Nenhum")
+    );
+    for (const it of itensParaDegradar) {
+      await desgastarItem(jogadorSelecionadoEmail, it._itemUid || it.nome, 1);
     }
 
     const resultados = [];
@@ -1891,6 +1997,10 @@ async function rolarAcao() {
   
     setRolagemEmAndamento(true);
     
+    // 🟢 DECLARAÇÕES MOVIDAS PRA CÁ (evita TDZ)
+    const pvAtual = Number(fichaJogador?.pontosVida || 0);
+    const nomePersonagem = fichaJogador?.nome || userNick;
+    
     // 🟢 CONSUMO DE FOME E SEDE POR AÇÃO
     try {
       const refConsumo = doc(db, "fichas", jogadorSelecionadoEmail);
@@ -1962,60 +2072,8 @@ async function rolarAcao() {
         timestamp: serverTimestamp(),
       });
     }
-  // 🟢 FUNÇÃO PARA SEGUNDA ROLAGEM DO PÓS-CHOQUE
-const rolarPosChoque = () => {
-  if (!posChoquePendente) return;
-  
-  const fatorSorte = sorteAzarMap[userEmail];
-  const rolls = [];
-  let total = 0;
-  
-  for (let i = 0; i < posChoquePendente.totalD10; i++) {
-    let valor;
-    if (fatorSorte !== undefined) {
-      valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
-    } else {
-      valor = Math.floor(Math.random() * 10) + 1;
-    }
-    rolls.push(valor);
-    total += valor;
-  }
-  
-  setPosChoqueRolls(rolls);
-  setPosChoqueTotal(total);
-};
-
-const confirmarPosChoque = async () => {
-  if (!posChoquePendente) return;
-  
-  const totalFinal = posChoquePendente.total + posChoqueTotal;
-  const mensagemFinal = posChoquePendente.mensagem + 
-    `\n\n⚡ **PÓS-CHOQUE:** Segunda rolagem! [${posChoqueRolls.join(", ")}] = ${posChoqueTotal}` +
-    `\n\n🎯 **DANO TOTAL:** ${posChoquePendente.total} + ${posChoqueTotal} = **${totalFinal}**`;
-  
-  // Envia mensagem com o total combinado
-  const isDadoSecreto = modoSecreto;
-  await addDoc(chatCol, {
-    userNick: posChoquePendente.nomePersonagem,
-    userEmail: jogadorSelecionadoEmail,
-    type: "acao",
-    text: isDadoSecreto ? mensagemFinal.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagemFinal,
-    dadosRolados: [...posChoquePendente.rolls, ...posChoqueRolls],
-    secretRolls: isDadoSecreto ? [...posChoquePendente.rolls, ...posChoqueRolls] : null,
-    secretText: isDadoSecreto ? mensagemFinal.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
-    timestamp: serverTimestamp(),
-  });
-  
-  // Adiciona XP
-  await adicionarXpAcao(jogadorSelecionadoEmail, 2);
-  
-  setPosChoquePendente(null);
-  setPosChoqueOpen(false);
-  setPosChoqueRolls([]);
-  setPosChoqueTotal(0);
-};
-  // 🟢 VALIDAR PV MÍNIMO (precisa ter mais de 1)
-  const pvAtual = Number(fichaJogador?.pontosVida || 0);
+  // 🟢 Funções de Pós-Choque movidas para o escopo do componente
+  // 🟢 VALIDAR PV MÍNIMO (pvAtual declarado no topo)
   if (pvAtual <= 1) {
     alert("⚠️ PV insuficiente! É necessário ter mais de 1 ponto de vida para realizar uma ação.");
     setRolagemEmAndamento(false);
@@ -2063,29 +2121,32 @@ if (acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] !== undefined) {
       if (acaoPericia2 === "aura") custoTotalEnergia += 1;
     }
     
-        // 🟢 ITEM - VALIDAR DURABILIDADE
-            // 🟢 ITEM - VALIDAR DURABILIDADE (OU CONSUMÍVEL)
-    if (acaoItem) {
-      const todosItens = [
-        ...(fichaJogador?.equipamentos || []),
-        ...(fichaJogador?.vestes || []),
-        ...(fichaJogador?.diversos || [])
-      ];
-      const itemEncontrado = todosItens.find(it => it.nome === acaoItem);
+        // 🟢 ITENS - VALIDAR DURABILIDADE E ADICIONAR DADOS (MÚLTIPLOS)
+    const itensParaProcessar = acaoItens.filter(it => it?.nome);
+    const todosItensRef = [
+      ...(fichaJogador?.equipamentos || []),
+      ...(fichaJogador?.vestes || []),
+      ...(fichaJogador?.diversos || [])
+    ];
+    
+    for (const it of itensParaProcessar) {
+      const itemCompleto = it._itemUid
+        ? todosItensRef.find(x => x._uid === it._itemUid)
+        : todosItensRef.find(x => x.nome === it.nome);
+      const isConsumivel = it.consumivel && it.consumivel !== "Nenhum";
       
-      // 🟢 Se for consumível, não adiciona dado
-      if (acaoItemConsumivel) {
-        descricao.push(`🧪 Consumível: ${acaoItem} (${acaoConsumivelPercentual}%)`);
+      if (isConsumivel) {
+        descricao.push(`🧪 Consumível: ${it.nome} (${it.consumivelPercentual || 100}%)`);
       } else {
-        // Item normal - verifica durabilidade
-        if (itemEncontrado && (itemEncontrado.durabilidade || 100) <= 1) {
-          alert(`⚠️ O item "${acaoItem}" está muito danificado e não pode ser usado!`);
+        if (itemCompleto && (itemCompleto.durabilidade || 100) <= 1) {
+          alert(`⚠️ O item "${it.nome}" está muito danificado e não pode ser usado!`);
           setRolagemEmAndamento(false);
           return;
         }
-        totalD10 += acaoItemDado;
-        descricao.push(`Item: ${acaoItem} (${acaoItemDado})`);
-        await desgastarItem(jogadorSelecionadoEmail, acaoItem, 1);
+        totalD10 += Number(it.dado) || 0;
+        descricao.push(`Item: ${it.nome} (${it.dado})`);
+        // 🟢 Degrada o item EXATO pelo _uid (fallback por nome)
+        await desgastarItem(jogadorSelecionadoEmail, it._itemUid || it.nome, 1);
       }
     }
     
@@ -2179,7 +2240,6 @@ if (acaoHabilidadeSelecionada) {
       descricao.push(`Bônus: +${totalBonus} (${totalAntes} → ${total})`);
     }
     
-        const nomePersonagem = fichaJogador?.nome || userNick;
     const partesDescricao = descricao.length > 0 ? descricao.join("; ") : "";
     
     // 🟢 ============= VERIFICAR CRÍTICO E ERRO CRÍTICO =============
@@ -2243,7 +2303,71 @@ if (acaoHabilidadeSelecionada) {
       };
       
       setPosChoquePendente(dadosPrimeiraRolagem);
+      setPosChoqueOpen(true);
       setRolagemEmAndamento(false);
+      return;
+    }
+
+    // 🟢 FURTIVIDADE (bloco movido pra fora do if do dano)
+    if (acaoModo === "acao" && acaoTipo === "furtividade" && acaoAlvo) {
+      const fichaAlvo = fichasMap[acaoAlvo];
+      const percepcaoAlvo = fichaAlvo?.pericias?.percepcao || 0;
+      const inteligenciaAlvo = fichaAlvo?.atributos?.inteligencia || 0;
+      let msgFurtiva = `🌫️ Ação de Furtividade\n\n`;
+
+      if (fichaAlvo?.tracos?.includes("Observador")) {
+        msgFurtiva += `👁️ ${fichaAlvo?.nome || acaoAlvo} tem **TERCEIRO OLHO** (Traço)!\n`;
+        msgFurtiva += `❌ FURTIVIDADE FALHOU! O alvo é imune a golpes de oportunidade.`;
+      } else if (percepcaoAlvo < 1) {
+        msgFurtiva += `👁️ ${fichaAlvo?.nome || acaoAlvo} NÃO tem Percepção!\n`;
+        msgFurtiva += `✅ FURTIVIDADE BEM-SUCEDIDA!\n`;
+        msgFurtiva += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será CRÍTICO AUTOMÁTICO!`;
+
+        await setDoc(doc(db, "game", "combate"), {
+          [`proximoCritico.${userEmail}`]: {
+            alvo: acaoAlvo,
+            atacante: userEmail,
+            timestamp: serverTimestamp(),
+          }
+        }, { merge: true });
+      } else if (percepcaoAlvo >= 5) {
+        msgFurtiva += `👁️ ${fichaAlvo?.nome || acaoAlvo} tem PERCEPÇÃO NÍVEL 5!\n`;
+        msgFurtiva += `❌ FALHA! O alvo percebeu sua movimentação!\n`;
+        msgFurtiva += `🛡️ Você foi detectado! Nenhum efeito adicional.`;
+      } else {
+        const defesaPercepcao = inteligenciaAlvo + percepcaoAlvo;
+        msgFurtiva += `🎯 Seu resultado: ${total}\n`;
+        msgFurtiva += `👁️ Percepção do alvo: ${defesaPercepcao}\n\n`;
+
+        if (total > defesaPercepcao) {
+          msgFurtiva += `✅ FURTIVIDADE BEM-SUCEDIDA!\n`;
+          msgFurtiva += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será CRÍTICO AUTOMÁTICO!`;
+
+          await setDoc(doc(db, "game", "combate"), {
+            [`proximoCritico.${userEmail}`]: {
+              alvo: acaoAlvo,
+              atacante: userEmail,
+              timestamp: serverTimestamp(),
+            }
+          }, { merge: true });
+        } else {
+          msgFurtiva += `❌ FURTIVIDADE FALHOU!\n`;
+          msgFurtiva += `👁️ O alvo está alerta. Nenhum efeito adicional.`;
+        }
+      }
+
+      await addDoc(chatCol, {
+        userNick: fichaJogador?.nome || userNick,
+        userEmail: jogadorSelecionadoEmail,
+        type: "acao",
+        text: msgFurtiva,
+        timestamp: serverTimestamp(),
+      });
+
+      await adicionarXpAcao(jogadorSelecionadoEmail, 1);
+      setAcaoOpen(false);
+      setRolagemEmAndamento(false);
+      setAcaoTipo("");
       return;
     }
 
@@ -2260,77 +2384,7 @@ if (acaoHabilidadeSelecionada) {
           tipoDanoAcao = hab.tipoDano;
         }
       }
-      // 🟢 FURTIVIDADE
-if (acaoTipo === "furtividade" && acaoAlvo) {
-  const fichaAlvo = fichasMap[acaoAlvo];
-  const percepcaoAlvo = fichaAlvo?.pericias?.percepcao || 0;
-  const inteligenciaAlvo = fichaAlvo?.atributos?.inteligencia || 0;
-  let mensagem = `🌫️ Ação de Furtividade\n\n`;
-  
-  // 🟢 Verifica Terceiro Olho (Traço)
-  if (fichaAlvo?.tracos?.includes("Observador")) {
-    mensagem += `👁️ ${fichaAlvo?.nome || acaoAlvo} tem **TERCEIRO OLHO** (Traço)!\n`;
-    mensagem += `❌ FURTIVIDADE FALHOU! O alvo é imune a golpes de oportunidade.`;
-  } else if (percepcaoAlvo < 1) {
-    mensagem += `👁️ ${fichaAlvo?.nome || acaoAlvo} NÃO tem Percepção!\n`;
-    mensagem += `✅ FURTIVIDADE BEM-SUCEDIDA!\n`;
-    mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será CRÍTICO AUTOMÁTICO!`;
-    
-    // Marca próximo ataque como crítico
-    await setDoc(doc(db, "game", "combate"), {
-      [`proximoCritico.${userEmail}`]: {
-        alvo: acaoAlvo,
-        atacante: userEmail,
-        timestamp: serverTimestamp(),
-      }
-    }, { merge: true });
-    
-} else if (percepcaoAlvo >= 5) {
-  // 🟢 Alvo com Percepção nível 5 - atacante NÃO consegue
-  mensagem += `👁️ ${fichaAlvo?.nome || acaoAlvo} tem PERCEPÇÃO NÍVEL 5!\n`;
-  mensagem += `❌ FALHA! O alvo percebeu sua movimentação!\n`;
-  mensagem += `🛡️ Você foi detectado! Nenhum efeito adicional.`;
-  
-} else {
-  // 🟢 Testa contra Percepção do alvo
-  const ataqueFurtivo = total;
-  const defesaPercepcao = inteligenciaAlvo + percepcaoAlvo;
-  
-  mensagem += `🎯 Seu resultado: ${ataqueFurtivo}\n`;
-  mensagem += `👁️ Percepção do alvo: ${defesaPercepcao}\n\n`;
-  
-  if (ataqueFurtivo > defesaPercepcao) {
-    mensagem += `✅ FURTIVIDADE BEM-SUCEDIDA!\n`;
-    mensagem += `🎯 O próximo golpe contra ${fichaAlvo?.nome || acaoAlvo} será CRÍTICO AUTOMÁTICO!`;
-    
-    await setDoc(doc(db, "game", "combate"), {
-      [`proximoCritico.${userEmail}`]: {
-        alvo: acaoAlvo,
-        atacante: userEmail,
-        timestamp: serverTimestamp(),
-      }
-    }, { merge: true });
-    
-  } else {
-    mensagem += `❌ FURTIVIDADE FALHOU!\n`;
-    mensagem += `👁️ O alvo está alerta. Nenhum efeito adicional.`;
-  }
-}
-  
-  // Envia mensagem de furtividade
-  await addDoc(chatCol, {
-    userNick: fichaJogador?.nome || userNick,
-    userEmail: jogadorSelecionadoEmail,
-    type: "acao",
-    text: mensagem,
-    timestamp: serverTimestamp(),
-  });
-  
-  setAcaoOpen(false);
-  setRolagemEmAndamento(false);
-  // ... limpar estados ...
-  return;
-}
+      // 🟢 REMOVIDO DAQUI — MOVIDO PARA FORA DO IF DO DANO
       
       // 2. Se não tem habilidade, verifica item
       if (tipoDanoAcao === "Nenhum" && acaoItem) {
@@ -2374,7 +2428,24 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
     }
     // 🟢 SE FOR REAÇÃO: Envia como o personagem que reagiu
     if (acaoModo === "reacao" && acaoPendenteId && acaoTipo) {
-      const resultadoCombate = await resolverCombate(acaoPendenteId, acaoTipo, total, rolls);
+      // 🟢 PÉ DIREITO: primeira esquiva do combate é perfeita
+      let isPeDireitoPerfeito = false;
+      if (
+        acaoTipo === "esquiva" &&
+        fichaJogador?.caracteristicas?.includes("Pé Direito") &&
+        !fichaJogador?.peDireitoUsado
+      ) {
+        isPeDireitoPerfeito = true;
+        await setDoc(doc(db, "fichas", jogadorSelecionadoEmail), { peDireitoUsado: true }, { merge: true });
+      }
+      
+      const resultadoCombate = await resolverCombate(
+        acaoPendenteId,
+        acaoTipo,
+        total,
+        rolls,
+        { peDireitoPerfeito: isPeDireitoPerfeito }
+      );
       
       // 🟢 ADICIONAR XP PARA O DEFENSOR
       let xpDefensor = 1;
@@ -2390,7 +2461,8 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
     }
     
             // 🟢 SE FOR CONSUMÍVEL, APLICAR EFEITO
-    if (acaoItemConsumivel && acaoItem) {
+    if (acaoItemConsumivel && _consumivelItem) {
+      const _consumivelNome = _consumivelItem?.nome || acaoItem;
       const valorReal = Math.round(acaoConsumivelValor * acaoConsumivelPercentual / 100);
       const emailAlvo = acaoAlvo || jogadorSelecionadoEmail;
       const ehOutro = acaoAlvo && acaoAlvo !== jogadorSelecionadoEmail;
@@ -2401,7 +2473,8 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
       
       if (ehOutro && percentualAcerto < 51) {
         // Falhou em aplicar no outro
-        mensagem += `\n\n🧪 **FALHA ao usar ${acaoItem}!** (${Math.round(percentualAcerto)}% < 51% necessário)`;
+        const _consumivelNomeParaErro = _consumivelItem?.nome || acaoItem;
+        mensagem += `\n\n🧪 **FALHA ao usar ${_consumivelNomeParaErro}!** (${Math.round(percentualAcerto)}% < 51% necessário)`;
                 const isDadoSecreto = modoSecreto;
         await addDoc(chatCol, {
           userNick: fichaJogador?.nome || userNick,
@@ -2444,15 +2517,16 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
           // A durabilidade do item representa o % restante do item
           // Ex: durabilidade 50% + usar 100% = consome os 50% restantes + 50% do próximo
           
+          // 🟢 Usa o NOME DO CONSUMÍVEL (não o primeiro item) pra não bagunçar
           const categoria = Object.keys(fichaJogador).find(cat => 
-            Array.isArray(fichaJogador[cat]) && fichaJogador[cat].some(it => it.nome === acaoItem)
+            Array.isArray(fichaJogador[cat]) && fichaJogador[cat].some(it => it.nome === _consumivelNome)
           );
           
           if (categoria) {
             // Pega TODOS os itens com o mesmo nome (podem estar em slots diferentes)
             const itensMismoNome = fichaJogador[categoria]
               .map((it, i) => ({ ...it, __originalIndex: i }))
-              .filter(it => it.nome === acaoItem);
+              .filter(it => it.nome === _consumivelNome);
             
             let percentualRestanteParaConsumir = acaoConsumivelPercentual;
             const itensAtualizados = [...fichaJogador[categoria]];
@@ -2501,7 +2575,7 @@ if (acaoTipo === "furtividade" && acaoAlvo) {
             setFichaJogador(prev => ({ ...prev, [categoria]: novosItens }));
           }
           
-          mensagem += `\n\n🧪 **${acaoItem} usado!** ${msgEfeito}`;
+          mensagem += `\n\n🧪 **${_consumivelNome} usado!** ${msgEfeito}`;
           
                     const isDadoSecreto = modoSecreto;
           await addDoc(chatCol, {
@@ -2564,25 +2638,20 @@ setAcaoOpen(false);
     setAcaoAtributo("");
     setAcaoPericia("");
     setAcaoPericia2("");
-    setAcaoItem("");
-    setAcaoItemDado(0);
+    setAcaoItens([]);
     setAcaoCasting(0);
     setAcaoEmbuicao(0);
-        setAcaoHabilidadeSelecionada("");
+    setAcaoHabilidadeSelecionada("");
     setAcaoHabilidadeDado(0);
-    setAcaoHabilidadeCustoPE(0);  // 🟢 ADICIONE
-    setAcaoDebuffs([]);            // 🟢 ADICIONE
-    setAcaoBonusVariavelLista([]);  // 🟢 Limpa bônus
-    setAcaoValorDificuldade("");    // 🟢 Limpa VD
-    setAcaoItemConsumivel(false);
-    setAcaoConsumivelTipo("");
-    setAcaoConsumivelValor(0);
-    setAcaoConsumivelPercentual(100);
+    setAcaoHabilidadeCustoPE(0);
+    setAcaoDebuffs([]);
+    setAcaoBonusVariavelLista([]);
+    setAcaoValorDificuldade("");
   }
 }
 
 // 🟢 FUNÇÃO PARA RESOLVER COMBATE - VERSÃO CORRIGIDA
-async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa = []) {
+async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa = [], opcoes = {}) {
   const pendenteRef = doc(db, "acoesPendentes", pendenteId);
   const snap = await getDoc(pendenteRef);
   
@@ -2629,7 +2698,11 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
   const _sep = `━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   if (tipoDefesa === "esquiva") {
-    if (isErroCriticoDefensor) {
+    if (opcoes.peDireitoPerfeito) {
+      danoBrutoAlvo = 0;
+      mensagem = `${_cabecalhoCombate}🛡️ ESQUIVA PERFEITA!\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n🌟 **PÉ DIREITO** ativado! Esquiva automática. NENHUM DANO.\n`;
+    }
+    else if (isErroCriticoDefensor) {
       danoBrutoAlvo = valorAtaque;
       mensagem = `${_cabecalhoCombate}🛡️ Esquiva tentada...\n\n${_rolagemAtacante}\n${_rolagemDefensor}\n\n${_sep}\n💥 ERRO CRÍTICO NA ESQUIVA!\n💔 Dano cheio aplicado: ${valorAtaque}\n`;
     }
@@ -2811,17 +2884,9 @@ async function resolverCombate(pendenteId, tipoDefesa, valorDefesa, dadosDefesa 
     timestamp: serverTimestamp(),
   });
   
-  // 🟢 ADICIONAR XP PARA O ATACANTE (baseado nas flags DELE)
-  let xpAtacante = 1;
-  if (isCritico) xpAtacante = 2;
-  if (isErroCritico) xpAtacante = 0;
-  await adicionarXpAcao(atacante, xpAtacante);
+  // 🟢 XP do atacante já foi adicionado em rolarAcao (evita 2x)
   
-  // 🟢 ADICIONAR XP PARA O DEFENSOR (baseado nas flags DELE)
-  let xpDefensor = 1;
-  if (isCriticoDefensor) xpDefensor = 2;
-  if (isErroCriticoDefensor) xpDefensor = 0;
-  await adicionarXpAcao(alvo, xpDefensor);
+  // 🟢 XP do defensor já foi adicionado em rolarAcao (evita 2x)
   
   return { mensagem, isCriticoDefensor, isErroCriticoDefensor };
 }
@@ -4205,7 +4270,22 @@ useEffect(() => {
        {/* 🟢 MODAL DE AÇÃO - VERSÃO COMPLETA */}
       <Dialog 
         open={acaoOpen} 
-        onClose={() => { setAcaoOpen(false); setJogadoresConjunto([]); }}
+        onClose={() => {
+          setAcaoOpen(false);
+          setJogadoresConjunto([]);
+          setAcaoItens([]);
+          setAcaoAtributo("");
+          setAcaoPericia("");
+          setAcaoPericia2("");
+          setAcaoCasting(0);
+          setAcaoEmbuicao(0);
+          setAcaoHabilidadeSelecionada("");
+          setAcaoHabilidadeDado(0);
+          setAcaoHabilidadeCustoPE(0);
+          setAcaoDebuffs([]);
+          setAcaoBonusVariavelLista([]);
+          setAcaoValorDificuldade("");
+        }}
         maxWidth="sm"
         fullWidth
         PaperProps={{
@@ -4260,12 +4340,17 @@ useEffect(() => {
               border: '1px solid rgba(156, 39, 176, 0.3)',
               mb: 1
             }}>
-              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
-                ℹ️ <strong style={{ color: '#9c27b0' }}>Atributo</strong> e 
-                <strong style={{ color: '#ff9800' }}> VD (Valor Mínimo para Sucesso)</strong> são obrigatórios.
+              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.5 }}>
+                ℹ️ <strong style={{ color: '#9c27b0' }}>Atributo</strong> é obrigatório (ou uma perícia).
               </Typography>
-              <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
-                Todos os demais campos são <strong style={{ color: '#4caf50' }}>opcionais</strong>.
+              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.5 }}>
+                🎯 <strong style={{ color: '#ff9800' }}>VMS (Valor Mínimo de Sucesso)</strong> só é obrigatório para ações <strong>livres</strong>.
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', fontWeight: 'bold' }}>
+                ✅ Não precisa de VMS quando: marcar ☠️ Dano, 🌫️ Furtividade ou escolher um 🎯 Alvo.
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5 }}>
+                Essas ações dependem do embate (ataque × defesa) entre os personagens.
               </Typography>
             </Box>
 
@@ -4640,121 +4725,131 @@ useEffect(() => {
     </Select>
   </FormControl>
 )}
-{/* Item */}
-<FormControl fullWidth size="small">
-  <InputLabel sx={{ color: '#94a3b8', '&.Mui-focused': { color: '#ff9800' } }}>Item</InputLabel>
-  <Select
-    value={acaoItem}
-    onChange={(e) => {
-      setAcaoItem(e.target.value);
-      const todosItens = [
-        ...(fichaJogador?.equipamentos || []),
-        ...(fichaJogador?.vestes || []),
-        ...(fichaJogador?.diversos || [])
-      ];
-      const itemEncontrado = todosItens.find(it => it.nome === e.target.value);
-      setAcaoItemDado(itemEncontrado?.dado || 0);
-      
-      if (itemEncontrado?.consumivel && itemEncontrado.consumivel !== "Nenhum") {
-        setAcaoItemConsumivel(true);
-        setAcaoConsumivelTipo(itemEncontrado.consumivel);
-        setAcaoConsumivelValor(itemEncontrado.consumivelValor || 0);
-        setAcaoConsumivelPercentual(itemEncontrado.consumivelPercentual || 100);
-        setAcaoItemDado(0);
-        setAcaoTipo("");
-      } else {
-        setAcaoItemConsumivel(false);
-        setAcaoConsumivelTipo("");
-        setAcaoConsumivelValor(0);
-        setAcaoConsumivelPercentual(100);
-      }
-    }}
-    sx={{ 
-      color: '#fff', 
-      bgcolor: '#1a1a2e',
-      borderRadius: 2,
-      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#334155', transition: 'border-color 0.3s' },
-      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' },
-      '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800', borderWidth: 2 },
-      '& .MuiSelect-icon': { color: '#ff9800' },
-      transition: 'all 0.3s',
-    }}
-    MenuProps={{
-      PaperProps: { 
-        sx: { 
-          bgcolor: "#1a1a2e", 
-          color: "#fff",
-          borderRadius: 2,
-          border: '1px solid #ff9800',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
-          mt: 1,
-          maxHeight: 400,
-          '& .MuiMenuItem-root': {
-            color: '#94a3b8',
-            transition: 'all 0.2s',
-            '&:hover': { bgcolor: 'rgba(255,152,0,0.2)', color: '#fff' },
-            '&.Mui-selected': { bgcolor: 'rgba(255,152,0,0.3)', color: '#ff9800', fontWeight: 'bold' },
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: 0.5,
-            padding: '8px 16px',
-          }
-        } 
-      },
-      anchorOrigin: { vertical: "bottom", horizontal: "left" },
-      transformOrigin: { vertical: "top", horizontal: "left" },
-    }}
-    renderValue={(selected) => {
-      const todosItens = [
-        ...(fichaJogador?.equipamentos || []),
-        ...(fichaJogador?.vestes || []),
-        ...(fichaJogador?.diversos || [])
-      ];
-      const item = todosItens.find(it => it.nome === selected);
-      if (!item) return <Typography sx={{ color: '#94a3b8' }}>{selected}</Typography>;
-      return (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-          <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>{item.nome}</Typography>
-          <Chip label={`🎲${item.dado || 1}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 20, fontSize: '0.6rem' }} />
-          <Chip label={`🔧${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ff9800', height: 20, fontSize: '0.6rem' }} />
-          {item.tipoDano && item.tipoDano !== "Nenhum" && (
-            <Chip label={`🗡️${item.tipoDano}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ef4444', height: 20, fontSize: '0.6rem' }} />
-          )}
-          {item.consumivel && item.consumivel !== "Nenhum" && (
-            <Chip label={`🧪${item.consumivel}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#4caf50', height: 20, fontSize: '0.6rem' }} />
-          )}
+{/* Itens (múltiplos) */}
+<Paper sx={{ p: 1.5, bgcolor: 'rgba(255,152,0,0.06)', border: '1px solid #ff9800', borderRadius: 2 }}>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+    <Typography variant="subtitle2" sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '0.85rem' }}>
+      ⚔️ ITENS DA AÇÃO ({acaoItens.length})
+    </Typography>
+    <Button
+      size="small"
+      variant="outlined"
+      disabled={!podeAdicionarItemAcao().ok}
+      onClick={() => {
+        const check = podeAdicionarItemAcao();
+        if (!check.ok) return alert(check.motivo);
+        setAcaoItens([...acaoItens, { uid: `${Date.now()}_${Math.random().toString(36).slice(2,6)}`, _itemUid: null, nome: "", dado: 0, tipoDano: "Nenhum", consumivel: "Nenhum", consumivelTipo: "", consumivelValor: 0, consumivelPercentual: 100, categoria: "" }]);
+      }}
+      sx={{ color: '#ff9800', borderColor: '#ff9800', fontSize: '0.7rem', minWidth: 'auto', px: 1, '&.Mui-disabled': { color: '#475569', borderColor: '#334155' } }}
+    >
+      + Item
+    </Button>
+  </Box>
+  
+  {acaoItens.length === 0 && (
+    <Typography variant="caption" sx={{ color: '#64748b', display: 'block', textAlign: 'center', py: 1.5, fontStyle: 'italic' }}>
+      Nenhum item selecionado.
+    </Typography>
+  )}
+  
+  {acaoItens.map((it, idx) => {
+    // 🟢 FILTRA por categoria da ação: normal ↔ normal, consumível ↔ consumível. Insumíveis excluídos.
+    const todosItens = [
+      ...(fichaJogador?.equipamentos || []).map(x => ({ ...x, categoria: 'equipamentos' })),
+      ...(fichaJogador?.vestes || []).map(x => ({ ...x, categoria: 'vestes' })),
+      ...(fichaJogador?.diversos || []).map(x => ({ ...x, categoria: 'diversos' })),
+    ].filter(x => {
+      if (!x.nome) return false;
+      if (x.insumivel && x.insumivel !== "Nenhum") return false; // Insumíveis vão pelo modal próprio
+      const isConsum = x.consumivel && x.consumivel !== "Nenhum";
+      if (!categoriaAcao) return true;
+      if (categoriaAcao === "consumivel") return isConsum;
+      return !isConsum;
+    });
+    return (
+      <Box key={it.uid} sx={{ mb: 1, p: 1, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <FormControl fullWidth size="small">
+            <Select
+              value={it._itemUid || it.nome || ""}
+              displayEmpty
+              onChange={(e) => {
+                const valorSelect = e.target.value;
+                const enc = valorSelect ? todosItens.find(x => (x._uid || x.nome) === valorSelect) : null;
+                const nome = enc?.nome || "";
+                const novos = [...acaoItens];
+                novos[idx] = {
+                  ...it,
+                  nome,
+                  _itemUid: enc?._uid || null, // 🟢 armazena uid do item específico
+                  dado: (enc?.consumivel && enc.consumivel !== "Nenhum") ? 0 : (enc?.dado || 0),
+                  tipoDano: enc?.tipoDano || "Nenhum",
+                  consumivel: enc?.consumivel || "Nenhum",
+                  consumivelTipo: enc?.consumivel && enc.consumivel !== "Nenhum" ? enc.consumivel : "",
+                  consumivelValor: enc?.consumivelValor || 0,
+                  consumivelPercentual: enc?.consumivelPercentual || 100,
+                  categoria: enc?.categoria || "",
+                };
+                setAcaoItens(novos);
+              }}
+              renderValue={() => {
+                if (!it.nome) return <em style={{ color: '#64748b', fontSize: '0.8rem' }}>Selecione um item...</em>;
+                return (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                    <Typography sx={{ color: '#fff', fontWeight: 'bold', fontSize: '0.8rem' }}>{it.nome}</Typography>
+                    {it.dado > 0 && <Chip label={`🎲${it.dado}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 18, fontSize: '0.55rem' }} />}
+                    {it.tipoDano && it.tipoDano !== "Nenhum" && <Chip label={it.tipoDano} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ef4444', height: 18, fontSize: '0.55rem' }} />}
+                    {it.consumivel && it.consumivel !== "Nenhum" && <Chip label={`🧪${it.consumivel}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#4caf50', height: 18, fontSize: '0.55rem' }} />}
+                  </Box>
+                );
+              }}
+              sx={{ color: '#fff', bgcolor: '#0a0a12', borderRadius: 1, fontSize: '0.8rem' }}
+              MenuProps={{ PaperProps: { sx: { bgcolor: '#1a1a2e', color: '#fff', maxHeight: 400 } } }}
+            >
+              <MenuItem value="">Nenhum</MenuItem>
+              {todosItens.map((item, i) => (
+                <MenuItem key={`${item.categoria}-${i}`} value={item._uid || item.nome}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>{item.nome}</Typography>
+                    <Chip label={`🎲${item.dado || 1}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 18, fontSize: '0.55rem' }} />
+                    <Chip label={`🔧${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ff9800', height: 18, fontSize: '0.55rem' }} />
+                    {item.tipoDano && item.tipoDano !== "Nenhum" && <Chip label={item.tipoDano} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ef4444', height: 18, fontSize: '0.55rem' }} />}
+                    {item.consumivel && item.consumivel !== "Nenhum" && <Chip label={`🧪${item.consumivel}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#4caf50', height: 18, fontSize: '0.55rem' }} />}
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <IconButton size="small" onClick={() => setAcaoItens(acaoItens.filter((_, i) => i !== idx))} sx={{ color: '#ef4444' }}>
+            <DeleteIcon fontSize="small" />
+          </IconButton>
         </Box>
-      );
-    }}
-  >
-    <MenuItem value="">Nenhum</MenuItem>
-    {[
-      ...(fichaJogador?.equipamentos || []).map(it => ({ ...it, categoria: 'equipamentos' })),
-      ...(fichaJogador?.vestes || []).map(it => ({ ...it, categoria: 'vestes' })),
-      ...(fichaJogador?.diversos || []).map(it => ({ ...it, categoria: 'diversos' }))
-    ].filter(n => n.nome).map((item, i) => (
-      <MenuItem key={i} value={item.nome}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography sx={{ color: '#fff', fontWeight: 'bold' }}>{item.nome}</Typography>
-            <Chip label={`🎲${item.dado || 1}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#00e0ff', height: 18, fontSize: '0.55rem' }} />
-            <Chip label={`🔧${item.durabilidade || 100}%`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ff9800', height: 18, fontSize: '0.55rem' }} />
-            {item.tipoDano && item.tipoDano !== "Nenhum" && (
-              <Chip label={`🗡️${item.tipoDano}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#ef4444', height: 18, fontSize: '0.55rem' }} />
-            )}
-            {item.consumivel && item.consumivel !== "Nenhum" && (
-              <Chip label={`🧪${item.consumivel}`} size="small" sx={{ bgcolor: '#1e3a5f', color: '#4caf50', height: 18, fontSize: '0.55rem' }} />
-            )}
+        {it.consumivel && it.consumivel !== "Nenhum" && (
+          <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" sx={{ color: '#4caf50', fontSize: '0.65rem', minWidth: 80 }}>
+              🧪 Consumir {it.consumivelPercentual || 100}%
+            </Typography>
+            <Slider
+              value={it.consumivelPercentual || 100}
+              onChange={(e, val) => {
+                const novos = [...acaoItens];
+                novos[idx] = { ...it, consumivelPercentual: val };
+                setAcaoItens(novos);
+              }}
+              min={1}
+              max={100}
+              size="small"
+              sx={{ color: '#4caf50', flex: 1 }}
+            />
+            <Typography variant="caption" sx={{ color: '#facc15', fontSize: '0.65rem' }}>
+              +{Math.round((it.consumivelValor || 0) * (it.consumivelPercentual || 100) / 100)} {it.consumivel}
+            </Typography>
           </Box>
-          <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.6rem' }}>
-            [{item.categoria}] {item.quantidade > 1 ? `Qtd: ${item.quantidade}` : ''}
-          </Typography>
-        </Box>
-      </MenuItem>
-    ))}
-  </Select>
-</FormControl>
+        )}
+      </Box>
+    );
+  })}
+</Paper>
 {/* 🟢 SELEÇÃO DE ALVO */}
 {acaoModo === "acao" && (
   <FormControl fullWidth size="small">
@@ -5229,44 +5324,22 @@ useEffect(() => {
                 sx: { color: '#fff' } 
               }}
               sx={{ bgcolor: '#1a1a2e', '& .MuiInputLabel-root': { color: '#94a3b8' } }}
-              helperText="Definido pelo Mestre. Sucesso se resultado ≥ VD (1-1000)."
-              FormHelperTextProps={{ sx: { color: '#64748b' } }}
+              helperText={(() => {
+                const totalD10Modal =
+                  (acaoAtributo && Number(fichaJogador?.atributos?.[acaoAtributo]) || 0) +
+                  (acaoPericia && Number(fichaJogador?.pericias?.[acaoPericia]) || 0) +
+                  (acaoPericia2 && Number(fichaJogador?.pericias?.[acaoPericia2]) || 0) +
+                  acaoItemDado +
+                  (Number(acaoCasting) || 0) +
+                  (Number(acaoEmbuicao) || 0) +
+                  (Number(acaoHabilidadeDado) || 0);
+                const vmsRec = totalD10Modal > 0 ? Math.round(totalD10Modal * 10 * 0.5 + 1) : 0;
+                return `Definido pelo Mestre. Sucesso se resultado ≥ VD (1-1000).${vmsRec > 0 ? ` Valor de VMS recomendado: ${vmsRec}` : ''}`;
+              })()}
+              FormHelperTextProps={{ sx: { color: '#475569', fontStyle: 'italic', fontSize: '0.7rem' } }}
             />
             
-            {/* Configuração de Consumível */}
-            {acaoItemConsumivel && (
-              <Paper sx={{ p: 2, bgcolor: '#1e1a2e', border: '1px solid #4caf50' }}>
-                <Typography variant="subtitle2" sx={{ color: '#4caf50', mb: 1 }}>
-                  🧪 Item Consumível: {acaoItem}
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
-                  Tipo: <strong style={{ color: '#fff' }}>{acaoConsumivelTipo}</strong> | 
-                  Valor: <strong style={{ color: '#fff' }}>{acaoConsumivelValor}</strong>
-                </Typography>
-                <Box sx={{ mt: 1 }}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                    Percentual: <strong style={{ color: '#4caf50' }}>{acaoConsumivelPercentual}%</strong>
-                  </Typography>
-                  <Slider
-                    value={acaoConsumivelPercentual}
-                    onChange={(e, val) => setAcaoConsumivelPercentual(val)}
-                    min={1}
-                    max={100}
-                    step={1}
-                    size="small"
-                    sx={{ color: '#4caf50' }}
-                  />
-                </Box>
-                <Typography variant="caption" sx={{ color: '#facc15' }}>
-                  Efeito: <strong>+{Math.round(acaoConsumivelValor * acaoConsumivelPercentual / 100)} {acaoConsumivelTipo}</strong>
-                </Typography>
-                {acaoConsumivelPercentual < 100 && (
-                  <Typography variant="caption" sx={{ color: '#ff9800', display: 'block' }}>
-                    ⚠️ Consumo parcial - durabilidade reduzida
-                  </Typography>
-                )}
-              </Paper>
-            )}
+            {/* Configuração de Consumível — agora dentro de cada item em acaoItens */}
 
             {/* Resumo */}
             {fichaJogador && (
@@ -5313,7 +5386,25 @@ useEffect(() => {
         </DialogContent>
         
         <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
-          <Button onClick={() => setAcaoOpen(false)} sx={{ color: '#94a3b8' }}>
+          <Button 
+            onClick={() => {
+              setAcaoOpen(false);
+              setJogadoresConjunto([]);
+              setAcaoItens([]);
+              setAcaoAtributo("");
+              setAcaoPericia("");
+              setAcaoPericia2("");
+              setAcaoCasting(0);
+              setAcaoEmbuicao(0);
+              setAcaoHabilidadeSelecionada("");
+              setAcaoHabilidadeDado(0);
+              setAcaoHabilidadeCustoPE(0);
+              setAcaoDebuffs([]);
+              setAcaoBonusVariavelLista([]);
+              setAcaoValorDificuldade("");
+            }} 
+            sx={{ color: '#94a3b8' }}
+          >
             Cancelar
           </Button>
           <Button 
@@ -5322,7 +5413,123 @@ useEffect(() => {
             disabled={rolagemEmAndamento}
             sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
           >
-            {rolagemEmAndamento ? '🔄 Rolando...' : '⚔️ Rolar Ação'}
+            {rolagemEmAndamento ? '🔄 ROLANDO...' : '⚔️ ROLAR AÇÃO'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🟢 MODAL PÓS-CHOQUE (SEGUNDA ROLAGEM) */}
+      <Dialog 
+        open={posChoqueOpen} 
+        onClose={() => {
+          setPosChoqueOpen(false);
+          setPosChoquePendente(null);
+          setPosChoqueRolls([]);
+          setPosChoqueTotal(0);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: "#0f172a",
+            border: "2px solid #ff9800",
+            borderRadius: 3,
+            boxShadow: "0 0 30px rgba(255,152,0,0.4)",
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          color: '#ff9800',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          borderBottom: '2px solid #ff9800',
+          pb: 2,
+          background: 'linear-gradient(90deg, rgba(255,152,0,0.2), transparent)',
+        }}>
+          <span style={{ fontSize: '1.8rem' }}>⚡</span>
+          <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#ff9800' }}>
+            PÓS-CHOQUE!
+          </Typography>
+          <Chip 
+            label="CRÍTICO!" 
+            size="small"
+            sx={{
+              bgcolor: '#ff9800',
+              color: '#000',
+              fontWeight: 'bold',
+              ml: 'auto',
+              animation: 'pulse 1.5s infinite',
+            }}
+          />
+        </DialogTitle>
+        
+        <DialogContent>
+          {posChoquePendente && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+              <Paper sx={{ p: 2, bgcolor: '#1a1a2e', border: '1px solid #334155', borderRadius: 2 }}>
+                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1, fontWeight: 'bold' }}>
+                  🎲 PRIMEIRA ROLAGEM (CRÍTICO)
+                </Typography>
+                <Typography sx={{ color: '#fff', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                  [{posChoquePendente.rolls.join(", ")}] = {posChoquePendente.total}
+                </Typography>
+              </Paper>
+              
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={rolarPosChoque}
+                disabled={posChoqueRolls.length > 0}
+                sx={{
+                  bgcolor: '#ff9800',
+                  color: '#000',
+                  fontWeight: 'bold',
+                  py: 1.5,
+                  '&:hover': { bgcolor: '#f57c00' },
+                  '&.Mui-disabled': { bgcolor: '#334155', color: '#64748b' },
+                }}
+              >
+                {posChoqueRolls.length > 0 ? '✅ ROLADO' : '🎲 ROLAR NOVAMENTE'}
+              </Button>
+              
+              {posChoqueRolls.length > 0 && (
+                <Paper sx={{ p: 2, bgcolor: 'rgba(255,152,0,0.1)', border: '1px solid #ff9800', borderRadius: 2 }}>
+                  <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mb: 1, fontWeight: 'bold' }}>
+                    ⚡ SEGUNDA ROLAGEM (PÓS-CHOQUE)
+                  </Typography>
+                  <Typography sx={{ color: '#fff', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                    [{posChoqueRolls.join(", ")}] = {posChoqueTotal}
+                  </Typography>
+                  <Divider sx={{ my: 1.5, borderColor: '#ff980044' }} />
+                  <Typography sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                    🎯 DANO TOTAL: {posChoquePendente.total} + {posChoqueTotal} = {posChoquePendente.total + posChoqueTotal}
+                  </Typography>
+                </Paper>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
+          <Button 
+            onClick={() => {
+              setPosChoqueOpen(false);
+              setPosChoquePendente(null);
+              setPosChoqueRolls([]);
+              setPosChoqueTotal(0);
+            }}
+            sx={{ color: '#94a3b8' }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={confirmarPosChoque}
+            disabled={posChoqueRolls.length === 0}
+            sx={{ bgcolor: '#4caf50', '&:hover': { bgcolor: '#388e3c' }, '&.Mui-disabled': { bgcolor: '#334155', color: '#64748b' } }}
+          >
+            ✅ Confirmar
           </Button>
         </DialogActions>
       </Dialog>
