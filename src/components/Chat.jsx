@@ -498,6 +498,72 @@ const CORES_PERICIA = {
   performance: "#e5e5e5", intimidacao: "#facc15", aura: "#facc15",
 };
 
+// 🟢 HELPERS DE COR POR DISPLAY NAME
+const getCorAtributoPorDisplay = (displayName) => {
+  for (const key of ORDEM_ATRIBUTOS) {
+    if (formatarNome(key) === displayName) return CORES_ATRIBUTOS[key] || '#ef4444';
+  }
+  return '#ef4444';
+};
+
+const getCorPericiaPorDisplay = (displayName) => {
+  for (const key of ORDEM_PERICIA) {
+    if (formatarNome(key) === displayName) return CORES_PERICIA[key] || '#22c55e';
+  }
+  return '#22c55e';
+};
+
+// 🟢 CORES POR TIPO DE COMPONENTE
+const CORES_TIPO_COMPONENTE = {
+  item: '#ff9800',
+  consumivel: '#4caf50',
+  casting: '#a855f7',
+  embuicao: '#00e0ff',
+  habilidade: '#ffd700',
+  custoHabilidade: '#facc15',
+  golpe: '#ff9800',
+  debuff: '#ef4444',
+  bonus: '#4caf50',
+  penalidade: '#ef4444',
+};
+
+// 🟢 FORMATA UMA LINHA DE DESCRIÇÃO COM ÍCONE + COR
+const colorirLinhaAcao = (linha) => {
+  if (!linha) return '';
+
+  const mA = linha.match(/^Atributo: (.+?) \((\d+)\)$/);
+  if (mA) return `[C:${getCorAtributoPorDisplay(mA[1])}]💪 Atributo: ${mA[1]} (${mA[2]})[/C]`;
+
+  const mP2 = linha.match(/^2ª Perícia: (.+?) \((\d+)\)$/);
+  if (mP2) return `[C:${getCorPericiaPorDisplay(mP2[1])}]📚 2ª Perícia: ${mP2[1]} (${mP2[2]})[/C]`;
+
+  const mP = linha.match(/^Perícia: (.+?) \((\d+)\)$/);
+  if (mP) return `[C:${getCorPericiaPorDisplay(mP[1])}]📚 Perícia: ${mP[1]} (${mP[2]})[/C]`;
+
+  if (linha.startsWith('Item: ')) return `[C:${CORES_TIPO_COMPONENTE.item}]⚔️ ${linha}[/C]`;
+  if (linha.includes('Consumível: ')) return `[C:${CORES_TIPO_COMPONENTE.consumivel}]🧪 ${linha.replace(/^🧪 /, '')}[/C]`;
+  if (linha.startsWith('Casting: ')) return `[C:${CORES_TIPO_COMPONENTE.casting}]🌀 ${linha}[/C]`;
+  if (linha.startsWith('Embuição: ')) return `[C:${CORES_TIPO_COMPONENTE.embuicao}]💠 ${linha}[/C]`;
+  if (linha.startsWith('Habilidade: ')) return `[C:${CORES_TIPO_COMPONENTE.habilidade}]✨ ${linha}[/C]`;
+  if (linha.startsWith('Custo Habilidade: ')) return `[C:${CORES_TIPO_COMPONENTE.custoHabilidade}]💛 ${linha}[/C]`;
+  if (linha.startsWith('⚔️ ')) return `[C:${CORES_TIPO_COMPONENTE.golpe}]${linha}[/C]`;
+  if (linha.startsWith('Debuffs: ') || linha.startsWith('Penalidade de Efeitos: ')) {
+    return `[C:${CORES_TIPO_COMPONENTE.debuff}]🔻 ${linha}[/C]`;
+  }
+  if (linha.startsWith('Bônus: ')) return `[C:${CORES_TIPO_COMPONENTE.bonus}]🟢 ${linha}[/C]`;
+
+  // Fallback: formato raw "chave(valor)" (vem da ação conjunta)
+  const mRaw = linha.match(/^([a-zA-ZÀ-ÿ]+)\((\d+)\)$/);
+  if (mRaw) {
+    const key = mRaw[1];
+    const valor = mRaw[2];
+    if (ORDEM_ATRIBUTOS.includes(key)) return `[C:${getCorAtributoPorDisplay(formatarNome(key))}]💪 ${formatarNome(key)} (${valor})[/C]`;
+    if (ORDEM_PERICIA.includes(key)) return `[C:${getCorPericiaPorDisplay(formatarNome(key))}]📚 ${formatarNome(key)} (${valor})[/C]`;
+  }
+
+  return linha;
+};
+
 export default function Chat({ userNick, userEmail }) {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([]);
@@ -855,6 +921,19 @@ const getCorAtributo = (nome) => {
     if (first.consumivel && first.consumivel !== "Nenhum") return "consumivel";
     return "normal";
   }, [acaoItens]);
+
+  // 🟢 VMS: bloqueado em reação, alvo, dano ou furtividade (só permitido em Ação livre)
+  const vmsBloqueado =
+    acaoModo === "reacao" ||
+    !!acaoAlvo ||
+    acaoTipo === "dano" ||
+    acaoTipo === "furtividade";
+
+  const vmsMotivoBloqueio =
+    acaoModo === "reacao" ? "🔒 VMS desativado em Reações"
+    : acaoTipo === "furtividade" ? "🔒 VMS desativado em Ações Furtivas"
+    : (acaoTipo === "dano" || !!acaoAlvo) ? "🔒 VMS desativado em Ações de Combate"
+    : "";
 
   const podeAdicionarItemAcao = () => {
     if (acaoItens.length >= 10) return { ok: false, motivo: "Máximo de 10 itens por ação" };
@@ -1977,10 +2056,10 @@ async function rolarAcao() {
   
      // 🟢 Consumível sozinho é permitido (sem atributo/perícia)
     
-    // 🟢 NOVA LÓGICA: VMS só é obrigatório se NÃO tiver alvo, dano, furtividade ou for reação
+    // 🟢 VMS é OBRIGATÓRIO em Ações livres; BLOQUEADO em Combate/Furtiva/Reação
     const requiresVMS = acaoModo !== "reacao" && !acaoAlvo && acaoTipo !== "dano" && acaoTipo !== "furtividade";
     if (requiresVMS && !acaoValorDificuldade) {
-      alert("Preencha o VMS (Valor Mínimo de Sucesso)!");
+      alert("🎭 Esta é uma AÇÃO livre — preencha o VMS (Valor Mínimo de Sucesso)!\n\nPara ações com alvo/dano/furtividade, o VMS não se aplica.");
       return;
     }
 
@@ -2240,7 +2319,9 @@ if (acaoHabilidadeSelecionada) {
       descricao.push(`Bônus: +${totalBonus} (${totalAntes} → ${total})`);
     }
     
-    const partesDescricao = descricao.length > 0 ? descricao.join("; ") : "";
+    // 🟢 Formata cada linha da descrição com cores e ícones por tipo
+    const descricaoColorida = descricao.map(colorirLinhaAcao);
+    const partesDescricao = descricaoColorida.join("\n");
     
     // 🟢 ============= VERIFICAR CRÍTICO E ERRO CRÍTICO =============
     let isCritico = false;
@@ -2274,10 +2355,26 @@ if (acaoHabilidadeSelecionada) {
     }
     
     // 🟢 MONTAR MENSAGEM (ANTES do Pós-Choque)
-    let mensagem = `${montarCaixa("⚔️ AÇÃO DE COMBATE ⚔️", 37)}\n\n🎭 ${nomePersonagem}\n${partesDescricao ? `📋 ${partesDescricao}\n` : ""}\n🎲 DADOS: [${rolls.join(", ")}] = ${total}\n`;
+    // 🟢 Detecta o tipo de ação para o cabeçalho
+    const tipoAcao = (() => {
+      if (acaoTipo === "furtividade" && acaoAlvo) return "furtiva";
+      if (acaoTipo === "dano" || acaoAlvo) return "combate";
+      return "acao";
+    })();
+    const headerAcao = {
+      acao:    { titulo: "🎭 AÇÃO 🎭",            cor: "#00e0ff" },
+      combate: { titulo: "⚔️ AÇÃO DE COMBATE ⚔️", cor: "#ef4444" },
+      furtiva: { titulo: "🌫️ AÇÃO FURTIVA 🌫️",   cor: "#3b82f6" },
+    }[tipoAcao];
+
+    let mensagem = `${montarCaixa(headerAcao.titulo, 37)}\n\n🎭 [C:${headerAcao.cor}]${nomePersonagem}[/C]\n`;
+    if (descricaoColorida.length > 0) {
+      mensagem += `\n📋 COMPONENTES:\n${partesDescricao}\n`;
+    }
+    mensagem += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎲 RESULTADO: [${rolls.join(", ")}] = [C:${headerAcao.cor}]${total}[/C]\n`;
     
-    if (isCritico) mensagem += `\n🌟 CRÍTICO!\nDano direto! O valor total ignora a defesa do oponente.`;
-    if (isErroCritico) mensagem += `\n💥 ERRO CRÍTICO!\nFracasso total na ação!`;
+    if (isCritico) mensagem += `\n[C:#facc15]🌟 CRÍTICO![/C]\nDano direto! O valor total ignora a defesa do oponente.`;
+    if (isErroCritico) mensagem += `\n[C:#ef4444]💥 ERRO CRÍTICO![/C]\nFracasso total na ação!`;
     if (tipoDanoMensagem !== "Nenhum") mensagem += `\n🗡️ Tipo de Dano: ${tipoDanoMensagem}`;
     if (custoTotalEnergia > 0) mensagem += `\n⚡ Energia: -${custoTotalEnergia} PE (Restante: ${novaEnergia} PE)`;
     
@@ -4343,14 +4440,17 @@ useEffect(() => {
               <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.5 }}>
                 ℹ️ <strong style={{ color: '#9c27b0' }}>Atributo</strong> é obrigatório (ou uma perícia).
               </Typography>
-              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.5 }}>
-                🎯 <strong style={{ color: '#ff9800' }}>VMS (Valor Mínimo de Sucesso)</strong> só é obrigatório para ações <strong>livres</strong>.
+              <Typography variant="caption" sx={{ color: '#00e0ff', display: 'block', mb: 0.3 }}>
+                🎭 <strong>Ação</strong> — teste livre (sem alvo/dano/furtividade) → <strong style={{ color: '#4caf50' }}>VMS OBRIGATÓRIO</strong>
               </Typography>
-              <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', fontWeight: 'bold' }}>
-                ✅ Não precisa de VMS quando: marcar ☠️ Dano, 🌫️ Furtividade ou escolher um 🎯 Alvo.
+              <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mb: 0.3 }}>
+                ⚔️ <strong>Ação de Combate</strong> — com alvo ou dano → <strong style={{ color: '#ef4444' }}>VMS BLOQUEADO</strong>
               </Typography>
-              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5 }}>
-                Essas ações dependem do embate (ataque × defesa) entre os personagens.
+              <Typography variant="caption" sx={{ color: '#3b82f6', display: 'block', mb: 0.5 }}>
+                🌫️ <strong>Ação Furtiva</strong> — furtividade + alvo → <strong style={{ color: '#ef4444' }}>VMS BLOQUEADO</strong>
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', fontSize: '0.7rem', fontStyle: 'italic' }}>
+                O tipo é detectado automaticamente pelos campos preenchidos.
               </Typography>
             </Box>
 
@@ -5305,13 +5405,14 @@ useEffect(() => {
               )}
             </Paper>
 
-            {/* VD */}
+            {/* VD — OBRIGATÓRIO em Ação livre, BLOQUEADO em Combate/Furtiva/Reação */}
             <TextField
               label="🎯 VMS (Valor Mínimo de Sucesso)"
               type="number"
               size="small"
-              value={acaoValorDificuldade}
+              value={vmsBloqueado ? "" : acaoValorDificuldade}
               onChange={(e) => {
+                if (vmsBloqueado) return;
                 const val = Number(e.target.value);
                 if (val >= 1 && val <= 1000) {
                   setAcaoValorDificuldade(val);
@@ -5319,12 +5420,25 @@ useEffect(() => {
                   setAcaoValorDificuldade("");
                 }
               }}
-              InputProps={{ 
+              disabled={vmsBloqueado}
+              InputProps={{
                 inputProps: { min: 1, max: 1000 },
-                sx: { color: '#fff' } 
+                sx: { color: vmsBloqueado ? '#64748b' : '#fff' }
               }}
-              sx={{ bgcolor: '#1a1a2e', '& .MuiInputLabel-root': { color: '#94a3b8' } }}
+              sx={{
+                bgcolor: vmsBloqueado ? 'rgba(10,10,18,0.6)' : '#1a1a2e',
+                opacity: vmsBloqueado ? 0.75 : 1,
+                transition: 'all 0.25s ease',
+                '& .MuiInputLabel-root': { color: vmsBloqueado ? '#475569' : '#94a3b8' },
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': {
+                    borderStyle: vmsBloqueado ? 'dashed' : 'solid',
+                    borderColor: vmsBloqueado ? '#334155' : undefined,
+                  },
+                },
+              }}
               helperText={(() => {
+                if (vmsBloqueado) return vmsMotivoBloqueio;
                 const totalD10Modal =
                   (acaoAtributo && Number(fichaJogador?.atributos?.[acaoAtributo]) || 0) +
                   (acaoPericia && Number(fichaJogador?.pericias?.[acaoPericia]) || 0) +
@@ -5334,9 +5448,16 @@ useEffect(() => {
                   (Number(acaoEmbuicao) || 0) +
                   (Number(acaoHabilidadeDado) || 0);
                 const vmsRec = totalD10Modal > 0 ? Math.round(totalD10Modal * 10 * 0.5 + 1) : 0;
-                return `Definido pelo Mestre. Sucesso se resultado ≥ VD (1-1000).${vmsRec > 0 ? ` Valor de VMS recomendado: ${vmsRec}` : ''}`;
+                return `🔒 Obrigatório para Ações livres. Sucesso se resultado ≥ VMS (1-1000).${vmsRec > 0 ? ` VMS recomendado: ${vmsRec}` : ''}`;
               })()}
-              FormHelperTextProps={{ sx: { color: '#475569', fontStyle: 'italic', fontSize: '0.7rem' } }}
+              FormHelperTextProps={{
+                sx: {
+                  color: vmsBloqueado ? '#ef4444' : '#475569',
+                  fontStyle: 'italic',
+                  fontSize: '0.7rem',
+                  fontWeight: vmsBloqueado ? 'bold' : 'normal',
+                }
+              }}
             />
             
             {/* Configuração de Consumível — agora dentro de cada item em acaoItens */}

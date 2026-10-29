@@ -30,19 +30,19 @@ import IAChat from "./IAChat";
 import SimuladorMundo from "./SimuladorMundo";
 
 const ICONES_PADRAO = [
-  { id: "whatsapp", icon: <GroupsIcon />, label: "Chat de Personagens", cor: "#00e0ff" },
-  { id: "comercio", icon: <StorefrontIcon />, label: "Comércio", cor: "#f59e0b" },
-  { id: "perfil", icon: <PublicIcon />, label: "Perfís Reqviem", cor: "#8b5cf6" },
-  { id: "anotacoes", icon: <NoteAltIcon />, label: "Anotações", cor: "#fbbf24" },
-  { id: "eventos", icon: <StarsIcon />, label: "Eventos Aleatórios", cor: "#ec4899" },
-  { id: "roleta", icon: <CasinoIcon />, label: "Roleta da Sorte", cor: "#f44336" },
-  { id: "octogono", icon: <AssessmentIcon />, label: "Avaliar Mestre", cor: "#a855f7" },
+  { id: "anotacoes", icon: <NoteAltIcon />, label: "Anotações", cor: "#e5fb24" },
+  { id: "whatsapp", icon: <GroupsIcon />, label: "Chat de Personagens", cor: "#09ff00" },
+  { id: "comercio", icon: <StorefrontIcon />, label: "Comércio", cor: "#98b10c" },
   { id: "rede", icon: <LanguageIcon />, label: "Rede", cor: "#10b981" },
-  { id: "cassino", icon: <VideogameAssetIcon />, label: "Cassino", cor: "#eab308" },
-    { id: "chaveamento", icon: <EmojiEventsIcon />, label: "Chaveamento", cor: "#a855f7" },
-    { id: "ia", icon: <SmartToyIcon />, label: "IA Réquiem", cor: "#a855f7" },
-        { id: "battlemap", icon: <GridOnIcon />, label: "Grid de Batalha", cor: "#00e0ff" },
-    { id: "mundo", icon: <PublicIcon />, label: "Simulador do Mundo", cor: "#c9a961" },
+  { id: "battlemap", icon: <GridOnIcon />, label: "Grid de Batalha", cor: "#ff0000" },
+  { id: "perfil", icon: <PublicIcon />, label: "Perfís Reqviem", cor: "#ff00d4" },
+  { id: "mundo", icon: <PublicIcon />, label: "Simulador do Mundo", cor: "#55524b" },
+  { id: "roleta", icon: <CasinoIcon />, label: "Roleta da Sorte", cor: "#f3f3ec" },
+  { id: "cassino", icon: <VideogameAssetIcon />, label: "Cassino", cor: "#b8c543" },
+  { id: "eventos", icon: <StarsIcon />, label: "Eventos Aleatórios", cor: "#ec4899" },
+  { id: "chaveamento", icon: <EmojiEventsIcon />, label: "Chaveamento", cor: "#6e0acc" },
+  { id: "octogono", icon: <AssessmentIcon />, label: "Avaliar Mestre", cor: "#2c0cdf" },
+  { id: "ia", icon: <SmartToyIcon />, label: "IA Réquiem", cor: "#a855f7" },
 ];
 
 function SidebarHUD({ userEmail = null, userNick = "", isMaster = false, fichasMap = {}, whatsappNotificacoes = {}, setWhatsappNotificacoes = () => {} }) {
