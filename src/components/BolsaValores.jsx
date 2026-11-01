@@ -12,9 +12,45 @@ import ShowChartIcon from "@mui/icons-material/ShowChart";
 import EditIcon from "@mui/icons-material/Edit";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import Checkbox from "@mui/material/Checkbox";
+import CircularProgress from "@mui/material/CircularProgress";
+import ListItemText from "@mui/material/ListItemText";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import ZoomOutIcon from "@mui/icons-material/ZoomOut";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { db } from "../firebaseConfig";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import useSimulador from "../hooks/useSimulador";
+
+// --- NOVAS CONSTANTES E FUNÇÕES ---
+export const SETORES_DISPONIVEIS = [
+  "Tecnologia", "Energia", "Mineração", "Cibernética", "Farmacêutica", 
+  "Metalurgia", "Financeiro", "Agrícola", "Construção", "Mídia", 
+  "Transporte", "Logística", "Armamentos", "Biotecnologia", "Automotivo", 
+  "Química", "Têxtil", "Pesca", "Aeroespacial", "Comércio", "Serviços", 
+  "Educação", "Saúde", "Entretenimento", "Moda", "Alimentício", "Bebidas", 
+  "Tabaco", "Papel", "Imobiliário", "Siderurgia", "Telecomunicações"
+];
+
+export const EMOJIS_LISTA = [
+  "🏢", "🏭", "⚡", "⛏️", "🧠", "🧬", "🔨", "💰", "🌾", "❄️", "🔥", 
+  "🚢", "📈", "💊", "🛡️", "⚔️", "🚀", "🌍", "💼", "🏦", "🏗️", "📡", 
+  "🚗", "💎", "⚙️", "🔋", "💻", "📱", "🏥", "🎬", "🍔", "🥤", "✈️", 
+  "🚁", "🛰️", "🧪", "🧫", "🌲", "🐟", "🚜", "🗞️", "📺", "🎮", "🎨", 
+  "🛠️", "📦", "🛒", "🏨", "🏫", "📚", "✂️", "👗", "👞", "🛢️", "🪙"
+];
+
+const formatMoeda = (valor) => {
+  if (valor === undefined || valor === null || isNaN(valor)) return "$ 0,00";
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor).replace('R$', '$');
+};
+
+const parseMoeda = (texto) => {
+  const apenasDigitos = texto.replace(/\D/g, "");
+  return Number(apenasDigitos) / 100;
+};
+// ----------------------------------
 
 const EMPRESAS_INICIAIS = [
   { id: "hollow", nome: "Hollow Corp", setor: "Tecnologia", sigla: "HLC", preco: 847.50, variacao: 0, historico: [], logo: "🏢", imagem: "", descricao: "Maior corporação de tecnologia do Império Aurano.", sede: "Auraxia", fundador: "Viktor Hollow", ceoAtual: "Sarah Hollow", tipoEmpresa: "Pública", valorEmpresa: 1200000000000, faturamentoAnual: 480000000000, historia: "Fundada em 722 D.C.", empresasAfiliadas: [{ nome: "Hollow Defense", relacao: "Subsidiária" }] },
@@ -57,11 +93,42 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
   const [modalEdicaoOpen, setModalEdicaoOpen] = useState(false);
   const [modalDetalhesOpen, setModalDetalhesOpen] = useState(false);
   const [novaEmpresa, setNovaEmpresa] = useState({
-    id: "", nome: "", setor: "Tecnologia", sigla: "", preco: 100,
+    id: "", nome: "", setores: ["Tecnologia"], sigla: "", preco: 100,
     logo: "🏢", imagem: "", descricao: "", sede: "", fundador: "",
     ceoAtual: "", tipoEmpresa: "Pública", valorEmpresa: 0,
     faturamentoAnual: 0, historia: "", empresasAfiliadas: [],
   });
+
+  // 🟢 ESTADOS DO LIGHTBOX (ZOOM E ARRASTAR)
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState("");
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [draggingImage, setDraggingImage] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isUploading, setIsUploading] = useState(false); // 🟢 NOVO ESTADO DE UPLOAD
+
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const zoomFactor = 0.1;
+    if (e.deltaY < 0) setZoom(z => Math.min(z + zoomFactor, 4));
+    else setZoom(z => Math.max(z - zoomFactor, 0.5));
+  };
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setDraggingImage(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!draggingImage) return;
+    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+
+  const handleMouseUp = () => setDraggingImage(false);
+  
+  const resetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
   // 🟢 GUARDA O FORMATO ORIGINAL DAS CARTEIRAS ("array" ou "object")
   //    Isso evita que a gente converta array→objeto e quebre o resto do app.
@@ -239,12 +306,15 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
   };
 
   const empresasFiltradas = empresas.filter(emp => {
-    const matchSetor = filtroSetor === "todos" || emp.setor === filtroSetor;
+    // Compatibilidade com empresas antigas (que tinham apenas 'setor')
+    const empSetores = emp.setores || (emp.setor ? [emp.setor] : []);
+    
+    const matchSetor = filtroSetor === "todos" || empSetores.includes(filtroSetor);
     const matchBusca = emp.nome.toLowerCase().includes(busca.toLowerCase()) || emp.sigla.toLowerCase().includes(busca.toLowerCase());
     return matchSetor && matchBusca;
   });
 
-  const setores = ["todos", ...new Set(empresas.map(e => e.setor))];
+  const setores = ["todos", ...SETORES_DISPONIVEIS];
 
   // 🟢 Mini gráfico SVG
   const MiniGrafico = ({ historico }) => {
@@ -315,7 +385,7 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
                 </FormControl>
                 {isMaster && modoEdicao && (
                   <Button size="small" variant="contained" startIcon={<AddIcon />}
-                    onClick={() => { setEmpresaEditando(null); setNovaEmpresa({ id: "", nome: "", setor: "Tecnologia", sigla: "", preco: 100, logo: "🏢", imagem: "", descricao: "", sede: "", fundador: "", ceoAtual: "", tipoEmpresa: "Pública", valorEmpresa: 0, faturamentoAnual: 0, historia: "", empresasAfiliadas: [] }); setModalEdicaoOpen(true); }}
+                    onClick={() => { setEmpresaEditando(null); setNovaEmpresa({ id: "", nome: "", setores: ["Tecnologia"], sigla: "", preco: 100, logo: "🏢", imagem: "", descricao: "", sede: "", fundador: "", ceoAtual: "", tipoEmpresa: "Pública", valorEmpresa: 0, faturamentoAnual: 0, historia: "", empresasAfiliadas: [] }); setModalEdicaoOpen(true); }}
                     sx={{ bgcolor: "#22c55e", fontSize: "0.6rem" }}>Nova Empresa</Button>
                 )}
               </Box>
@@ -323,36 +393,63 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
               <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                 {empresasFiltradas.map((emp) => {
                   const variacaoPositiva = emp.variacao >= 0;
+                  const empSetores = emp.setores || (emp.setor ? [emp.setor] : []);
                   return (
                     <Paper key={emp.id} onClick={() => { setEmpresaSelecionada(emp); setModalDetalhesOpen(true); }}
-                      sx={{ p: 1, bgcolor: "#1a1a2e", border: "1px solid #334155", cursor: "pointer", '&:hover': { borderColor: "#fbbf2466" }, display: "flex", alignItems: "center", gap: 1 }}>
-                      {emp.imagem ? (
-                        <Box sx={{ width: 32, height: 32, borderRadius: 1, overflow: 'hidden', flexShrink: 0 }}>
-                          <img src={emp.imagem} alt={emp.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </Box>
-                      ) : (
-                        <Typography sx={{ fontSize: "1.5rem", flexShrink: 0 }}>{emp.logo}</Typography>
-                      )}
-                      <Box sx={{ minWidth: 120 }}>
-                        <Typography variant="body2" sx={{ fontWeight: "bold", color: "#fff", fontSize: "0.75rem" }}>{emp.nome}</Typography>
-                        <Typography variant="caption" sx={{ color: "#64748b" }}>{emp.sigla} • {emp.setor}</Typography>
+                      sx={{ p: 1, bgcolor: "#1a1a2e", border: "1px solid #334155", cursor: "pointer", '&:hover': { borderColor: "#fbbf2466" }, display: "flex", alignItems: "center", gap: 2 }}>
+                      
+                      {/* COLUNA 1: Logo/Imagem (Tamanho Fixo) */}
+                      <Box sx={{ width: 44, height: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {emp.imagem ? (
+                          <Box 
+                            onClick={(e) => { e.stopPropagation(); setLightboxImage(emp.imagem); setLightboxOpen(true); }}
+                            sx={{ 
+                              width: 40, height: 40, borderRadius: 1.5, overflow: 'hidden', cursor: 'pointer',
+                              border: "2px solid #fbbf24", p: 0.3, bgcolor: "#0f172a",
+                              boxShadow: "0 0 8px rgba(251,191,36,0.3)", transition: "transform 0.2s",
+                              "&:hover": { transform: "scale(1.1)" }
+                            }}
+                          >
+                            <img src={emp.imagem} alt={emp.nome} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 3 }} />
+                          </Box>
+                        ) : (
+                          <Typography sx={{ fontSize: "1.8rem" }}>{emp.logo}</Typography>
+                        )}
                       </Box>
-                      <MiniGrafico historico={emp.historico} />
-                      <Box sx={{ textAlign: "right", minWidth: 90 }}>
-                        <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold", fontSize: "0.75rem" }}>💰 {getPrecoBolsaAjustado(emp).toFixed(2)}</Typography>
-                        <Typography variant="caption" sx={{ color: variacaoPositiva ? "#22c55e" : "#ef4444", fontWeight: "bold", display: "block" }}>
+
+                      {/* COLUNA 2: Nome e Setores (Fixo) */}
+                      <Box sx={{ width: 150, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+                        <Typography variant="body2" sx={{ fontWeight: "bold", color: "#fff", fontSize: "0.75rem", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.nome}</Typography>
+                        <Typography variant="caption" sx={{ color: "#64748b", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.sigla} • {empSetores.join(', ')}</Typography>
+                      </Box>
+
+                      {/* COLUNA 3: Gráfico (Fixo) */}
+                      <Box sx={{ width: 150, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+                        <MiniGrafico historico={emp.historico} />
+                      </Box>
+
+                      {/* COLUNA 4: Valores (Fixo) */}
+                      <Box sx={{ width: 110, flexShrink: 0, textAlign: "right", display: 'flex', flexDirection: 'column' }}>
+                        <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold", fontSize: "0.75rem" }}>💰 {formatMoeda(getPrecoBolsaAjustado(emp))}</Typography>
+                        <Typography variant="caption" sx={{ color: variacaoPositiva ? "#22c55e" : "#ef4444", fontWeight: "bold" }}>
                           {variacaoPositiva ? "▲" : "▼"} {Math.abs(emp.variacao).toFixed(2)}%
                         </Typography>
                         <Typography variant="caption" sx={{ color: "#c9a961", fontSize: "0.55rem" }}>
-                          🌍 ×{getFatorBolsa(emp.setor, emp.sede)}
+                          🌍 ×{getFatorBolsa(empSetores[0] || "", emp.sede)}
                         </Typography>
                       </Box>
-                      <Button size="small" variant="contained" startIcon={<ShoppingCartIcon sx={{ fontSize: 14 }} />}
-                        onClick={(e) => { e.stopPropagation(); setEmpresaSelecionada(emp); setQuantidadeCompra(1); setModalCompra(true); }}
-                        sx={{ bgcolor: "#22c55e", fontSize: "0.6rem", minWidth: 70 }}>Comprar</Button>
+
+                      {/* COLUNA 5: Botão Comprar (Fixo) */}
+                      <Box sx={{ width: 100, flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                        <Button size="small" variant="contained" startIcon={<ShoppingCartIcon sx={{ fontSize: 14 }} />}
+                          onClick={(e) => { e.stopPropagation(); setEmpresaSelecionada(emp); setQuantidadeCompra(1); setModalCompra(true); }}
+                          sx={{ bgcolor: "#22c55e", fontSize: "0.6rem", minWidth: 85 }}>Comprar</Button>
+                      </Box>
+
+                      {/* COLUNA 6: Botões de Admin (Fixo) */}
                       {isMaster && modoEdicao && (
-                        <Box sx={{ display: "flex", gap: 0.3 }}>
-                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEmpresaEditando(emp); setNovaEmpresa({ ...emp }); setModalEdicaoOpen(true); }} sx={{ color: "#ff9800", p: 0.3 }}>
+                        <Box sx={{ width: 60, flexShrink: 0, display: "flex", gap: 0.3, justifyContent: "flex-end" }}>
+                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); setEmpresaEditando(emp); setNovaEmpresa({ ...emp, setores: empSetores, imagem: emp.imagem || "" }); setModalEdicaoOpen(true); }} sx={{ color: "#ff9800", p: 0.3 }}>
                             <EditIcon sx={{ fontSize: 14 }} />
                           </IconButton>
                           <IconButton size="small" onClick={(e) => { e.stopPropagation(); if (window.confirm(`Remover ${emp.nome}?`)) { const novas = empresas.filter(x => x.id !== emp.id); setEmpresas(novas); salvarDados(novas); } }} sx={{ color: "#ef4444", p: 0.3 }}>
@@ -413,17 +510,27 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
         PaperProps={{ sx: { bgcolor: "#0f172a", border: "2px solid #fbbf24", borderRadius: 2, maxHeight: "90vh" } }}>
         {empresaSelecionada && (
           <>
-            <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, bgcolor: "#1a1a0a", borderBottom: "1px solid #fbbf2444" }}>
+            <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1.5, bgcolor: "#1a1a0a", borderBottom: "1px solid #fbbf2444" }}>
               {empresaSelecionada.imagem ? (
-                <Box sx={{ width: 48, height: 48, borderRadius: 1, overflow: 'hidden', flexShrink: 0 }}>
-                  <img src={empresaSelecionada.imagem} alt={empresaSelecionada.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Box 
+                  onClick={() => { setLightboxImage(empresaSelecionada.imagem); setLightboxOpen(true); }}
+                  sx={{ 
+                    width: 54, height: 54, borderRadius: 2, overflow: 'hidden', flexShrink: 0, 
+                    border: "2px solid #fbbf24", p: 0.5, bgcolor: "#0f172a", cursor: "pointer",
+                    boxShadow: "0 0 10px rgba(251,191,36,0.3)", transition: "transform 0.2s",
+                    "&:hover": { transform: "scale(1.05)" }
+                  }}
+                >
+                  <img src={empresaSelecionada.imagem} alt={empresaSelecionada.nome} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4 }} />
                 </Box>
               ) : (
                 <Typography sx={{ fontSize: "2rem", flexShrink: 0 }}>{empresaSelecionada.logo}</Typography>
               )}
               <Box sx={{ flex: 1 }}>
                 <Typography sx={{ color: "#fbbf24", fontWeight: "bold", fontSize: "1.2rem" }}>{empresaSelecionada.nome}</Typography>
-                <Typography variant="caption" sx={{ color: "#94a3b8" }}>{empresaSelecionada.sigla} • {empresaSelecionada.setor}</Typography>
+                <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+                  {empresaSelecionada.sigla} • {(empresaSelecionada.setores || (empresaSelecionada.setor ? [empresaSelecionada.setor] : [])).join(', ')}
+                </Typography>
               </Box>
               <IconButton onClick={() => setModalDetalhesOpen(false)} sx={{ color: "#94a3b8" }}><CloseIcon /></IconButton>
             </DialogTitle>
@@ -431,21 +538,28 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <Typography variant="subtitle2" sx={{ color: "#fbbf24", mb: 0.5 }}>📊 Informações</Typography>
-                  <Typography variant="body2" sx={{ color: "#fff" }}>💰 Preço: <strong>{getPrecoBolsaAjustado(empresaSelecionada).toFixed(2)}</strong></Typography>
-                  <Typography variant="caption" sx={{ color: "#c9a961", display: "block" }}>🌍 Fator de simulação: ×{getFatorBolsa(empresaSelecionada.setor, empresaSelecionada.sede)}</Typography>
+                  <Typography variant="body2" sx={{ color: "#fff" }}>💰 Preço: <strong>{formatMoeda(getPrecoBolsaAjustado(empresaSelecionada))}</strong></Typography>
+                  <Typography variant="caption" sx={{ color: "#c9a961", display: "block" }}>🌍 Fator: ×{getFatorBolsa((empresaSelecionada.setores && empresaSelecionada.setores[0]) || empresaSelecionada.setor, empresaSelecionada.sede)}</Typography>
                   <Typography variant="body2" sx={{ color: "#fff" }}>🏙️ Sede: <strong>{empresaSelecionada.sede || "—"}</strong></Typography>
                   <Typography variant="body2" sx={{ color: "#fff" }}>👤 Fundador: <strong>{empresaSelecionada.fundador || "—"}</strong></Typography>
                   <Typography variant="body2" sx={{ color: "#fff" }}>👔 CEO: <strong>{empresaSelecionada.ceoAtual || "—"}</strong></Typography>
                   <Typography variant="body2" sx={{ color: "#fff" }}>🏢 Tipo: <strong>{empresaSelecionada.tipoEmpresa || "—"}</strong></Typography>
-                  <Typography variant="body2" sx={{ color: "#fff" }}>💎 Valor: <strong>{empresaSelecionada.valorEmpresa ? empresaSelecionada.valorEmpresa.toLocaleString('pt-BR') : "—"}</strong></Typography>
-                  <Typography variant="body2" sx={{ color: "#fff" }}>📈 Faturamento: <strong>{empresaSelecionada.faturamentoAnual ? empresaSelecionada.faturamentoAnual.toLocaleString('pt-BR') : "—"}</strong></Typography>
+                  <Typography variant="body2" sx={{ color: "#fff" }}>💎 Valor: <strong>{formatMoeda(empresaSelecionada.valorEmpresa)}</strong></Typography>
+                  <Typography variant="body2" sx={{ color: "#fff" }}>📈 Faturamento: <strong>{formatMoeda(empresaSelecionada.faturamentoAnual)}</strong></Typography>
                 </Grid>
                 <Grid item xs={12} sm={6}>
                   <Typography variant="subtitle2" sx={{ color: "#fbbf24", mb: 0.5 }}>📝 Descrição</Typography>
-                  <Typography variant="body2" sx={{ color: "#94a3b8" }}>{empresaSelecionada.descricao || "Sem descrição."}</Typography>
-                  <Divider sx={{ my: 1, bgcolor: "#fbbf2433" }} />
+                  <Box sx={{ bgcolor: '#1a1a2e', p: 1.5, borderRadius: 1.5, border: '1px solid #334155', mb: 1 }}>
+                    <Typography variant="body2" sx={{ color: "#94a3b8", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                      {empresaSelecionada.descricao || "Sem descrição."}
+                    </Typography>
+                  </Box>
                   <Typography variant="subtitle2" sx={{ color: "#fbbf24", mb: 0.5 }}>📜 História</Typography>
-                  <Typography variant="body2" sx={{ color: "#94a3b8" }}>{empresaSelecionada.historia || "Sem história."}</Typography>
+                  <Box sx={{ bgcolor: '#1a1a2e', p: 1.5, borderRadius: 1.5, border: '1px solid #334155' }}>
+                    <Typography variant="body2" sx={{ color: "#94a3b8", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                      {empresaSelecionada.historia || "Sem história."}
+                    </Typography>
+                  </Box>
                 </Grid>
                 {empresaSelecionada.empresasAfiliadas && empresaSelecionada.empresasAfiliadas.length > 0 && (
                   <Grid item xs={12}>
@@ -530,19 +644,112 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
             <TextField label="Nome" fullWidth size="small" value={novaEmpresa.nome} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, nome: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
             <TextField label="Sigla" fullWidth size="small" value={novaEmpresa.sigla} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, sigla: e.target.value.toUpperCase() })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
+            
             <FormControl fullWidth size="small">
-              <InputLabel sx={{ color: '#94a3b8' }}>Setor</InputLabel>
-              <Select value={novaEmpresa.setor} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, setor: e.target.value })} sx={{ color: '#fff' }}>
-                {["Tecnologia", "Energia", "Mineração", "Cibernética", "Farmacêutica", "Metalurgia", "Financeiro", "Agrícola"].map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+              <InputLabel sx={{ color: '#94a3b8' }}>Setores (Múltiplos)</InputLabel>
+              <Select 
+                multiple
+                value={novaEmpresa.setores || []} 
+                onChange={(e) => setNovaEmpresa({ ...novaEmpresa, setores: e.target.value })} 
+                sx={{ color: '#fff' }}
+                renderValue={(selected) => selected.join(', ')}
+              >
+                {SETORES_DISPONIVEIS.map(s => (
+                  <MenuItem key={s} value={s}>
+                    <Checkbox checked={(novaEmpresa.setores || []).indexOf(s) > -1} sx={{ color: '#fbbf24', '&.Mui-checked': { color: '#fbbf24' } }} />
+                    <ListItemText primary={s} />
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
+
             <TextField label="Preço Inicial" type="number" fullWidth size="small" value={novaEmpresa.preco} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, preco: Math.max(0.01, Number(e.target.value) || 0) })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
-            <TextField label="Emoji/Logo" fullWidth size="small" value={novaEmpresa.logo} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, logo: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
-            <TextField label="URL da Imagem (opcional - imgbb)" fullWidth size="small" value={novaEmpresa.imagem} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, imagem: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} helperText="Cole a URL direta da imagem (ex: https://i.ibb.co/...)" FormHelperTextProps={{ sx: { color: '#64748b' } }} />
+            
+            {/* SELETOR DE EMOJIS */}
+            <Box>
+              <Typography variant="caption" sx={{ color: '#94a3b8', mb: 0.5, display: 'block' }}>Selecione um Emoji para a Logo:</Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxHeight: 120, overflowY: 'auto', p: 1, border: '1px solid #334155', borderRadius: 1, bgcolor: '#1a1a2e' }}>
+                {EMOJIS_LISTA.map(emoji => (
+                  <IconButton 
+                    key={emoji} 
+                    size="small" 
+                    onClick={() => setNovaEmpresa({ ...novaEmpresa, logo: emoji })}
+                    sx={{ border: novaEmpresa.logo === emoji ? "2px solid #22c55e" : "1px solid transparent", borderRadius: 1 }}
+                  >
+                    {emoji}
+                  </IconButton>
+                ))}
+              </Box>
+            </Box>
+
+            {/* UPLOAD DE IMAGEM */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 1, border: '1px dashed #334155', borderRadius: 1 }}>
+              <Button 
+                variant="contained" 
+                component="label" 
+                startIcon={isUploading ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : <UploadFileIcon />} 
+                sx={{ bgcolor: isUploading ? '#64748b' : '#3b82f6', '&:hover': { bgcolor: isUploading ? '#64748b' : '#2563eb' } }}
+                disabled={isUploading}
+              >
+                {isUploading ? 'Enviando...' : 'Upload de Imagem'}
+                <input type="file" hidden accept="image/*" onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+
+                  setIsUploading(true);
+                  const formData = new FormData();
+                  formData.append("file", file);
+
+                  try {
+                    // ⚠️ ATENÇÃO: COLOQUE A URL DO SEU BACKEND AQUI.
+                    // Se o seu servidor Express estiver rodando na porta 3001 localmente, use a URL abaixo.
+                    // Se já estiver em produção (hospedado), coloque a URL correta (ex: "https://seu-site.com/upload").
+                    const res = await fetch("http://localhost:3001/upload", {
+                      method: "POST",
+                      body: formData,
+                    });
+
+                    const data = await res.json();
+                    
+                    if (data.url) {
+                      // Salva o link do ImgBB no banco de dados
+                      setNovaEmpresa({ ...novaEmpresa, imagem: data.url });
+                    } else {
+                      alert("Erro no upload: " + (data.error || "Desconhecido"));
+                    }
+                  } catch (error) {
+                    console.error(error);
+                    alert("Erro ao conectar com o servidor. O seu backend Node.js está rodando?");
+                  } finally {
+                    setIsUploading(false);
+                  }
+                }} />
+              </Button>
+              {novaEmpresa.imagem && (
+                <Box sx={{ position: 'relative' }}>
+                  <Box 
+                    onClick={() => { setLightboxImage(novaEmpresa.imagem); setLightboxOpen(true); }}
+                    sx={{ 
+                      width: 64, height: 64, borderRadius: 2, overflow: 'hidden', 
+                      border: "2px solid #22c55e", cursor: "pointer", p: 0.5, bgcolor: "#0f172a",
+                      boxShadow: "0 0 10px rgba(34,197,94,0.3)", transition: "transform 0.2s",
+                      "&:hover": { transform: "scale(1.05)" }
+                    }}
+                  >
+                    <img src={novaEmpresa.imagem} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4 }} />
+                  </Box>
+                  <IconButton size="small" onClick={() => setNovaEmpresa({ ...novaEmpresa, imagem: "" })} sx={{ position: 'absolute', top: -10, right: -10, bgcolor: '#ef4444', color: '#fff', p: 0.2, '&:hover': { bgcolor: '#dc2626' } }}>
+                    <CloseIcon sx={{ fontSize: 12 }} />
+                  </IconButton>
+                </Box>
+              )}
+            </Box>
+
             <TextField label="Descrição" fullWidth multiline rows={2} size="small" value={novaEmpresa.descricao} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, descricao: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
             <TextField label="Sede" fullWidth size="small" value={novaEmpresa.sede} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, sede: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
             <TextField label="Fundador" fullWidth size="small" value={novaEmpresa.fundador} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, fundador: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
             <TextField label="CEO Atual" fullWidth size="small" value={novaEmpresa.ceoAtual} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, ceoAtual: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
+            
             <FormControl fullWidth size="small">
               <InputLabel sx={{ color: '#94a3b8' }}>Tipo</InputLabel>
               <Select value={novaEmpresa.tipoEmpresa} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, tipoEmpresa: e.target.value })} sx={{ color: '#fff' }}>
@@ -550,26 +757,101 @@ function BolsaValores({ userEmail, onClose, fichasMap, isMaster }) {
                 <MenuItem value="Privada">Privada</MenuItem>
               </Select>
             </FormControl>
-            <TextField label="Valor da Empresa (numeral)" type="number" fullWidth size="small" value={novaEmpresa.valorEmpresa} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, valorEmpresa: Number(e.target.value) || 0 })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
-            <TextField label="Faturamento Anual (numeral)" type="number" fullWidth size="small" value={novaEmpresa.faturamentoAnual} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, faturamentoAnual: Number(e.target.value) || 0 })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
+
+            {/* INPUTS DE VALOR COM MÁSCARA ($) */}
+            <TextField 
+              label="Valor da Empresa" 
+              fullWidth 
+              size="small" 
+              value={formatMoeda(novaEmpresa.valorEmpresa)} 
+              onChange={(e) => setNovaEmpresa({ ...novaEmpresa, valorEmpresa: parseMoeda(e.target.value) })} 
+              InputProps={{ sx: { color: '#fff' } }} 
+              InputLabelProps={{ sx: { color: '#94a3b8' } }} 
+            />
+            <TextField 
+              label="Faturamento Anual" 
+              fullWidth 
+              size="small" 
+              value={formatMoeda(novaEmpresa.faturamentoAnual)} 
+              onChange={(e) => setNovaEmpresa({ ...novaEmpresa, faturamentoAnual: parseMoeda(e.target.value) })} 
+              InputProps={{ sx: { color: '#fff' } }} 
+              InputLabelProps={{ sx: { color: '#94a3b8' } }} 
+            />
             <TextField label="História" fullWidth multiline rows={2} size="small" value={novaEmpresa.historia} onChange={(e) => setNovaEmpresa({ ...novaEmpresa, historia: e.target.value })} InputProps={{ sx: { color: '#fff' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setModalEdicaoOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
-          <Button variant="contained" onClick={() => {
+          <Button variant="contained" onClick={async () => {
             if (!novaEmpresa.nome.trim() || !novaEmpresa.sigla.trim()) { alert("Preencha nome e sigla!"); return; }
+            // Garante que a propriedade primária 'setor' exista (para compatibilidade)
+            const empresaFormatada = {
+              ...novaEmpresa,
+              setor: novaEmpresa.setores[0] || "Outros" 
+            };
+
             let novasEmpresas;
             if (empresaEditando) {
-              novasEmpresas = empresas.map(e => e.id === empresaEditando.id ? { ...novaEmpresa, id: e.id, variacao: e.variacao, historico: e.historico } : e);
+              novasEmpresas = empresas.map(e => e.id === empresaEditando.id ? { ...empresaFormatada, id: e.id, variacao: e.variacao, historico: e.historico } : e);
             } else {
-              const id = novaEmpresa.nome.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
-              novasEmpresas = [...empresas, { ...novaEmpresa, id, variacao: 0, historico: [novaEmpresa.preco] }];
+              const id = empresaFormatada.nome.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+              novasEmpresas = [...empresas, { ...empresaFormatada, id, variacao: 0, historico: [empresaFormatada.preco] }];
             }
-            setEmpresas(novasEmpresas);
-            salvarDados(novasEmpresas);
-            setModalEdicaoOpen(false);
+            
+            try {
+              await salvarDados(novasEmpresas);
+              setEmpresas(novasEmpresas);
+              setModalEdicaoOpen(false);
+            } catch (error) {
+              console.error("Erro ao salvar:", error);
+              alert("Erro ao salvar a empresa. A imagem pode ser muito grande ou o banco falhou.");
+            }
           }} sx={{ bgcolor: '#22c55e' }}>{empresaEditando ? "Salvar" : "Adicionar"}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* LIGHTBOX DE IMAGEM */}
+      <Dialog 
+        open={lightboxOpen} 
+        onClose={() => { setLightboxOpen(false); resetZoom(); }} 
+        maxWidth="lg" fullWidth
+        PaperProps={{ sx: { bgcolor: "rgba(15, 23, 42, 0.95)", border: "2px solid #fbbf24", borderRadius: 2, overflow: "hidden", height: "90vh" } }}
+      >
+        <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", bgcolor: "#1a1a0a", borderBottom: "1px solid #fbbf2444", p: 1.5 }}>
+          <Typography sx={{ color: "#fbbf24", fontWeight: "bold" }}>🖼️ Visualizador de Imagem</Typography>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <IconButton onClick={() => setZoom(z => Math.min(z + 0.2, 4))} sx={{ color: "#fff", bgcolor: "#334155", '&:hover': { bgcolor: '#475569' } }}><ZoomInIcon /></IconButton>
+            <IconButton onClick={() => setZoom(z => Math.max(z - 0.2, 0.5))} sx={{ color: "#fff", bgcolor: "#334155", '&:hover': { bgcolor: '#475569' } }}><ZoomOutIcon /></IconButton>
+            <IconButton onClick={resetZoom} sx={{ color: "#fff", bgcolor: "#334155", '&:hover': { bgcolor: '#475569' } }}><RestartAltIcon /></IconButton>
+            <IconButton onClick={() => { setLightboxOpen(false); resetZoom(); }} sx={{ color: "#ef4444", bgcolor: "#334155", '&:hover': { bgcolor: '#475569' } }}><CloseIcon /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent 
+          sx={{ p: 0, overflow: "hidden", position: "relative", cursor: draggingImage ? "grabbing" : "grab", bgcolor: "#000" }}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          <Box sx={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <img 
+              src={lightboxImage} 
+              alt="Zoom" 
+              draggable={false}
+              style={{ 
+                maxWidth: "100%", maxHeight: "100%", 
+                transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`, 
+                transition: draggingImage ? 'none' : 'transform 0.2s ease-out',
+                userSelect: 'none'
+              }} 
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: "#1a1a0a", borderTop: "1px solid #fbbf2444", justifyContent: "center", p: 1 }}>
+          <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+            Use o scroll do mouse para dar zoom e clique e arraste para mover a imagem.
+          </Typography>
         </DialogActions>
       </Dialog>
     </Paper>,

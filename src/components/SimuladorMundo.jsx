@@ -143,6 +143,10 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
     donoNomeLivre: "",
     subsidiarias: [],
     categorias: [],
+    fundador: "",
+    ceoAtual: "",
+    historia: "",
+    faturamentoAnual: 0,
   });
   const [modalNegociacaoOpen, setModalNegociacaoOpen] = useState(false);
   const [negociacaoSelecionada, setNegociacaoSelecionada] = useState(null);
@@ -2605,6 +2609,54 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
             InputLabelProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
           />
 
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <TextField
+              label="Fundador"
+              size="small"
+              fullWidth
+              value={formEmpresa.fundador || ""}
+              onChange={(e) => setFormEmpresa((p) => ({ ...p, fundador: e.target.value }))}
+              sx={{ bgcolor: V3.paper }}
+              InputProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+              InputLabelProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+            />
+            <TextField
+              label="CEO Atual"
+              size="small"
+              fullWidth
+              value={formEmpresa.ceoAtual || ""}
+              onChange={(e) => setFormEmpresa((p) => ({ ...p, ceoAtual: e.target.value }))}
+              sx={{ bgcolor: V3.paper }}
+              InputProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+              InputLabelProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+            />
+          </Box>
+
+          <TextField
+            label="História da Empresa"
+            size="small"
+            fullWidth
+            multiline
+            rows={2}
+            value={formEmpresa.historia || ""}
+            onChange={(e) => setFormEmpresa((p) => ({ ...p, historia: e.target.value }))}
+            sx={{ bgcolor: V3.paper }}
+            InputProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+            InputLabelProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+          />
+
+          <TextField
+            label="Faturamento Anual (💰)"
+            type="number"
+            size="small"
+            fullWidth
+            value={formEmpresa.faturamentoAnual || 0}
+            onChange={(e) => setFormEmpresa((p) => ({ ...p, faturamentoAnual: Number(e.target.value) || 0 }))}
+            sx={{ bgcolor: V3.paper }}
+            InputProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+            InputLabelProps={{ sx: { color: V3.ink, fontSize: "0.8rem" } }}
+          />
+
           <Typography variant="caption" sx={{ color: V3.gold, fontWeight: 900, letterSpacing: 1, fontSize: "0.65rem" }}>
             🖼️ IMAGEM
           </Typography>
@@ -2698,13 +2750,19 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                   return;
                 }
                 const b = bolsaEmpresas.find((x) => x.id === bolsaId);
+                if (!b) return;
+                
                 setFormEmpresa((p) => ({
                   ...p,
                   bolsaEmpresaId: bolsaId,
-                  valor: b?.valorEmpresa || b?.valor || 0,
-                  nome: p.nome || b?.nome || "",
-                  descricao: p.descricao || b?.descricao || "",
-                  imagemUrl: p.imagemUrl || b?.imagem || "",
+                  valor: b.valorEmpresa || b.valor || 0,
+                  nome: b.nome || p.nome,
+                  descricao: b.descricao || p.descricao,
+                  imagemUrl: b.imagem || b.imagemUrl || p.imagemUrl,
+                  fundador: b.fundador || "",
+                  ceoAtual: b.ceoAtual || "",
+                  historia: b.historia || "",
+                  faturamentoAnual: b.faturamentoAnual || 0,
                 }));
               }}
               displayEmpty
@@ -3105,6 +3163,10 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                   donoNomeLivre: formEmpresa.donoModo === "livre" ? (formEmpresa.donoNomeLivre || "") : "",
                   subsidiarias: formEmpresa.subsidiarias,
                   categorias: formEmpresa.categorias || [],
+                  fundador: formEmpresa.fundador || "",
+                  ceoAtual: formEmpresa.ceoAtual || "",
+                  historia: formEmpresa.historia || "",
+                  faturamentoAnual: Number(formEmpresa.faturamentoAnual) || 0,
                   cofre: empresaEditando?.cofre ?? 0,
                   categoria: empresaEditando?.categoria ?? "$",
                   categoriaModo: empresaEditando?.categoriaModo ?? "auto",
@@ -3288,11 +3350,46 @@ function SimuladorMundo({ userEmail, isMaster, fichasMap = {}, onClose }) {
                     />
                   )}
 
-                  {empLive.descricao && (
-                    <Paper sx={{ p: 1.5, bgcolor: V3.paperDark, border: `1px solid ${V3.gold}44`, borderRadius: 1 }}>
-                      <Typography sx={{ color: V3.ink, fontFamily: "Georgia, serif", fontSize: "0.75rem", lineHeight: 1.5 }}>
-                        {empLive.descricao}
-                      </Typography>
+                  {(empLive.descricao || empLive.historia || empLive.fundador || empLive.ceoAtual || empLive.faturamentoAnual > 0) && (
+                    <Paper sx={{ p: 1.5, bgcolor: V3.paperDark, border: `1px solid ${V3.gold}44`, borderRadius: 1, display: "flex", flexDirection: "column", gap: 1 }}>
+                      {empLive.descricao && (
+                        <Box>
+                          <Typography variant="caption" sx={{ color: V3.gold, fontWeight: 900, fontSize: "0.55rem", letterSpacing: 1 }}>DESCRIÇÃO</Typography>
+                          <Typography sx={{ color: V3.ink, fontFamily: "Georgia, serif", fontSize: "0.75rem", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                            {empLive.descricao}
+                          </Typography>
+                        </Box>
+                      )}
+                      {empLive.historia && (
+                        <Box>
+                          <Typography variant="caption" sx={{ color: V3.gold, fontWeight: 900, fontSize: "0.55rem", letterSpacing: 1 }}>HISTÓRIA</Typography>
+                          <Typography sx={{ color: V3.ink, fontFamily: "Georgia, serif", fontSize: "0.75rem", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                            {empLive.historia}
+                          </Typography>
+                        </Box>
+                      )}
+                      {(empLive.fundador || empLive.ceoAtual) && (
+                        <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, mt: 0.5 }}>
+                          {empLive.fundador && (
+                            <Box>
+                              <Typography variant="caption" sx={{ color: V3.ink, opacity: 0.6, fontSize: "0.55rem" }}>👤 Fundador</Typography>
+                              <Typography sx={{ color: V3.ink, fontWeight: 800, fontSize: "0.75rem" }}>{empLive.fundador}</Typography>
+                            </Box>
+                          )}
+                          {empLive.ceoAtual && (
+                            <Box>
+                              <Typography variant="caption" sx={{ color: V3.ink, opacity: 0.6, fontSize: "0.55rem" }}>👔 CEO Atual</Typography>
+                              <Typography sx={{ color: V3.ink, fontWeight: 800, fontSize: "0.75rem" }}>{empLive.ceoAtual}</Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      )}
+                      {empLive.faturamentoAnual > 0 && (
+                        <Box sx={{ mt: 0.5 }}>
+                          <Typography variant="caption" sx={{ color: V3.ink, opacity: 0.6, fontSize: "0.55rem" }}>📈 Faturamento Anual</Typography>
+                          <Typography sx={{ color: V3.green, fontWeight: 800, fontSize: "0.75rem" }}>💰 {Number(empLive.faturamentoAnual).toLocaleString("pt-BR")}</Typography>
+                        </Box>
+                      )}
                     </Paper>
                   )}
 
