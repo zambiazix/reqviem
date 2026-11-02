@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from "react";
 import {
   Box,
   Button,
@@ -12,6 +12,7 @@ import {
   CircularProgress,
   Divider,
   Paper,
+  Tooltip,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import AddIcon from "@mui/icons-material/Add";
@@ -103,6 +104,14 @@ const globalStyles = `
 
 const MESTRE_EMAIL = "mestre@reqviemrpg.com";
 
+// 🟢 Garante que cada tópico tenha um id único e estável
+const ensureTopicIds = (list) =>
+  (list || []).map((t, i) =>
+    t && t.id
+      ? t
+      : { ...t, id: `topic_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 10)}` }
+  );
+
 // 🟢 LIGHTBOX OTIMIZADO
 const LightboxImage = memo(({ src, zoom, setZoom, onClose }) => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -191,10 +200,23 @@ const LightboxImage = memo(({ src, zoom, setZoom, onClose }) => {
   );
 });
 
-// 🟢 COMPONENTE DE TÓPICO MEMOIZADO
-const TopicCard = memo(({ topic, index, isMaster, onEdit, onDelete, setLightboxImage, setZoom }) => {
+// 🟢 COMPONENTE DE TÓPICO MEMOIZADO (com setas de movimento + exportar)
+const TopicCard = memo(({
+  topic,
+  sideSel,
+  index,
+  totalInColumn,
+  isMaster,
+  onEdit,
+  onDelete,
+  onMove,
+  onExport,
+  setLightboxImage,
+  setZoom,
+}) => {
   return (
     <Box
+      data-topic-id={topic.id}
       sx={{
         bgcolor: '#0f172a',
         borderRadius: 3,
@@ -204,28 +226,47 @@ const TopicCard = memo(({ topic, index, isMaster, onEdit, onDelete, setLightboxI
         contentVisibility: 'auto',
         containIntrinsicSize: 'auto 150px',
         border: '1px solid #334155',
-        transition: 'all 0.3s ease',
+        transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
         '&:hover': {
           border: '1px solid #9c27b0',
           boxShadow: '0 0 20px rgba(156,39,176,0.2)',
-          transform: 'translateY(-2px)',
         },
       }}
     >
-      <Typography 
-        variant="h6" 
-        sx={{ 
-          fontWeight: 800,
-          color: '#ffffff !important',
-          borderBottom: '2px solid #9c27b0',
-          pb: 1,
-          mb: 1.5,
-          letterSpacing: 0.5,
-          textShadow: '0 0 10px rgba(255,255,255,0.2)',
-        }}
-      >
-        {topic.title}
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+        <Typography
+          variant="h6"
+          sx={{
+            flex: 1,
+            fontWeight: 800,
+            color: '#ffffff !important',
+            borderBottom: '2px solid #9c27b0',
+            pb: 1,
+            mb: 1.5,
+            letterSpacing: 0.5,
+            textShadow: '0 0 10px rgba(255,255,255,0.2)',
+          }}
+        >
+          {topic.title}
+        </Typography>
+
+        {isMaster && (
+          <Tooltip title="Exportar este tópico" arrow>
+            <IconButton
+              size="small"
+              onClick={() => onExport(topic, sideSel)}
+              sx={{
+                color: '#4ade80',
+                mt: 0.5,
+                '&:hover': { bgcolor: 'rgba(74,222,128,0.12)' },
+              }}
+            >
+              <span style={{ fontSize: '1rem' }}>⬇</span>
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
+
       <Box sx={{ mt: 1 }} className="markdown-content">
         <ReactMarkdown
           children={topic.content}
@@ -258,13 +299,108 @@ const TopicCard = memo(({ topic, index, isMaster, onEdit, onDelete, setLightboxI
       </Box>
 
       {isMaster && (
-        <Box sx={{ position: "absolute", top: 8, right: 8, display: 'flex', gap: 0.5 }}>
-          <IconButton color="info" size="small" onClick={() => onEdit(index)}>
-            <EditIcon fontSize="small" />
-          </IconButton>
-          <IconButton color="error" size="small" onClick={() => onDelete(index)}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
+        <Box
+          sx={{
+            mt: 2,
+            pt: 1.5,
+            borderTop: '1px solid #334155',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap',
+          }}
+        >
+          {/* ⬅️⬆️⬇️➡️ Cruz de movimento */}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: '28px 28px 28px',
+              gridTemplateRows: '28px 28px 28px',
+              alignItems: 'center',
+              justifyItems: 'center',
+            }}
+          >
+            <Box />
+            <Tooltip title="Mover para cima" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={index === 0}
+                  onClick={() => onMove(sideSel, index, 'up')}
+                  sx={{ p: 0.2, color: '#94a3b8', '&:hover': { color: '#9c27b0' }, '&.Mui-disabled': { color: '#334155' } }}
+                >
+                  <span style={{ fontSize: '0.85rem' }}>▲</span>
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Box />
+
+            <Tooltip title="Mover para a esquerda" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={sideSel === 'left'}
+                  onClick={() => onMove(sideSel, index, 'left')}
+                  sx={{ p: 0.2, color: '#94a3b8', '&:hover': { color: '#9c27b0' }, '&.Mui-disabled': { color: '#334155' } }}
+                >
+                  <span style={{ fontSize: '0.85rem' }}>◀</span>
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                bgcolor: '#9c27b0',
+                borderRadius: '50%',
+                boxShadow: '0 0 8px rgba(156,39,176,0.6)',
+              }}
+            />
+
+            <Tooltip title="Mover para a direita" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={sideSel === 'right'}
+                  onClick={() => onMove(sideSel, index, 'right')}
+                  sx={{ p: 0.2, color: '#94a3b8', '&:hover': { color: '#9c27b0' }, '&.Mui-disabled': { color: '#334155' } }}
+                >
+                  <span style={{ fontSize: '0.85rem' }}>▶</span>
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            <Box />
+            <Tooltip title="Mover para baixo" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={index === totalInColumn - 1}
+                  onClick={() => onMove(sideSel, index, 'down')}
+                  sx={{ p: 0.2, color: '#94a3b8', '&:hover': { color: '#9c27b0' }, '&.Mui-disabled': { color: '#334155' } }}
+                >
+                  <span style={{ fontSize: '0.85rem' }}>▼</span>
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Box />
+          </Box>
+
+          {/* Editar / Deletar */}
+          <Box sx={{ display: 'flex', gap: 0.3 }}>
+            <Tooltip title="Editar" arrow>
+              <IconButton color="info" size="small" onClick={() => onEdit(index)}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Excluir" arrow>
+              <IconButton color="error" size="small" onClick={() => onDelete(index)}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
       )}
     </Box>
@@ -277,6 +413,7 @@ export default function Sistema() {
   const currentUser = auth.currentUser;
   const isMaster = useMemo(() => currentUser?.email === MESTRE_EMAIL, [currentUser]);
   const contentInputRef = useRef(null);
+  const positionsRef = useRef(null);
 
   // estados
   const [topicsLeft, setTopicsLeft] = useState([]);
@@ -313,17 +450,55 @@ export default function Sistema() {
     }
   `, []);
 
-  // 🔹 Carrega tópicos do Firestore
+  // 🔹 Carrega tópicos do Firestore (e garante IDs únicos)
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "world", "Sistema"), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setTopicsLeft(data.left || []);
-        setTopicsRight(data.right || []);
+        setTopicsLeft(ensureTopicIds(data.left || []));
+        setTopicsRight(ensureTopicIds(data.right || []));
       }
     });
     return () => unsub();
   }, []);
+
+  // 🟢 FLIP — Anima blocos quando mudam de posição (subir/descer/trocar de coluna)
+  useLayoutEffect(() => {
+    const next = new Map();
+    document.querySelectorAll('[data-topic-id]').forEach((el) => {
+      next.set(el.dataset.topicId, el.getBoundingClientRect());
+    });
+
+    const prev = positionsRef.current;
+    positionsRef.current = next;
+
+    if (!prev) return;
+
+    next.forEach((rect, id) => {
+      const oldRect = prev.get(id);
+      if (!oldRect) return;
+      const dx = oldRect.left - rect.left;
+      const dy = oldRect.top - rect.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+
+      const el = document.querySelector(`[data-topic-id="${id}"]`);
+      if (!el) return;
+
+      el.style.transition = 'none';
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+      el.style.zIndex = '10';
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform 0.45s cubic-bezier(0.4, 0, 0.2, 1)';
+          el.style.transform = '';
+          setTimeout(() => {
+            el.style.zIndex = '';
+          }, 470);
+        });
+      });
+    });
+  }, [topicsLeft, topicsRight]);
 
   // 🔹 Abre modal (MEMOIZADO)
   const handleOpenDialog = useCallback((sideSel, index = null) => {
@@ -405,12 +580,23 @@ export default function Sistema() {
     const newLeft = [...topicsLeft];
     const newRight = [...topicsRight];
 
+    const existingId =
+      side === "left"
+        ? editIndex !== null ? newLeft[editIndex]?.id : null
+        : editIndex !== null ? newRight[editIndex]?.id : null;
+
+    const topicToSave = {
+      id: existingId || `topic_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      title,
+      content,
+    };
+
     if (side === "left") {
-      if (editIndex !== null) newLeft[editIndex] = { title, content };
-      else newLeft.push({ title, content });
+      if (editIndex !== null) newLeft[editIndex] = topicToSave;
+      else newLeft.push(topicToSave);
     } else {
-      if (editIndex !== null) newRight[editIndex] = { title, content };
-      else newRight.push({ title, content });
+      if (editIndex !== null) newRight[editIndex] = topicToSave;
+      else newRight.push(topicToSave);
     }
 
     await setDoc(doc(db, "world", "Sistema"), { left: newLeft, right: newRight });
@@ -430,6 +616,131 @@ export default function Sistema() {
     await setDoc(doc(db, "world", "Sistema"), { left: newLeft, right: newRight });
     setTopicsLeft(newLeft);
     setTopicsRight(newRight);
+  }, [topicsLeft, topicsRight]);
+
+  // 🟢 MOVER TÓPICO (cima/baixo/esquerda/direita)
+  const moverTopico = useCallback(async (sideSel, index, direction) => {
+    const newLeft = [...topicsLeft];
+    const newRight = [...topicsRight];
+
+    if (direction === 'up') {
+      if (index <= 0) return;
+      const list = sideSel === 'left' ? newLeft : newRight;
+      [list[index - 1], list[index]] = [list[index], list[index - 1]];
+    } else if (direction === 'down') {
+      const list = sideSel === 'left' ? newLeft : newRight;
+      if (index >= list.length - 1) return;
+      [list[index], list[index + 1]] = [list[index + 1], list[index]];
+    } else if (direction === 'left') {
+      if (sideSel !== 'right') return;
+      const [moved] = newRight.splice(index, 1);
+      if (!moved) return;
+      newLeft.push(moved);
+    } else if (direction === 'right') {
+      if (sideSel !== 'left') return;
+      const [moved] = newLeft.splice(index, 1);
+      if (!moved) return;
+      newRight.push(moved);
+    } else {
+      return;
+    }
+
+    setTopicsLeft(newLeft);
+    setTopicsRight(newRight);
+    await setDoc(doc(db, "world", "Sistema"), { left: newLeft, right: newRight });
+  }, [topicsLeft, topicsRight]);
+
+  // 🟢 EXPORTAR TÓPICO INDIVIDUAL
+  const exportarTopico = useCallback((topic, sideSel) => {
+    const payload = {
+      type: "reqviem_sistema_topic",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      side: sideSel,
+      topic,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `topico_${(topic.title || "sem_titulo").replace(/\s+/g, "_").slice(0, 40)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  // 🟢 EXPORTAR SISTEMA COMPLETO
+  const exportarSistemaCompleto = useCallback(() => {
+    const payload = {
+      type: "reqviem_sistema_full",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      left: topicsLeft,
+      right: topicsRight,
+      totalLeft: topicsLeft.length,
+      totalRight: topicsRight.length,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sistema_completo_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [topicsLeft, topicsRight]);
+
+  // 🟢 IMPORTAR SISTEMA (detecta: tópico individual ou sistema completo)
+  const importarSistema = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    try {
+      const payload = JSON.parse(await file.text());
+
+      // -- Importar tópico individual --
+      if (payload?.type === "reqviem_sistema_topic" && payload.topic) {
+        const newTopic = ensureTopicIds([payload.topic])[0];
+        const sideSel = payload.side === 'right' ? 'right' : 'left';
+        const newLeft = [...topicsLeft];
+        const newRight = [...topicsRight];
+
+        if (sideSel === 'left') newLeft.push(newTopic);
+        else newRight.push(newTopic);
+
+        setTopicsLeft(newLeft);
+        setTopicsRight(newRight);
+        await setDoc(doc(db, "world", "Sistema"), { left: newLeft, right: newRight });
+        alert(`✅ Tópico "${newTopic.title}" importado para a coluna ${sideSel === 'left' ? 'esquerda' : 'direita'}.`);
+        return;
+      }
+
+      // -- Importar sistema completo --
+      if (payload?.type === "reqviem_sistema_full") {
+        const left = ensureTopicIds(payload.left || []);
+        const right = ensureTopicIds(payload.right || []);
+
+        if (!window.confirm(
+          `Importar sistema completo?\n\n` +
+          `• ${left.length} tópico(s) na esquerda\n` +
+          `• ${right.length} tópico(s) na direita\n\n` +
+          `OK = SUBSTITUIR tudo\nCancelar = CANCELAR`
+        )) return;
+
+        setTopicsLeft(left);
+        setTopicsRight(right);
+        await setDoc(doc(db, "world", "Sistema"), { left, right });
+        alert(`✅ Sistema importado (${left.length + right.length} tópicos).`);
+        return;
+      }
+
+      alert("❌ Tipo de arquivo não reconhecido.");
+    } catch (err) {
+      alert("❌ Erro ao importar: " + err.message);
+    }
   }, [topicsLeft, topicsRight]);
 
   // 🟢 CALLBACKS PARA O TOPIC CARD
@@ -478,18 +789,22 @@ export default function Sistema() {
 
       {topics.map((t, i) => (
         <TopicCard
-          key={`${sideSel}-${i}-${t.title}`}
+          key={t.id}
           topic={t}
+          sideSel={sideSel}
           index={i}
+          totalInColumn={topics.length}
           isMaster={isMaster}
           onEdit={(idx) => handleEditTopic(sideSel, idx)}
           onDelete={(idx) => handleDeleteTopic(sideSel, idx)}
+          onMove={moverTopico}
+          onExport={exportarTopico}
           setLightboxImage={setLightboxImage}
           setZoom={setZoom}
         />
       ))}
     </Box>
-  ), [isMaster, handleOpenDialog, handleEditTopic, handleDeleteTopic, setLightboxImage, setZoom]);
+  ), [isMaster, handleOpenDialog, handleEditTopic, handleDeleteTopic, moverTopico, exportarTopico, setLightboxImage, setZoom]);
 
   return (
     <Box
@@ -584,6 +899,44 @@ export default function Sistema() {
           📖 Sistema - Reqviem RPG
         </Typography>
         <Divider sx={{ borderColor: '#334155', mb: 2 }} />
+
+        {isMaster && (
+          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', flexWrap: 'wrap', mb: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={exportarSistemaCompleto}
+              sx={{
+                color: '#4ade80',
+                borderColor: '#4ade80',
+                fontWeight: 'bold',
+                '&:hover': { bgcolor: 'rgba(74,222,128,0.1)' },
+              }}
+            >
+              ⬇ Exportar Sistema
+            </Button>
+            <Box
+              component="label"
+              sx={{
+                fontSize: '0.875rem',
+                px: 2,
+                py: 0.75,
+                fontWeight: 'bold',
+                color: '#fbbf24',
+                border: '1px solid #fbbf24',
+                borderRadius: 1,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.5,
+                '&:hover': { bgcolor: 'rgba(251,191,36,0.1)' },
+              }}
+            >
+              ⬆ Importar
+              <input hidden type="file" accept=".json,application/json" onChange={importarSistema} />
+            </Box>
+          </Box>
+        )}
       </Box>
 
       {/* corpo - duas colunas */}

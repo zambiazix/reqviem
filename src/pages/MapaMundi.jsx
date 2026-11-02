@@ -40,7 +40,7 @@ import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import LZString from "lz-string";
 
 const MESTRE_EMAIL = "mestre@reqviemrpg.com";
-const CHUNK_SIZE = 800000;
+const CHUNK_SIZE = 400000; // 400k chars UTF-16 ≈ 800KB — seguro para Firestore
 
 const MAPS = [
   { id: "MapaMundi", title: "Mapa Político" },
@@ -49,18 +49,40 @@ const MAPS = [
   { id: "Mapa4", title: "Mapa de Religiões" },
 ];
 
-const EMOJIS_MARCADORES = [
-  "📍", "🏰", "🏯", "🏠", "🏘️", "🏙️", "🏚️", "🏛️", "🏟️", "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰",
-  "⛪", "🕌", "🕍", "⛩️", "🕋", "🏔️", "⛰️", "🌋", "🗻", "🏕️", "🏖️", "🏜️", "🏝️", "🏞️",
-  "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "🍀", "🌊", "🌋", "🗿", "🏆", "🎯", "⚔️", "🛡️",
-  "👑", "💀", "☠️", "👻", "🐉", "🐲", "🦄", "🐎", "🦅", "🦉", "🐺", "🦊", "🐻", "🐗",
-  "⭐", "🌟", "✨", "🔥", "💧", "❄️", "🌪️", "🌈", "☀️", "🌙", "⚡", "💎", "🔮", "📜",
-  "🗡️", "🏹", "🪓", "🔨", "⛏️", "🕯️", "🏮", "🎪", "🎭", "🎨", "🎵",
-  "🍺", "🍷", "🍞", "🧀", "🪙", "💎", "👁️", "🧿", "🪬", "💠",
-  "🚪", "🚶", "🏃", "🧭", "🗺️", "📿", "🔔", "📯", "🎺",
-  "💒", "💍", "🤝", "✋", "🫶", "❤️", "💔", "🏁", "🚩", "🎌",
-  "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",
-];
+const EMOJIS_MARCADORES = Array.from(new Set([
+  // Lugares & construções
+  "📍","🏰","🏯","🏠","🏘️","🏙️","🏚️","🏛️","🏟️","🏦","🏨","🏩","🏪","🏫","🏬","🏭","🏗️","🗼","🗽","🎪","🎭","⛺","🏕️",
+  // Religioso
+  "⛪","🕌","🕍","⛩️","🕋","🛕","☦️","☪️","☸️","✝️","🕉️","🕎","🔯",
+  // Natureza
+  "🏔️","⛰️","🌋","🗻","🏖️","🏜️","🏝️","🏞️","🌄","🌅","🌊","🌲","🌳","🌴","🌵","🌾","🌿","🍀","🍁","🍄","🌺","🌻","🌷","🌹","💐","🌸","🌼",
+  // Animais
+  "🐉","🐲","🦄","🐎","🦅","🦉","🦇","🐺","🦊","🐻","🐗","🐴","🐮","🐷","🐔","🐍","🦎","🐢","🦂","🕷️","🦋","🐙","🦈","🐋","🐟","🦑","🐘","🦁","🐅","🐆","🦓","🦌","🐐","🐏","🐑","🐕","🐈","🐓","🦃","🦆","🦢","🦩","🕊️","🐇","🐿️","🦔","🦦","🦥","🦡","🦨","🦧","🦍","🦒","🐪","🐫","🦙","🦘",
+  // Fantasia
+  "👑","💀","☠️","👻","🎃","🧙","🧙‍♂️","🧙‍♀️","🧝","🧝‍♂️","🧝‍♀️","🧛","🧛‍♂️","🧛‍♀️","🧜","🧜‍♀️","🧜‍♂️","🧚","🧚‍♀️","🧚‍♂️","👹","👺","👽","👾","🤖","🎅","🤴","👸","🥷","💂","🕵️","👮","👷",
+  // Magia & símbolos
+  "⭐","🌟","✨","💫","☄️","🔥","💧","❄️","🌪️","🌈","☀️","🌙","⚡","💎","🔮","📜","📖","📕","📗","📘","📙","🗝️","🔑","🔒","🔓","🧿","🪬","🔱","⚜️","☯️","☮️","✡️","🕯️","🪔","🏮",
+  // Armas & combate
+  "⚔️","🛡️","🗡️","🏹","🪓","🔨","⛏️","🔧","🪃","🗿","💣","🧨","🎯","🏆","🥇","🥈","🥉","🎖️",
+  // Comida & bebida
+  "🍺","🍷","🍻","🍞","🧀","🍖","🍗","🍕","🍔","🍟","🍣","🍜","🍲","🥐","🥖","🍰","🎂","🍫","🍬","🍭","🍯","☕","🍵","🍶","🍾","🥂","🥃","🍸","🍹","🧉","🍎","🍇","🍒","🍓","🍑","🍋","🍊",
+  // Tesouros & objetos
+  "🪙","💰","💵","💴","💶","💷","💸","💳","⚱️","🏺","📿","🔔","📯","🎺","🎻","🎸","🥁","🎷","🪕","🎼","🎵","🎶",
+  // Navegação & exploração
+  "🧭","🗺️","⛵","🚢","🛶","🎒","👣","🚶","🏃","🚪",
+  // Cores
+  "🔴","🟠","🟡","🟢","🔵","🟣","⚫","⚪","🟤","🔶","🔷","🔸","🔹","🔺","🔻","💠","🔘",
+  // Números
+  "1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟",
+  // Corações
+  "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝",
+  // Bandeiras
+  "🏁","🚩","🎌","🏴","🏳️","🏳️‍🌈","🏴‍☠️",
+  // Arte & música
+  "🎨","🎬","🎤","🎧",
+  // Gestos
+  "✋","🤚","🖐️","👋","👌","🤝","🫱","🫲","✍️"
+]));
 // 🟢 ESTILOS GLOBAIS DA PÁGINA
 const globalStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
@@ -107,7 +129,93 @@ const globalStyles = `
     to { opacity: 1; transform: translateY(0); }
   }
 `;
+// ============================================================
+// HELPERS GLOBAIS PARA ZOOM, PAN E COORDENADAS
+// ============================================================
 
+/** Converte evento de mouse para coordenada SVG (funciona com zoom/pan/panZoom). */
+function getSvgCoords(e, host) {
+  if (!host) return null;
+  const svgEl = host.querySelector ? host.querySelector("svg") : host;
+  if (!svgEl) return null;
+
+  const viewport = svgEl.querySelector(".svg-pan-zoom_viewport") || svgEl;
+  const pt = svgEl.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  const ctm = viewport.getScreenCTM();
+  if (!ctm) {
+    // fallback
+    const rect = svgEl.getBoundingClientRect();
+    return { x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) };
+  }
+  const svgPt = pt.matrixTransform(ctm.inverse());
+  return { x: Math.round(svgPt.x), y: Math.round(svgPt.y) };
+}
+
+/** Aplica escala inversa aos marcadores e rotas (mantém tamanho constante na tela). */
+function applyMarkerScale(host, zoom) {
+  if (!host) return;
+  const scale = 1 / zoom;
+
+  host.querySelectorAll("#marcadores g").forEach((g) => {
+    const tx = g.getAttribute("data-tx") || "0";
+    const ty = g.getAttribute("data-ty") || "0";
+    g.setAttribute("transform", `translate(${tx},${ty}) scale(${scale})`);
+  });
+
+  host.querySelectorAll("#caminhos path").forEach((p) => {
+    p.setAttribute("stroke-width", 6 * scale);
+  });
+
+  host.querySelectorAll("#caminhos circle").forEach((c) => {
+    if (!c.hasAttribute("data-r-original")) {
+      c.setAttribute("data-r-original", c.getAttribute("r") || "4");
+    }
+    const rOrig = parseFloat(c.getAttribute("data-r-original"));
+    c.setAttribute("r", rOrig * scale);
+  });
+
+  host.querySelectorAll("#caminhos text").forEach((t) => {
+    if (!t.hasAttribute("data-fs-original")) {
+      t.setAttribute("data-fs-original", t.getAttribute("font-size") || "12");
+    }
+    const fsOrig = parseFloat(t.getAttribute("data-fs-original"));
+    t.setAttribute("font-size", fsOrig * scale);
+  });
+}
+
+/** Upload de imagem para o Cloudinary — retorna URL pública. */
+async function uploadImagemCloudinary(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("upload_preset", "reqviem_upload");
+  const res = await fetch("https://api.cloudinary.com/v1_1/dwaxw0l83/image/upload", {
+    method: "POST",
+    body: fd,
+  });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Falha no upload");
+  return data.secure_url;
+}
+
+/** Insere markdown na posição do cursor de um textarea. */
+function inserirNoCursor(textareaEl, markdown, setter, valorAtual) {
+  if (!textareaEl) {
+    setter((prev) => (prev || "") + markdown);
+    return;
+  }
+  const start = textareaEl.selectionStart ?? (valorAtual || "").length;
+  const end = textareaEl.selectionEnd ?? start;
+  const valor = textareaEl.value ?? valorAtual ?? "";
+  const novo = valor.substring(0, start) + markdown + valor.substring(end);
+  setter(novo);
+  setTimeout(() => {
+    textareaEl.focus();
+    const pos = start + markdown.length;
+    try { textareaEl.setSelectionRange(pos, pos); } catch {}
+  }, 30);
+}
 export default function MapaMundi() {
     // 🎨 ESTILOS PARA ANOTAÇÕES EXPANSÍVEIS
   const styles = {
@@ -245,6 +353,7 @@ const wikiImagemInputRef = useRef(null);
 const balãoRef = useRef(null);  
 const cidadeSvgRef = useRef(null);
 const cidadePanZoomRef = useRef(null);
+const marcadorDescricaoRef = useRef(null);
 const converterCoordenadasClique = (e, containerRef) => {
   const container = containerRef?.current;
   if (!container) return null;
@@ -573,78 +682,14 @@ panZoomRef.current = svgPanZoom(svgEl, {
   center: false,
   minZoom: 0.2,
   maxZoom: 40,
-  onZoom: function() {
-    var zoom = this.getZoom();
-   var scale = Math.min(1 / zoom, 0.5);
-    var marcadores = document.querySelectorAll('#marcadores g');
-marcadores.forEach(function(g) {
-      var tx = g.getAttribute('data-tx') || '0';
-      var ty = g.getAttribute('data-ty') || '0';
-      g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-    });
-    var paths = document.querySelectorAll('#caminhos path');
-    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
-    var circles = document.querySelectorAll('#caminhos circle');
-    circles.forEach(function(c) {
-      var r = parseFloat(c.getAttribute('r') || 4);
-      c.setAttribute('r', r * scale);
-    });
-    var texts = document.querySelectorAll('#caminhos text');
-    texts.forEach(function(t) {
-      var fs = parseFloat(t.getAttribute('font-size') || 12);
-      t.setAttribute('font-size', fs * scale);
-    });
+  onZoom: function () {
+    applyMarkerScale(host, this.getZoom());
   },
-  onPan: function() {
-    var zoom = this.getZoom();
-    var scale = Math.min(1 / zoom, 0.3);
-    var marcadores = document.querySelectorAll('#marcadores g');
-marcadores.forEach(function(g) {
-      var tx = g.getAttribute('data-tx') || '0';
-      var ty = g.getAttribute('data-ty') || '0';
-      g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-    });
-    var paths = document.querySelectorAll('#caminhos path');
-    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
-    var circles = document.querySelectorAll('#caminhos circle');
-    circles.forEach(function(c) {
-      var r = parseFloat(c.getAttribute('r') || 4);
-      c.setAttribute('r', r * scale);
-    });
-    var texts = document.querySelectorAll('#caminhos text');
-    texts.forEach(function(t) {
-      var fs = parseFloat(t.getAttribute('font-size') || 12);
-      t.setAttribute('font-size', fs * scale);
-    });
+  onPan: function () {
+    applyMarkerScale(host, this.getZoom());
   },
 });
-
-setTimeout(function() {
-  if (panZoomRef.current) {
-    var zoom = panZoomRef.current.getZoom();
-    var scale = Math.min(1 / zoom, 0.5); // Limita o tamanho máximo
-    var marcadores = document.querySelectorAll('#marcadores g');
-    marcadores.forEach(function(g) {
-      var tx = g.getAttribute('data-tx') || '0';
-      var ty = g.getAttribute('data-ty') || '0';
-      g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-    });
-    
-    // Também ajusta os caminhos
-    var paths = document.querySelectorAll('#caminhos path');
-    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
-    var circles = document.querySelectorAll('#caminhos circle');
-    circles.forEach(function(c) {
-      var r = parseFloat(c.getAttribute('r') || 4);
-      c.setAttribute('r', r * scale);
-    });
-    var texts = document.querySelectorAll('#caminhos text');
-    texts.forEach(function(t) {
-      var fs = parseFloat(t.getAttribute('font-size') || 12);
-      t.setAttribute('font-size', fs * scale);
-    });
-  }
-}, 100);
+applyMarkerScale(host, panZoomRef.current.getZoom());
         // Restaura o zoom/pan anterior
         try {
           panZoomRef.current.zoom(currentZoom);
@@ -849,57 +894,29 @@ const loadSvgFromFirestore = async (svgId) => {
 const handleMapaContextMenu = (e, mapId) => {
   e.preventDefault();
   if (!isMestre) return;
-  
   const host = mapSvgRefs.current[mapId];
   if (!host) return;
-  
-  const svgEl = host.querySelector("svg");
-  if (!svgEl) return;
-  
-  const rect = svgEl.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
-  
-  let svgX, svgY;
-  
-  if (panZoomRef.current && panZoomRef.current.getPan && panZoomRef.current.getZoom) {
-    const pan = panZoomRef.current.getPan();
-    const zoom = panZoomRef.current.getZoom();
-    const sizes = panZoomRef.current.getSizes();
-    svgX = Math.round((mouseX - pan.x) / zoom + sizes.viewBox.x);
-    svgY = Math.round((mouseY - pan.y) / zoom + sizes.viewBox.y);
-  } else {
-    try {
-      const viewBox = svgEl.viewBox.baseVal;
-      const scaleX = viewBox.width / rect.width;
-      const scaleY = viewBox.height / rect.height;
-      svgX = Math.round(viewBox.x + mouseX * scaleX);
-      svgY = Math.round(viewBox.y + mouseY * scaleY);
-    } catch {
-      svgX = Math.round(mouseX);
-      svgY = Math.round(mouseY);
-    }
-  }
-  
-  // 🟢 SE ESTIVER EDITANDO UMA ROTA, ADICIONA PONTO
+
+  const coords = getSvgCoords(e, host);
+  if (!coords) return;
+  const { x: svgX, y: svgY } = coords;
+
   if (editandoCaminhoId && expanded === mapId) {
     adicionarPontoAoCaminho(mapId, editandoCaminhoId, svgX, svgY);
     return;
   }
-  
-  // 🟢 SE ESTIVER EM MODO CRIAR CAMINHO, ADICIONA PONTO
   if (modoCriarCaminho && caminhoAtivo?.id) {
     adicionarPontoAoCaminho(mapId, caminhoAtivo.id, svgX, svgY);
     return;
   }
-  
-  console.log("🎯 Marcador em:", svgX, svgY);
-  
+
   setMarcadorX(svgX);
   setMarcadorY(svgY);
   setMarcadorNome("");
   setMarcadorDescricao("");
   setMarcadorIcone("📍");
+  setMarcadorTipo("local");
+  setMarcadorCidadeSvg(null);
   setMarcadorEditando({ mapId, marcadorId: null, pais: "" });
   setMarcadorDialogOpen(true);
 };
@@ -1200,41 +1217,20 @@ return `<g transform="translate(${m.x},${m.y})" data-tx="${m.x}" data-ty="${m.y}
       if (svgEl) {
         if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
 panZoomRef.current = svgPanZoom(svgEl, {
-  zoomEnabled: true, controlIconsEnabled: true,
-  fit: false, center: false, minZoom: 0.2, maxZoom: 40,
-  onZoom: function() {
-    var zoom = this.getZoom();
-    var scale = Math.min(1 / zoom, 0.5);
-    var marcadores = document.querySelectorAll('#marcadores g');
-    marcadores.forEach(function(g) {
-  var tx = g.getAttribute('data-tx') || '0';
-  var ty = g.getAttribute('data-ty') || '0';
-  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-});
-    var paths = document.querySelectorAll('#caminhos path');
-    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
-    var circles = document.querySelectorAll('#caminhos circle');
-    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
-    var texts = document.querySelectorAll('#caminhos text');
-    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  zoomEnabled: true,
+  controlIconsEnabled: true,
+  fit: false,
+  center: false,
+  minZoom: 0.2,
+  maxZoom: 40,
+  onZoom: function () {
+    applyMarkerScale(host, this.getZoom());
   },
-  onPan: function() {
-    var zoom = this.getZoom();
-    var scale = Math.min(1 / zoom, 0.5);
-    var marcadores = document.querySelectorAll('#marcadores g');
-    marcadores.forEach(function(g) {
-  var tx = g.getAttribute('data-tx') || '0';
-  var ty = g.getAttribute('data-ty') || '0';
-  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-});
-    var paths = document.querySelectorAll('#caminhos path');
-    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
-    var circles = document.querySelectorAll('#caminhos circle');
-    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
-    var texts = document.querySelectorAll('#caminhos text');
-    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  onPan: function () {
+    applyMarkerScale(host, this.getZoom());
   },
 });
+applyMarkerScale(host, panZoomRef.current.getZoom());
         try {
           panZoomRef.current.zoom(currentZoom);
           panZoomRef.current.pan(currentPan);
@@ -1350,41 +1346,20 @@ return `<g transform="translate(${m.x},${m.y})" data-tx="${m.x}" data-ty="${m.y}
       if (svgEl) {
         if (panZoomRef.current?.destroy) panZoomRef.current.destroy();
 panZoomRef.current = svgPanZoom(svgEl, {
-  zoomEnabled: true, controlIconsEnabled: true,
-  fit: false, center: false, minZoom: 0.2, maxZoom: 40,
-  onZoom: function() {
-    var zoom = this.getZoom();
-    var scale = Math.min(1 / zoom, 0.5);
-    var marcadores = document.querySelectorAll('#marcadores g');
-    marcadores.forEach(function(g) {
-  var tx = g.getAttribute('data-tx') || '0';
-  var ty = g.getAttribute('data-ty') || '0';
-  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-});
-    var paths = document.querySelectorAll('#caminhos path');
-    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
-    var circles = document.querySelectorAll('#caminhos circle');
-    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
-    var texts = document.querySelectorAll('#caminhos text');
-    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  zoomEnabled: true,
+  controlIconsEnabled: true,
+  fit: false,
+  center: false,
+  minZoom: 0.2,
+  maxZoom: 40,
+  onZoom: function () {
+    applyMarkerScale(host, this.getZoom());
   },
-  onPan: function() {
-    var zoom = this.getZoom();
-    var scale = Math.min(1 / zoom, 0.5);
-    var marcadores = document.querySelectorAll('#marcadores g');
-    marcadores.forEach(function(g) {
-  var tx = g.getAttribute('data-tx') || '0';
-  var ty = g.getAttribute('data-ty') || '0';
-  g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
-});
-    var paths = document.querySelectorAll('#caminhos path');
-    paths.forEach(function(p) { p.setAttribute('stroke-width', 6 * scale); });
-    var circles = document.querySelectorAll('#caminhos circle');
-    circles.forEach(function(c) { c.setAttribute('r', (parseFloat(c.getAttribute('r') || 4)) * scale); });
-    var texts = document.querySelectorAll('#caminhos text');
-    texts.forEach(function(t) { t.setAttribute('font-size', (parseFloat(t.getAttribute('font-size') || 12)) * scale); });
+  onPan: function () {
+    applyMarkerScale(host, this.getZoom());
   },
 });
+applyMarkerScale(host, panZoomRef.current.getZoom());
         try { panZoomRef.current.zoom(currentZoom); panZoomRef.current.pan(currentPan); } catch(e) {}
       }
     }
@@ -1573,32 +1548,50 @@ const criarCidadeCaminho = async () => {
       alert("Erro ao enviar imagem. Verifique a conexão.");
     }
   };
+const handleFileUpload = async (e, mapId) => {
+  if (!isMestre) return;
+  const file = e.target.files?.[0];
+  if (!file) return;
+  e.target.value = "";
 
-  // 🔹 Upload de SVG
-  const handleFileUpload = async (e, mapId) => {
-    if (!isMestre) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const svgData = evt.target.result.trim();
-        const compressed = LZString.compressToUTF16(svgData);
-        const chunks = [];
-        for (let i = 0; i < compressed.length; i += CHUNK_SIZE) {
-          chunks.push(compressed.substring(i, i + CHUNK_SIZE));
-        }
-        const docData = {};
-        chunks.forEach((c, idx) => (docData[`part_${idx + 1}`] = c));
-        await setDoc(doc(db, "world", `Map_${mapId}`), docData);
-        await loadSvgForMap(mapId);
-      } catch (err) {
-        console.error("Erro upload SVG:", err);
-      }
-    };
-    reader.readAsText(file);
-  };
+  const mb = file.size / 1024 / 1024;
+  if (mb > 200) {
+    alert(`Arquivo muito grande (${mb.toFixed(1)}MB).\nLimite: 200MB.`);
+    return;
+  }
+  if (mb > 30 && !window.confirm(`Arquivo com ${mb.toFixed(1)}MB — pode travar. Continuar?`)) return;
 
+  try {
+    const raw = await file.text();
+    if (!raw || raw.indexOf("<svg") === -1) {
+      alert("❌ Arquivo não parece ser um SVG válido.");
+      return;
+    }
+    // Sanitiza: remove declaração XML / DOCTYPE (Azgaar inclui)
+    const limpo = raw
+      .replace(/<\?xml[^>]*\?>/gi, "")
+      .replace(/<!DOCTYPE[^>]*>/gi, "")
+      .trim();
+
+    const comprimido = LZString.compressToUTF16(limpo);
+    if (!comprimido) throw new Error("Falha ao comprimir");
+
+    const chunks = [];
+    for (let i = 0; i < comprimido.length; i += CHUNK_SIZE) {
+      chunks.push(comprimido.substring(i, i + CHUNK_SIZE));
+    }
+    const docData = {};
+    chunks.forEach((c, idx) => { docData[`part_${idx + 1}`] = c; });
+
+    await setDoc(doc(db, "world", `Map_${mapId}`), docData);
+    await loadSvgForMap(mapId);
+
+    alert(`✅ SVG carregado!\n${chunks.length} parte(s) · ${mb.toFixed(2)}MB originais`);
+  } catch (err) {
+    console.error("Erro upload SVG:", err);
+    alert("❌ Erro ao enviar SVG:\n" + (err.message || err));
+  }
+};
   // 🟢 EXPORTAR MARCADORES (JSON completo)
   const exportarMarcadoresMapa = async (mapId) => {
     const lista = marcadores[mapId] || [];
@@ -1818,6 +1811,52 @@ const criarCidadeCaminho = async () => {
     await setDoc(doc(db, "world", "Chapters"), { list: existing });
   };
 
+  // 🟢 EXPORTAR ANOTAÇÕES DE UM MAPA
+  const exportarCapitulosMapa = (mapId) => {
+    const lista = chaptersMap[mapId] || [];
+    if (!lista.length) return alert("Nenhuma anotação para exportar.");
+    const payload = {
+      type: "reqviem_map_chapters",
+      version: 1,
+      mapId,
+      exportedAt: new Date().toISOString(),
+      chapters: lista,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `anotacoes_${mapId}_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // 🟢 IMPORTAR ANOTAÇÕES DE UM MAPA
+  const importarCapitulosMapa = async (e, mapId) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const payload = JSON.parse(await file.text());
+      if (payload?.type !== "reqviem_map_chapters" || !Array.isArray(payload.chapters)) {
+        return alert("❌ Arquivo inválido.");
+      }
+      const atual = chaptersMap[mapId] || [];
+      const substituir = window.confirm(
+        `Importar ${payload.chapters.length} anotação(ões)?\n\n` +
+        `OK = SUBSTITUIR todas (${atual.length} atuais)\n` +
+        `Cancelar = CANCELAR importação`
+      );
+      if (!substituir) return;
+      await setDoc(doc(db, "world", `Chapters_${mapId}`), { list: payload.chapters });
+      alert(`✅ ${payload.chapters.length} anotação(ões) importada(s).`);
+    } catch (err) {
+      alert("❌ Erro: " + err.message);
+    }
+  };
+
   // 📖 CRUD WIKI DA CRÔNICA
   const salvarWikiNoFirestore = async (categorias, cronicas) => {
     await setDoc(doc(db, "world", "CronicaWiki"), { categorias, cronicas }, { merge: true });
@@ -1890,6 +1929,97 @@ const criarCidadeCaminho = async () => {
     setWikiCronicas(novas);
     await salvarWikiNoFirestore(wikiCategorias, novas);
     setWikiMoverCronica(null);
+  };
+
+  // 📖 EXPORTAR CRÔNICA INDIVIDUAL
+  const exportarCronicaIndividual = (cronica) => {
+    if (!cronica) return;
+    const cat = wikiCategorias.find((c) => c.id === cronica.categoriaId);
+    const payload = {
+      type: "reqviem_wiki_cronica",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      cronica,
+      categoria: cat ? { id: cat.id, nome: cat.nome, descricao: cat.descricao || "" } : null,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cronica_${(cronica.titulo || "sem_titulo").replace(/\s+/g, "_").slice(0, 40)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // 📖 EXPORTAR GRIMÓRIO COMPLETO
+  const exportarWikiCompleta = () => {
+    const payload = {
+      type: "reqviem_wiki_full",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      categorias: wikiCategorias,
+      cronicas: wikiCronicas,
+      totalCategorias: wikiCategorias.length,
+      totalCronicas: wikiCronicas.length,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `grimorio_completo_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // 📖 IMPORTAR WIKI (individual ou completa)
+  const importarWiki = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const payload = JSON.parse(await file.text());
+
+      if (payload?.type === "reqviem_wiki_cronica" && payload.cronica) {
+        const cronica = { ...payload.cronica, id: String(payload.cronica.id || `cron_${Date.now()}`) };
+        let catId = cronica.categoriaId;
+        let novasCats = [...wikiCategorias];
+        if (catId && !novasCats.some((c) => c.id === catId)) {
+          novasCats.push(payload.categoria || {
+            id: catId, nome: "Importada", descricao: "", ordem: novasCats.length,
+          });
+        }
+        const novasCron = [...wikiCronicas, cronica];
+        setWikiCategorias(novasCats);
+        setWikiCronicas(novasCron);
+        await salvarWikiNoFirestore(novasCats, novasCron);
+        alert(`✅ Crônica "${cronica.titulo}" importada.`);
+        return;
+      }
+
+      if (payload?.type === "reqviem_wiki_full") {
+        const cats = Array.isArray(payload.categorias) ? payload.categorias : [];
+        const crons = Array.isArray(payload.cronicas) ? payload.cronicas : [];
+        if (!window.confirm(
+          `Importar grimório completo?\n\n` +
+          `• ${cats.length} categoria(s)\n` +
+          `• ${crons.length} crônica(s)\n\n` +
+          `OK = SUBSTITUIR tudo\nCancelar = CANCELAR`
+        )) return;
+        setWikiCategorias(cats);
+        setWikiCronicas(crons);
+        await salvarWikiNoFirestore(cats, crons);
+        alert(`✅ Grimório importado (${crons.length} crônicas).`);
+        return;
+      }
+
+      alert("❌ Tipo de arquivo não reconhecido.");
+    } catch (err) {
+      alert("❌ Erro ao importar: " + err.message);
+    }
   };
 
   // 📥 MIGRAR CRÔNICAS ANTIGAS (world/Chapters) PARA O GRIMÓRIO
@@ -2543,7 +2673,8 @@ const criarCidadeCaminho = async () => {
         const rota = caminhos[m.id]?.find(c => c.id === editandoCaminhoId);
         if (!rota || rota.pontos.length === 0) return;
         
-        const tolerancia = 15;
+        const zoomAtual = panZoomRef.current?.getZoom?.() || 1;
+        const tolerancia = 20 / zoomAtual;
         const pontoClicado = rota.pontos.findIndex(p => {
           const dist = Math.sqrt((p.x - svgX) ** 2 + (p.y - svgY) ** 2);
           return dist < tolerancia;
@@ -2579,15 +2710,36 @@ const criarCidadeCaminho = async () => {
       </Typography>
     </Typography>
     {isMestre && (
-      <Button
-        startIcon={<AddIcon />}
-        size="small"
-        variant="contained"
-        sx={{ fontSize: '0.7rem' }}
-        onClick={(e) => openChapterDialog(m.id, null, e)}
-      >
-        Nova
-      </Button>
+      <Box sx={{ display: 'flex', gap: 0.5 }}>
+        <Button
+          size="small"
+          variant="outlined"
+          sx={{ fontSize: '0.65rem', minWidth: 'auto', px: 1, py: 0.3, color: '#4ade80', borderColor: 'rgba(74,222,128,0.4)' }}
+          onClick={(e) => { e.stopPropagation(); exportarCapitulosMapa(m.id); }}
+          title="Exportar anotações"
+        >
+          ⬇ Exportar
+        </Button>
+        <Box component="label" sx={{ fontSize: '0.65rem', px: 1, py: 0.3, color: '#fbbf24', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 1, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          onClick={(e) => e.stopPropagation()}>
+          ⬆ Importar
+          <input
+            hidden
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => { e.stopPropagation(); importarCapitulosMapa(e, m.id); }}
+          />
+        </Box>
+        <Button
+          startIcon={<AddIcon />}
+          size="small"
+          variant="contained"
+          sx={{ fontSize: '0.7rem' }}
+          onClick={(e) => openChapterDialog(m.id, null, e)}
+        >
+          Nova
+        </Button>
+      </Box>
     )}
   </Box>
   <Divider sx={{ mb: 1, flexShrink: 0 }} />
@@ -2736,7 +2888,28 @@ const criarCidadeCaminho = async () => {
     </Box>
 
     {isMestre && (
-      <Box sx={{ display: 'flex', gap: 1 }}>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<span>⬇</span>}
+          onClick={exportarWikiCompleta}
+          sx={{ color: '#4ade80', borderColor: '#4ade80', fontWeight: 'bold', '&:hover': { bgcolor: 'rgba(74,222,128,0.1)' } }}
+        >
+          Exportar Tudo
+        </Button>
+        <Box
+          component="label"
+          sx={{
+            fontSize: '0.85rem', px: 1.5, py: 0.5, fontWeight: 'bold',
+            color: '#fbbf24', border: '1px solid #fbbf24', borderRadius: 1,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 0.5,
+            '&:hover': { bgcolor: 'rgba(251,191,36,0.1)' },
+          }}
+        >
+          ⬆ Importar
+          <input hidden type="file" accept=".json,application/json" onChange={importarWiki} />
+        </Box>
         <Button
           size="small"
           variant="outlined"
@@ -3205,6 +3378,9 @@ const criarCidadeCaminho = async () => {
 
               {isMestre && (
                 <Box sx={{ display: 'flex', gap: 1, mt: 3, pt: 2, borderTop: '1px solid rgba(184,148,90,0.2)' }}>
+                  <Button size="small" startIcon={<span>⬇</span>} onClick={() => exportarCronicaIndividual(cron)} sx={{ color: '#4ade80' }}>
+                    Exportar
+                  </Button>
                   <Button size="small" startIcon={<EditIcon />} onClick={() => setWikiEditandoCronica({ ...cron })} sx={{ color: '#ffd700' }}>
                     Editar
                   </Button>
@@ -3575,74 +3751,168 @@ const criarCidadeCaminho = async () => {
     </IconButton>
   </div>
 )}
-{/* 🟢 MODAL EDITAR MARCADOR */}
-<Dialog 
-  open={marcadorDialogOpen} 
-  onClose={() => setMarcadorDialogOpen(false)} 
-  maxWidth="sm" 
+{/* 🟢 MODAL EDITAR MARCADOR — REDESENHADO */}
+<Dialog
+  open={marcadorDialogOpen}
+  onClose={() => setMarcadorDialogOpen(false)}
+  maxWidth="sm"
   fullWidth
-  PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff' } }}
+  PaperProps={{
+    sx: {
+      bgcolor: '#0f172a',
+      color: '#fff',
+      border: '1px solid rgba(255,152,0,0.35)',
+      borderRadius: 3,
+      backgroundImage:
+        'radial-gradient(circle at 0% 0%, rgba(255,152,0,0.06), transparent 45%), radial-gradient(circle at 100% 100%, rgba(168,85,247,0.06), transparent 45%)',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.7)',
+    },
+  }}
 >
-  <DialogTitle>
+  <DialogTitle
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1.5,
+      fontWeight: 800,
+      fontSize: '1rem',
+      color: '#ff9800',
+      borderBottom: '1px solid rgba(255,152,0,0.15)',
+      pb: 1.5,
+      letterSpacing: '0.3px',
+    }}
+  >
+    <Box
+      component="span"
+      sx={{
+        width: 32, height: 32, borderRadius: '10px',
+        bgcolor: 'rgba(255,152,0,0.15)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '1rem',
+      }}
+    >
+      {marcadorEditando?.marcadorId ? '✏️' : '✦'}
+    </Box>
     {marcadorEditando?.marcadorId ? 'Editar Marcador' : 'Novo Marcador'}
   </DialogTitle>
-  <DialogContent>
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-      <TextField
-        label="Nome do local"
-        fullWidth
-        value={marcadorNome}
-        onChange={(e) => setMarcadorNome(e.target.value)}
-        InputProps={{ style: { color: '#fff' } }}
-        InputLabelProps={{ style: { color: '#ccc' } }}
-        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }}
-      />
+
+  <DialogContent sx={{ pt: '16px !important' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+        <TextField
+          label="Nome do local"
+          fullWidth
+          size="small"
+          value={marcadorNome}
+          onChange={(e) => setMarcadorNome(e.target.value)}
+          InputProps={{ style: { color: '#fff' } }}
+          InputLabelProps={{ style: { color: '#94a3b8' } }}
+          sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,152,0,0.3)' }, '&:hover fieldset': { borderColor: 'rgba(255,152,0,0.6)' } } }}
+        />
+        <Box
+          onClick={() => setEmojiPickerOpen(true)}
+          sx={{
+            width: 48, height: 40, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            bgcolor: 'rgba(255,152,0,0.08)',
+            border: '1px solid rgba(255,152,0,0.35)',
+            borderRadius: 1.5,
+            fontSize: '1.3rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            '&:hover': { bgcolor: 'rgba(255,152,0,0.18)', transform: 'scale(1.05)' },
+          }}
+          title="Trocar ícone"
+        >
+          {marcadorIcone || '📍'}
+        </Box>
+      </Box>
 
       <TextField
         label="País / Região"
         fullWidth
+        size="small"
         value={marcadorEditando?.pais || ""}
-        onChange={(e) => setMarcadorEditando(prev => ({ ...(prev || {}), pais: e.target.value }))}
+        onChange={(e) => setMarcadorEditando((prev) => ({ ...(prev || {}), pais: e.target.value }))}
         InputProps={{ style: { color: '#fff' } }}
-        InputLabelProps={{ style: { color: '#ccc' } }}
-        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }}
+        InputLabelProps={{ style: { color: '#94a3b8' } }}
+        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(255,152,0,0.3)' } } }}
       />
-      
-      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-        Descrição (Markdown - use ![](url) para imagens)
-      </Typography>
-      <TextField
-        label="Descrição"
-        fullWidth
-        multiline
-        minRows={4}
-        maxRows={8}
-        value={marcadorDescricao}
-        onChange={(e) => setMarcadorDescricao(e.target.value)}
-        InputProps={{ style: { color: '#fff' } }}
-        InputLabelProps={{ style: { color: '#ccc' } }}
-        sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#555' } } }}
-      />
-      {/* ÍCONE */}
-<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Ícone:</Typography>
-  <Button size="small" variant="outlined" onClick={() => setEmojiPickerOpen(true)}
-    sx={{ color: '#fff', borderColor: '#555', fontSize: '1.2rem', minWidth: 50, height: 36 }}>
-    {marcadorIcone || "📍"}
-  </Button>
-  <Typography variant="caption" sx={{ color: '#64748b' }}>Clique para trocar</Typography>
-</Box>
 
-      {isMestre && (
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+      <FormControl fullWidth size="small">
+        <InputLabel sx={{ color: '#94a3b8' }}>Tipo</InputLabel>
+        <Select
+          value={marcadorTipo}
+          label="Tipo"
+          onChange={(e) => setMarcadorTipo(e.target.value)}
+          sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,152,0,0.3)' } }}
+        >
+          <MenuItem value="local">📍 Local Comum</MenuItem>
+          <MenuItem value="cidade">🏙️ Cidade (com mapa interno)</MenuItem>
+        </Select>
+      </FormControl>
+
+      <Box>
+        <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 700, mb: 0.5, display: 'block', letterSpacing: '0.5px' }}>
+          📝 DESCRIÇÃO — Markdown · Ctrl+V para colar imagem
+        </Typography>
+        <TextField
+          inputRef={marcadorDescricaoRef}
+          label=""
+          fullWidth
+          multiline
+          minRows={5}
+          maxRows={10}
+          value={marcadorDescricao}
+          onChange={(e) => setMarcadorDescricao(e.target.value)}
+          placeholder="Descreva o local... Use markdown: **negrito**, *itálico*, ![](url)"
+          onPaste={async (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const it of items) {
+              if (it.type && it.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = it.getAsFile();
+                if (!file) return;
+                try {
+                  const url = await uploadImagemCloudinary(file);
+                  inserirNoCursor(
+                    marcadorDescricaoRef.current,
+                    `\n\n![](${url})\n\n`,
+                    setMarcadorDescricao,
+                    marcadorDescricao
+                  );
+                } catch (err) {
+                  alert("Erro ao colar imagem: " + err.message);
+                }
+                return;
+              }
+            }
+          }}
+          InputProps={{ style: { color: '#fff', fontSize: '0.85rem', lineHeight: 1.6 } }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              bgcolor: 'rgba(0,0,0,0.3)',
+              '& fieldset': { borderColor: 'rgba(255,152,0,0.25)' },
+              '&:hover fieldset': { borderColor: 'rgba(255,152,0,0.5)' },
+              '&.Mui-focused fieldset': { borderColor: '#ff9800' },
+            },
+          }}
+        />
+        <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
           <Button
+            size="small"
             variant="outlined"
             component="label"
-            size="small"
-            startIcon={<UploadIcon />}
-            sx={{ color: '#94a3b8', borderColor: '#555' }}
+            startIcon={<UploadIcon sx={{ fontSize: '1rem' }} />}
+            sx={{
+              color: '#94a3b8', borderColor: 'rgba(255,152,0,0.3)',
+              fontSize: '0.7rem', textTransform: 'none',
+              '&:hover': { borderColor: '#ff9800', color: '#ff9800' },
+            }}
           >
-            Upload Imagem
+            Inserir imagem (no cursor)
             <input
               hidden
               type="file"
@@ -3650,101 +3920,159 @@ const criarCidadeCaminho = async () => {
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                e.target.value = "";
                 try {
-                  const apiBase = window.location.hostname === "localhost"
-                    ? "http://localhost:5000"
-                    : "https://app-rpg.onrender.com";
-                  const fd = new FormData();
-                  fd.append("file", file);
-                  const res = await fetch(`${apiBase}/upload`, { method: "POST", body: fd });
-                  const data = await res.json();
-                  if (data.url) {
-                    setMarcadorDescricao(prev => prev + `\n\n![](${data.url})`);
-                  }
+                  const url = await uploadImagemCloudinary(file);
+                  inserirNoCursor(
+                    marcadorDescricaoRef.current,
+                    `\n\n![](${url})\n\n`,
+                    setMarcadorDescricao,
+                    marcadorDescricao
+                  );
                 } catch (err) {
-                  alert("Erro ao enviar imagem");
+                  alert("Erro ao enviar imagem: " + err.message);
                 }
               }}
             />
           </Button>
+          <Typography variant="caption" sx={{ color: '#64748b', alignSelf: 'center', fontSize: '0.65rem' }}>
+            {marcadorDescricao.length} caracteres
+          </Typography>
         </Box>
-      )}
-      
-            {/* 🟢 TIPO DE MARCADOR */}
-      <FormControl fullWidth>
-        <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Marcador</InputLabel>
-        <Select
-          value={marcadorTipo}
-          label="Tipo de Marcador"
-          onChange={(e) => setMarcadorTipo(e.target.value)}
-          sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: '#555' } }}
-        >
-          <MenuItem value="local">📍 Local Comum</MenuItem>
-          <MenuItem value="cidade">🏙️ Cidade (com mapa interno)</MenuItem>
-        </Select>
-      </FormControl>
+      </Box>
 
-            {/* 🟢 UPLOAD DE SVG DO MAPA (sempre visível) */}
-      <Box sx={{ mt: 1, p: 2, bgcolor: '#1a1a2e', borderRadius: 1, border: '1px solid #334155' }}>
-        <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mb: 1 }}>
+      <Box sx={{ p: 1.5, bgcolor: 'rgba(0,0,0,0.25)', borderRadius: 1.5, border: '1px dashed rgba(255,152,0,0.25)' }}>
+        <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mb: 0.75, fontWeight: 700 }}>
           🗺️ Mapa SVG (opcional)
         </Typography>
-        <Button variant="outlined" component="label" size="small" startIcon={<UploadIcon />} fullWidth
-          sx={{ color: '#94a3b8', borderColor: '#555' }}>
+        <Button
+          variant="outlined"
+          component="label"
+          size="small"
+          startIcon={<UploadIcon sx={{ fontSize: '1rem' }} />}
+          fullWidth
+          sx={{ color: '#94a3b8', borderColor: 'rgba(255,152,0,0.3)', fontSize: '0.75rem', textTransform: 'none' }}
+        >
           {marcadorCidadeSvg ? "Trocar SVG" : "Enviar SVG do Mapa"}
-          <input hidden type="file" accept=".svg" onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (evt) => setMarcadorCidadeSvg(evt.target.result);
-            reader.readAsText(file);
-          }} />
+          <input
+            hidden
+            type="file"
+            accept=".svg"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const text = await file.text();
+                const limpo = text.replace(/<\?xml[^>]*\?>/gi, "").replace(/<!DOCTYPE[^>]*>/gi, "").trim();
+                setMarcadorCidadeSvg(limpo);
+              } catch (err) {
+                alert("Erro ao ler SVG: " + err.message);
+              }
+            }}
+          />
         </Button>
         {marcadorCidadeSvg && (
-          <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
-            ✅ SVG carregado!
+          <Typography variant="caption" sx={{ color: '#4ade80', display: 'block', mt: 0.75, fontSize: '0.7rem' }}>
+            ✅ SVG carregado ({(marcadorCidadeSvg.length / 1024).toFixed(1)} KB)
           </Typography>
         )}
       </Box>
 
-      <Typography variant="caption" sx={{ color: '#64748b' }}>
-        Posição SVG: X={marcadorX}, Y={marcadorY}
+      <Typography variant="caption" sx={{ color: '#475569', fontSize: '0.7rem', textAlign: 'right' }}>
+        📌 Posição: X={marcadorX} · Y={marcadorY}
       </Typography>
     </Box>
   </DialogContent>
-  <DialogActions sx={{ borderTop: '1px solid #333' }}>
+
+  <DialogActions sx={{ borderTop: '1px solid rgba(255,152,0,0.15)', px: 2, py: 1.5 }}>
     {marcadorEditando?.marcadorId && (
-      <Button onClick={deletarMarcador} sx={{ color: '#ef4444', mr: 'auto' }}>
+      <Button onClick={deletarMarcador} sx={{ color: '#ef4444', mr: 'auto', textTransform: 'none' }}>
         🗑️ Deletar
       </Button>
     )}
-    <Button onClick={() => setMarcadorDialogOpen(false)} sx={{ color: '#ccc' }}>
+    <Button onClick={() => setMarcadorDialogOpen(false)} sx={{ color: '#94a3b8', textTransform: 'none' }}>
       Cancelar
     </Button>
-    <Button variant="contained" onClick={salvarMarcador} disabled={!marcadorNome.trim()}>
+    <Button
+      variant="contained"
+      onClick={salvarMarcador}
+      disabled={!marcadorNome.trim()}
+      sx={{
+        bgcolor: '#ff9800',
+        color: '#000',
+        fontWeight: 700,
+        textTransform: 'none',
+        '&:hover': { bgcolor: '#fb8c00' },
+        '&:disabled': { bgcolor: '#475569', color: '#94a3b8' },
+      }}
+    >
       Salvar
     </Button>
   </DialogActions>
 </Dialog>
 {/* MODAL EMOJI */}
-<Dialog open={emojiPickerOpen} onClose={() => setEmojiPickerOpen(false)} maxWidth="sm" fullWidth
-  PaperProps={{ sx: { bgcolor: '#1e1e1e', color: '#fff' } }}>
-  <DialogTitle>Escolha um ícone</DialogTitle>
-  <DialogContent>
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', maxHeight: 300, overflowY: 'auto' }}>
+<Dialog
+  open={emojiPickerOpen}
+  onClose={() => setEmojiPickerOpen(false)}
+  maxWidth="sm"
+  fullWidth
+  PaperProps={{
+    sx: {
+      bgcolor: '#0f172a', color: '#fff',
+      border: '1px solid rgba(255,152,0,0.35)',
+      borderRadius: 3,
+    },
+  }}
+>
+  <DialogTitle sx={{ color: '#ff9800', fontWeight: 800, fontSize: '1rem', borderBottom: '1px solid rgba(255,152,0,0.15)' }}>
+    Escolha um ícone
+  </DialogTitle>
+  <DialogContent sx={{ pt: '16px !important' }}>
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, 40px)',
+        gap: 0.5,
+        justifyContent: 'center',
+        maxHeight: 400,
+        overflowY: 'auto',
+        p: 0.5,
+        '&::-webkit-scrollbar': { width: '6px' },
+        '&::-webkit-scrollbar-thumb': { background: 'rgba(255,152,0,0.4)', borderRadius: 3 },
+      }}
+    >
       {EMOJIS_MARCADORES.map((emoji, idx) => (
-        <Button key={idx} onClick={() => { setMarcadorIcone(emoji); setEmojiPickerOpen(false); }}
-          sx={{ fontSize: '1.5rem', minWidth: 40, height: 40, bgcolor: marcadorIcone === emoji ? '#333' : 'transparent',
-            border: marcadorIcone === emoji ? '1px solid #ff9800' : '1px solid transparent', '&:hover': { bgcolor: '#333' } }}>
+        <button
+          key={idx}
+          type="button"
+          onClick={() => { setMarcadorIcone(emoji); setEmojiPickerOpen(false); }}
+          style={{
+            fontSize: '1.3rem',
+            width: 40,
+            height: 40,
+            padding: 0,
+            border: marcadorIcone === emoji ? '2px solid #ff9800' : '1px solid transparent',
+            borderRadius: 8,
+            background: marcadorIcone === emoji ? 'rgba(255,152,0,0.2)' : 'transparent',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = marcadorIcone === emoji ? 'rgba(255,152,0,0.2)' : 'transparent';
+          }}
+        >
           {emoji}
-        </Button>
+        </button>
       ))}
     </Box>
   </DialogContent>
-  <DialogActions>
-    <Button onClick={() => setEmojiPickerOpen(false)} sx={{ color: '#ccc' }}>Fechar</Button>
+  <DialogActions sx={{ borderTop: '1px solid rgba(255,152,0,0.15)' }}>
+    <Button onClick={() => setEmojiPickerOpen(false)} sx={{ color: '#94a3b8', textTransform: 'none' }}>
+      Fechar
+    </Button>
   </DialogActions>
-      </Dialog>
+</Dialog>
       
       {/* 🟢 MODAL CRIAR CAMINHO */}
       <Dialog 
