@@ -129,10 +129,10 @@ export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) 
   const [collapsed, setCollapsed] = useState(false);
     // 🟢 JANELA FLUTUANTE - TAMANHO AJUSTÁVEL
   const [minimizado, setMinimizado] = useState(false);
-  // 🟢 TAMANHO INICIAL - PODE SER SOBRESCRITO PELO FIRESTORE
+  // 🟢 TAMANHO INICIAL - INDEPENDENTE POR JOGADOR
 const [tamanho, setTamanho] = useState(() => {
-  // 🟢 Mudei para v5 para limpar o cache. Altura 0 força o uso da altura exata dos ícones
-  const saved = localStorage.getItem('floatingHUD_tamanho_v5');
+  const userKey = userEmail || "default";
+  const saved = localStorage.getItem(`floatingHUD_tamanho_v6_${userKey}`);
   if (saved) {
     try {
       return JSON.parse(saved);
@@ -165,12 +165,17 @@ const [bgDialogOpen, setBgDialogOpen] = useState(false);
 // 🟢 SISTEMA DE NOTIFICAÇÕES DE FOME/SEDE
 const [notificacoesFomeSede, setNotificacoesFomeSede] = useState([]);
 
-// 🟢 CARREGAR POSIÇÃO SALVA DO FIRESTORE
+// 🟢 CARREGAR POSIÇÃO SALVA DO LOCALSTORAGE (INDEPENDENTE POR JOGADOR)
 useEffect(() => {
-  if (!hud?.floatingPos) return;
-  setPosicaoLocal(hud.floatingPos);
-  setPosicaoSalva(true);
-}, [hud?.floatingPos]);
+  if (!currentUserEmail) return;
+  const saved = localStorage.getItem(`floatingHUD_posicao_${currentUserEmail}`);
+  if (saved) {
+    try {
+      setPosicaoLocal(JSON.parse(saved));
+      setPosicaoSalva(true);
+    } catch {}
+  }
+}, [currentUserEmail]);
 const [openProfileDialog, setOpenProfileDialog] = useState(false);
 const [lightboxOpen, setLightboxOpen] = useState(false);
 const [lightboxSrc, setLightboxSrc] = useState(null);
@@ -236,24 +241,16 @@ const [novoPerfil, setNovoPerfil] = useState({
   };
 // 🟢 SALVAR TAMANHO NO LOCALSTORAGE
 useEffect(() => {
-  localStorage.setItem('floatingHUD_tamanho_v5', JSON.stringify(tamanho));
-}, [tamanho]);
+  if (userEmail) {
+    localStorage.setItem(`floatingHUD_tamanho_v6_${userEmail}`, JSON.stringify(tamanho));
+  }
+}, [tamanho, userEmail]);
 // 🟢 SALVAR POSIÇÃO NO LOCALSTORAGE
 useEffect(() => {
-  localStorage.setItem('floatingHUD_posicao', JSON.stringify(posicaoLocal));
-}, [posicaoLocal]);
-// 🟢 CARREGAR POSIÇÃO DO LOCALSTORAGE (FALLBACK)
-useEffect(() => {
-  if (!posicaoSalva) {
-    const saved = localStorage.getItem('floatingHUD_posicao');
-    if (saved) {
-      try {
-        const pos = JSON.parse(saved);
-        setPosicaoLocal(pos);
-      } catch {}
-    }
+  if (currentUserEmail) {
+    localStorage.setItem(`floatingHUD_posicao_${currentUserEmail}`, JSON.stringify(posicaoLocal));
   }
-}, [posicaoSalva]);
+}, [posicaoLocal, currentUserEmail]);
   // 🟢 KEYFRAMES DOS EFEITOS FLUTUANTES
   useEffect(() => {
     const style = document.createElement("style");
@@ -428,10 +425,9 @@ function onMouseUp() {
   try {
     const rect = refBox.current.getBoundingClientRect();
     const pos = { x: rect.left, y: rect.top };
-    // 🟢 ATUALIZA POSIÇÃO LOCAL E SALVA NO FIRESTORE
+    // 🟢 ATUALIZA POSIÇÃO LOCAL APENAS
     setPosicaoLocal(pos);
-    setFloatingPosLocal(pos);
-    saveFloatingPosGlobal(pos);
+    // REMOVIDO: setFloatingPosLocal(pos) e saveFloatingPosGlobal(pos) para não afetar outros jogadores
   } catch {}
 }
 
@@ -447,7 +443,7 @@ function onMouseUp() {
   if (refBox.current) {
     setHudRect(refBox.current.getBoundingClientRect());
   }
-}, [collapsed, hud?.floatingPos]);
+}, [collapsed, posicaoLocal]);
   // 🟢 REDIMENSIONAMENTO DA JANELA
   useEffect(() => {
     let rafId = null;

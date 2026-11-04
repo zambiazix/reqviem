@@ -507,7 +507,7 @@ const getCorAtributoPorDisplay = (displayName) => {
 };
 
 const getCorPericiaPorDisplay = (displayName) => {
-  for (const key of ORDEM_PERICIA) {
+  for (const key of ORDEM_PERICIAS) {
     if (formatarNome(key) === displayName) return CORES_PERICIA[key] || '#22c55e';
   }
   return '#22c55e';
@@ -558,7 +558,7 @@ const colorirLinhaAcao = (linha) => {
     const key = mRaw[1];
     const valor = mRaw[2];
     if (ORDEM_ATRIBUTOS.includes(key)) return `[C:${getCorAtributoPorDisplay(formatarNome(key))}]💪 ${formatarNome(key)} (${valor})[/C]`;
-    if (ORDEM_PERICIA.includes(key)) return `[C:${getCorPericiaPorDisplay(formatarNome(key))}]📚 ${formatarNome(key)} (${valor})[/C]`;
+    if (ORDEM_PERICIAS.includes(key)) return `[C:${getCorPericiaPorDisplay(formatarNome(key))}]📚 ${formatarNome(key)} (${valor})[/C]`;
   }
 
   return linha;
@@ -621,6 +621,8 @@ const [acaoAlvo, setAcaoAlvo] = useState(""); // email do alvo
 const [acaoTipo, setAcaoTipo] = useState(""); // "dano", "esquiva", "contragolpe"
 const [acaoPendenteId, setAcaoPendenteId] = useState(null); // ID da ação pendente
 const [acoesPendentes, setAcoesPendentes] = useState([]); // lista de ações pendentes contra este jogador
+const [acoesConjuntas, setAcoesConjuntas] = useState([]); // Ações conjuntas aguardando este jogador
+const [acaoConjuntaAtivaId, setAcaoConjuntaAtivaId] = useState(null); // ID da ação conjunta em andamento
 const [fichasMap, setFichasMap] = useState({}); // nomes de todos os jogadores
 // 🟢 ADICIONE APÓS OS OUTROS ESTADOS (aproximadamente linha 60-70)
 const [galeriaOpen, setGaleriaOpen] = useState(false);
@@ -1260,6 +1262,20 @@ useEffect(() => {
   return () => window.removeEventListener('enviarEventoChat', handleEventoChat);
 }, [userNick, userEmail, chatCol]);
 
+// 🟢 OUVIR AÇÕES CONJUNTAS PENDENTES PARA ESTE JOGADOR
+useEffect(() => {
+  if (!userEmail) return;
+  const q = query(
+    collection(db, "acoesConjuntas"),
+    where("participantes", "array-contains", userEmail),
+    where("status", "==", "coletando")
+  );
+  const unsub = onSnapshot(q, (snap) => {
+    setAcoesConjuntas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+  return () => unsub();
+}, [userEmail]);
+
 // 🟢 OUVIR AÇÕES PENDENTES (contra o jogador selecionado ou logado)
 // Reações expiram automaticamente em 1 hora
 useEffect(() => {
@@ -1844,183 +1860,115 @@ async function desgastarItem(email, itemUidOrNome, quantidade = 1) {
   }
 }
 
-// 🟢 ROLAR AÇÃO EM CONJUNTO (soma os valores de todos os participantes)
+// 🟢 INICIAR AÇÃO EM CONJUNTO (Líder cria o lobby)
 async function rolarAcaoConjunta() {
   if (rolagemEmAndamento) return;
   setRolagemEmAndamento(true);
 
   try {
-    const participantes = [
-      { email: jogadorSelecionadoEmail, ficha: fichaJogador, isPrincipal: true },
-      ...jogadoresConjunto.map((email) => ({ email, ficha: fichasMap[email], isPrincipal: false })),
-    ].filter((p) => p.ficha);
-
-    if (participantes.length === 0) {
-      alert("Nenhum participante válido.");
-      setRolagemEmAndamento(false);
-      return;
+    if (!acaoAtributo && !acaoPericia && !acaoItemConsumivel) {
+        alert("Selecione pelo menos um Atributo ou uma Perícia!");
+        return;
     }
 
-    // 🟢 DEGRADAR ITENS DO JOGADOR PRINCIPAL (uma vez por item, não por participante)
-    const itensParaDegradar = acaoItens.filter(
-      (it) => it?.nome && (!it.consumivel || it.consumivel === "Nenhum")
-    );
-    for (const it of itensParaDegradar) {
-      await desgastarItem(jogadorSelecionadoEmail, it._itemUid || it.nome, 1);
+    let totalD10 = 0;
+    let descricao = [];
+    
+    if (acaoAtributo && fichaJogador?.atributos) {
+      const valor = Math.max(1, Number(fichaJogador.atributos[acaoAtributo]) || 1);
+      totalD10 += valor;
+      descricao.push(`Atributo: ${formatarNome(acaoAtributo)} (${valor})`);
+    }
+    if (acaoPericia && fichaJogador?.pericias?.[acaoPericia]) {
+      const valor = fichaJogador.pericias[acaoPericia];
+      totalD10 += valor;
+      descricao.push(`Perícia: ${formatarNome(acaoPericia)} (${valor})`);
+    }
+    if (acaoPericia2 && fichaJogador?.pericias?.[acaoPericia2]) {
+      const valor2 = fichaJogador.pericias[acaoPericia2];
+      totalD10 += valor2;
+      descricao.push(`2ª Perícia: ${formatarNome(acaoPericia2)} (${valor2})`);
     }
 
-    const resultados = [];
-
-    for (const p of participantes) {
-      let totalD10 = 0;
-      const descParts = [];
-
-      if (acaoAtributo && p.ficha?.atributos?.[acaoAtributo] !== undefined) {
-        const v = Math.max(1, Number(p.ficha.atributos[acaoAtributo]) || 1);
-        totalD10 += v;
-        descParts.push(`${acaoAtributo}(${v})`);
+    const itensParaProcessar = acaoItens.filter(it => it?.nome);
+    for (const it of itensParaProcessar) {
+      const isConsumivel = it.consumivel && it.consumivel !== "Nenhum";
+      if (!isConsumivel) {
+        totalD10 += Number(it.dado) || 0;
+        descricao.push(`Item: ${it.nome} (${it.dado})`);
+        await desgastarItem(jogadorSelecionadoEmail, it._itemUid || it.nome, 1);
       }
-      if (acaoPericia && p.ficha?.pericias?.[acaoPericia]) {
-        const v = Number(p.ficha.pericias[acaoPericia]) || 0;
-        totalD10 += v;
-        descParts.push(`${acaoPericia}(${v})`);
-      }
-      if (acaoPericia2 && p.ficha?.pericias?.[acaoPericia2]) {
-        const v = Number(p.ficha.pericias[acaoPericia2]) || 0;
-        totalD10 += v;
-        descParts.push(`${acaoPericia2}(${v})`);
-      }
-      if (acaoItemDado) totalD10 += acaoItemDado;
-      if (acaoCasting) totalD10 += acaoCasting;
-      if (acaoEmbuicao) totalD10 += acaoEmbuicao;
-      if (acaoHabilidadeDado) totalD10 += acaoHabilidadeDado;
+    }
 
-      // Roll
-      const fatorSorte = sorteAzarMap[p.email];
-      const rolls = [];
-      let soma = 0;
-      for (let i = 0; i < totalD10; i++) {
-        let valor;
-        if (fatorSorte !== undefined) {
-          valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
-        } else {
-          valor = Math.floor(Math.random() * 10) + 1;
+    if (acaoCasting > 0) { totalD10 += acaoCasting; descricao.push(`Casting: ${acaoCasting}`); }
+    if (acaoEmbuicao > 0) { totalD10 += acaoEmbuicao; descricao.push(`Embuição: ${acaoEmbuicao}`); }
+    if (acaoHabilidadeSelecionada) { totalD10 += acaoHabilidadeDado; descricao.push(`Habilidade: ${acaoHabilidadeSelecionada} (${acaoHabilidadeDado})`); }
+
+    const fatorSorte = sorteAzarMap[userEmail];
+    const rolls = [];
+    let total = 0;
+    for (let i = 0; i < totalD10; i++) {
+      let valor;
+      if (fatorSorte !== undefined) {
+        valor = Math.random() < (fatorSorte / 10) ? Math.floor(Math.random() * 5) + 6 : Math.floor(Math.random() * 5) + 1;
+      } else {
+        valor = Math.floor(Math.random() * 10) + 1;
+      }
+      rolls.push(valor);
+      total += valor;
+    }
+
+    const totalDebuff = acaoDebuffs.reduce((soma, d) => soma + d.valor, 0);
+    if (totalDebuff > 0) total = Math.max(0, total - totalDebuff);
+    const totalBonus = acaoBonusVariavelLista.reduce((soma, b) => soma + b.valor, 0);
+    if (totalBonus > 0) total += totalBonus;
+
+    const temDez = rolls.some(r => r === 10);
+    const temUm = rolls.some(r => r === 1);
+    const todosPos = rolls.length > 0 && rolls.every(r => r >= 6);
+    const todosNeg = rolls.length > 0 && rolls.every(r => r <= 5);
+    const isCritico = temDez && todosPos;
+    const isErroCritico = temUm && todosNeg;
+
+    let tipoDanoMensagem = "Nenhum";
+    if (acaoHabilidadeSelecionada && fichaJogador?.habilidades) {
+      const hab = fichaJogador.habilidades.find(h => h.nome === acaoHabilidadeSelecionada);
+      if (hab?.tipoDano && hab.tipoDano !== "Nenhum") tipoDanoMensagem = hab.tipoDano;
+    }
+    if (tipoDanoMensagem === "Nenhum" && acaoItem) {
+      const todosItens = [ ...(fichaJogador?.equipamentos || []), ...(fichaJogador?.vestes || []), ...(fichaJogador?.diversos || []) ];
+      const itemEncontrado = todosItens.find(it => it.nome === acaoItem);
+      if (itemEncontrado?.tipoDano && itemEncontrado.tipoDano !== "Nenhum") tipoDanoMensagem = itemEncontrado.tipoDano;
+    }
+
+    const docRef = await addDoc(collection(db, "acoesConjuntas"), {
+      lider: jogadorSelecionadoEmail,
+      participantes: [jogadorSelecionadoEmail, ...jogadoresConjunto],
+      status: "coletando",
+      rolagens: {
+        [jogadorSelecionadoEmail]: {
+          email: jogadorSelecionadoEmail,
+          nome: fichaJogador?.nome || userNick,
+          totalD10,
+          rolls,
+          total,
+          descricao: descricao.join(" + "),
+          isCritico,
+          isErroCritico
         }
-        rolls.push(valor);
-        soma += valor;
-      }
-
-      // Debuffs e bônus
-      const totalDebuff = acaoDebuffs.reduce((s, d) => s + d.valor, 0);
-      const totalBonus = acaoBonusVariavelLista.reduce((s, b) => s + b.valor, 0);
-      soma = Math.max(0, soma - totalDebuff) + totalBonus;
-
-      // Crítico por jogador
-      const temDez = rolls.some((r) => r === 10);
-      const temUm = rolls.some((r) => r === 1);
-      const todosPos = rolls.length > 0 && rolls.every((r) => r >= 6);
-      const todosNeg = rolls.length > 0 && rolls.every((r) => r <= 5);
-      const isCrit = temDez && todosPos;
-      const isErro = temUm && todosNeg;
-
-      resultados.push({
-        email: p.email,
-        nome: p.ficha.nome || p.email,
-        totalD10,
-        rolls,
-        total: soma,
-        descricao: descParts.join(" + "),
-        isCrit,
-        isErro,
-      });
-    }
-
-    const somaTotal = resultados.reduce((s, r) => s + r.total, 0);
-    const nomePrincipal = fichaJogador?.nome || userNick;
-
-    let mensagem = `${montarCaixa("🎭 AÇÃO EM CONJUNTO 🎭", 37)}\n\n`;
-    mensagem += `👥 ${resultados.length} participante(s)\n\n`;
-
-    for (const r of resultados) {
-      mensagem += `🎲 ${r.nome}: ${r.totalD10}d10 => [${r.rolls.join(", ")}] = ${r.total}`;
-      if (r.descricao) mensagem += `\n   📋 ${r.descricao}`;
-      if (r.isCrit) mensagem += ` 🌟 CRÍTICO!`;
-      if (r.isErro) mensagem += ` 💥 ERRO CRÍTICO!`;
-      mensagem += `\n\n`;
-    }
-
-    mensagem += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    mensagem += `🎯 TOTAL COMBINADO: ${somaTotal}\n`;
-
-    if (acaoValorDificuldade) {
-      const vd = Number(acaoValorDificuldade);
-      mensagem += `\n${somaTotal >= vd ? '✅ SUCESSO!' : '❌ FRACASSO!'} (VMS ${vd})`;
-    }
-
-    if (acaoAlvo) {
-      mensagem += `\n\n🎯 Alvo: ${fichasMap[acaoAlvo]?.nome || acaoAlvo}`;
-    }
-
-    // 🟢 SE TEM ALVO + DANO, CRIA AÇÃO PENDENTE (mesma lógica da individual)
-    if (acaoModo === "acao" && acaoAlvo && acaoTipo === "dano") {
-      let tipoDanoAcao = "Nenhum";
-      if (acaoHabilidadeSelecionada && fichaJogador?.habilidades) {
-        const hab = fichaJogador.habilidades.find(h => h.nome === acaoHabilidadeSelecionada);
-        if (hab?.tipoDano && hab.tipoDano !== "Nenhum") tipoDanoAcao = hab.tipoDano;
-      }
-      if (tipoDanoAcao === "Nenhum" && acaoItem) {
-        const todosItens = [
-          ...(fichaJogador?.equipamentos || []),
-          ...(fichaJogador?.vestes || []),
-          ...(fichaJogador?.diversos || [])
-        ];
-        const itemEncontrado = todosItens.find(it => it.nome === acaoItem);
-        if (itemEncontrado?.tipoDano && itemEncontrado.tipoDano !== "Nenhum") tipoDanoAcao = itemEncontrado.tipoDano;
-      }
-
-      const pendenteRef = doc(collection(db, "acoesPendentes"));
-      await setDoc(pendenteRef, {
-        atacante: jogadorSelecionadoEmail,
-        alvo: acaoAlvo,
-        tipo: "dano",
-        valorAtaque: somaTotal,
-        dadosRolados: resultados.flatMap(r => r.rolls),
-        itemUsado: acaoItem || null,
-        habilidadeUsada: acaoHabilidadeSelecionada || null,
-        tipoDanoAtaque: tipoDanoAcao,
-        isCritico: resultados.some(r => r.isCrit),
-        isErroCritico: resultados.every(r => r.isErro),
-        ignorarArmaduraDemolidor: false,
-        conjunto: true,
-        participantes: resultados.map(r => r.email),
-        timestamp: serverTimestamp(),
-        resolvida: false,
-      });
-      mensagem += `\n\n⚠️ Aguardando reação do alvo...`;
-    }
-
-    const isDadoSecreto = modoSecreto;
-    await addDoc(chatCol, {
-      userNick: nomePrincipal,
-      userEmail: jogadorSelecionadoEmail,
-      type: "acao",
-      text: isDadoSecreto
-        ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***')
-        : mensagem,
-      dadosRolados: resultados.flatMap((r) => r.rolls),
-      secretRolls: isDadoSecreto ? resultados.flatMap((r) => r.rolls) : null,
-      secretText: isDadoSecreto
-        ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***')
-        : null,
-      timestamp: serverTimestamp(),
+      },
+      alvo: acaoAlvo || null,
+      tipoDano: tipoDanoMensagem,
+      timestamp: serverTimestamp()
     });
 
-    // XP pra cada participante (não-mestre)
-    for (const r of resultados) {
-      if (r.email !== "mestre@reqviemrpg.com") {
-        await adicionarXpAcao(r.email, 1);
-      }
-    }
+    await addDoc(chatCol, {
+      userNick: fichaJogador?.nome || userNick,
+      userEmail: jogadorSelecionadoEmail,
+      type: "acao",
+      text: `🌐 **AÇÃO EM CONJUNTO INICIADA**\n👤 Líder: ${fichaJogador?.nome || userNick}\n⏳ Aguardando: ${jogadoresConjunto.map(e => fichasMap[e]?.nome || e).join(", ")}`,
+      timestamp: serverTimestamp()
+    });
 
     setAcaoOpen(false);
     setJogadoresConjunto([]);
@@ -2066,6 +2014,12 @@ async function rolarAcao() {
   // 🟢 Só valida se NÃO for consumível (consumível não precisa de tipo de dano)
   if (acaoModo === "acao" && acaoAlvo && !acaoTipo && !acaoItemConsumivel) {
     alert("Selecione o tipo: ☠️ Dano");
+    return;
+  }
+  
+  if (acaoModo === "acao" && acaoTipo === "dano" && !acaoAlvo) {
+    alert("Para uma Ação de Dano, você precisa selecionar um 🎯 Alvo!");
+    setRolagemEmAndamento(false);
     return;
   }
   
@@ -2180,7 +2134,7 @@ async function rolarAcao() {
     }
     let custoTotalEnergia = 0;
     
-if (acaoAtributo && fichaJogador?.atributos?.[acaoAtributo] !== undefined) {
+if (acaoAtributo && fichaJogador?.atributos) {
   const valor = Math.max(1, Number(fichaJogador.atributos[acaoAtributo]) || 1);
   totalD10 += valor;
   descricao.push(`Atributo: ${formatarNome(acaoAtributo)} (${valor})`); // 🟢 NOME BONITO
@@ -2276,22 +2230,35 @@ if (acaoHabilidadeSelecionada) {
     ];
     const itemEncontradoGolpe = todosItens.find(it => it.nome === acaoItem);
 
-    if (fichaJogador?.tracos?.includes("Lutador") && acaoPericia === "luta" && !acaoItem && !acaoHabilidadeSelecionada) {
-        numGolpes = 2; nomeTracoGolpe = "Brigão";
-    } else if (fichaJogador?.tracos?.includes("Espadachim") && (acaoPericia === "armaBranca" || itemEncontradoGolpe?.tipoDano === "Cortante")) {
-        numGolpes = 2; nomeTracoGolpe = "Espadachim";
-    } else if (fichaJogador?.tracos?.includes("Atirador") && (acaoPericia === "armaDistancia" || itemEncontradoGolpe?.tipoDano === "Perfurante")) {
-        numGolpes = 2; nomeTracoGolpe = "Franco-Atirador";
-    }
+                // 🟢 Verifica traços em todas as listas possíveis (tracos, talentos, caracteristicas)
+            const allTraits = [
+                ...(fichaJogador?.tracos || []),
+                ...(fichaJogador?.talentos || []),
+                ...(fichaJogador?.caracteristicas || [])
+            ].map(t => typeof t === 'string' ? t.toLowerCase() : '');
+            const hasTrait = (t) => allTraits.includes(t.toLowerCase());
+
+            const isLutador = hasTrait("Lutador") || hasTrait("Brigão");
+            const isEspadachim = hasTrait("Espadachim") || hasTrait("Esgrimista");
+            const isAtirador = hasTrait("Atirador") || hasTrait("Franco-Atirador");
+
+            if (isLutador && acaoPericia === "luta" && !acaoItem && !acaoHabilidadeSelecionada) {
+                numGolpes = 2; nomeTracoGolpe = "Brigão";
+            } else if (isEspadachim && (acaoPericia === "armaBranca" || itemEncontradoGolpe?.tipoDano === "Cortante")) {
+                numGolpes = 2; nomeTracoGolpe = "Espadachim";
+            } else if (isAtirador && (acaoPericia === "armaDistancia" || itemEncontradoGolpe?.tipoDano === "Perfurante")) {
+                numGolpes = 2; nomeTracoGolpe = "Franco-Atirador";
+            }
 
     if (numGolpes > 1) {
         descricao.push(`⚔️ Golpe Duplo (Traço ${nomeTracoGolpe})`);
     }
 
-    const rolls = [];
+    const rollsPorGolpe = [];
     let total = 0;
     const fatorSorte = sorteAzarMap[userEmail];
     for (let g = 0; g < numGolpes; g++) {
+        const rollsGolpeAtual = [];
         for (let i = 0; i < totalD10; i++) {
             let valor;
             if (fatorSorte !== undefined) {
@@ -2299,10 +2266,12 @@ if (acaoHabilidadeSelecionada) {
             } else {
                 valor = Math.floor(Math.random() * 10) + 1;
             }
-            rolls.push(valor);
+            rollsGolpeAtual.push(valor);
             total += valor;
         }
+        rollsPorGolpe.push(rollsGolpeAtual);
     }
+    const rolls = rollsPorGolpe.flat();
     
     // 🟢 APLICAR DEBUFFS (subtrai do total)
     const totalDebuff = acaoDebuffs.reduce((soma, d) => soma + d.valor, 0);
@@ -2371,7 +2340,15 @@ if (acaoHabilidadeSelecionada) {
     if (descricaoColorida.length > 0) {
       mensagem += `\n📋 COMPONENTES:\n${partesDescricao}\n`;
     }
-    mensagem += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎲 RESULTADO: [${rolls.join(", ")}] = [C:${headerAcao.cor}]${total}[/C]\n`;
+    if (numGolpes > 1) {
+        mensagem += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        rollsPorGolpe.forEach((r, idx) => {
+            mensagem += `🎲 GOLPE ${idx + 1}: [${r.join(", ")}]\n`;
+        });
+        mensagem += `\n🎯 RESULTADO TOTAL: [C:${headerAcao.cor}]${total}[/C]\n`;
+    } else {
+        mensagem += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎲 RESULTADO: [${rolls.join(", ")}] = [C:${headerAcao.cor}]${total}[/C]\n`;
+    }
     
     if (isCritico) mensagem += `\n[C:#facc15]🌟 CRÍTICO![/C]\nDano direto! O valor total ignora a defesa do oponente.`;
     if (isErroCritico) mensagem += `\n[C:#ef4444]💥 ERRO CRÍTICO![/C]\nFracasso total na ação!`;
@@ -2385,7 +2362,7 @@ if (acaoHabilidadeSelecionada) {
     }
     
     // 🟢 TALENTO PÓS-CHOQUE (agora tipoDanoMensagem e mensagem JÁ existem)
-    const temPosChoque = fichaJogador?.caracteristicas?.includes("Pós-Choque") || false;
+    const temPosChoque = fichaJogador?.caracteristicas?.includes("Pós-Choque") || fichaJogador?.tracos?.includes("Pós-Choque") || false;
     if (isCritico && temPosChoque && !acaoPendenteId) {
       const dadosPrimeiraRolagem = {
         rolls,
@@ -2524,7 +2501,90 @@ if (acaoHabilidadeSelecionada) {
       mensagem += `\n\n🎯 Alvo: **${fichasMap[acaoAlvo]?.nome || acaoAlvo}**\n⚠️ Aguardando reação...`;
     }
     // 🟢 SE FOR REAÇÃO: Envia como o personagem que reagiu
-    if (acaoModo === "reacao" && acaoPendenteId && acaoTipo) {
+            // 🟢 SE FOR PARTICIPANTE DE AÇÃO CONJUNTA
+        if (acaoModo === "conjunta_participante" && acaoConjuntaAtivaId) {
+            const docRef = doc(db, "acoesConjuntas", acaoConjuntaAtivaId);
+            await updateDoc(docRef, {
+                [`rolagens.${jogadorSelecionadoEmail}`]: {
+                    email: jogadorSelecionadoEmail,
+                    nome: fichaJogador?.nome || userNick,
+                    totalD10,
+                    rolls,
+                    total,
+                    descricao: descricao.join(" + "),
+                    isCritico,
+                    isErroCritico
+                }
+            });
+
+            const snap = await getDoc(docRef);
+            const data = snap.data();
+            
+            // Se todos já rolaram, junta e manda no chat!
+            if (Object.keys(data.rolagens).length === data.participantes.length) {
+                let msg = `${montarCaixa("🌐 AÇÃO EM CONJUNTO FINALIZADA 🌐", 37)}\n\n`;
+                let somaTotal = 0;
+                for (const email of data.participantes) {
+                    const r = data.rolagens[email];
+                    somaTotal += r.total;
+                    msg += `🎲 [C:#00e0ff]${r.nome}[/C]: ${r.totalD10}d10 => [${r.rolls.join(", ")}] = ${r.total}\n`;
+                    if (r.descricao) msg += `   📋 ${r.descricao}\n`;
+                    if (r.isCritico) msg += ` 🌟 CRÍTICO!\n`;
+                    if (r.isErroCritico) msg += ` 💥 ERRO CRÍTICO!\n`;
+                    msg += `\n`;
+                }
+                msg += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                msg += `🎯 TOTAL COMBINADO: [C:#4caf50]${somaTotal}[/C]\n`;
+
+                if (data.alvo && data.tipoDano && data.tipoDano !== "Nenhum") {
+                    const pendenteRef = doc(collection(db, "acoesPendentes"));
+                    await setDoc(pendenteRef, {
+                        atacante: data.lider,
+                        alvo: data.alvo,
+                        tipo: "dano",
+                        valorAtaque: somaTotal,
+                        dadosRolados: Object.values(data.rolagens).flatMap(r => r.rolls),
+                        itemUsado: null,
+                        habilidadeUsada: null,
+                        tipoDanoAtaque: data.tipoDano,
+                        isCritico: Object.values(data.rolagens).some(r => r.isCritico),
+                        isErroCritico: Object.values(data.rolagens).every(r => r.isErroCritico),
+                        ignorarArmaduraDemolidor: false,
+                        conjunto: true,
+                        participantes: data.participantes,
+                        timestamp: serverTimestamp(),
+                        resolvida: false
+                    });
+                    msg += `\n\n⚠️ Ataque combinado contra [C:#ffd700]${fichasMap[data.alvo]?.nome || data.alvo}[/C] aguardando reação...`;
+                }
+
+                const isDadoSecreto = modoSecreto;
+                await addDoc(chatCol, {
+                    userNick: "SISTEMA",
+                    userEmail: "sistema@reqviemrpg.com",
+                    type: "acao",
+                    text: isDadoSecreto ? msg.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : msg,
+                    dadosRolados: Object.values(data.rolagens).flatMap(r => r.rolls),
+                    timestamp: serverTimestamp(),
+                });
+                await updateDoc(docRef, { status: "finalizado" });
+            } else {
+                await addDoc(chatCol, {
+                    userNick: fichaJogador?.nome || userNick,
+                    userEmail: jogadorSelecionadoEmail,
+                    type: "acao",
+                    text: `✅ ${fichaJogador?.nome || userNick} rolou sua parte na Ação Conjunta!\n⏳ Aguardando os outros...`,
+                    timestamp: serverTimestamp(),
+                });
+            }
+            setAcaoOpen(false);
+            setAcaoConjuntaAtivaId(null);
+            setAcaoModo("acao");
+            return;
+        }
+
+        // 🟢 SE FOR REAÇÃO: Envia como o personagem que reagiu
+        if (acaoModo === "reacao" && acaoPendenteId && acaoTipo) {
       // 🟢 PÉ DIREITO: primeira esquiva do combate é perfeita
       let isPeDireitoPerfeito = false;
       if (
@@ -2730,6 +2790,9 @@ if (acaoAtributo || acaoPericia) {
     }
 
 setAcaoOpen(false);
+    } catch (err) {
+      console.error("❌ Erro em rolarAcao:", err);
+      alert("❌ Erro ao processar a ação:\n\n" + (err?.message || String(err)) + "\n\nAbra o console (F12) para ver detalhes.");
     } finally {
     setRolagemEmAndamento(false);
     setAcaoAtributo("");
@@ -4188,7 +4251,11 @@ useEffect(() => {
                 size="medium" 
                 onClick={() => { 
                   setAcaoPericia2(""); 
-                  if (acoesPendentes.length > 0) {
+                  if (acoesConjuntas.length > 0) {
+                    setAcaoModo("conjunta_participante"); 
+                    setAcaoConjuntaAtivaId(acoesConjuntas[0].id);
+                    setAcaoPendenteId(null); setAcaoTipo("");
+                  } else if (acoesPendentes.length > 0) {
                     setAcaoModo("reacao"); setAcaoPendenteId(acoesPendentes[0].id); setAcaoTipo("");
                   } else {
                     setAcaoModo("acao"); setAcaoPendenteId(null); setAcaoAlvo(""); setAcaoTipo("");
@@ -4196,25 +4263,24 @@ useEffect(() => {
                   setAcaoOpen(true); 
                 }}
                 sx={{ 
-                  bgcolor: acoesPendentes.length > 0 ? '#ef4444' : '#9c27b0', 
-                  boxShadow: acoesPendentes.length > 0 ? '0 0 15px rgba(239, 68, 68, 0.5)' : '0 0 15px rgba(156, 39, 176, 0.4)',
+                  bgcolor: acoesConjuntas.length > 0 ? '#2196f3' : (acoesPendentes.length > 0 ? '#ef4444' : '#9c27b0'), 
+                  boxShadow: acoesConjuntas.length > 0 ? '0 0 15px rgba(33, 150, 243, 0.5)' : (acoesPendentes.length > 0 ? '0 0 15px rgba(239, 68, 68, 0.5)' : '0 0 15px rgba(156, 39, 176, 0.4)'),
                   borderRadius: 2, 
                   height: 40, 
-                  width: "100%", // 🟢 Força o botão a respeitar os 130px do container
-                  padding: 0, // 🟢 Remove o espaço vazio nas laterais
+                  width: "100%",
+                  padding: 0,
                   fontWeight: "bold", 
                   color: "#fff",
                   whiteSpace: "nowrap", 
                   flexShrink: 0,
-                  minWidth: "0px", // 🟢 REMOVIDO O "max-content" QUE FURAVA O LAYOUT
-                  fontSize: acoesPendentes.length > 0 ? "0.75rem" : "0.875rem", // 🟢 Fonte menor para caber REAÇÃO
-                  "&:hover": { bgcolor: acoesPendentes.length > 0 ? '#dc2626' : '#7b1fa2', transform: "scale(1.02)" },
+                  minWidth: "0px",
+                  fontSize: (acoesConjuntas.length > 0 || acoesPendentes.length > 0) ? "0.75rem" : "0.875rem",
+                  "&:hover": { bgcolor: acoesConjuntas.length > 0 ? '#1976d2' : (acoesPendentes.length > 0 ? '#dc2626' : '#7b1fa2'), transform: "scale(1.02)" },
                   transition: "all 0.2s"
                 }}
               >
-                {acoesPendentes.length > 0 ? `⚔️ REAÇÃO` : '⚔️ AÇÃO'}
+                {acoesConjuntas.length > 0 ? `🌐 AÇÃO CONJUNTA` : (acoesPendentes.length > 0 ? `⚔️ REAÇÃO` : '⚔️ AÇÃO')}
               </Button>
-
               {/* Bolinha Vermelha manual (Não ocupa espaço no layout) */}
               {acoesPendentes.length > 0 && (
                 <Box sx={{
@@ -4404,9 +4470,9 @@ useEffect(() => {
           pb: 2,
           background: 'linear-gradient(90deg, rgba(156,39,176,0.2), transparent)',
         }}>
-          <span style={{ fontSize: '1.8rem' }}>{acaoModo === "reacao" ? '🛡️' : '⚔️'}</span>
-          <Typography component="div" variant="h5" sx={{ fontWeight: 'bold', color: '#9c27b0' }}>
-            {acaoModo === "reacao" ? 'REAGIR' : 'AÇÃO'}
+          <span style={{ fontSize: '1.8rem' }}>{acaoModo === "conjunta_participante" ? '🌐' : (acaoModo === "reacao" ? '🛡️' : '⚔️')}</span>
+          <Typography component="div" variant="h5" sx={{ fontWeight: 'bold', color: acaoModo === "conjunta_participante" ? '#2196f3' : '#9c27b0' }}>
+            {acaoModo === "conjunta_participante" ? 'AÇÃO EM CONJUNTO' : (acaoModo === "reacao" ? 'REAGIR' : 'AÇÃO')}
           </Typography>
           <Typography component="div" variant="subtitle1" sx={{ color: '#94a3b8', ml: 1 }}>
             - {fichaJogador?.nome || userNick}
@@ -4455,6 +4521,7 @@ useEffect(() => {
             </Box>
 
             {/* 🟢 JOGADA EM CONJUNTO */}
+            {acaoModo !== "conjunta_participante" && (
             <Paper sx={{
               p: 2,
               bgcolor: jogadoresConjunto.length > 0 ? 'rgba(76,175,80,0.14)' : 'rgba(76,175,80,0.03)',
@@ -4594,6 +4661,7 @@ useEffect(() => {
                 );
               })}
             </Paper>
+            )}
             
  {/* Atributo */}
 <FormControl fullWidth size="small">

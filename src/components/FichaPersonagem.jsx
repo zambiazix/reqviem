@@ -362,6 +362,92 @@ function ItemCard({
             </Grid>
           </Grid>
 
+          {/* 🟢 SISTEMA DE COMIDA/BEBIDA NO INVENTÁRIO */}
+          <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px dashed #334155', mb: 2 }}>
+            <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={item.isComida || false}
+                    disabled={!isMestre}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        onAtualizarItem(categoria, index, "isComida", true);
+                        onAtualizarItem(categoria, index, "isBebida", false);
+                        onAtualizarItem(categoria, index, "tipoDano", "Nenhum");
+                        onAtualizarItem(categoria, index, "consumivel", "Nenhum");
+                        onAtualizarItem(categoria, index, "insumivel", "Nenhum");
+                      } else {
+                        onAtualizarItem(categoria, index, "isComida", false);
+                      }
+                    }}
+                    size="small"
+                    sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }}
+                  />
+                }
+                label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 'bold' }}>🍽️ É Comida?</Typography>}
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={item.isBebida || false}
+                    disabled={!isMestre}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        onAtualizarItem(categoria, index, "isBebida", true);
+                        onAtualizarItem(categoria, index, "isComida", false);
+                        onAtualizarItem(categoria, index, "tipoDano", "Nenhum");
+                        onAtualizarItem(categoria, index, "consumivel", "Nenhum");
+                        onAtualizarItem(categoria, index, "insumivel", "Nenhum");
+                      } else {
+                        onAtualizarItem(categoria, index, "isBebida", false);
+                      }
+                    }}
+                    size="small"
+                    sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                  />
+                }
+                label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 'bold' }}>🥤 É Bebida?</Typography>}
+              />
+            </Box>
+            {(item.isComida || item.isBebida) && (
+              <Grid container spacing={1.5}>
+                <Grid item xs={6}>
+                  <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5 }}>
+                    {item.isComida ? '🍽️ Recupera Fome (%)' : '🥤 Recupera Sede (%)'}
+                  </Typography>
+                  <TextField
+                    fullWidth size="small" type="number"
+                    value={item.isComida ? (item.recuperacaoFome || 0) : (item.recuperacaoSede || 0)}
+                    disabled={!isMestre}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                      onAtualizarItem(categoria, index, item.isComida ? "recuperacaoFome" : "recuperacaoSede", val);
+                    }}
+                    InputProps={{ inputProps: { min: 0, max: 100 }, sx: { color: item.isComida ? '#4caf50' : '#3b82f6', fontSize: '0.85rem', fontWeight: 700 } }}
+                    sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5 }}>
+                    ⏳ Validade (Dias)
+                  </Typography>
+                  <TextField
+                    fullWidth size="small" type="number"
+                    value={item.validadeDias || 15}
+                    disabled={!isMestre}
+                    onChange={(e) => {
+                      const val = Math.max(1, Number(e.target.value) || 15);
+                      onAtualizarItem(categoria, index, "validadeDias", val);
+                    }}
+                    InputProps={{ inputProps: { min: 1 }, sx: { color: '#fff', fontSize: '0.85rem' } }}
+                    sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
+                  />
+                </Grid>
+              </Grid>
+            )}
+          </Box>
+
           {/* Tipo Dano / Consumível / Insumível */}
           <Grid container spacing={1.5} sx={{ mb: 1 }}>
             <Grid item xs={12} sm={4}>
@@ -369,7 +455,7 @@ function ItemCard({
                 🗡️ TIPO DE DANO
               </Typography>
               {isMestre ? (
-                <FormControl fullWidth size="small">
+                <FormControl fullWidth size="small" disabled={item.isComida || item.isBebida}>
                   <Select
                     value={item.tipoDano || "Nenhum"}
                     onChange={(e) => onAtualizarItem(categoria, index, "tipoDano", e.target.value)}
@@ -398,7 +484,7 @@ function ItemCard({
                 🧪 CONSUMÍVEL
               </Typography>
               {isMestre ? (
-                <FormControl fullWidth size="small">
+                <FormControl fullWidth size="small" disabled={item.isComida || item.isBebida}>
                   <Select
                     value={item.consumivel || "Nenhum"}
                     onChange={(e) => onAtualizarItem(categoria, index, "consumivel", e.target.value)}
@@ -424,7 +510,7 @@ function ItemCard({
                 🛢️ INSUMÍVEL
               </Typography>
               {isMestre ? (
-                <FormControl fullWidth size="small">
+                <FormControl fullWidth size="small" disabled={item.isComida || item.isBebida}>
                   <Select
                     value={item.insumivel || "Nenhum"}
                     onChange={(e) => onAtualizarItem(categoria, index, "insumivel", e.target.value)}
@@ -1091,6 +1177,7 @@ useEffect(() => {
             }
             await setDoc(refAtual, { carteiras: carteirasAtuais }, { merge: true });
             setCarteiras(carteirasAtuais);
+            setFicha(prev => ({ ...prev, carteiras: carteirasAtuais })); // 🟢 CORREÇÃO DO BUG AQUI
           } else if (transf.tipo === "item") {
             const categoria = transf.categoria || "diversos";
             const itensAtuais = Array.isArray(fichaAtual[categoria]) ? [...fichaAtual[categoria]] : [];
@@ -2462,6 +2549,12 @@ const gerarCampoComIA = async (habilidadeIndex, campo) => {
         consumivelValor: 0,
         insumivel: "Nenhum",
         insumivelValor: 0,
+        // 🟢 NOVOS CAMPOS
+        isComida: false,
+        isBebida: false,
+        recuperacaoFome: 0,
+        recuperacaoSede: 0,
+        validadeDias: 15,
       },
     ],
   }));
@@ -2621,6 +2714,13 @@ async function salvarFicha() {
         if (!dados.atributos || !dados.pericias) {
           alert('❌ Arquivo inválido! O JSON não contém os campos "atributos" ou "pericias".');
           return;
+        }
+
+        // 🟢 GARANTE QUE O "BOLSO" EXISTA MESMO EM BACKUPS ANTIGOS
+        if (!dados.carteiras || !Array.isArray(dados.carteiras)) {
+          dados.carteiras = [{ nome: "Bolso", valor: 0 }];
+        } else if (!dados.carteiras.some(c => c.nome === "Bolso")) {
+          dados.carteiras = [{ nome: "Bolso", valor: 0 }, ...dados.carteiras];
         }
 
         if (!window.confirm('⚠️ Isso substituirá TODOS os dados atuais da ficha. Continuar?')) {
@@ -2866,16 +2966,21 @@ useEffect(() => {
     carregarJogadores();
   }
 }, [fichaId, modalTransferenciaOpen, modalTransferirItemOpen]);
-// 🟢 Função para realizar transferência - VERSÃO CORRIGIDA (COM SUBColeção)
+// 🟢 Função para realizar transferência - VERSÃO COM EMOJIS E CORREÇÕES
 const realizarTransferencia = async () => {
   if (!jogadorSelecionado || !carteiraOrigem || !carteiraDestino || valorTransferencia <= 0) {
-    alert("Preencha todos os campos!");
+    alert("⚠️ Preencha todos os campos para transferir!");
     return;
   }
   
+  if (jogadorSelecionado === fichaId && carteiraOrigem === carteiraDestino) {
+    alert("⚠️ A carteira de origem e destino são iguais! Escolha outra.");
+    return;
+  }
+
   const carteiraOrig = carteiras.find(c => c.nome === carteiraOrigem);
   if (!carteiraOrig || carteiraOrig.valor < valorTransferencia) {
-    alert("Saldo insuficiente!");
+    alert("❌ Saldo insuficiente na carteira de origem!");
     return;
   }
   
@@ -2891,8 +2996,9 @@ const realizarTransferencia = async () => {
       const refOrigem = doc(db, "fichas", fichaId);
       await setDoc(refOrigem, { carteiras: novasCarteiras }, { merge: true });
       setCarteiras(novasCarteiras);
+      setFicha(prev => ({ ...prev, carteiras: novasCarteiras }));
       
-      alert(`Transferência de ${valorTransferencia} realizada!`);
+      alert(`✅ Transferência interna de 💰 ${valorTransferencia} realizada com sucesso!`);
       setModalTransferenciaOpen(false);
       setJogadorSelecionado("");
       setCarteiraOrigem("");
@@ -2902,8 +3008,6 @@ const realizarTransferencia = async () => {
     }
     
     // 🟢 CASO 2: Transferência para OUTRO jogador — envio DIRETO
-    // 1º cria o envelope, 2º debita da origem
-    
     const destFicha = listaJogadores.find(j => j.id === jogadorSelecionado);
     const destNome = destFicha?.nome || jogadorSelecionado;
     const agora = new Date().toISOString();
@@ -2929,8 +3033,9 @@ const realizarTransferencia = async () => {
     const refOrigem = doc(db, "fichas", fichaId);
     await setDoc(refOrigem, { carteiras: novasCarteirasOrig }, { merge: true });
     setCarteiras(novasCarteirasOrig);
+    setFicha(prev => ({ ...prev, carteiras: novasCarteirasOrig }));
     
-    alert(`✅ ${valorTransferencia} 💰 enviados para ${destNome}. Cai na hora.`);
+    alert(`🚀 ${valorTransferencia} 💰 enviados para ${destNome}. Chegará na hora!`);
     
     setModalTransferenciaOpen(false);
     setJogadorSelecionado("");
@@ -2940,20 +3045,19 @@ const realizarTransferencia = async () => {
     
   } catch (error) {
     console.error("Erro na transferência:", error);
-    alert("Erro ao realizar transferência: " + error.message);
+    alert("❌ Erro ao realizar transferência: " + error.message);
   }
 };
-
-// Função para realizar pagamento (débito)
+// 🟢 Função para realizar pagamento (débito) COM EMOJIS
 const realizarPagamento = async () => {
   if (!carteiraPagamento || valorPagamento <= 0) {
-    alert("Selecione uma carteira e um valor válido!");
+    alert("⚠️ Selecione uma carteira e um valor válido!");
     return;
   }
   
   const carteira = carteiras.find(c => c.nome === carteiraPagamento);
-  if (!carteira || c.valor < valorPagamento) {
-    alert("Saldo insuficiente!");
+  if (!carteira || carteira.valor < valorPagamento) {
+    alert("❌ Saldo insuficiente nesta carteira!");
     return;
   }
   
@@ -2961,11 +3065,12 @@ const realizarPagamento = async () => {
     c.nome === carteiraPagamento ? { ...c, valor: c.valor - valorPagamento } : c
   );
   setCarteiras(novasCarteiras);
+  setFicha(prev => ({ ...prev, carteiras: novasCarteiras }));
   
   const ref = doc(db, "fichas", fichaId);
   await setDoc(ref, { carteiras: novasCarteiras }, { merge: true });
   
-  alert(`Pagamento de ${valorPagamento} realizado com sucesso!`);
+  alert(`💸 Pagamento de 💰 ${valorPagamento} realizado com sucesso!`);
   setModalPagamentoOpen(false);
   setCarteiraPagamento("");
   setValorPagamento(0);
@@ -5653,7 +5758,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       {/* Modal Dinheiro */}
       <Dialog open={modalDinheiroOpen} onClose={() => setModalDinheiroOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-  💰 Carteiras
+  💳 Minhas Carteiras 💰
   <Box>
     <Button variant="contained" size="small" onClick={async () => {
   // Recarrega a lista de jogadores antes de abrir
@@ -5683,11 +5788,11 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   setListaJogadores(jogadores);
   setModalTransferenciaOpen(true);
 }} sx={{ mr: 1, bgcolor: '#1976d2' }}>
-  🔄 Transferir
+  🔄 Transferir Dinheiro
 </Button>
     
     <Button variant="contained" size="small" onClick={() => setModalPagamentoOpen(true)} sx={{ bgcolor: '#ff9800' }}>
-      💳 Pagar
+      💸 Pagar Conta
     </Button>
   </Box>
 </DialogTitle>
@@ -5695,7 +5800,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
           <Box sx={{ mb: 2, display: 'flex', gap: 1 }}>
             <TextField
   size="small"
-  placeholder="Ex: Bolso, Banco Hollow..."
+  placeholder="📝 Ex: Bolso, Banco Hollow..."
   value={novaCarteiraNome}
   onChange={(e) => setNovaCarteiraNome(e.target.value)}
   sx={{ 
@@ -5715,12 +5820,12 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                 setCarteiras([...carteiras, { nome: novaCarteiraNome, valor: 0 }]);
                 setNovaCarteiraNome("");
               }
-            }} sx={{ bgcolor: '#1976d2' }}>+ Adicionar</Button>
+            }} sx={{ bgcolor: '#1976d2' }}>➕ Adicionar Carteira</Button>
           </Box>
                                 {(Array.isArray(carteiras) ? carteiras : []).map((c, index) => (
-            <Paper key={index} sx={{ p: 2, mb: 1, bgcolor: '#0f172a' }}>
+            <Paper key={index} sx={{ p: 2, mb: 1, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 'bold' }}>{c.nome}</Typography>
+                <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 'bold' }}>👛 {c.nome}</Typography>
                 <Box>
                   <IconButton size="small" onClick={() => {
   // 🟢 Bloqueia renomear "Bolso"
@@ -5728,7 +5833,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
     alert("🔒 A carteira 'Bolso' é permanente e não pode ser renomeada!");
     return;
   }
-  const novoNome = prompt("Novo nome:", c.nome);
+  const novoNome = prompt("✏️ Novo nome:", c.nome);
   if (novoNome && novoNome.trim() && novoNome !== "Bolso") {
     const novasCarteiras = [...carteiras];
     novasCarteiras[index].nome = novoNome.trim();
@@ -5750,7 +5855,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
 
   if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length > 0) {
     const destino = prompt(
-      `A carteira "${carteiraParaExcluir.nome}" tem ${carteiraParaExcluir.valor} 💰.\n` +
+      `⚠️ A carteira "${carteiraParaExcluir.nome}" tem 💰 ${carteiraParaExcluir.valor}.\n` +
       `Digite o nome da carteira para transferir o saldo:\n` +
       `Opções: ${outrasCarteiras.map(c => c.nome).join(', ')}`
     );
@@ -5768,14 +5873,14 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
         );
         setCarteiras(novasCarteiras);
       } else {
-        alert('Carteira não encontrada!');
+        alert('❌ Carteira não encontrada!');
         return;
       }
     } else {
       return;
     }
   } else if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length === 0) {
-    alert('Não é possível excluir a última carteira com dinheiro!');
+    alert('❌ Não é possível excluir a última carteira com dinheiro!');
     return;
   } else {
     setCarteiras(outrasCarteiras);
@@ -5810,15 +5915,15 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
             </Paper>
           ))}
           {carteiras.length > 0 && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: '#16213e', borderRadius: 1 }}>
+            <Box sx={{ mt: 2, p: 2, bgcolor: '#16213e', borderRadius: 1, border: '1px solid #00e0ff66', boxShadow: '0 0 15px rgba(0,224,255,0.1)' }}>
               <Typography variant="h6" sx={{ color: '#00e0ff' }}>
-                Total: 💰 {carteiras.reduce((total, c) => total + (c.valor || 0), 0)}
+                💎 TOTAL GERAL: 💰 {carteiras.reduce((total, c) => total + (c.valor || 0), 0)}
               </Typography>
             </Box>
           )}
         </DialogContent>
         <DialogActions sx={{ bgcolor: '#1a1a2e' }}>
-          <Button onClick={() => setModalDinheiroOpen(false)} sx={{ color: '#fff' }}>Fechar</Button>
+          <Button onClick={() => setModalDinheiroOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
           <Button variant="contained" onClick={async () => {
   // 🟢 Garante que "Bolso" existe antes de salvar
   const carteirasFinal = Array.isArray(carteiras)
@@ -5834,27 +5939,27 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   setCarteiras(carteirasFinal);
 
   setModalDinheiroOpen(false);
-}} sx={{ bgcolor: '#2e7d32' }}>Salvar</Button>
+}} sx={{ bgcolor: '#2e7d32', fontWeight: 'bold' }}>💾 Salvar Carteiras</Button>
         </DialogActions>
       </Dialog>
       {/* Modal Transferência */}
 <Dialog open={modalTransferenciaOpen} onClose={() => setModalTransferenciaOpen(false)} maxWidth="sm" fullWidth>
-  <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>🔄 Transferir Dinheiro</DialogTitle>
+  <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>🔄 Transferir Dinheiro 💸</DialogTitle>
   <DialogContent sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
       <FormControl fullWidth>
-        <InputLabel sx={{ color: '#fff' }}>Jogador Destino</InputLabel>
+        <InputLabel sx={{ color: '#fff' }}>👤 Jogador Destino</InputLabel>
                 <Select
           value={jogadorSelecionado}
-          label="Jogador Destino"
+          label="👤 Jogador Destino"
           onChange={(e) => setJogadorSelecionado(e.target.value)}
           sx={{ color: '#fff' }}
           MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 400 } } }}
         >
-          <MenuItem value="">-- selecione --</MenuItem>
+          <MenuItem value="">-- 👇 Selecione o destino --</MenuItem>
           <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #4caf50', mt: 0.5 }}>
             <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-              ── PERSONAGENS DO JOGADOR ──
+              ── 👤 PERSONAGENS DO JOGADOR ──
             </Typography>
           </MenuItem>
           {listaJogadores.filter(j => (j.tipoFicha || "PJ") === "PJ").map(jogador => (
@@ -5870,7 +5975,7 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
           {listaJogadores.some(j => j.tipoFicha === "PM") && (
             <MenuItem disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 1 }}>
               <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
-                ── PERSONAGENS DO MESTRE ──
+                ── 👑 PERSONAGENS DO MESTRE ──
               </Typography>
             </MenuItem>
           )}
@@ -5888,37 +5993,37 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       </FormControl>
       
       <FormControl fullWidth>
-        <InputLabel sx={{ color: '#fff' }}>Sua Carteira (Origem)</InputLabel>
+        <InputLabel sx={{ color: '#fff' }}>📤 Sua Carteira (Origem)</InputLabel>
         <Select
           value={carteiraOrigem}
-          label="Sua Carteira (Origem)"
+          label="📤 Sua Carteira (Origem)"
           onChange={(e) => setCarteiraOrigem(e.target.value)}
           sx={{ color: '#fff' }}
         >
                                 {(Array.isArray(carteiras) ? carteiras : []).map((c, index) => (
-            <MenuItem key={c.nome} value={c.nome}>{c.nome} (Saldo: {c.valor})</MenuItem>
+            <MenuItem key={c.nome} value={c.nome}>👛 {c.nome} (Saldo: 💰 {c.valor})</MenuItem>
           ))}
         </Select>
       </FormControl>
       
       {jogadorSelecionado && (
         <FormControl fullWidth>
-          <InputLabel sx={{ color: '#fff' }}>Carteira Destino</InputLabel>
+          <InputLabel sx={{ color: '#fff' }}>📥 Carteira Destino</InputLabel>
           <Select
             value={carteiraDestino}
-            label="Carteira Destino"
+            label="📥 Carteira Destino"
             onChange={(e) => setCarteiraDestino(e.target.value)}
             sx={{ color: '#fff' }}
           >
             {listaJogadores.find(j => j.id === jogadorSelecionado)?.carteiras.map(c => (
-              <MenuItem key={c.nome} value={c.nome}>{c.nome}</MenuItem>
+              <MenuItem key={c.nome} value={c.nome}>👛 {c.nome}</MenuItem>
             ))}
           </Select>
         </FormControl>
       )}
       
       <TextField
-        label="Valor"
+        label="💵 Valor da Transferência"
         type="text"
         value={valorTransferencia}
         onChange={(e) => {
@@ -5940,44 +6045,44 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                 }}
                 sx={{ minWidth: 'auto', p: 0.5 }}
               >
-                Max
+                MAX
               </Button>
             </InputAdornment>
           )
         }}
         sx={{ input: { color: '#fff' } }}
-        helperText={carteiraOrigem ? `Máximo: ${carteiras.find(c => c.nome === carteiraOrigem)?.valor || 0}` : "Selecione uma carteira"}
+        helperText={carteiraOrigem ? `💰 Máximo disponível: ${carteiras.find(c => c.nome === carteiraOrigem)?.valor || 0}` : "👉 Selecione uma carteira de origem"}
         FormHelperTextProps={{ sx: { color: '#aaa' } }}
       />
     </Box>
   </DialogContent>
   <DialogActions sx={{ bgcolor: '#1a1a2e' }}>
-    <Button onClick={() => setModalTransferenciaOpen(false)} sx={{ color: '#fff' }}>Cancelar</Button>
-    <Button variant="contained" onClick={realizarTransferencia} sx={{ bgcolor: '#1976d2' }}>Transferir</Button>
+    <Button onClick={() => setModalTransferenciaOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+    <Button variant="contained" onClick={realizarTransferencia} sx={{ bgcolor: '#1976d2', fontWeight: 'bold' }}>🚀 Transferir Agora</Button>
   </DialogActions>
 </Dialog>
 
       {/* Modal Pagamento */}
       <Dialog open={modalPagamentoOpen} onClose={() => setModalPagamentoOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>💳 Realizar Pagamento</DialogTitle>
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>💳 Realizar Pagamento 💸</DialogTitle>
         <DialogContent sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
             <FormControl fullWidth>
-              <InputLabel sx={{ color: '#fff' }}>Carteira</InputLabel>
+              <InputLabel sx={{ color: '#fff' }}>👛 Carteira</InputLabel>
               <Select
                 value={carteiraPagamento}
-                label="Carteira"
+                label="👛 Carteira"
                 onChange={(e) => setCarteiraPagamento(e.target.value)}
                 sx={{ color: '#fff' }}
               >
                                       {(Array.isArray(carteiras) ? carteiras : []).map((c, index) => (
-                  <MenuItem key={c.nome} value={c.nome}>{c.nome} (Saldo: {c.valor})</MenuItem>
+                  <MenuItem key={c.nome} value={c.nome}>👛 {c.nome} (Saldo: 💰 {c.valor})</MenuItem>
                 ))}
               </Select>
             </FormControl>
             
             <TextField
-  label="Valor do Pagamento"
+  label="💵 Valor do Pagamento"
   type="number"
   value={valorPagamento}
   onChange={(e) => {
@@ -5999,20 +6104,20 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
           }}
           sx={{ minWidth: 'auto', p: 0.5 }}
         >
-          Max
+          MAX
         </Button>
       </InputAdornment>
     )
   }}
   sx={{ input: { color: '#fff' } }}
-  helperText={carteiraPagamento ? `Máximo: ${carteiras.find(c => c.nome === carteiraPagamento)?.valor || 0}` : "Selecione uma carteira"}
+  helperText={carteiraPagamento ? `💰 Máximo disponível: ${carteiras.find(c => c.nome === carteiraPagamento)?.valor || 0}` : "👉 Selecione uma carteira"}
   FormHelperTextProps={{ sx: { color: '#aaa' } }}
 />
           </Box>
         </DialogContent>
         <DialogActions sx={{ bgcolor: '#1a1a2e' }}>
-          <Button onClick={() => setModalPagamentoOpen(false)} sx={{ color: '#fff' }}>Cancelar</Button>
-          <Button variant="contained" onClick={realizarPagamento} sx={{ bgcolor: '#ff9800' }}>Pagar</Button>
+          <Button onClick={() => setModalPagamentoOpen(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+          <Button variant="contained" onClick={realizarPagamento} sx={{ bgcolor: '#ff9800', fontWeight: 'bold' }}>💸 Pagar Agora</Button>
         </DialogActions>
       </Dialog>
 {/* 🟢 MODAL NÍVEL 6 DE ATRIBUTO */}
@@ -9447,19 +9552,93 @@ const novosDiversos = [...diversosAtuais, novoItem];
           helperText="Se preenchido, o nome aparecerá como 'Nome Editado (Original)'"
           FormHelperTextProps={{ sx: { color: '#64748b' } }}
         />
-        <TextField
-          label="Descrição"
-          fullWidth
-          multiline
-          minRows={3}
-          value={itemEditando.item.descricao || ""}
-          onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, descricao: e.target.value } }))}
-          InputProps={{ sx: { color: '#fff' } }}
-          InputLabelProps={{ sx: { color: '#94a3b8' } }}
-        />
-      </Box>
-    )}
-  </DialogContent>
+                <TextField
+                  label="Descrição"
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  value={itemEditando.item.descricao || ""}
+                  onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, descricao: e.target.value } }))}
+                  InputProps={{ sx: { color: '#fff' } }}
+                  InputLabelProps={{ sx: { color: '#94a3b8' } }}
+                />
+
+                {/* 🟢 SISTEMA DE COMIDA/BEBIDA NO MODAL */}
+                <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px dashed #334155' }}>
+                  <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={itemEditando.item.isComida || false}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isComida: true, isBebida: false, tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" } }));
+                            } else {
+                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isComida: false } }));
+                            }
+                          }}
+                          size="small"
+                          sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }}
+                        />
+                      }
+                      label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 'bold' }}>🍽️ É Comida?</Typography>}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={itemEditando.item.isBebida || false}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isBebida: true, isComida: false, tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" } }));
+                            } else {
+                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isBebida: false } }));
+                            }
+                          }}
+                          size="small"
+                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                        />
+                      }
+                      label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 'bold' }}>🥤 É Bebida?</Typography>}
+                    />
+                  </Box>
+                  {(itemEditando.item.isComida || itemEditando.item.isBebida) && (
+                    <Grid container spacing={1.5}>
+                      <Grid item xs={6}>
+                        <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5 }}>
+                          {itemEditando.item.isComida ? '🍽️ Recupera Fome (%)' : '🥤 Recupera Sede (%)'}
+                        </Typography>
+                        <TextField
+                          fullWidth size="small" type="number"
+                          value={itemEditando.item.isComida ? (itemEditando.item.recuperacaoFome || 0) : (itemEditando.item.recuperacaoSede || 0)}
+                          onChange={(e) => {
+                            const val = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                            setItemEditando(prev => ({ ...prev, item: { ...prev.item, [prev.item.isComida ? 'recuperacaoFome' : 'recuperacaoSede']: val } }));
+                          }}
+                          InputProps={{ inputProps: { min: 0, max: 100 }, sx: { color: itemEditando.item.isComida ? '#4caf50' : '#3b82f6', fontSize: '0.85rem', fontWeight: 700 } }}
+                          sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
+                        />
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5 }}>
+                          ⏳ Validade (Dias)
+                        </Typography>
+                        <TextField
+                          fullWidth size="small" type="number"
+                          value={itemEditando.item.validadeDias || 15}
+                          onChange={(e) => {
+                            const val = Math.max(1, Number(e.target.value) || 15);
+                            setItemEditando(prev => ({ ...prev, item: { ...prev.item, validadeDias: val } }));
+                          }}
+                          InputProps={{ inputProps: { min: 1 }, sx: { color: '#fff', fontSize: '0.85rem' } }}
+                          sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
+                        />
+                      </Grid>
+                    </Grid>
+                  )}
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
   <DialogActions>
     <Button onClick={() => { setModalEditarItemOpen(false); setItemEditando(null); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
     <Button
