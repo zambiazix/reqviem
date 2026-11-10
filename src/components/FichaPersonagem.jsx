@@ -30,6 +30,8 @@ import { Checkbox, FormControlLabel, Tooltip, Collapse } from "@mui/material";
   import EditIcon from "@mui/icons-material/Edit";
   import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
   import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+  import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+  import ChevronRightIcon from "@mui/icons-material/ChevronRight";
   import { db } from "../firebaseConfig";
   import { doc, getDoc, setDoc, onSnapshot, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
   import { CircularProgress } from "@mui/material";
@@ -48,11 +50,13 @@ function ItemCard({
   onAbrirImagem,
   onAbrirEditar,
   onMoverItem,
+  onMoverCategoria,
   mostrarAcoes = true,
   TIPOS_DANO = [],
   TIPOS_CONSUMIVEL = [],
   TIPOS_INSUMIVEL = [],
   onConsumirItem, // 🟢 NOVO PARÂMETRO
+  onUploadImagemItem,
 }) {
   const durabilidadePercent = Math.max(0, Math.min(100, item.durabilidade ?? 100)) / 100;
   const barColor = durabilidadePercent > 0.66 ? '#4caf50' : durabilidadePercent > 0.33 ? '#ff9800' : '#f44336';
@@ -109,6 +113,7 @@ function ItemCard({
             cursor: item.imagem ? 'pointer' : 'default',
             transition: 'transform 0.2s ease, border-color 0.2s ease',
             '&:hover': item.imagem ? { transform: 'scale(1.05)', borderColor: '#00e0ff' } : {},
+            position: 'relative' /* 🟢 AQUI ESTAVA O BUG: Faltava isso para segurar o botão */
           }}
         >
           {item.imagem ? (
@@ -116,6 +121,34 @@ function ItemCard({
           ) : (
             <Typography sx={{ fontSize: '1.4rem', opacity: 0.5 }}>📦</Typography>
           )}
+          
+          {/* 🟢 BOTÃO DE UPLOAD CORRIGIDO (Cantinho da imagem) */}
+          <IconButton
+            component="label"
+            size="small"
+            onClick={(e) => e.stopPropagation()}
+            sx={{
+              position: 'absolute',
+              bottom: 0,
+              right: 0,
+              bgcolor: 'rgba(0,0,0,0.7)',
+              borderRadius: '4px 0 0 0',
+              p: 0.2,
+              color: '#fff',
+              '&:hover': { bgcolor: 'rgba(0,224,255,0.9)', color: '#000' }
+            }}
+          >
+            <span style={{ fontSize: '0.8rem' }}>📷</span>
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onUploadImagemItem(categoria, index, file);
+              }}
+            />
+          </IconButton>
         </Box>
 
         {/* Nome + chips */}
@@ -240,6 +273,22 @@ function ItemCard({
           </Tooltip>
         )}
 
+        {/* Setas de Categoria */}
+        {onMoverCategoria && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 1 }} onClick={(e) => e.stopPropagation()}>
+            <Tooltip title="Mover para Categoria Anterior">
+              <IconButton size="small" onClick={() => onMoverCategoria(categoria, index, -1)} sx={{ p: 0.5, color: '#94a3b8', '&:hover': { color: '#00e0ff', bgcolor: 'rgba(0,224,255,0.1)' } }}>
+                <ChevronLeftIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Mover para Próxima Categoria">
+              <IconButton size="small" onClick={() => onMoverCategoria(categoria, index, 1)} sx={{ p: 0.5, color: '#94a3b8', '&:hover': { color: '#00e0ff', bgcolor: 'rgba(0,224,255,0.1)' } }}>
+                <ChevronRightIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+
         {/* Seta animada */}
         <Typography
           sx={{
@@ -362,14 +411,14 @@ function ItemCard({
             </Grid>
           </Grid>
 
-          {/* 🟢 SISTEMA DE COMIDA/BEBIDA NO INVENTÁRIO */}
+          {/* 🟢 SISTEMA DE COMIDA/BEBIDA (APENAS MESTRE) */}
+          {isMestre && (
           <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px dashed #334155', mb: 2 }}>
             <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
               <FormControlLabel
                 control={
                   <Checkbox
                     checked={item.isComida || false}
-                    disabled={!isMestre}
                     onChange={(e) => {
                       if (e.target.checked) {
                         onAtualizarItem(categoria, index, "isComida", true);
@@ -391,7 +440,6 @@ function ItemCard({
                 control={
                   <Checkbox
                     checked={item.isBebida || false}
-                    disabled={!isMestre}
                     onChange={(e) => {
                       if (e.target.checked) {
                         onAtualizarItem(categoria, index, "isBebida", true);
@@ -419,7 +467,6 @@ function ItemCard({
                   <TextField
                     fullWidth size="small" type="number"
                     value={item.isComida ? (item.recuperacaoFome || 0) : (item.recuperacaoSede || 0)}
-                    disabled={!isMestre}
                     onChange={(e) => {
                       const val = Math.max(0, Math.min(100, Number(e.target.value) || 0));
                       onAtualizarItem(categoria, index, item.isComida ? "recuperacaoFome" : "recuperacaoSede", val);
@@ -435,7 +482,6 @@ function ItemCard({
                   <TextField
                     fullWidth size="small" type="number"
                     value={item.validadeDias || 15}
-                    disabled={!isMestre}
                     onChange={(e) => {
                       const val = Math.max(1, Number(e.target.value) || 15);
                       onAtualizarItem(categoria, index, "validadeDias", val);
@@ -447,6 +493,7 @@ function ItemCard({
               </Grid>
             )}
           </Box>
+          )}
 
           {/* Tipo Dano / Consumível / Insumível */}
           <Grid container spacing={1.5} sx={{ mb: 1 }}>
@@ -547,7 +594,7 @@ function ItemCard({
                 </Button>
               )}
               <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => onAbrirEditar(categoria, index, item)} sx={{ color: '#ff9800', borderColor: '#ff9800' }}>
-                Editar Item
+                {isMestre ? 'Editar Item' : '✏️ Nome / Descrição'}
               </Button>
               {isMestre && (
                 <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => { if (window.confirm(`Remover "${item.nome || "item"}"?`)) onRemoverItem(categoria, index); }}>
@@ -992,28 +1039,121 @@ const RECEITAS_CRAFT = {
     // Lista de defeitos disponíveis
 const DEFEITOS_DISPONIVEIS = [
   // Nível 1
-  { nome: "Fobia", nivel: 1, pontos: 1, bloqueia: null },
-  { nome: "Compulsão", nivel: 1, pontos: 1, bloqueia: null },
-  { nome: "Cabeça Quente", nivel: 1, pontos: 1, bloqueia: null },
-  { nome: "Infâmia", nivel: 1, pontos: 1, bloqueia: null },
-  { nome: "Honesto", nivel: 1, pontos: 1, bloqueia: null },
+  { 
+    nome: "Fobia", nivel: 1, pontos: 1, bloqueia: null, 
+    variacoes: ["Acrofobia (Altura)", "Claustrofobia (Espaços Fechados)", "Aracnofobia (Aranhas)", "Ofidiofobia (Cobras)", "Hemofobia (Sangue)", "Nictofobia (Escuridão)", "Agorafobia (Multidões)", "Batofobia (Profundezas)", "Hidrofobia (Água)", "Pirofobia (Fogo)", "Tanatofobia (Morte)", "Socialfobia (Julgamento)", "Cinofobia (Cães)", "Astrafobia (Raios)", "Tafofobia (Enterrado Vivo)", "Xenofobia (Desconhecido)", "Belonofobia (Agulhas)", "Nosofobia (Doenças)", "Hipnofobia (Dormir)", "Zoofobia (Animais)"]
+  },
+  { 
+    nome: "Compulsão", nivel: 1, pontos: 1, bloqueia: null,
+    variacoes: ["Ritual de Limpeza", "Ritual de Verificação", "Simetria", "Contagem", "Acumulação", "Cleptomania", "Mitomania", "Oniomania (Compras)", "Ludomania (Jogos)", "Piromania (Fogo)", "Tricotilomania (Cabelos)", "Onicofagia (Unhas)", "Dermatilomania (Pele)", "Ecolalia", "Evitamento de Linhas", "Escrupulosidade", "Toque Ritualístico", "Confissão Compulsiva", "Autopunição", "Correção Alheia"]
+  },
+  { nome: "Cabeça Quente", nivel: 1, pontos: 1, bloqueia: null, variacoes: [] },
+  { nome: "Infâmia", nivel: 1, pontos: 1, bloqueia: null, variacoes: [] },
+  { nome: "Covardia", nivel: 1, pontos: 1, bloqueia: null, variacoes: [] },
+  { nome: "Paranoia", nivel: 1, pontos: 1, bloqueia: null, variacoes: [] },
   
   // Nível 2
-  { nome: "Insônia", nivel: 2, pontos: 2, bloqueia: null },
-  { nome: "Sono Pesado", nivel: 2, pontos: 2, bloqueia: null },
-  { nome: "Sonambulismo", nivel: 2, pontos: 2, bloqueia: null },
-  { nome: "Alergia", nivel: 2, pontos: 2, bloqueia: null },
-  { nome: "Vício", nivel: 2, pontos: 2, bloqueia: null },
+  { nome: "Insônia", nivel: 2, pontos: 2, bloqueia: null, variacoes: [] },
+  { nome: "Sono Pesado", nivel: 2, pontos: 2, bloqueia: null, variacoes: [] },
+  { nome: "Sonambulismo", nivel: 2, pontos: 2, bloqueia: null, variacoes: [] },
+  { 
+    nome: "Alergia", nivel: 2, pontos: 2, bloqueia: null,
+    variacoes: ["Poeira e Ácaros", "Pólen", "Pelos de Animais", "Picadas de Insetos", "Amendoim", "Frutos do Mar", "Leite e Derivados", "Trigo e Glúten", "Ovos", "Medicamentos", "Metais", "Látex e Borracha", "Mofo e Fungos", "Luz do Sol", "Frio Extremo", "Calor Extremo", "Água", "Plantas Silvestres", "Fumaça e Químicos", "Poeira de Minérios"]
+  },
+  { 
+    nome: "Vício", nivel: 2, pontos: 2, bloqueia: null,
+    variacoes: ["Álcool", "Tabaco", "Entorpecentes", "Estimulantes", "Açúcar", "Jogos de Azar", "Sexo", "Adrenalina", "Ouro", "Magia", "Sangue", "Vaidade", "Trabalho", "Engenhocas", "Fofoca", "Combate", "Colecionismo", "Aprovação", "Mentir", "Perfumes"]
+  },
+  { nome: "Sadismo", nivel: 2, pontos: 2, bloqueia: null, variacoes: [] },
+  { nome: "Amnésia", nivel: 2, pontos: 2, bloqueia: "conhecimento", variacoes: [] }, // Movido para nível 2
   
   // Nível 3
-  { nome: "7 Pecados Capitais", nivel: 3, pontos: 3, bloqueia: "natureza" },
-  { nome: "5 Sentidos", nivel: 3, pontos: 3, bloqueia: "investigacao" },
-  { nome: "Amnésia", nivel: 3, pontos: 3, bloqueia: "conhecimento" },
-  { nome: "Enfermo", nivel: 3, pontos: 3, bloqueia: "atletismo" },
-  { nome: "Deficiência", nivel: 3, pontos: 3, bloqueia: "intimidacao" },
-  { nome: "Alucinação", nivel: 3, pontos: 3, bloqueia: "percepcao" },
-  { nome: "TDI", nivel: 3, pontos: 3, bloqueia: "performance" },
+  { nome: "Honesto", nivel: 3, pontos: 3, bloqueia: "labia", variacoes: [] }, // Movido para nível 3
+  { 
+    nome: "7 Pecados Capitais", nivel: 3, pontos: 3, bloqueia: "natureza",
+    variacoes: ["Soberba", "Avareza", "Luxúria", "Inveja", "Gula", "Ira", "Preguiça"]
+  },
+  { 
+    nome: "5 Sentidos", nivel: 3, pontos: 3, bloqueia: "investigacao",
+    variacoes: ["Cegueira", "Surdez", "Paladar", "Olfato", "Tato Adormecido"]
+  },
+  { 
+    nome: "Enfermo", nivel: 3, pontos: 3, bloqueia: "atletismo",
+    variacoes: ["Peste Negra", "Tuberculose", "Malária", "Cólera", "Raiva", "Tétano", "Hanseníase", "Varíola", "Febre Tifoide", "Anemia Falciforme", "Asma", "Epilepsia", "Licantropia", "Porfiria", "Petrificação Lenta", "Podridão da Alma", "Febre do Mana", "Mente Fúngica", "Doença do Sono", "Necrose Aurana"]
+  },
+  { 
+    nome: "Deficiência", nivel: 3, pontos: 3, bloqueia: "intimidacao",
+    variacoes: ["Amputação de Braço", "Amputação de Perna", "Paraplegia", "Tetraplegia", "Hemiplegia", "Amputação de Dedos", "Nanismo Severo", "Gigantismo", "Escoliose Severa", "Claudicação Severa", "Fraqueza Muscular", "Apraxia", "Epilepsia", "Tremor Essencial", "Vertigem Crônica", "Gagueira Severa", "Afasia", "Dislexia Severa", "Déficit de Atenção", "Deficiência Intelectual"]
+  },
+  { 
+    nome: "Alucinação", nivel: 3, pontos: 3, bloqueia: "percepcao",
+    variacoes: ["Vozes Sussurrando", "Visões de Entidades", "Ilusões Visuais", "Sensação de ser Tocado", "Delírios Persecutórios"]
+  },
+  { nome: "TDI", nivel: 3, pontos: 3, bloqueia: "performance", variacoes: ["1 Personalidade", "2 Personalidades", "3 Personalidades", "4 Personalidades"] },
 ];
+
+// 🟢 DICIONÁRIO DE ÍCONES ATUALIZADO (Suporta busca por palavra-chave)
+const DEFEITOS_ICONS = {
+  "Fobia": { icon: "😨", color: "#ef4444", desc: "Medo irracional e paralisante." },
+  "Fobia de Altura": { icon: "🌉", color: "#ef4444", desc: "Acrofobia: Pânico de lugares altos." },
+  "Fobia de Sangue": { icon: "🩸", color: "#ef4444", desc: "Hemofobia: Desmaia ao ver sangue." },
+  "Fobia de Aranhas": { icon: "🕷️", color: "#ef4444", desc: "Aracnofobia: Terror de aracnídeos." },
+  "Fobia de Escuridão": { icon: "🌑", color: "#ef4444", desc: "Nictofobia: Pânico no escuro." },
+  
+  "Compulsão": { icon: "🔁", color: "#ff9800", desc: "Mania ou ritual obsessivo." },
+  "Compulsão de Limpeza": { icon: "🧼", color: "#ff9800", desc: "Lava as mãos obsessivamente." },
+  "Compulsão de Simetria": { icon: "📐", color: "#ff9800", desc: "Tudo precisa estar perfeitamente alinhado." },
+  "Cleptomania": { icon: "🤏", color: "#ff9800", desc: "Rouba sem precisar." },
+  
+  "Cabeça Quente": { icon: "🤬", color: "#ef4444", desc: "Pavio curto e reação explosiva." },
+  "Infâmia": { icon: "👎", color: "#94a3b8", desc: "Reputação manchada." },
+  "Covardia": { icon: "🏃", color: "#facc15", desc: "Foge do perigo a todo custo." },
+  "Paranoia": { icon: "👁️", color: "#a855f7", desc: "Desconfia de tudo e todos." },
+  
+  "Insônia": { icon: "🦉", color: "#a855f7", desc: "Incapaz de dormir." },
+  "Sono Pesado": { icon: "🛌", color: "#3b82f6", desc: "Dorme como uma pedra." },
+  "Sonambulismo": { icon: "🚶", color: "#94a3b8", desc: "Anda dormindo." },
+  
+  "Alergia": { icon: "🤧", color: "#22c55e", desc: "Reação alérgica severa." },
+  "Alergia a Poeira": { icon: "🌪️", color: "#22c55e", desc: "Espirros incontroláveis em ambientes sujos." },
+  "Alergia a Metais": { icon: "⚙️", color: "#22c55e", desc: "Queimaduras ao tocar ferro ou prata." },
+  "Alergia a Luz do Sol": { icon: "☀️", color: "#22c55e", desc: "Fotossensibilidade severa." },
+  
+  "Vício": { icon: "🚬", color: "#facc15", desc: "Dependência física ou psicológica." },
+  "Vício em Álcool": { icon: "🍺", color: "#facc15", desc: "Precisa beber todos os dias." },
+  "Vício em Tabaco": { icon: "🚬", color: "#facc15", desc: "Fuma descontroladamente." },
+  "Vício em Jogos": { icon: "🎲", color: "#facc15", desc: "Apostador compulsivo." },
+  "Vício em Magia": { icon: "✨", color: "#facc15", desc: "Viciado em canalizar mana." },
+  
+  "Sadismo": { icon: "🩸", color: "#ef4444", desc: "Prazer mórbido no sofrimento alheio." },
+  "Amnésia": { icon: "❓", color: "#94a3b8", desc: "Esqueceu parte ou todo o passado." },
+  
+  "Honesto": { icon: "🫡", color: "#00e0ff", desc: "Incapaz de mentir." },
+  "7 Pecados Capitais": { icon: "😈", color: "#ef4444", desc: "Personificação de um pecado." },
+  "Pecado da Ira": { icon: "🔥", color: "#ef4444", desc: "Fúria cega e incontrolável." },
+  "Pecado da Gula": { icon: "🍖", color: "#ef4444", desc: "Consumo desenfreado." },
+  
+  "5 Sentidos": { icon: "👁️", color: "#00e0ff", desc: "Perda de um dos sentidos." },
+  "Cegueira": { icon: "🦯", color: "#00e0ff", desc: "Perda total da visão." },
+  "Surdez": { icon: "🤟", color: "#00e0ff", desc: "Perda total da audição." },
+  
+  "Enfermo": { icon: "🤒", color: "#22c55e", desc: "Doença crônica ou debilitante." },
+  "Peste Negra": { icon: "☠️", color: "#22c55e", desc: "Doença letal e necrosante." },
+  "Tuberculose": { icon: "🫁", color: "#22c55e", desc: "Tosse com sangue e fadiga extrema." },
+  "Raiva": { icon: "🐕", color: "#22c55e", desc: "Doença neurológica transmitida por mordidas." },
+  
+  "Deficiência": { icon: "🦽", color: "#facc15", desc: "Limitação física severa." },
+  "Amputação de Braço": { icon: "🦾", color: "#facc15", desc: "Perda de um membro superior." },
+  "Amputação de Perna": { icon: "🦿", color: "#facc15", desc: "Perda de um membro inferior." },
+  "Paraplegia": { icon: "🦽", color: "#facc15", desc: "Paralisia da cintura para baixo." },
+  "Cegueira Parcial": { icon: "👓", color: "#facc15", desc: "Visão extremamente limitada." },
+  
+  "Alucinação": { icon: "🌀", color: "#a855f7", desc: "Vê coisas que não existem." },
+  "Vozes Sussurrando": { icon: "👂", color: "#a855f7", desc: "Ouve vozes constantes." },
+  "Visões de Entidades": { icon: "👻", color: "#a855f7", desc: "Vê monstros e fantasmas." },
+  
+  "TDI": { icon: "🎭", color: "#e5e5e5", desc: "Transtorno Dissociativo de Identidade." },
+};
 
 // Estado para o modal de defeitos
 const [modalDefeitosOpen, setModalDefeitosOpen] = useState(false);
@@ -1063,25 +1203,7 @@ const TRACOS_ICONS = {
   "Auris": { icon: "✨", color: "#facc15", desc: "Aurano: Soma Aura com outra perícia em uma ação." }
 };
 
-const DEFEITOS_ICONS = {
-  "Fobia": { icon: "🕷️", color: "#ef4444", desc: "Medo extremo de algo." },
-  "Compulsão": { icon: "🎲", color: "#ff9800", desc: "Necessidade incontrolável de fazer algo." },
-  "Cabeça Quente": { icon: "🤬", color: "#ef4444", desc: "Perde a paciência facilmente." },
-  "Infâmia": { icon: "👎", color: "#94a3b8", desc: "Tem uma má reputação." },
-  "Honesto": { icon: "🫡", color: "#00e0ff", desc: "Não consegue mentir." },
-  "Insônia": { icon: "🦉", color: "#a855f7", desc: "Dificuldade para dormir." },
-  "Sono Pesado": { icon: "🛌", color: "#3b82f6", desc: "Difícil de acordar." },
-  "Sonambulismo": { icon: "🚶‍♂️", color: "#94a3b8", desc: "Anda dormindo." },
-  "Alergia": { icon: "🤧", color: "#22c55e", desc: "Reação alérgica a algo." },
-  "Vício": { icon: "🚬", color: "#facc15", desc: "Dependência de algo." },
-  "7 Pecados Capitais": { icon: "😈", color: "#ef4444", desc: "Movido por um dos 7 pecados." },
-  "5 Sentidos": { icon: "👁️", color: "#00e0ff", desc: "Falta de um dos 5 sentidos." },
-  "Amnésia": { icon: "❓", color: "#94a3b8", desc: "Esqueceu parte do passado." },
-  "Enfermo": { icon: "🤒", color: "#22c55e", desc: "Doença crônica." },
-  "Deficiência": { icon: "🦽", color: "#facc15", desc: "Limitação física." },
-  "Alucinação": { icon: "🌀", color: "#a855f7", desc: "Vê coisas que não existem." },
-  "TDI": { icon: "🎭", color: "#e5e5e5", desc: "Transtorno Dissociativo de Identidade." }
-};
+
 // Lista de Talentos disponíveis por atributo
 const TALENTOS_POR_ATRIBUTO = {
   forca: [
@@ -1126,8 +1248,12 @@ const [avaliacaoIA, setAvaliacaoIA] = useState(null);
 const [carregandoIA, setCarregandoIA] = useState(false);
 const [gerandoHabilidade, setGerandoHabilidade] = useState(false);
 const [modalDinheiroOpen, setModalDinheiroOpen] = useState(false);
-const [carteiras, setCarteiras] = useState([{ nome: "Bolso", valor: 0 }]);
+const [carteiras, setCarteiras] = useState([{ nome: "Bolso", valor: 0, icone: "👛" }]);
 const [novaCarteiraNome, setNovaCarteiraNome] = useState("");
+const [novoCarteiraIcone, setNovoCarteiraIcone] = useState("👛");
+const [modalNovaCarteiraOpen, setModalNovaCarteiraOpen] = useState(false);
+const [editandoCarteira, setEditandoCarteira] = useState(null);
+const EMOJIS_CARTEIRA = ["👛", "💰", "💳", "💎", "🏦", "🎒", "📦", "🗝️", "💵", "🪙", "🧾", "🛍️"];
 const [modalGaleriaOpen, setModalGaleriaOpen] = useState(false);
 const [modalTransferenciaOpen, setModalTransferenciaOpen] = useState(false);
 const [modalPagamentoOpen, setModalPagamentoOpen] = useState(false);
@@ -2573,6 +2699,32 @@ const gerarCampoComIA = async (habilidadeIndex, campo) => {
         [tipo]: p[tipo].filter((_, idx) => idx !== i),
       }));
     }
+  const moverItemCategoria = async (categoriaAtual, index, direcao) => {
+    const categorias = ['equipamentos', 'vestes', 'diversos'];
+    let idxAtual = categorias.indexOf(categoriaAtual);
+    let novoIdx = idxAtual + direcao;
+
+    if (novoIdx < 0) novoIdx = categorias.length - 1;
+    if (novoIdx >= categorias.length) novoIdx = 0;
+
+    const categoriaDestino = categorias[novoIdx];
+    const item = ficha[categoriaAtual][index];
+    const novosItensOrigem = ficha[categoriaAtual].filter((_, i) => i !== index);
+    const novosItensDestino = [...(ficha[categoriaDestino] || []), item];
+
+    setFicha(p => ({
+      ...p,
+      [categoriaAtual]: novosItensOrigem,
+      [categoriaDestino]: novosItensDestino
+    }));
+
+    const ref = doc(db, "fichas", fichaId);
+    await setDoc(ref, {
+      [categoriaAtual]: novosItensOrigem,
+      [categoriaDestino]: novosItensDestino
+    }, { merge: true });
+  };
+
 function moverItem(tipo, i, direcao) {
   setFicha((p) => {
     const arr = [...(p[tipo] || [])];
@@ -3081,7 +3233,10 @@ const salvarDefeitos = async (defeitos) => {
   
   // Aplica bloqueios das perícias
   defeitos.forEach(defeitoNome => {
-    const defeitoInfo = DEFEITOS_DISPONIVEIS.find(d => d.nome === defeitoNome);
+    // 🟢 CORREÇÃO: Busca o defeito base (ex: "Enfermo de Peste Negra" -> busca "Enfermo")
+    const defeitoInfo = DEFEITOS_DISPONIVEIS.find(d => 
+      defeitoNome === d.nome || defeitoNome.startsWith(d.nome + " de ") || defeitoNome.startsWith(d.nome + " em ") || defeitoNome.startsWith(d.nome + " a ")
+    );
     if (defeitoInfo?.bloqueia) {
       periciasAtualizadas[defeitoInfo.bloqueia] = 0;
     }
@@ -4089,6 +4244,7 @@ const pontosAtributoRestantes = pontosAtributoMax - pontosAtributoGastos - custo
 const bonusBackground = ficha?.backgroundTipo ? (BACKGROUNDS.find(b => b.nome === ficha.backgroundTipo)?.bonus || 0) : 0;
 const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBackground;
 
+  const totalCarteiras = (Array.isArray(carteiras) ? carteiras : []).reduce((acc, c) => acc + (Number(c.valor) || 0), 0);
 
     return (
       <Paper sx={{ p: 2, bgcolor: "#07121a", color: "#fff", height: "100%", overflowY: "auto" }}>
@@ -4228,11 +4384,16 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       label={`NÍVEL ${nivelJogador}`}
       sx={{ bgcolor: '#9c27b022', color: '#a855f7', border: '1px solid #9c27b066', fontWeight: 'bold', fontSize: '0.75rem' }}
     />
+    <Chip
+      icon={<span style={{ fontSize: '1rem' }}>💰</span>}
+      label={`${totalCarteiras.toLocaleString('pt-BR')} 💰`}
+      sx={{ bgcolor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e66', fontWeight: 'bold', fontSize: '0.75rem' }}
+    />
   </Box>
 </Paper>
       {/* 🟢 GRID DOS CAMPOS — visual premium e polido */}
       <Grid container spacing={3}>
-        <Grid item xs={12} md={9}>
+        <Grid item xs={12} lg={10}>
           <Paper sx={{
             p: 3,
             bgcolor: 'rgba(10, 10, 18, 0.5)',
@@ -4247,10 +4408,10 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
               border: '1px solid rgba(168, 85, 247, 0.4)',
             }
           }}>
-            <Grid container spacing={2.5}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               
               {/* COLUNA ESQUERDA */}
-              <Grid item xs={12} md={6}>
+              <Box>
                 {/* NOME */}
                 <Box sx={{ mb: 1.5 }}>
                   <Typography component="div" sx={{ color: '#a855f7', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>
@@ -4379,10 +4540,10 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                     sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: 'rgba(168,85,247,0.3)' } } }}
                   />
                 </Box>
-              </Grid>
+              </Box>
 
               {/* COLUNA DIREITA */}
-              <Grid item xs={12} md={6}>
+              <Box>
                 {/* DEFEITOS (COM ÍCONES) */}
                 <Box sx={{ mb: 2 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
@@ -4411,9 +4572,23 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                       <Typography sx={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', alignSelf: 'center' }}>Nenhum defeito selecionado</Typography>
                     ) : (
                       ficha.defeitos.split(";").map(d => d.trim()).filter(Boolean).map(defeitoNome => {
-                        const info = DEFEITOS_ICONS[defeitoNome] || { icon: "❓", color: "#888", desc: "Desconhecido" };
+                        // 🟢 Busca o ícone exato. Se não achar, tenta achar a base (ex: "Vício em Álcool" -> busca "Vício em Álcool", depois "Vício")
+                        let info = DEFEITOS_ICONS[defeitoNome];
+                        if (!info) {
+                          const baseNome = Object.keys(DEFEITOS_ICONS).find(k => defeitoNome.startsWith(k));
+                          info = DEFEITOS_ICONS[baseNome] || { icon: "❓", color: "#888", desc: "Desconhecido" };
+                        }
+                        
+                        // 🟢 Descrição dinâmica para variações
+                        let descricaoFinal = info.desc;
+                        if (defeitoNome.includes(" de ")) {
+                           descricaoFinal = `Variação: ${defeitoNome.split(" de ")[1]}. ${info.desc}`;
+                        } else if (defeitoNome.includes(" em ")) {
+                           descricaoFinal = `Variação: ${defeitoNome.split(" em ")[1]}. ${info.desc}`;
+                        }
+
                         return (
-                          <Tooltip key={defeitoNome} arrow placement="top" title={<Box sx={{ p: 0.5 }}><Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{defeitoNome}</Typography><Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography></Box>}>
+                          <Tooltip key={defeitoNome} arrow placement="top" title={<Box sx={{ p: 0.5 }}><Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{defeitoNome}</Typography><Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{descricaoFinal}</Typography></Box>}>
                             <Box sx={{ width: 36, height: 36, borderRadius: 1.5, border: `1px solid ${info.color}`, bgcolor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: `0 0 8px ${info.color}44`, cursor: 'help', transition: 'transform 0.2s', '&:hover': { transform: 'scale(1.15)' } }}>
                               {info.icon}
                             </Box>
@@ -4499,23 +4674,13 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                           setCampo("pontosVida", valor);
                           await setDoc(doc(db, "fichas", fichaId), { pontosVida: valor }, { merge: true });
                         }}
-      InputProps={{ 
-        sx: { 
-          color: '#ff4d4f', 
-          fontSize: '0.9rem', 
-          fontWeight: 'bold', 
-          height: 30, 
-          '& input': { textAlign: 'center' },
-          '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': { 
-            WebkitAppearance: 'none', 
-            margin: 0 
-          },
-          '& input[type=number]': { MozAppearance: 'textfield' }
-        } 
-      }}
-      sx={{ width: 72, '& fieldset': { border: 'none' } }}
+                        InputProps={{ sx: { color: '#ff4d4f', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' }, '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': { WebkitAppearance: 'none', margin: 0 }, '& input[type=number]': { MozAppearance: 'textfield' } } }}
+                        sx={{ width: 72, '& fieldset': { border: 'none' } }}
                       />
                       <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>/ {pontosVidaMax}</Typography>
+                    </Box>
+                    <Box sx={{ mt: 0.5 }}>
+                      <LinearProgress variant="determinate" value={Math.min(100, Math.max(0, (Number(ficha.pontosVida || 0) / pontosVidaMax) * 100))} sx={{ height: 6, borderRadius: 3, bgcolor: '#ff4d4f22', '& .MuiLinearProgress-bar': { bgcolor: '#ff4d4f' } }} />
                     </Box>
                   </Grid>
                   <Grid item xs={6} sm={4}>
@@ -4528,23 +4693,13 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                           setCampo("pontosEnergia", valor);
                           await setDoc(doc(db, "fichas", fichaId), { pontosEnergia: valor }, { merge: true });
                         }}
-      InputProps={{ 
-        sx: { 
-          color: '#facc15', 
-          fontSize: '0.9rem', 
-          fontWeight: 'bold', 
-          height: 30, 
-          '& input': { textAlign: 'center' },
-          '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': { 
-            WebkitAppearance: 'none', 
-            margin: 0 
-          },
-          '& input[type=number]': { MozAppearance: 'textfield' }
-        } 
-      }}
-      sx={{ width: 72, '& fieldset': { border: 'none' } }}
+                        InputProps={{ sx: { color: '#facc15', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' }, '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': { WebkitAppearance: 'none', margin: 0 }, '& input[type=number]': { MozAppearance: 'textfield' } } }}
+                        sx={{ width: 72, '& fieldset': { border: 'none' } }}
                       />
                       <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>/ {pontosEnergiaMax}</Typography>
+                    </Box>
+                    <Box sx={{ mt: 0.5 }}>
+                      <LinearProgress variant="determinate" value={Math.min(100, Math.max(0, (Number(ficha.pontosEnergia || 0) / pontosEnergiaMax) * 100))} sx={{ height: 6, borderRadius: 3, bgcolor: '#facc1522', '& .MuiLinearProgress-bar': { bgcolor: '#facc15' } }} />
                     </Box>
                   </Grid>
                   <Grid item xs={12} sm={4}>
@@ -4557,9 +4712,11 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                         sx={{ width: 80, '& fieldset': { border: 'none' } }}
                       />
                     </Box>
+                    <Box sx={{ mt: 0.5 }}>
+                      <LinearProgress variant="determinate" value={Math.min(100, Math.max(0, (Number(ficha.armadura || 0) / 50) * 100))} sx={{ height: 6, borderRadius: 3, bgcolor: '#00e0ff22', '& .MuiLinearProgress-bar': { bgcolor: '#00e0ff' } }} />
+                    </Box>
                   </Grid>
 
-                  {/* 🟢 FOME E SEDE (BLOQUEADO PARA JOGADORES) */}
                   <Grid item xs={6} sm={6}>
                     <Typography component="div" sx={{ color: '#ff9800', fontWeight: 800, fontSize: '0.75rem', mb: 0.5, letterSpacing: 0.5 }}>🍖 FOME</Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,152,0,0.3)', borderRadius: 2, p: 0.5 }}>
@@ -4572,13 +4729,13 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                           setFicha(prev => ({ ...prev, fome: valor }));
                           await setDoc(doc(db, "fichas", fichaId), { fome: valor }, { merge: true });
                         }}
-                        InputProps={{ 
-                          readOnly: !isMestre,
-                          sx: { color: (ficha.fome ?? 100) === 0 ? '#ef4444' : '#ff9800', fontSize: '0.85rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } 
-                        }}
+                        InputProps={{ readOnly: !isMestre, sx: { color: (ficha.fome ?? 100) === 0 ? '#ef4444' : '#ff9800', fontSize: '0.85rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } }}
                         sx={{ width: 75, '& fieldset': { border: 'none' } }}
                       />
                       <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>%</Typography>
+                    </Box>
+                    <Box sx={{ mt: 0.5 }}>
+                      <LinearProgress variant="determinate" value={Math.min(100, Math.max(0, Number(ficha.fome ?? 100)))} sx={{ height: 6, borderRadius: 3, bgcolor: '#ff980022', '& .MuiLinearProgress-bar': { bgcolor: '#ff9800' } }} />
                     </Box>
                   </Grid>
                   <Grid item xs={6} sm={6}>
@@ -4593,13 +4750,13 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                           setFicha(prev => ({ ...prev, sede: valor }));
                           await setDoc(doc(db, "fichas", fichaId), { sede: valor }, { merge: true });
                         }}
-                        InputProps={{ 
-                          readOnly: !isMestre,
-                          sx: { color: '#3b82f6', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } 
-                        }}
+                        InputProps={{ readOnly: !isMestre, sx: { color: '#3b82f6', fontSize: '0.9rem', fontWeight: 'bold', height: 30, '& input': { textAlign: 'center' } } }}
                         sx={{ width: 75, '& fieldset': { border: 'none' } }}
                       />
                       <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold', flex: 1, textAlign: 'center' }}>%</Typography>
+                    </Box>
+                    <Box sx={{ mt: 0.5 }}>
+                      <LinearProgress variant="determinate" value={Math.min(100, Math.max(0, Number(ficha.sede ?? 100)))} sx={{ height: 6, borderRadius: 3, bgcolor: '#3b82f622', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} />
                     </Box>
                   </Grid>
                 </Grid>
@@ -4634,8 +4791,8 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
   Descansar
 </Button>
                 </Box>
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Paper>
     {/* ATRIBUTOS e PERÍCIAS continuam aqui embaixo, sem alteração */}
             <Box mt={2} sx={{
@@ -5563,122 +5720,167 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
         onClose={() => setModalDefeitosOpen(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{ sx: { bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 3 } }}
       >
-        <DialogTitle>Selecionar Defeitos</DialogTitle>
-        <DialogContent sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
-  <Box sx={{ mb: 3, p: 2, bgcolor: '#16213e', borderRadius: 2 }}>
-    <Typography variant="h6" sx={{ color: '#00e0ff' }}>
-      Pontos de Perícia Extras: +{pontosPericiaExtras}
-    </Typography>
-  </Box>
-  
-  {[1, 2, 3].map(nivel => (
-    <Box key={nivel} sx={{ mb: 3 }}>
-      <Typography 
-        variant="h6" 
-        sx={{ 
-          color: nivel === 1 ? '#4caf50' : nivel === 2 ? '#ff9800' : '#f44336',
-          fontWeight: 'bold',
-          mb: 1,
-          borderBottom: '2px solid',
-          borderColor: nivel === 1 ? '#4caf50' : nivel === 2 ? '#ff9800' : '#f44336',
-          pb: 1
-        }}
-      >
-        Nível {nivel} {nivel === 3 && '(Bloqueia Perícia)'}
-      </Typography>
-      
-      <Grid container spacing={1}>
-        {DEFEITOS_DISPONIVEIS.filter(d => d.nivel === nivel).map(defeito => {
-          const isSelected = defeitosSelecionados.includes(defeito.nome);
-          const isBlocked = defeito.bloqueia && 
-            defeitosSelecionados.some(d => {
-              const info = DEFEITOS_DISPONIVEIS.find(def => def.nome === d);
-              return info?.bloqueia === defeito.bloqueia;
-            });
-          
-          return (
-            <Grid item xs={12} sm={6} key={defeito.nome}>
-              <Paper 
+        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <span style={{ fontSize: '1.5rem' }}>🎭</span>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Selecionar Defeitos</Typography>
+          </Box>
+          <Chip 
+            label={`+${pontosPericiaExtras} P.P Extras`} 
+            sx={{ bgcolor: 'rgba(0, 224, 255, 0.15)', color: '#00e0ff', fontWeight: 'bold', border: '1px solid #00e0ff44' }} 
+          />
+        </DialogTitle>
+        
+        <DialogContent sx={{ bgcolor: '#0f172a', color: '#fff', p: 3 }}>
+          {[1, 2, 3].map(nivel => (
+            <Box key={nivel} sx={{ mb: 4 }}>
+              <Typography 
+                variant="h6" 
                 sx={{ 
-                  p: 1.5, 
-                  bgcolor: isSelected ? '#1e3a5f' : '#0f172a',
-                  border: isSelected ? '1px solid #00e0ff' : '1px solid #333',
-                  borderRadius: 1,
-                  transition: 'all 0.2s',
-                  '&:hover': { bgcolor: '#1e293b' }
+                  color: nivel === 1 ? '#4caf50' : nivel === 2 ? '#ff9800' : '#f44336',
+                  fontWeight: 900,
+                  mb: 2,
+                  borderBottom: `2px solid ${nivel === 1 ? '#4caf50' : nivel === 2 ? '#ff9800' : '#f44336'}33`,
+                  pb: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1
                 }}
               >
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={isSelected}
-                      disabled={isBlocked && !isSelected}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setDefeitosSelecionados([...defeitosSelecionados, defeito.nome]);
-                        } else {
-                          setDefeitosSelecionados(defeitosSelecionados.filter(d => d !== defeito.nome));
-                        }
-                      }}
-                      sx={{ color: '#00e0ff' }}
-                    />
-                  }
-                  label={
-                    <Box sx={{ ml: 1 }}>
-                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#fff' }}>
-                        {defeito.nome}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: '#00e0ff' }}>
-                        +{defeito.pontos} P.P
-                      </Typography>
-                      {defeito.bloqueia && (
-                        <Typography variant="caption" sx={{ color: '#f44336', display: 'block' }}>
-                          Bloqueia: {LABEL_MAP[defeito.bloqueia]}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                />
-              </Paper>
-            </Grid>
-          );
-        })}
-      </Grid>
-      
-      <Divider sx={{ mt: 2, bgcolor: '#333' }} />
-    </Box>
-  ))}
-</DialogContent>
-        <DialogActions>
-  <Button onClick={() => {
-    setDefeitosSelecionados([]);
-  }}>
-    Limpar Seleção
-  </Button>
-  <Button onClick={() => setModalDefeitosOpen(false)}>
-    Cancelar
-  </Button>
-  <Button 
-    variant="contained"
-    color="error"
-    onClick={async () => {
-      await salvarDefeitos([]);
-      setModalDefeitosOpen(false);
-    }}
-  >
-    LIMPAR TUDO
-  </Button>
-  <Button 
-    variant="contained"
-    onClick={async () => {
-      await salvarDefeitos(defeitosSelecionados);
-      setModalDefeitosOpen(false);
-    }}
-  >
-    Salvar Defeitos
-  </Button>
-</DialogActions>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: nivel === 1 ? '#4caf50' : nivel === 2 ? '#ff9800' : '#f44336' }} />
+                Nível {nivel} {nivel === 3 && '(Bloqueia Perícia)'}
+              </Typography>
+              
+              <Grid container spacing={2}>
+                {DEFEITOS_DISPONIVEIS.filter(d => d.nivel === nivel).map(defeito => {
+                  const isSelected = defeitosSelecionados.includes(defeito.nome) || 
+                                     defeitosSelecionados.some(d => d.startsWith(defeito.nome + " de ") || d.startsWith(defeito.nome + " em ") || d.startsWith(defeito.nome + " a "));
+                  const isBlocked = defeito.bloqueia && 
+                    defeitosSelecionados.some(d => {
+                      const info = DEFEITOS_DISPONIVEIS.find(def => d.startsWith(def.nome));
+                      return info?.bloqueia === defeito.bloqueia;
+                    });
+                  
+                  // Filtra a variação atual se já estiver salva
+                  const variacaoAtual = defeitosSelecionados.find(d => d.startsWith(defeito.nome + " de ") || d.startsWith(defeito.nome + " em ") || d.startsWith(defeito.nome + " a "));
+
+                  return (
+                    <Grid item xs={12} key={defeito.nome}>
+                      <Paper 
+                        sx={{ 
+                          p: 2, 
+                          bgcolor: isSelected ? 'rgba(30, 58, 95, 0.4)' : 'rgba(15, 23, 42, 0.6)',
+                          border: isSelected ? '1px solid #00e0ff' : '1px solid #334155',
+                          borderRadius: 2,
+                          transition: 'all 0.2s',
+                          boxShadow: isSelected ? '0 0 15px rgba(0, 224, 255, 0.1)' : 'none',
+                          '&:hover': { bgcolor: isSelected ? 'rgba(30, 58, 95, 0.5)' : 'rgba(30, 41, 59, 0.8)', borderColor: '#00e0ff88' }
+                        }}
+                      >
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={isSelected}
+                              disabled={isBlocked && !isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  if (defeito.variacoes && defeito.variacoes.length > 0) {
+                                    setDefeitosSelecionados([...defeitosSelecionados, `${defeito.nome} de ${defeito.variacoes[0]}`]);
+                                  } else {
+                                    setDefeitosSelecionados([...defeitosSelecionados, defeito.nome]);
+                                  }
+                                } else {
+                                  setDefeitosSelecionados(defeitosSelecionados.filter(d => !d.startsWith(defeito.nome)));
+                                }
+                              }}
+                              sx={{ color: '#00e0ff', '&.Mui-checked': { color: '#00e0ff' } }}
+                            />
+                          }
+                          label={
+                            <Box sx={{ ml: 1 }}>
+                              <Typography variant="body1" sx={{ fontWeight: 'bold', color: isSelected ? '#00e0ff' : '#fff', fontSize: '1.05rem' }}>
+                                {defeito.nome}
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.5 }}>
+                                +{defeito.pontos} P.P {defeito.bloqueia && `| Bloqueia: ${LABEL_MAP[defeito.bloqueia]}`}
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                        
+                        {/* SELEÇÃO DE VARIAÇÃO */}
+                        {isSelected && defeito.variacoes && defeito.variacoes.length > 0 && (
+                          <Box sx={{ mt: 2, pl: 5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                            {defeito.variacoes.map(variacao => {
+                              const nomeCompleto = `${defeito.nome} de ${variacao}`;
+                              const isVariacaoSelecionada = defeitosSelecionados.includes(nomeCompleto);
+                              
+                              return (
+                                <Chip
+                                  key={variacao}
+                                  label={variacao}
+                                  size="small"
+                                  onClick={() => {
+                                    // Remove a versão antiga e adiciona a nova
+                                    const novosDefeitos = defeitosSelecionados.filter(d => !d.startsWith(defeito.nome));
+                                    setDefeitosSelecionados([...novosDefeitos, nomeCompleto]);
+                                  }}
+                                  sx={{
+                                    bgcolor: isVariacaoSelecionada ? '#00e0ff' : 'rgba(0, 224, 255, 0.1)',
+                                    color: isVariacaoSelecionada ? '#000' : '#00e0ff',
+                                    fontWeight: isVariacaoSelecionada ? 'bold' : 'normal',
+                                    border: isVariacaoSelecionada ? '1px solid #00e0ff' : '1px solid #00e0ff44',
+                                    cursor: 'pointer',
+                                    '&:hover': { bgcolor: isVariacaoSelecionada ? '#00e0ff' : 'rgba(0, 224, 255, 0.2)' }
+                                  }}
+                                />
+                              );
+                            })}
+                          </Box>
+                        )}
+                      </Paper>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #334155', bgcolor: '#1a1a2e' }}>
+          <Button 
+            onClick={() => setDefeitosSelecionados([])} 
+            sx={{ color: '#94a3b8', '&:hover': { color: '#fff' } }}
+          >
+            Limpar Seleção
+          </Button>
+          <Box sx={{ flex: 1 }} />
+          <Button onClick={() => setModalDefeitosOpen(false)} sx={{ color: '#94a3b8' }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained"
+            color="error"
+            onClick={async () => {
+              await salvarDefeitos([]);
+              setModalDefeitosOpen(false);
+            }}
+            sx={{ fontWeight: 'bold' }}
+          >
+            LIMPAR TUDO
+          </Button>
+          <Button 
+            variant="contained"
+            onClick={async () => {
+              await salvarDefeitos(defeitosSelecionados);
+              setModalDefeitosOpen(false);
+            }}
+            sx={{ bgcolor: '#22c55e', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#16a34a' } }}
+          >
+            Salvar Defeitos
+          </Button>
+        </DialogActions>
       </Dialog>
       {/* Modal Calendário */}
       <Dialog 
@@ -5756,190 +5958,372 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
         </DialogActions>
       </Dialog>
       {/* Modal Dinheiro */}
-      <Dialog open={modalDinheiroOpen} onClose={() => setModalDinheiroOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1a1a2e', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-  💳 Minhas Carteiras 💰
-  <Box>
-    <Button variant="contained" size="small" onClick={async () => {
-  // Recarrega a lista de jogadores antes de abrir
-  const col = collection(db, "fichas");
-  const snapshot = await getDocs(col);
-  const jogadores = [];
-  
-  const fichaAtual = await getDoc(doc(db, "fichas", fichaId));
-  if (fichaAtual.exists()) {
-    jogadores.push({
-      id: fichaId,
-      nome: fichaAtual.data().nome || "Você mesmo",
-      carteiras: fichaAtual.data().carteiras || []
-    });
-  }
-  
-  snapshot.forEach((doc) => {
-    if (doc.id !== fichaId) {
-      jogadores.push({
-        id: doc.id,
-        nome: doc.data().nome || doc.id,
-        carteiras: doc.data().carteiras || []
-      });
-    }
-  });
-  
-  setListaJogadores(jogadores);
-  setModalTransferenciaOpen(true);
-}} sx={{ mr: 1, bgcolor: '#1976d2' }}>
-  🔄 Transferir Dinheiro
-</Button>
-    
-    <Button variant="contained" size="small" onClick={() => setModalPagamentoOpen(true)} sx={{ bgcolor: '#ff9800' }}>
-      💸 Pagar Conta
-    </Button>
-  </Box>
-</DialogTitle>
-        <DialogContent sx={{ bgcolor: '#1a1a2e', color: '#fff' }}>
-          <Box sx={{ mb: 2, display: 'flex', gap: 1 }}>
-            <TextField
-  size="small"
-  placeholder="📝 Ex: Bolso, Banco Hollow..."
-  value={novaCarteiraNome}
-  onChange={(e) => setNovaCarteiraNome(e.target.value)}
-  sx={{ 
-    flex: 1, 
-    bgcolor: '#0f172a', 
-    borderRadius: 1,
-    '& input::placeholder': {
-      color: '#666',
-      fontStyle: 'italic',
-      fontSize: '0.85rem'
-    }
-  }}
-  InputProps={{ style: { color: '#fff' } }}
-/>
-            <Button variant="contained" onClick={() => {
-              if (novaCarteiraNome.trim()) {
-                setCarteiras([...carteiras, { nome: novaCarteiraNome, valor: 0 }]);
-                setNovaCarteiraNome("");
-              }
-            }} sx={{ bgcolor: '#1976d2' }}>➕ Adicionar Carteira</Button>
+      <Dialog 
+        open={modalDinheiroOpen} 
+        onClose={() => setModalDinheiroOpen(false)} 
+        maxWidth="md" 
+        fullWidth 
+        PaperProps={{ 
+          sx: { 
+            bgcolor: 'rgba(15, 23, 42, 0.95)', 
+            backdropFilter: 'blur(12px)',
+            borderRadius: 4, 
+            border: '1px solid rgba(34, 197, 94, 0.3)',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.5), inset 0 0 30px rgba(34,197,94,0.05)',
+            backgroundImage: 'radial-gradient(circle at top right, rgba(34, 197, 94, 0.1), transparent 40%)'
+          } 
+        }}
+      >
+        <DialogTitle sx={{ 
+          color: '#fff', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          pb: 2
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ 
+              width: 40, height: 40, borderRadius: 2, 
+              bgcolor: 'rgba(34, 197, 94, 0.15)', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '1px solid rgba(34, 197, 94, 0.3)'
+            }}>
+              <span style={{ fontSize: '1.5rem' }}>💳</span>
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 900, letterSpacing: 0.5 }}>Minhas Carteiras</Typography>
+              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Gerencie seus fundos e transferências</Typography>
+            </Box>
           </Box>
-                                {(Array.isArray(carteiras) ? carteiras : []).map((c, index) => (
-            <Paper key={index} sx={{ p: 2, mb: 1, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 'bold' }}>👛 {c.nome}</Typography>
-                <Box>
-                  <IconButton size="small" onClick={() => {
-  // 🟢 Bloqueia renomear "Bolso"
-  if (c.nome === "Bolso") {
-    alert("🔒 A carteira 'Bolso' é permanente e não pode ser renomeada!");
-    return;
-  }
-  const novoNome = prompt("✏️ Novo nome:", c.nome);
-  if (novoNome && novoNome.trim() && novoNome !== "Bolso") {
-    const novasCarteiras = [...carteiras];
-    novasCarteiras[index].nome = novoNome.trim();
-    setCarteiras(novasCarteiras);
-  } else if (novoNome === "Bolso") {
-    alert("🔒 Esse nome é reservado e não pode ser usado para outra carteira.");
-  }
-}}>✏️</IconButton>
-                  <IconButton size="small" onClick={() => {
-  const carteiraParaExcluir = carteiras[index];
-
-  // 🟢 Bloqueia excluir "Bolso"
-  if (carteiraParaExcluir.nome === "Bolso") {
-    alert("🔒 A carteira 'Bolso' é permanente e não pode ser excluída!");
-    return;
-  }
-
-  const outrasCarteiras = carteiras.filter((_, i) => i !== index);
-
-  if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length > 0) {
-    const destino = prompt(
-      `⚠️ A carteira "${carteiraParaExcluir.nome}" tem 💰 ${carteiraParaExcluir.valor}.\n` +
-      `Digite o nome da carteira para transferir o saldo:\n` +
-      `Opções: ${outrasCarteiras.map(c => c.nome).join(', ')}`
-    );
-
-    if (destino) {
-      const carteiraDestino = outrasCarteiras.find(c =>
-        c.nome.toLowerCase() === destino.toLowerCase()
-      );
-
-      if (carteiraDestino) {
-        const novasCarteiras = outrasCarteiras.map(c =>
-          c.nome === carteiraDestino.nome
-            ? { ...c, valor: c.valor + carteiraParaExcluir.valor }
-            : c
-        );
-        setCarteiras(novasCarteiras);
-      } else {
-        alert('❌ Carteira não encontrada!');
-        return;
-      }
-    } else {
-      return;
-    }
-  } else if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length === 0) {
-    alert('❌ Não é possível excluir a última carteira com dinheiro!');
-    return;
-  } else {
-    setCarteiras(outrasCarteiras);
-  }
-}}>🗑️</IconButton>
-                </Box>
-              </Box>
-              <TextField
-  fullWidth
-  size="small"
-  type="number"
-  value={c.valor}
-  disabled={!isMestre} // 🔴 Apenas mestre pode editar
-  onChange={(e) => {
-    if (!isMestre) return; // Segurança extra
-    const novasCarteiras = [...carteiras];
-    novasCarteiras[index].valor = Number(e.target.value);
-    setCarteiras(novasCarteiras);
-  }}
-  InputProps={{ 
-    startAdornment: <InputAdornment position="start">💰</InputAdornment>, 
-    style: { color: '#fff' },
-    readOnly: !isMestre // Remove setinhas para jogadores
-  }}
-  sx={{ 
-    bgcolor: '#1a1a2e',
-    '& input[type=number]::-webkit-inner-spin-button': {
-      display: isMestre ? 'block' : 'none' // Esconde setinhas para jogadores
-    }
-  }}
-/>
-            </Paper>
-          ))}
-          {carteiras.length > 0 && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: '#16213e', borderRadius: 1, border: '1px solid #00e0ff66', boxShadow: '0 0 15px rgba(0,224,255,0.1)' }}>
-              <Typography variant="h6" sx={{ color: '#00e0ff' }}>
-                💎 TOTAL GERAL: 💰 {carteiras.reduce((total, c) => total + (c.valor || 0), 0)}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button 
+              variant="outlined" 
+              size="small" 
+              startIcon={<span>🔄</span>}
+              onClick={() => { 
+                const carregar = async () => {
+                  const col = collection(db, "fichas"); const snapshot = await getDocs(col); const jogadores = [];
+                  const fichaAtual = await getDoc(doc(db, "fichas", fichaId));
+                  if (fichaAtual.exists()) jogadores.push({ id: fichaId, nome: fichaAtual.data().nome || "Você mesmo", carteiras: fichaAtual.data().carteiras || [] });
+                  snapshot.forEach((doc) => { if (doc.id !== fichaId) jogadores.push({ id: doc.id, nome: doc.data().nome || doc.id, carteiras: doc.data().carteiras || [] }); });
+                  setListaJogadores(jogadores); setModalTransferenciaOpen(true);
+                }; carregar();
+              }} 
+              sx={{ borderColor: '#3b82f6', color: '#3b82f6', '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.1)' } }}
+            >
+              Transferir
+            </Button>
+            <Button 
+              variant="outlined" 
+              size="small" 
+              startIcon={<span>💸</span>}
+              onClick={() => setModalPagamentoOpen(true)} 
+              sx={{ borderColor: '#ff9800', color: '#ff9800', '&:hover': { bgcolor: 'rgba(255, 152, 0, 0.1)' } }}
+            >
+              Pagar
+            </Button>
+          </Box>
+        </DialogTitle>
+        
+        <DialogContent sx={{ p: 3 }}>
+          {/* TOTAL GERAL */}
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            mb: 4,
+            p: 3,
+            bgcolor: 'rgba(0,0,0,0.4)',
+            borderRadius: 3,
+            border: '1px solid rgba(34, 197, 94, 0.2)',
+            background: 'linear-gradient(90deg, rgba(34,197,94,0.1) 0%, transparent 100%)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            <Box sx={{ position: 'absolute', right: -20, top: -20, fontSize: '8rem', opacity: 0.03 }}>$</Box>
+            <Box>
+              <Typography variant="overline" sx={{ color: '#94a3b8', letterSpacing: 2, fontWeight: 700 }}>Saldo Total Acumulado</Typography>
+              <Typography variant="h3" sx={{ color: '#4caf50', fontWeight: 900, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <span style={{ fontSize: '1.5rem', color: '#22c55e' }}>$</span>
+                {(carteiras || []).reduce((total, c) => total + (Number(c.valor) || 0), 0).toLocaleString('pt-BR')}
               </Typography>
             </Box>
+            <Button 
+              variant="contained" 
+              startIcon={<AddIcon />} 
+              onClick={() => { setNovaCarteiraNome(""); setNovoCarteiraIcone("👛"); setModalNovaCarteiraOpen(true); }} 
+              sx={{ 
+                bgcolor: '#22c55e', 
+                color: '#000', 
+                fontWeight: 'bold',
+                borderRadius: 2,
+                boxShadow: '0 4px 15px rgba(34, 197, 94, 0.4)',
+                '&:hover': { bgcolor: '#16a34a', transform: 'translateY(-2px)', boxShadow: '0 6px 20px rgba(34, 197, 94, 0.6)' },
+                transition: 'all 0.2s'
+              }}
+            >
+              Nova Carteira
+            </Button>
+          </Box>
+
+          {/* LISTA DE CARTEIRAS (ESTILO CARTÃO) */}
+          <Grid container spacing={3}>
+            {(Array.isArray(carteiras) ? carteiras : []).map((c, index) => (
+              <Grid item xs={12} sm={6} key={index}>
+                <Paper sx={{ 
+                  position: 'relative',
+                  p: 3, 
+                  bgcolor: '#0f172a', 
+                  borderRadius: 4, 
+                  border: '1px solid rgba(255,255,255,0.1)', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  gap: 2,
+                  overflow: 'hidden',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                  '&:hover': { 
+                    borderColor: '#22c55e', 
+                    transform: 'translateY(-4px)', 
+                    boxShadow: '0 10px 30px rgba(34,197,94,0.15)',
+                    '& .action-buttons': { opacity: 1, transform: 'translateY(0)' }
+                  } 
+                }}>
+                  {/* Linha Decorativa */}
+                  <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'linear-gradient(90deg, #22c55e, #00e0ff)' }} />
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Box sx={{ 
+                      fontSize: '2.5rem', 
+                      lineHeight: 1, 
+                      p: 1.5,
+                      bgcolor: 'rgba(255,255,255,0.03)',
+                      borderRadius: 3,
+                      border: '1px solid rgba(255,255,255,0.05)'
+                    }}>
+                      {c.icone || '👛'}
+                    </Box>
+                    
+                    {/* Botões de Ação no Hover */}
+                    <Box className="action-buttons" sx={{ 
+                      display: 'flex', 
+                      gap: 1, 
+                      opacity: 0, 
+                      transform: 'translateY(-10px)',
+                      transition: 'all 0.2s ease'
+                    }}>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => setEditandoCarteira({ index, icone: c.icone || '👛', nome: c.nome, valor: c.valor })} 
+                        sx={{ color: '#00e0ff', bgcolor: 'rgba(0, 224, 255, 0.1)', '&:hover': { bgcolor: 'rgba(0, 224, 255, 0.2)' } }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => {
+                          const carteiraParaExcluir = carteiras[index];
+                          if (carteiraParaExcluir.nome === "Bolso") { alert("🔒 A carteira 'Bolso' é permanente!"); return; }
+                          const outrasCarteiras = carteiras.filter((_, i) => i !== index);
+                          if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length > 0) {
+                            const destino = prompt(`⚠️ A carteira "${carteiraParaExcluir.nome}" tem $ ${carteiraParaExcluir.valor}.\nDigite o nome da carteira para transferir o saldo:\nOpções: ${outrasCarteiras.map(c => c.nome).join(', ')}`);
+                            if (destino) {
+                              const carteiraDestino = outrasCarteiras.find(c => c.nome.toLowerCase() === destino.toLowerCase());
+                              if (carteiraDestino) {
+                                const novasCarteiras = outrasCarteiras.map(c => c.nome === carteiraDestino.nome ? { ...c, valor: Number(c.valor || 0) + Number(carteiraParaExcluir.valor) } : c);
+                                setCarteiras(novasCarteiras);
+                              } else { alert('❌ Carteira não encontrada!'); return; }
+                            } else { return; }
+                          } else if (carteiraParaExcluir.valor > 0 && outrasCarteiras.length === 0) {
+                            alert('❌ Não é possível excluir a última carteira com dinheiro!'); return;
+                          } else { setCarteiras(outrasCarteiras); }
+                        }} 
+                        sx={{ color: '#ef4444', bgcolor: 'rgba(239, 68, 68, 0.1)', '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.2)' } }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </Box>
+                  
+                  <Box sx={{ mt: 1 }}>
+                    <Typography sx={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: 1 }}>
+                      {c.nome}
+                    </Typography>
+                    <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: '1.8rem', display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
+                      <span style={{ color: '#4caf50', fontSize: '1.2rem' }}>$</span>
+                      {Number(c.valor || 0).toLocaleString('pt-BR')}
+                    </Typography>
+                  </Box>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+        </DialogContent>
+        
+        <DialogActions sx={{ p: 3, borderTop: '1px solid rgba(255,255,255,0.05)', bgcolor: 'rgba(0,0,0,0.2)' }}>
+          <Button onClick={() => setModalDinheiroOpen(false)} sx={{ color: '#94a3b8', '&:hover': { color: '#fff' } }}>
+            Fechar
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={async () => {
+              const carteirasFinal = Array.isArray(carteiras) 
+                ? carteiras.some((c) => c.nome === "Bolso") 
+                  ? carteiras.map(c => ({ ...c, icone: c.icone || "👛" }))
+                  : [{ nome: "Bolso", valor: 0, icone: "👛" }, ...carteiras.map(c => ({ ...c, icone: c.icone || "👛" }))]
+                : [{ nome: "Bolso", valor: 0, icone: "👛" }];
+
+              const ref = doc(db, "fichas", fichaId);
+              await setDoc(ref, { carteiras: carteirasFinal }, { merge: true });
+              setFicha(p => ({ ...p, carteiras: carteirasFinal }));
+              setCarteiras(carteirasFinal);
+              setModalDinheiroOpen(false);
+            }} 
+            sx={{ 
+              bgcolor: '#22c55e', 
+              color: '#000', 
+              fontWeight: 'bold',
+              px: 4,
+              borderRadius: 2,
+              boxShadow: '0 4px 15px rgba(34, 197, 94, 0.3)',
+              '&:hover': { bgcolor: '#16a34a', transform: 'translateY(-2px)' },
+              transition: 'all 0.2s'
+            }}
+          >
+            💾 Salvar e Fechar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal Nova Carteira / Editar Carteira */}
+      <Dialog 
+        open={modalNovaCarteiraOpen || editandoCarteira !== null} 
+        onClose={() => { setModalNovaCarteiraOpen(false); setEditandoCarteira(null); }} 
+        maxWidth="xs" 
+        fullWidth 
+        PaperProps={{ 
+          sx: { 
+            bgcolor: '#0f172a', 
+            borderRadius: 4, 
+            border: '1px solid rgba(34, 197, 94, 0.4)',
+            backgroundImage: 'linear-gradient(180deg, rgba(34, 197, 94, 0.05) 0%, transparent 100%)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
+          } 
+        }}
+      >
+        <DialogTitle sx={{ color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 1 }}>
+          {editandoCarteira ? <EditIcon sx={{ color: '#00e0ff' }} /> : <AddIcon sx={{ color: '#22c55e' }} />}
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            {editandoCarteira ? 'Editar Carteira' : 'Nova Carteira'}
+          </Typography>
+        </DialogTitle>
+        
+        <DialogContent sx={{ pt: 3 }}>
+          <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, mb: 1, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Escolha um Ícone
+          </Typography>
+          <Box sx={{ 
+            display: 'flex', 
+            gap: 1, 
+            flexWrap: 'wrap', 
+            mb: 3, 
+            p: 1.5, 
+            bgcolor: 'rgba(0,0,0,0.3)', 
+            borderRadius: 3, 
+            border: '1px solid rgba(255,255,255,0.05)' 
+          }}>
+            {EMOJIS_CARTEIRA.map(e => (
+              <IconButton 
+                key={e} 
+                onClick={() => editandoCarteira ? setEditandoCarteira(prev => ({ ...prev, icone: e })) : setNovoCarteiraIcone(e)} 
+                sx={{ 
+                  fontSize: '1.5rem', 
+                  border: (editandoCarteira?.icone === e || (!editandoCarteira && novoCarteiraIcone === e)) ? '2px solid #22c55e' : '2px solid transparent', 
+                  borderRadius: 2,
+                  bgcolor: (editandoCarteira?.icone === e || (!editandoCarteira && novoCarteiraIcone === e)) ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                  transition: 'all 0.2s',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+                }}
+              >
+                {e}
+              </IconButton>
+            ))}
+          </Box>
+          
+          <TextField 
+            label="Nome da Carteira" 
+            fullWidth 
+            value={editandoCarteira ? editandoCarteira.nome : novaCarteiraNome} 
+            onChange={e => editandoCarteira ? setEditandoCarteira(prev => ({ ...prev, nome: e.target.value })) : setNovaCarteiraNome(e.target.value)} 
+            sx={{ 
+              mb: 2, 
+              '& .MuiOutlinedInput-root': {
+                bgcolor: 'rgba(0,0,0,0.2)',
+                '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                '&:hover fieldset': { borderColor: '#22c55e' },
+                '&.Mui-focused fieldset': { borderColor: '#22c55e' },
+              },
+              input: { color: '#fff', fontWeight: 'bold' } 
+            }} 
+            InputLabelProps={{ sx: { color: '#94a3b8' } }} 
+          />
+          
+          {editandoCarteira && (
+            <TextField 
+              label="Valor" 
+              type="number" 
+              fullWidth 
+              value={editandoCarteira.valor} 
+              onChange={e => setEditandoCarteira(prev => ({ ...prev, valor: Number(e.target.value) }))} 
+              disabled={!isMestre} 
+              InputProps={{ 
+                startAdornment: <InputAdornment position="start" sx={{ color: '#4caf50', fontWeight: 'bold' }}>$</InputAdornment>
+              }}
+              sx={{ 
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'rgba(0,0,0,0.2)',
+                  '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                  '&:hover fieldset': { borderColor: '#22c55e' },
+                  '&.Mui-focused fieldset': { borderColor: '#22c55e' },
+                },
+                input: { color: '#4caf50', fontWeight: 'bold', fontSize: '1.1rem' } 
+              }} 
+              InputLabelProps={{ sx: { color: '#94a3b8' } }} 
+            />
           )}
         </DialogContent>
-        <DialogActions sx={{ bgcolor: '#1a1a2e' }}>
-          <Button onClick={() => setModalDinheiroOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
-          <Button variant="contained" onClick={async () => {
-  // 🟢 Garante que "Bolso" existe antes de salvar
-  const carteirasFinal = Array.isArray(carteiras)
-    ? carteiras.some((c) => c.nome === "Bolso")
-      ? carteiras
-      : [{ nome: "Bolso", valor: 0 }, ...carteiras]
-    : [{ nome: "Bolso", valor: 0 }];
-
-  const ref = doc(db, "fichas", fichaId);
-  await setDoc(ref, { carteiras: carteirasFinal }, { merge: true });
-
-  setFicha(p => ({ ...p, carteiras: carteirasFinal }));
-  setCarteiras(carteirasFinal);
-
-  setModalDinheiroOpen(false);
-}} sx={{ bgcolor: '#2e7d32', fontWeight: 'bold' }}>💾 Salvar Carteiras</Button>
+        
+        <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <Button onClick={() => { setModalNovaCarteiraOpen(false); setEditandoCarteira(null); }} sx={{ color: '#94a3b8' }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={() => {
+              if (editandoCarteira) {
+                const novas = [...carteiras];
+                novas[editandoCarteira.index] = { icone: editandoCarteira.icone, nome: editandoCarteira.nome, valor: editandoCarteira.valor };
+                setCarteiras(novas);
+                setEditandoCarteira(null);
+              } else {
+                if (!novaCarteiraNome.trim()) return alert("Digite um nome!");
+                if (carteiras.some(c => c.nome === novaCarteiraNome && novaCarteiraNome === "Bolso")) return alert("Nome reservado!");
+                setCarteiras([...carteiras, { icone: novoCarteiraIcone, nome: novaCarteiraNome, valor: 0 }]);
+                setNovaCarteiraNome("");
+                setModalNovaCarteiraOpen(false);
+              }
+            }}
+            sx={{ 
+              bgcolor: '#22c55e', 
+              color: '#000', 
+              fontWeight: 'bold',
+              px: 3,
+              '&:hover': { bgcolor: '#16a34a' }
+            }}
+          >
+            Salvar
+          </Button>
         </DialogActions>
       </Dialog>
       {/* Modal Transferência */}
@@ -6552,9 +6936,23 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       onAtualizarItem={atualizarItem}
       onRemoverItem={removerItem}
       onMoverItem={moverItem}
+      onMoverCategoria={moverItemCategoria}
       onAbrirImagem={(src) => { setLightboxSrc(src); setZoom(1); setLightboxOpen(true); }}
       onAbrirEditar={(cat, idx, it) => { setItemEditando({ categoria: cat, index: idx, item: it }); setModalEditarItemOpen(true); }}
       onConsumirItem={consumirItem}
+      onUploadImagemItem={async (cat, idx, file) => {
+        const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
+        const fd = new FormData();
+        fd.append("image", file);
+        try {
+          const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
+          const data = await res.json();
+          if (data?.success) {
+            atualizarItem(cat, idx, "imagem", data.data.url);
+            await setDoc(doc(db, "fichas", fichaId), { [cat]: ficha[cat].map((it, i) => i === idx ? { ...it, imagem: data.data.url } : it) }, { merge: true });
+          }
+        } catch (err) { alert("Erro no upload da imagem."); }
+      }}
       TIPOS_DANO={TIPOS_DANO}
       TIPOS_CONSUMIVEL={TIPOS_CONSUMIVEL}
       TIPOS_INSUMIVEL={TIPOS_INSUMIVEL}
@@ -9541,6 +9939,7 @@ const novosDiversos = [...diversosAtuais, novoItem];
           InputProps={{ sx: { color: '#fff' } }}
           InputLabelProps={{ sx: { color: '#94a3b8' } }}
         />
+        {isMestre && (
         <TextField
           label="Nome Original (deixe vazio se não foi renomeado)"
           fullWidth
@@ -9552,6 +9951,7 @@ const novosDiversos = [...diversosAtuais, novoItem];
           helperText="Se preenchido, o nome aparecerá como 'Nome Editado (Original)'"
           FormHelperTextProps={{ sx: { color: '#64748b' } }}
         />
+        )}
                 <TextField
                   label="Descrição"
                   fullWidth
@@ -9564,6 +9964,7 @@ const novosDiversos = [...diversosAtuais, novoItem];
                 />
 
                 {/* 🟢 SISTEMA DE COMIDA/BEBIDA NO MODAL */}
+                {isMestre && (
                 <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px dashed #334155' }}>
                   <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
                     <FormControlLabel
@@ -9636,6 +10037,7 @@ const novosDiversos = [...diversosAtuais, novoItem];
                     </Grid>
                   )}
                 </Box>
+                )}
               </Box>
             )}
           </DialogContent>

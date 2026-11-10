@@ -98,6 +98,30 @@ const TRACOS_ICONS = {
     "Auris": { icon: "✨", color: "#facc15", desc: "Aurano: Soma Aura com outra perícia em uma ação." }
 };
 
+// 🟢 DICIONÁRIO DE ÍCONES DE DEFEITOS PARA O HUD
+const DEFEITOS_ICONS = {
+  "Fobia": { icon: "😨", color: "#ef4444", desc: "Medo irracional e paralisante." },
+  "Compulsão": { icon: "🔁", color: "#ff9800", desc: "Mania ou ritual obsessivo." },
+  "Cabeça Quente": { icon: "🤬", color: "#ef4444", desc: "Pavio curto e reação explosiva." },
+  "Infâmia": { icon: "👎", color: "#94a3b8", desc: "Reputação manchada." },
+  "Covardia": { icon: "🏃", color: "#facc15", desc: "Foge do perigo a todo custo." },
+  "Paranoia": { icon: "👁️", color: "#a855f7", desc: "Desconfia de tudo e todos." },
+  "Insônia": { icon: "🦉", color: "#a855f7", desc: "Incapaz de dormir." },
+  "Sono Pesado": { icon: "🛌", color: "#3b82f6", desc: "Dorme como uma pedra." },
+  "Sonambulismo": { icon: "🚶", color: "#94a3b8", desc: "Anda dormindo." },
+  "Alergia": { icon: "🤧", color: "#22c55e", desc: "Reação alérgica severa." },
+  "Vício": { icon: "🚬", color: "#facc15", desc: "Dependência física ou psicológica." },
+  "Sadismo": { icon: "🩸", color: "#ef4444", desc: "Prazer mórbido no sofrimento alheio." },
+  "Amnésia": { icon: "❓", color: "#94a3b8", desc: "Esqueceu parte ou todo o passado." },
+  "Honesto": { icon: "🫡", color: "#00e0ff", desc: "Incapaz de mentir." },
+  "7 Pecados Capitais": { icon: "😈", color: "#ef4444", desc: "Personificação de um pecado." },
+  "5 Sentidos": { icon: "👁️", color: "#00e0ff", desc: "Perda de um dos sentidos." },
+  "Enfermo": { icon: "🤒", color: "#22c55e", desc: "Doença crônica ou debilitante." },
+  "Deficiência": { icon: "🦽", color: "#facc15", desc: "Limitação física severa." },
+  "Alucinação": { icon: "🌀", color: "#a855f7", desc: "Vê coisas que não existem." },
+  "TDI": { icon: "🎭", color: "#e5e5e5", desc: "Transtorno Dissociativo de Identidade." },
+};
+
 export default function FloatingHUD({ userEmail, openCommerce, closeCommerce }) {
 
   const {
@@ -1449,52 +1473,106 @@ if (!fichasMap) return null;
           </Box>
         );
       })()}
+        {/* 🟢 PAINEL DIREITO 2: TALENTOS (VISÍVEL APENAS PARA O JOGADOR) */}
+        {!isMaster && userEmail !== "mestre@reqviemrpg.com" && (() => {
+          const playerFicha = fichasMap[userEmail] || {};
+          // 🟢 Correção: .split(";").map(t => t.trim()) limpa os espaços extras
+          const talentosList = playerFicha.caracteristicas ? playerFicha.caracteristicas.split(";").map(t => t.trim()).filter(Boolean) : [];
+          if (talentosList.length === 0) return null;
 
-      {/* 🟢 PAINEL DIREITO 2: TALENTOS (VISÍVEL APENAS PARA O JOGADOR) */}
-      {!isMaster && userEmail !== "mestre@reqviemrpg.com" && (() => {
-        const playerFicha = fichasMap[userEmail] || {};
-        // 🟢 Correção: .split(";").map(t => t.trim()) limpa os espaços extras
-        const talentosList = playerFicha.caracteristicas ? playerFicha.caracteristicas.split(";").map(t => t.trim()).filter(Boolean) : [];
-        if (talentosList.length === 0) return null;
+          return (
+            <Box sx={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              transform: `translate(${posicaoLocal.x + tamanho.width + 55}px, ${posicaoLocal.y}px)`,
+              zIndex: 119999,
+              display: "flex",
+              flexDirection: "column",
+              gap: 0.8,
+              pointerEvents: "none",
+              transition: dragging ? "none" : "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+            }}>
+              {talentosList.map(t => {
+                const info = TALENTOS_ICONS[t] || { icon: "❓", color: "#888", desc: "Talento Desconhecido." };
+                return (
+                  <Tooltip key={t} arrow placement="right" title={
+                    <Box sx={{ p: 0.5 }}>
+                      <Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{t}</Typography>
+                      <Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography>
+                    </Box>
+                  }>
+                    <Box sx={{ 
+                      width: 40, height: 40, borderRadius: 2, bgcolor: 'rgba(0,0,0,0.75)', border: `2px solid ${info.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: `0 0 10px ${info.color}88`, pointerEvents: (collapsed || minimizado) ? 'none' : 'auto', cursor: 'help',
+                      // 🟢 Animação de Sugar
+                      opacity: (collapsed || minimizado) ? 0 : 1,
+                      transform: (collapsed || minimizado) ? "translateX(-40px) scale(0.5)" : "translateX(0) scale(1)",
+                      transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}>
+                      {info.icon}
+                    </Box>
+                  </Tooltip>
+                );
+              })}
+            </Box>
+          );
+        })()}
 
-        return (
-          <Box sx={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            transform: `translate(${posicaoLocal.x + tamanho.width + 55}px, ${posicaoLocal.y}px)`,
-            zIndex: 119999,
-            display: "flex",
-            flexDirection: "column",
-            gap: 0.8,
-            pointerEvents: "none",
-            transition: dragging ? "none" : "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-          }}>
-            {talentosList.map(t => {
-              const info = TALENTOS_ICONS[t] || { icon: "❓", color: "#888", desc: "Talento Desconhecido." };
-              return (
-                <Tooltip key={t} arrow placement="right" title={
-                  <Box sx={{ p: 0.5 }}>
-                    <Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{t}</Typography>
-                    <Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{info.desc}</Typography>
-                  </Box>
-                }>
-                  <Box sx={{ 
-                    width: 40, height: 40, borderRadius: 2, bgcolor: 'rgba(0,0,0,0.75)', border: `2px solid ${info.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: `0 0 10px ${info.color}88`, pointerEvents: (collapsed || minimizado) ? 'none' : 'auto', cursor: 'help',
-                    // 🟢 Animação de Sugar
-                    opacity: (collapsed || minimizado) ? 0 : 1,
-                    transform: (collapsed || minimizado) ? "translateX(-40px) scale(0.5)" : "translateX(0) scale(1)",
-                    transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-                  }}>
-                    {info.icon}
-                  </Box>
-                </Tooltip>
-              );
-            })}
-          </Box>
-        );
-      })()}
+        {/* 🟢 PAINEL DIREITO 3: DEFEITOS (VISÍVEL PARA TODOS) */}
+        {(() => {
+          const activeEmail = isMaster ? (hud.turn?.id || currentUserEmail) : currentUserEmail;
+          const playerFicha = fichasMap[activeEmail] || {};
+          const defeitosList = playerFicha.defeitos ? playerFicha.defeitos.split(";").map(d => d.trim()).filter(Boolean) : [];
+          if (defeitosList.length === 0) return null;
 
+          return (
+            <Box sx={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              transform: `translate(${posicaoLocal.x + tamanho.width + 100}px, ${posicaoLocal.y}px)`, // Offset de 100px para ficar ao lado dos outros
+              zIndex: 119999,
+              display: "flex",
+              flexDirection: "column",
+              gap: 0.8,
+              pointerEvents: "none",
+              transition: dragging ? "none" : "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+            }}>
+              {defeitosList.map((defeitoNome, i) => {
+                let info = DEFEITOS_ICONS[defeitoNome];
+                if (!info) {
+                  const baseNome = Object.keys(DEFEITOS_ICONS).find(k => defeitoNome.startsWith(k));
+                  info = DEFEITOS_ICONS[baseNome] || { icon: "❓", color: "#888", desc: "Desconhecido" };
+                }
+                
+                let descricaoFinal = info.desc;
+                if (defeitoNome.includes(" de ")) {
+                  descricaoFinal = `Variação: ${defeitoNome.split(" de ")[1]}. ${info.desc}`;
+                } else if (defeitoNome.includes(" em ")) {
+                  descricaoFinal = `Variação: ${defeitoNome.split(" em ")[1]}. ${info.desc}`;
+                }
+
+                return (
+                  <Tooltip key={`${defeitoNome}-${i}`} arrow placement="right" title={
+                    <Box sx={{ p: 0.5 }}>
+                      <Typography sx={{ fontWeight: 'bold', color: info.color, fontSize: '0.8rem' }}>{defeitoNome}</Typography>
+                      <Typography sx={{ fontSize: '0.7rem', color: '#cbd5e1' }}>{descricaoFinal}</Typography>
+                    </Box>
+                  }>
+                    <Box sx={{ 
+                      width: 40, height: 40, borderRadius: 2, bgcolor: 'rgba(0,0,0,0.75)', border: `2px solid ${info.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: `0 0 10px ${info.color}88`, pointerEvents: (collapsed || minimizado) ? 'none' : 'auto', cursor: 'help',
+                      opacity: (collapsed || minimizado) ? 0 : 1,
+                      transform: (collapsed || minimizado) ? "translateX(-40px) scale(0.5)" : "translateX(0) scale(1)",
+                      transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}>
+                      {info.icon}
+                    </Box>
+                  </Tooltip>
+                );
+              })}
+            </Box>
+          );
+        })()}
       {/* 🟢 MODAL SORTE/AZAR */}
       <Dialog 
         open={sorteAzarOpen} 
