@@ -472,17 +472,17 @@ function onMouseUp() {
   useEffect(() => {
     let rafId = null;
     
-    const handleMouseMove = (e) => {
-      if (redimensionando) {
-        if (rafId) cancelAnimationFrame(rafId);
-        
-        rafId = requestAnimationFrame(() => {
-          const newWidth = Math.max(400, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x));
-          const newHeight = Math.max(400, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y));
-          setTamanho({ width: newWidth, height: newHeight });
-        });
-      }
-    };
+        const handleMouseMove = (e) => {
+          if (redimensionando) {
+            if (rafId) cancelAnimationFrame(rafId);
+            
+            rafId = requestAnimationFrame(() => {
+              const newWidth = Math.max(380, resizeStartRef.current.width + (e.clientX - resizeStartRef.current.x));
+              const newHeight = Math.max(400, resizeStartRef.current.height + (e.clientY - resizeStartRef.current.y));
+              setTamanho({ width: newWidth, height: newHeight });
+            });
+          }
+        };
 
 const handleMouseUp = () => {
   setRedimensionando(false);
@@ -1124,24 +1124,29 @@ if (!fichasMap) return null;
                     </Box>
 
                     {isMaster && (
-                      <Box sx={{ display: "flex", gap: 2, mt: 1, flexWrap: "wrap" }}>
+                      <Box sx={{ display: "flex", gap: 2, mt: 1.5, flexWrap: "wrap", bgcolor: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 2, p: 1.5, boxShadow: 'inset 0 0 15px rgba(168,85,247,0.1)' }}>
                         <FormControl size="small" sx={{ minWidth: 140 }}>
-                          <InputLabel>Fase</InputLabel>
-                          <Select value={hud.world?.phase || "manhã"} label="Fase" onChange={(e) => setWorldPhase(e.target.value)} MenuProps={{ disablePortal: false, container: typeof document !== "undefined" ? document.body : undefined, PaperProps: { sx: { zIndex: 140000, backdropFilter: "blur(4px)", maxHeight: 300, overflowY: 'auto', '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-thumb': { background: 'rgba(255,255,255,0.3)', borderRadius: '10px' } } }, anchorOrigin: { vertical: "bottom", horizontal: "left" }, transformOrigin: { vertical: "top", horizontal: "left" } }}>
+                          <InputLabel sx={{ color: '#e9d5ff' }}>Fase</InputLabel>
+                          <Select value={hud.world?.phase || "manhã"} label="Fase" onChange={(e) => setWorldPhase(e.target.value)} sx={{ color: '#fff', bgcolor: 'rgba(0,0,0,0.3)', ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(168,85,247,0.4)" }, "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#a855f7" } }} MenuProps={{ disablePortal: false, container: typeof document !== "undefined" ? document.body : undefined, PaperProps: { sx: { zIndex: 140000, bgcolor: "rgba(20,20,20,0.95)", backdropFilter: "blur(10px)", color: "#fff", border: "1px solid rgba(168,85,247,0.4)", maxHeight: 300, overflowY: 'auto', '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-thumb': { background: 'rgba(168,85,247,0.5)', borderRadius: '10px' } } }, anchorOrigin: { vertical: "bottom", horizontal: "left" }, transformOrigin: { vertical: "top", horizontal: "left" } }}>
                             {PHASES.map((p) => (<MenuItem key={p} value={p}>{p}</MenuItem>))}
                           </Select>
                         </FormControl>
                         <Box sx={{ display: "flex", gap: 1 }}>
-                          <TextField size="small" label="Dia" type="number" value={hud.world?.day ?? ""} onChange={(e) => handleMudarDia(Number(e.target.value || 1))} sx={{ width: 70 }} />
-                          <TextField size="small" label="Estação" type="number" value={SEASONS.indexOf(hud.world?.season) >= 0 ? SEASONS.indexOf(hud.world?.season) + 1 : 1} onChange={(e) => { let v = Number(e.target.value || 1); if (v < 1) v = 1; if (v > 4) v = 4; setWorldSeasonDayYear({ season: SEASONS[v - 1], day: hud.world?.day, year: hud.world?.year }); }} inputProps={{ min: 1, max: 4 }} sx={{ width: 70 }} />
-                          <TextField size="small" label="Ano" type="number" value={hud.world?.year ?? ""} onChange={(e) => setWorldSeasonDayYear({ season: hud.world?.season, day: hud.world?.day, year: Number(e.target.value || 1) })} sx={{ width: 90 }} />
+                          <TextField size="small" label="Dia" type="number" value={hud.world?.day ?? ""} onChange={(e) => handleMudarDia(Number(e.target.value || 1))} sx={{ width: 70, input: { color: '#fff', fontWeight: 'bold' }, "& .MuiOutlinedInput-root": { bgcolor: 'rgba(0,0,0,0.3)', "& fieldset": { borderColor: "rgba(168,85,247,0.4)" }, "&:hover fieldset": { borderColor: "#a855f7" } } }} InputLabelProps={{ sx: { color: '#e9d5ff' } }} />
+                          <TextField size="small" label="Estação" type="number" value={SEASONS.indexOf(hud.world?.season) >= 0 ? SEASONS.indexOf(hud.world?.season) + 1 : 1} onChange={(e) => { let v = Number(e.target.value || 1); if (v < 1) v = 1; if (v > 4) v = 4; setWorldSeasonDayYear({ season: SEASONS[v - 1], day: hud.world?.day, year: hud.world?.year }); }} inputProps={{ min: 1, max: 4 }} sx={{ width: 70, input: { color: '#fff', fontWeight: 'bold' }, "& .MuiOutlinedInput-root": { bgcolor: 'rgba(0,0,0,0.3)', "& fieldset": { borderColor: "rgba(168,85,247,0.4)" }, "&:hover fieldset": { borderColor: "#a855f7" } } }} InputLabelProps={{ sx: { color: '#e9d5ff' } }} />
+                          <TextField size="small" label="Ano" type="number" value={hud.world?.year ?? ""} onChange={(e) => setWorldSeasonDayYear({ season: hud.world?.season, day: hud.world?.day, year: Number(e.target.value || 1) })} sx={{ width: 90, input: { color: '#fff', fontWeight: 'bold' }, "& .MuiOutlinedInput-root": { bgcolor: 'rgba(0,0,0,0.3)', "& fieldset": { borderColor: "rgba(168,85,247,0.4)" }, "&:hover fieldset": { borderColor: "#a855f7" } } }} InputLabelProps={{ sx: { color: '#e9d5ff' } }} />
                         </Box>
                       </Box>
                     )}
                   </Box>
                   <Divider sx={{ width: "100%", opacity: 0.3 }} />
                   <Box sx={{ width: "100%" }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, textShadow, mb: 0.5 }}>XP</Typography>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8, mb: 1, px: 1.2, py: 0.4, borderRadius: 1.5, background: 'linear-gradient(90deg, rgba(142,202,255,0.28), rgba(0,224,255,0.08))', border: '1px solid rgba(142,202,255,0.45)', boxShadow: 'inset 0 0 10px rgba(142,202,255,0.15), 0 0 14px rgba(142,202,255,0.25)' }}>
+  <span style={{ fontSize: '0.9rem', filter: 'drop-shadow(0 0 4px #8ecaff)' }}>⚡</span>
+  <Typography sx={{ fontWeight: 900, fontSize: '0.7rem', letterSpacing: 2.5, color: '#8ecaff', textShadow: '0 0 8px rgba(142,202,255,0.8)', textTransform: 'uppercase' }}>
+    Experiência
+  </Typography>
+</Box>
                     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                       <Box sx={{ display: "flex", flexDirection: "column", gap: 1, maxHeight: "250px", overflowY: "auto", pr: 1, "&::-webkit-scrollbar": { width: "6px" }, "&::-webkit-scrollbar-track": { background: "rgba(255,255,255,0.1)", borderRadius: "10px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.3)", borderRadius: "10px", "&:hover": { background: "rgba(255,255,255,0.5)" } } }}>
                         {isMaster ? (
@@ -1153,7 +1158,7 @@ if (!fichasMap) return null;
                                   const status = calcularStatus(email);
                                   const corAura = CORES_AURA_HUD[fichasMap[email]?.tipoAura] || '#4caf50';
                                   return (
-                                    <Box key={email} sx={{ width: "100%", mb: 1, pl: 1, borderLeft: `3px solid ${corAura}` }}>
+                                    <Box key={email} sx={{ width: "100%", mb: 1.2, p: 1, px: 1.2, bgcolor: "rgba(0,0,0,0.4)", borderRadius: 1.5, border: `1px solid ${corAura}44`, borderLeft: `3px solid ${corAura}`, boxShadow: `inset 0 0 14px ${corAura}11, 0 2px 8px rgba(0,0,0,0.35)`, position: "relative", overflow: "hidden", transition: "all 0.25s ease", "&:hover": { bgcolor: "rgba(0,0,0,0.5)", boxShadow: `inset 0 0 18px ${corAura}22, 0 4px 12px rgba(0,0,0,0.45), 0 0 16px ${corAura}33` }, "&::before": { content: '""', position: "absolute", top: 0, left: 0, right: 0, height: "1px", background: `linear-gradient(90deg, transparent, ${corAura}, transparent)`, opacity: 0.6 } }}>
                                       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                         <Typography variant="caption" sx={{ textShadow, color: corAura, fontWeight: 'bold' }}>{displayNameFor(email)}</Typography>
                                         {Array.isArray(fichasMap[email]?.efeitosAtivos) && fichasMap[email].efeitosAtivos.length > 0 && (
@@ -1172,7 +1177,7 @@ if (!fichasMap) return null;
                                           <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pePercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.peAtual}/{status.peMax}</Box></Box>
                                         </Box>
                                       )}
-                                      <Box sx={{ position: "relative", mt: 0.5 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: "inherit", textShadow }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
+                                      <Box sx={{ position: "relative", mt: 0.7 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 14, borderRadius: 7, backgroundColor: "rgba(0,0,0,0.55)", border: "1px solid rgba(142,202,255,0.3)", boxShadow: "inset 0 1px 4px rgba(0,0,0,0.7)", "& .MuiLinearProgress-bar": { background: "linear-gradient(90deg, #4a9eff 0%, #8ecaff 50%, #00e0ff 100%)", boxShadow: "0 0 14px rgba(142,202,255,0.9), inset 0 0 6px rgba(255,255,255,0.25)", borderRadius: 7 } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 900, pointerEvents: "none", color: "inherit", textShadow: "0 0 4px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,1)", letterSpacing: 0.5 }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
 {/* 🟢 BARRAS DE FOME E SEDE */}
 <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
   <Tooltip title={`Fome: ${fichasMap[email]?.fome ?? 100}%`} arrow>
@@ -1200,7 +1205,7 @@ if (!fichasMap) return null;
                                   const status = calcularStatus(email);
                                   const corAura = CORES_AURA_HUD[fichasMap[email]?.tipoAura] || '#ff9800';
                                   return (
-                                    <Box key={email} sx={{ width: "100%", mb: 1, pl: 1, borderLeft: `3px solid ${corAura}` }}>
+                                    <Box key={email} sx={{ width: "100%", mb: 1.2, p: 1, px: 1.2, bgcolor: "rgba(0,0,0,0.4)", borderRadius: 1.5, border: `1px solid ${corAura}44`, borderLeft: `3px solid ${corAura}`, boxShadow: `inset 0 0 14px ${corAura}11, 0 2px 8px rgba(0,0,0,0.35)`, position: "relative", overflow: "hidden", transition: "all 0.25s ease", "&:hover": { bgcolor: "rgba(0,0,0,0.5)", boxShadow: `inset 0 0 18px ${corAura}22, 0 4px 12px rgba(0,0,0,0.45), 0 0 16px ${corAura}33` }, "&::before": { content: '""', position: "absolute", top: 0, left: 0, right: 0, height: "1px", background: `linear-gradient(90deg, transparent, ${corAura}, transparent)`, opacity: 0.6 } }}>
                                       <Box sx={{ display: "flex", justifyContent: "space-between" }}><Typography variant="caption" sx={{ textShadow, color: corAura, fontWeight: 'bold' }}>{displayNameFor(email)}</Typography></Box>
                                       {status && (
                                         <Box sx={{ display: "flex", gap: 0.5, mb: 0.5 }}>
@@ -1208,7 +1213,7 @@ if (!fichasMap) return null;
                                           <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pePercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.peAtual}/{status.peMax}</Box></Box>
                                         </Box>
                                       )}
-                                      <Box sx={{ position: "relative", mt: 0.5 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: "inherit", textShadow }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
+                                      <Box sx={{ position: "relative", mt: 0.7 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 14, borderRadius: 7, backgroundColor: "rgba(0,0,0,0.55)", border: "1px solid rgba(142,202,255,0.3)", boxShadow: "inset 0 1px 4px rgba(0,0,0,0.7)", "& .MuiLinearProgress-bar": { background: "linear-gradient(90deg, #4a9eff 0%, #8ecaff 50%, #00e0ff 100%)", boxShadow: "0 0 14px rgba(142,202,255,0.9), inset 0 0 6px rgba(255,255,255,0.25)", borderRadius: 7 } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 900, pointerEvents: "none", color: "inherit", textShadow: "0 0 4px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,1)", letterSpacing: 0.5 }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
 {/* 🟢 BARRAS DE FOME E SEDE */}
 <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
   <Tooltip title={`Fome: ${fichasMap[email]?.fome ?? 100}%`} arrow>
@@ -1236,7 +1241,7 @@ if (!fichasMap) return null;
                             const status = calcularStatus(email);
                             const corAura = CORES_AURA_HUD[fichasMap[email]?.tipoAura] || '#00e0ff';
                             return (
-                              <Box key={email} sx={{ width: "100%" }}>
+                              <Box key={email} sx={{ width: "100%", p: 1, px: 1.2, bgcolor: "rgba(0,0,0,0.4)", borderRadius: 1.5, border: `1px solid ${corAura}44`, borderLeft: `3px solid ${corAura}`, boxShadow: `inset 0 0 14px ${corAura}11, 0 2px 8px rgba(0,0,0,0.35)`, position: "relative", overflow: "hidden", transition: "all 0.25s ease", "&:hover": { bgcolor: "rgba(0,0,0,0.5)", boxShadow: `inset 0 0 18px ${corAura}22, 0 4px 12px rgba(0,0,0,0.45), 0 0 16px ${corAura}33` }, "&::before": { content: '""', position: "absolute", top: 0, left: 0, right: 0, height: "1px", background: `linear-gradient(90deg, transparent, ${corAura}, transparent)`, opacity: 0.6 } }}>
                                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                   <Typography variant="caption" sx={{ textShadow, color: corAura }}>{displayNameFor(email)}</Typography>
                                   {Array.isArray(fichasMap[email]?.efeitosAtivos) && fichasMap[email].efeitosAtivos.length > 0 && (
@@ -1255,7 +1260,7 @@ if (!fichasMap) return null;
                                     <Box sx={{ position: "relative", flex: 1 }}><LinearProgress variant="determinate" value={status.pePercent} sx={{ height: 6, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", "& .MuiLinearProgress-bar": { backgroundColor: "#facc15" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, pointerEvents: "none", color: "inherit", textShadow }}>{status.peAtual}/{status.peMax}</Box></Box>
                                   </Box>
                                 )}
-                                <Box sx={{ position: "relative", mt: 0.5 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", "& .MuiLinearProgress-bar": { backgroundColor: "#8ecaff", boxShadow: "0 0 8px rgba(142,202,255,0.7)" } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, pointerEvents: "none", color: "inherit", textShadow }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
+                                <Box sx={{ position: "relative", mt: 0.7 }}><LinearProgress variant="determinate" value={hud.xpMap?.[email]?.xp ?? 0} sx={{ height: 14, borderRadius: 7, backgroundColor: "rgba(0,0,0,0.55)", border: "1px solid rgba(142,202,255,0.3)", boxShadow: "inset 0 1px 4px rgba(0,0,0,0.7)", "& .MuiLinearProgress-bar": { background: "linear-gradient(90deg, #4a9eff 0%, #8ecaff 50%, #00e0ff 100%)", boxShadow: "0 0 14px rgba(142,202,255,0.9), inset 0 0 6px rgba(255,255,255,0.25)", borderRadius: 7 } }} /><Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 900, pointerEvents: "none", color: "inherit", textShadow: "0 0 4px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,1)", letterSpacing: 0.5 }}>LV {hud.xpMap?.[email]?.level ?? 1} — {hud.xpMap?.[email]?.xp ?? 0}/100</Box></Box>
 {/* 🟢 BARRAS DE FOME E SEDE */}
 <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
   <Tooltip title={`Fome: ${fichasMap[email]?.fome ?? 100}%`} arrow>
@@ -1278,11 +1283,11 @@ if (!fichasMap) return null;
                       </Box>
 
                       {isMaster && (
-                        <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
-                          <TextField size="small" label="Valor" type="number" value={xpEditValue} onChange={(e) => setXpEditValue(Number(e.target.value))} sx={{ width: 80 }} />
+                        <Box sx={{ display: "flex", gap: 1.5, mt: 1.5, p: 1.5, bgcolor: 'rgba(0,224,255,0.08)', border: '1px solid rgba(0,224,255,0.3)', borderRadius: 2, alignItems: "center", flexWrap: "wrap", boxShadow: 'inset 0 0 15px rgba(0,224,255,0.1)' }}>
+                          <TextField size="small" label="Valor" type="number" value={xpEditValue} onChange={(e) => setXpEditValue(Number(e.target.value))} sx={{ width: 80, input: { color: '#00e0ff', fontWeight: 'bold' }, "& .MuiOutlinedInput-root": { bgcolor: 'rgba(0,0,0,0.4)', "& fieldset": { borderColor: "rgba(0,224,255,0.3)" }, "&:hover fieldset": { borderColor: "#00e0ff" } } }} InputLabelProps={{ sx: { color: '#8ecaff' } }} />
                           <FormControl size="small" sx={{ minWidth: 150 }}>
-                            <InputLabel>Jogador</InputLabel>
-                            <Select value={selectedPlayerForXP || ""} label="Jogador" onChange={(e) => setSelectedPlayerForXP(e.target.value)} renderValue={(selected) => !selected ? <em style={{ color: "#94a3b8" }}>-- selecione --</em> : displayNameFor(selected)} sx={{ color: "#fff", bgcolor: "rgba(0,0,0,0.25)", borderRadius: 1.5, fontSize: "0.8rem", ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.18)" }, "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.35)" }, "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#8ecaff" } }} MenuProps={{ disablePortal: false, container: typeof document !== "undefined" ? document.body : undefined, PaperProps: { sx: { zIndex: 140000, bgcolor: "rgba(20,20,20,0.98)", backdropFilter: "blur(10px)", color: "#fff", borderRadius: 2, border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 12px 40px rgba(0,0,0,0.7)", maxHeight: 340, mt: 0.5, overflowY: "auto", "&::-webkit-scrollbar": { width: "5px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(255,255,255,0.25)", borderRadius: "10px" } } }, anchorOrigin: { vertical: "bottom", horizontal: "left" }, transformOrigin: { vertical: "top", horizontal: "left" } }}>
+                            <InputLabel sx={{ color: '#8ecaff' }}>Jogador</InputLabel>
+                            <Select value={selectedPlayerForXP || ""} label="Jogador" onChange={(e) => setSelectedPlayerForXP(e.target.value)} renderValue={(selected) => !selected ? <em style={{ color: "#94a3b8" }}>-- selecione --</em> : displayNameFor(selected)} sx={{ color: "#fff", bgcolor: "rgba(0,0,0,0.4)", borderRadius: 1.5, fontSize: "0.8rem", ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(0,224,255,0.3)" }, "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00e0ff" }, "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#00e0ff" } }} MenuProps={{ disablePortal: false, container: typeof document !== "undefined" ? document.body : undefined, PaperProps: { sx: { zIndex: 140000, bgcolor: "rgba(20,20,20,0.95)", backdropFilter: "blur(10px)", color: "#fff", borderRadius: 2, border: "1px solid rgba(0,224,255,0.3)", boxShadow: "0 12px 40px rgba(0,0,0,0.7)", maxHeight: 340, mt: 0.5, overflowY: "auto", "&::-webkit-scrollbar": { width: "5px" }, "&::-webkit-scrollbar-thumb": { background: "rgba(0,224,255,0.5)", borderRadius: "10px" } } }, anchorOrigin: { vertical: "bottom", horizontal: "left" }, transformOrigin: { vertical: "top", horizontal: "left" } }}>
                               <MenuItem value="" sx={{ fontSize: "0.8rem" }}><em style={{ color: "#94a3b8" }}>-- selecione --</em></MenuItem>
                               <MenuItem disabled sx={{ opacity: 1, borderBottom: "1px solid #4caf5044", mt: 0.5, py: 0.3 }}><Typography variant="caption" sx={{ color: "#4caf50", fontWeight: 800, fontSize: "0.6rem", letterSpacing: 1 }}>── PERSONAGENS DO JOGADOR ──</Typography></MenuItem>
                               {pjEmailsXP.map((email) => (<MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(76,175,80,0.15)" } }}>{displayNameFor(email)}</MenuItem>))}
@@ -1290,9 +1295,11 @@ if (!fichasMap) return null;
                               {pmEmailsXP.map((email) => (<MenuItem key={email} value={email} sx={{ pl: 3, fontSize: "0.8rem", py: 0.5, "&:hover": { bgcolor: "rgba(255,152,0,0.15)" } }}>{displayNameFor(email)}</MenuItem>))}
                             </Select>
                           </FormControl>
-                          <IconButton color="primary" onClick={handleGiveXP}><AddIcon /></IconButton>
-                          <IconButton color="secondary" onClick={handleRemoveXP}><RemoveIcon /></IconButton>
-                          <IconButton onClick={() => setSorteAzarOpen(true)} title="Sorte/Azar" sx={{ color: '#ff9800' }}><span style={{ fontSize: '1.2rem' }}>🎲</span></IconButton>
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <Tooltip title="Adicionar XP"><IconButton onClick={handleGiveXP} sx={{ bgcolor: 'rgba(76,175,80,0.2)', color: '#4caf50', border: '1px solid rgba(76,175,80,0.5)', '&:hover': { bgcolor: 'rgba(76,175,80,0.4)' } }}><AddIcon /></IconButton></Tooltip>
+                            <Tooltip title="Remover XP"><IconButton onClick={handleRemoveXP} sx={{ bgcolor: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.5)', '&:hover': { bgcolor: 'rgba(239,68,68,0.4)' } }}><RemoveIcon /></IconButton></Tooltip>
+                            <Tooltip title="Sorte/Azar"><IconButton onClick={() => setSorteAzarOpen(true)} sx={{ bgcolor: 'rgba(255,152,0,0.2)', color: '#ff9800', border: '1px solid rgba(255,152,0,0.5)', '&:hover': { bgcolor: 'rgba(255,152,0,0.4)' } }}><span style={{ fontSize: '1.2rem' }}>🎲</span></IconButton></Tooltip>
+                          </Box>
                         </Box>
                       )}
                     </Box>
@@ -1301,25 +1308,25 @@ if (!fichasMap) return null;
                   <Divider sx={{ width: "100%", opacity: 0.3 }} />
 
                   <Box sx={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", pb: 1, position: "relative" }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                      <Paper elevation={2} sx={{ px: 2, py: 1, borderRadius: 1, background: "rgba(0,0,0,0.25)" }}>
-                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: "monospace", textAlign: "center", minWidth: 96 }}>{displayTime(remaining)}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                      <Paper elevation={4} sx={{ px: 3, py: 1, borderRadius: 2, background: "linear-gradient(135deg, rgba(0,0,0,0.6), rgba(0,0,0,0.4))", border: "1px solid rgba(250,204,21,0.4)", boxShadow: "inset 0 0 15px rgba(250,204,21,0.15), 0 4px 15px rgba(0,0,0,0.5)" }}>
+                        <Typography variant="h4" sx={{ fontWeight: 900, fontFamily: "monospace", textAlign: "center", minWidth: 110, letterSpacing: 2, color: runningLocal ? "#facc15" : "#fff", textShadow: runningLocal ? "0 0 15px rgba(250,204,21,0.9)" : "0 0 3px rgba(0,0,0,0.8)", transition: "all 0.3s ease" }}>{displayTime(remaining)}</Typography>
                       </Paper>
-                      <IconButton onClick={() => { if (window.__toggleChat) window.__toggleChat(); }} title="Chat Flutuante" sx={{ color: '#00e0ff', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}><span style={{ fontSize: '1.1rem' }}>💬</span></IconButton>
-                      <IconButton onClick={() => { if (window.__toggleFicha) window.__toggleFicha(); }} title="Ficha Flutuante" sx={{ color: '#ff9800', bgcolor: 'rgba(0,0,0,0.25)', width: 36, height: 36 }}><span style={{ fontSize: '1.1rem' }}>📋</span></IconButton>
+                      <IconButton onClick={() => { if (window.__toggleChat) window.__toggleChat(); }} title="Chat Flutuante" sx={{ color: '#00e0ff', bgcolor: 'rgba(0,224,255,0.15)', border: '1px solid rgba(0,224,255,0.4)', width: 40, height: 40, '&:hover': { bgcolor: 'rgba(0,224,255,0.3)' } }}><span style={{ fontSize: '1.2rem' }}>💬</span></IconButton>
+                      <IconButton onClick={() => { if (window.__toggleFicha) window.__toggleFicha(); }} title="Ficha Flutuante" sx={{ color: '#ff9800', bgcolor: 'rgba(255,152,0,0.15)', border: '1px solid rgba(255,152,0,0.4)', width: 40, height: 40, '&:hover': { bgcolor: 'rgba(255,152,0,0.3)' } }}><span style={{ fontSize: '1.2rem' }}>📋</span></IconButton>
                     </Box>
                     
                     {isMaster && (
-                      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 0.5 }}>
-                        <TextField size="small" label="Min" type="number" inputProps={{ min: 0 }} value={minutesInput} onChange={(e) => setMinutesInput(Math.max(0, Number(e.target.value || 0)))} sx={{ width: 84 }} />
-                        <TextField size="small" label="Seg" type="number" inputProps={{ min: 0, max: 59 }} value={secondsInput} onChange={(e) => { let v = Number(e.target.value || 0); if (v < 0) v = 0; if (v > 59) v = 59; setSecondsInput(v); }} sx={{ width: 84 }} />
+                      <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", mt: 0.5, bgcolor: 'rgba(255,255,255,0.05)', p: 1, borderRadius: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <TextField size="small" label="Min" type="number" inputProps={{ min: 0 }} value={minutesInput} onChange={(e) => setMinutesInput(Math.max(0, Number(e.target.value || 0)))} sx={{ width: 80, input: { color: '#fff', fontWeight: 'bold', textAlign: 'center' }, "& .MuiOutlinedInput-root": { bgcolor: 'rgba(0,0,0,0.4)' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
+                        <TextField size="small" label="Seg" type="number" inputProps={{ min: 0, max: 59 }} value={secondsInput} onChange={(e) => { let v = Number(e.target.value || 0); if (v < 0) v = 0; if (v > 59) v = 59; setSecondsInput(v); }} sx={{ width: 80, input: { color: '#fff', fontWeight: 'bold', textAlign: 'center' }, "& .MuiOutlinedInput-root": { bgcolor: 'rgba(0,0,0,0.4)' } }} InputLabelProps={{ sx: { color: '#94a3b8' } }} />
                       </Box>
                     )}
 
                     {isMaster && (
-                      <Box sx={{ display: "flex", gap: 1, alignItems: "center", mt: 1 }}>
-                        <IconButton onClick={runningLocal ? handleTimerPause : handleTimerPlay} title={runningLocal ? "Pausar" : "Iniciar"} size="small">{runningLocal ? <PauseIcon /> : <PlayArrowIcon />}</IconButton>
-                        <IconButton onClick={handleTimerReset} title="Resetar" size="small"><RestartAltIcon /></IconButton>
+                      <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", mt: 1.5 }}>
+                        <IconButton onClick={runningLocal ? handleTimerPause : handleTimerPlay} title={runningLocal ? "Pausar" : "Iniciar"} sx={{ bgcolor: runningLocal ? 'rgba(239,68,68,0.2)' : 'rgba(76,175,80,0.2)', color: runningLocal ? '#ef4444' : '#4caf50', border: `1px solid ${runningLocal ? 'rgba(239,68,68,0.5)' : 'rgba(76,175,80,0.5)'}`, p: 1, '&:hover': { bgcolor: runningLocal ? 'rgba(239,68,68,0.4)' : 'rgba(76,175,80,0.4)' } }}>{runningLocal ? <PauseIcon /> : <PlayArrowIcon />}</IconButton>
+                        <IconButton onClick={handleTimerReset} title="Resetar" sx={{ bgcolor: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', p: 1, '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' } }}><RestartAltIcon /></IconButton>
                       </Box>
                     )}
                   </Box>
@@ -1344,11 +1351,13 @@ if (!fichasMap) return null;
               e.preventDefault();
               e.stopPropagation();
               setRedimensionando(true);
+              // 🟢 CORREÇÃO: Pega o tamanho REAL da tela no momento do clique, não o state que pode ser 0
+              const rect = refBox.current.getBoundingClientRect();
               resizeStartRef.current = {
                 x: e.clientX,
                 y: e.clientY,
-                width: tamanho.width,
-                height: tamanho.height,
+                width: rect.width,
+                height: rect.height,
               };
             }}
           />
@@ -1427,10 +1436,12 @@ if (!fichasMap) return null;
         );
       })()}
 
-      {/* 🟢 PAINEL DIREITO 1: TRAÇOS (VISÍVEL APENAS PARA O JOGADOR) */}
-      {!isMaster && userEmail !== "mestre@reqviemrpg.com" && (() => {
-        const playerFicha = fichasMap[userEmail] || {};
-        // 🟢 Correção: .split(";").map(t => t.trim()) limpa os espaços extras que impediam de achar o ícone
+      {/* 🟢 PAINEL DIREITO 1: TRAÇOS */}
+      {/* REGRA: Jogador = sempre os SEUS. Mestre = os do personagem do TURNO (se não houver turno, nada). */}
+      {(() => {
+        const activeEmail = isMaster ? (hud.turn?.id || null) : currentUserEmail;
+        if (!activeEmail) return null;
+        const playerFicha = fichasMap[activeEmail] || {};
         const tracosList = playerFicha.tracos ? playerFicha.tracos.split(";").map(t => t.trim()).filter(Boolean) : [];
         if (tracosList.length === 0) return null;
 
@@ -1439,7 +1450,7 @@ if (!fichasMap) return null;
             position: "fixed",
             top: 0,
             left: 0,
-            transform: `translate(${posicaoLocal.x + tamanho.width + 10}px, ${posicaoLocal.y}px)`,
+            transform: `translate(${posicaoLocal.x + tamanho.width + 55}px, ${posicaoLocal.y}px)`,
             zIndex: 119999,
             display: "flex",
             flexDirection: "column",
@@ -1473,10 +1484,12 @@ if (!fichasMap) return null;
           </Box>
         );
       })()}
-        {/* 🟢 PAINEL DIREITO 2: TALENTOS (VISÍVEL APENAS PARA O JOGADOR) */}
-        {!isMaster && userEmail !== "mestre@reqviemrpg.com" && (() => {
-          const playerFicha = fichasMap[userEmail] || {};
-          // 🟢 Correção: .split(";").map(t => t.trim()) limpa os espaços extras
+        {/* 🟢 PAINEL DIREITO 2: TALENTOS */}
+        {/* REGRA: Jogador = sempre os SEUS. Mestre = os do personagem do TURNO (se não houver turno, nada). */}
+        {(() => {
+          const activeEmail = isMaster ? (hud.turn?.id || null) : currentUserEmail;
+          if (!activeEmail) return null;
+          const playerFicha = fichasMap[activeEmail] || {};
           const talentosList = playerFicha.caracteristicas ? playerFicha.caracteristicas.split(";").map(t => t.trim()).filter(Boolean) : [];
           if (talentosList.length === 0) return null;
 
@@ -1485,7 +1498,7 @@ if (!fichasMap) return null;
               position: "fixed",
               top: 0,
               left: 0,
-              transform: `translate(${posicaoLocal.x + tamanho.width + 55}px, ${posicaoLocal.y}px)`,
+              transform: `translate(${posicaoLocal.x + tamanho.width + 100}px, ${posicaoLocal.y}px)`,
               zIndex: 119999,
               display: "flex",
               flexDirection: "column",
@@ -1518,9 +1531,11 @@ if (!fichasMap) return null;
           );
         })()}
 
-        {/* 🟢 PAINEL DIREITO 3: DEFEITOS (VISÍVEL PARA TODOS) */}
+        {/* 🟢 PAINEL DIREITO 3: DEFEITOS */}
+        {/* REGRA: Jogador = sempre os SEUS. Mestre = os do personagem do TURNO (se não houver turno, nada). */}
         {(() => {
-          const activeEmail = isMaster ? (hud.turn?.id || currentUserEmail) : currentUserEmail;
+          const activeEmail = isMaster ? (hud.turn?.id || null) : currentUserEmail;
+          if (!activeEmail) return null;
           const playerFicha = fichasMap[activeEmail] || {};
           const defeitosList = playerFicha.defeitos ? playerFicha.defeitos.split(";").map(d => d.trim()).filter(Boolean) : [];
           if (defeitosList.length === 0) return null;
@@ -1530,7 +1545,7 @@ if (!fichasMap) return null;
               position: "fixed",
               top: 0,
               left: 0,
-              transform: `translate(${posicaoLocal.x + tamanho.width + 100}px, ${posicaoLocal.y}px)`, // Offset de 100px para ficar ao lado dos outros
+              transform: `translate(${posicaoLocal.x + tamanho.width + 10}px, ${posicaoLocal.y}px)`,
               zIndex: 119999,
               display: "flex",
               flexDirection: "column",

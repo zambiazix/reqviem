@@ -57,6 +57,7 @@ function ItemCard({
   TIPOS_INSUMIVEL = [],
   onConsumirItem, // 🟢 NOVO PARÂMETRO
   onUploadImagemItem,
+  onAplicarInsumivel,
 }) {
   const durabilidadePercent = Math.max(0, Math.min(100, item.durabilidade ?? 100)) / 100;
   const barColor = durabilidadePercent > 0.66 ? '#4caf50' : durabilidadePercent > 0.33 ? '#ff9800' : '#f44336';
@@ -207,6 +208,24 @@ function ItemCard({
                 sx={{ height: 20, fontSize: '0.62rem', bgcolor: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f655', fontWeight: 700 }}
               />
             )}
+            {item.consumivel && item.consumivel !== "Nenhum" && (
+              <Tooltip title={`Restaura ${item.consumivelPercentual || 100}% do máximo de ${item.consumivel}.`} arrow>
+                <Chip
+                  label={`🧪 Consumível (${item.consumivel}) ${item.consumivelPercentual || 100}%`}
+                  size="small"
+                  sx={{ height: 20, fontSize: '0.62rem', bgcolor: item.consumivel === "PV" ? '#ef444422' : '#facc1522', color: item.consumivel === "PV" ? '#ef4444' : '#facc15', border: `1px solid ${item.consumivel === "PV" ? '#ef444455' : '#facc1555'}`, fontWeight: 700 }}
+                />
+              </Tooltip>
+            )}
+            {item.insumivel && item.insumivel !== "Nenhum" && (
+              <Tooltip title="Restaura a durabilidade de outro item (Proporção 2:1)." arrow>
+                <Chip
+                  label={`🛢️ Reparador: ${item.insumivel}`}
+                  size="small"
+                  sx={{ height: 20, fontSize: '0.62rem', bgcolor: '#00e0ff22', color: '#00e0ff', border: '1px solid #00e0ff55', fontWeight: 700 }}
+                />
+              </Tooltip>
+            )}
           </Box>
         </Box>
 
@@ -251,27 +270,56 @@ function ItemCard({
           </Box>
         )}
 
-        {/* 🟢 BOTÃO CONSUMIR (VISÍVEL NO ITEM RECOLHIDO) */}
-        {(item.isComida || item.isBebida) && (
-          <Tooltip title="Consumir Item">
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onConsumirItem(categoria, index, item);
-              }}
-              sx={{
-                color: '#4caf50',
-                bgcolor: 'rgba(76, 175, 80, 0.1)',
-                border: '1px solid rgba(76, 175, 80, 0.3)',
-                mr: 0.5,
-                '&:hover': { bgcolor: 'rgba(76, 175, 80, 0.25)', boxShadow: '0 0 12px rgba(76, 175, 80, 0.5)' }
-              }}
-            >
-              🍽️
-            </IconButton>
-          </Tooltip>
-        )}
+        {/* 🟢 BOTÕES DE AÇÃO RÁPIDA (VISÍVEL NO ITEM RECOLHIDO) */}
+        <Box sx={{ display: 'flex', gap: 0.5, mr: 0.5 }} onClick={(e) => e.stopPropagation()}>
+          {(item.isComida || item.isBebida) && (
+            <Tooltip title="Consumir Comida/Bebida">
+              <IconButton
+                size="small"
+                onClick={() => onConsumirItem(categoria, index, item)}
+                sx={{
+                  color: '#4caf50', bgcolor: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.3)',
+                  '&:hover': { bgcolor: 'rgba(76, 175, 80, 0.25)', boxShadow: '0 0 12px rgba(76, 175, 80, 0.5)' }
+                }}
+              >
+                🍽️
+              </IconButton>
+            </Tooltip>
+          )}
+          {(item.consumivel && item.consumivel !== "Nenhum") && (
+            <Tooltip title={`Usar Consumível (${item.consumivel})`}>
+              <IconButton
+                size="small"
+                onClick={() => onConsumirItem(categoria, index, item)}
+                sx={{
+                  color: item.consumivel === "PV" ? '#ef4444' : '#facc15', 
+                  bgcolor: item.consumivel === "PV" ? 'rgba(239, 68, 68, 0.1)' : 'rgba(250, 204, 21, 0.1)', 
+                  border: `1px solid ${item.consumivel === "PV" ? 'rgba(239, 68, 68, 0.3)' : 'rgba(250, 204, 21, 0.3)'}`,
+                  '&:hover': { 
+                    bgcolor: item.consumivel === "PV" ? 'rgba(239, 68, 68, 0.25)' : 'rgba(250, 204, 21, 0.25)', 
+                    boxShadow: `0 0 12px ${item.consumivel === "PV" ? 'rgba(239, 68, 68, 0.5)' : 'rgba(250, 204, 21, 0.5)'}` 
+                  }
+                }}
+              >
+                🧪
+              </IconButton>
+            </Tooltip>
+          )}
+          {(item.insumivel && item.insumivel !== "Nenhum") && (
+            <Tooltip title="Aplicar Insumível em outro item">
+              <IconButton
+                size="small"
+                onClick={() => onAplicarInsumivel(categoria, index, item)}
+                sx={{
+                  color: '#00e0ff', bgcolor: 'rgba(0, 224, 255, 0.1)', border: '1px solid rgba(0, 224, 255, 0.3)',
+                  '&:hover': { bgcolor: 'rgba(0, 224, 255, 0.25)', boxShadow: '0 0 12px rgba(0, 224, 255, 0.5)' }
+                }}
+              >
+                🛢️
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
 
         {/* Setas de Categoria */}
         {onMoverCategoria && (
@@ -582,25 +630,63 @@ function ItemCard({
 
           {/* Ações */}
           {mostrarAcoes && (
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 1.5 }}>
-              {(item.isComida || item.isBebida) && (
-                <Button
-                  size="small"
-                  variant="contained"
-                  color="success"
-                  onClick={(e) => { e.stopPropagation(); onConsumirItem(categoria, index, item); }}
-                >
-                  🍽️ Consumir
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1.5 }}>
+              {/* Botões de Aplicação */}
+              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                {(item.isComida || item.isBebida) && (
+                  <Tooltip title="Recupera Fome ou Sede ao ser consumido." arrow>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="success"
+                      onClick={(e) => { e.stopPropagation(); onConsumirItem(categoria, index, item); }}
+                    >
+                      🍽️ Consumir
+                    </Button>
+                  </Tooltip>
+                )}
+                {(item.consumivel && item.consumivel !== "Nenhum") && (
+                  <Tooltip title={`Recupera ${item.consumivelPercentual}% do máximo de ${item.consumivel} ao ser usado.`} arrow>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={(e) => { e.stopPropagation(); onConsumirItem(categoria, index, item); }}
+                      sx={{ bgcolor: item.consumivel === "PV" ? '#ef4444' : '#facc15', color: '#000', '&:hover': { bgcolor: item.consumivel === "PV" ? '#dc2626' : '#eab308' } }}
+                    >
+                      🧪 Usar ({item.consumivel})
+                    </Button>
+                  </Tooltip>
+                )}
+                {(item.insumivel && item.insumivel !== "Nenhum") && (
+                  <Tooltip title="Abre o menu para escolher um item e restaurar sua durabilidade." arrow>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        if (onAplicarInsumivel) {
+                          onAplicarInsumivel(categoria, index, item);
+                        }
+                      }}
+                      sx={{ bgcolor: '#00e0ff', color: '#000', '&:hover': { bgcolor: '#00bcd4' } }}
+                    >
+                      🛢️ Aplicar Insumível
+                    </Button>
+                  </Tooltip>
+                )}
+              </Box>
+
+              {/* Botões de Edição */}
+              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => onAbrirEditar(categoria, index, item)} sx={{ color: '#ff9800', borderColor: '#ff9800' }}>
+                  {isMestre ? 'Editar Item' : '✏️ Nome / Descrição'}
                 </Button>
-              )}
-              <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => onAbrirEditar(categoria, index, item)} sx={{ color: '#ff9800', borderColor: '#ff9800' }}>
-                {isMestre ? 'Editar Item' : '✏️ Nome / Descrição'}
-              </Button>
-              {isMestre && (
-                <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => { if (window.confirm(`Remover "${item.nome || "item"}"?`)) onRemoverItem(categoria, index); }}>
-                  Remover
-                </Button>
-              )}
+                {isMestre && (
+                  <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => { if (window.confirm(`Remover "${item.nome || "item"}"?`)) onRemoverItem(categoria, index); }}>
+                    Remover
+                  </Button>
+                )}
+              </Box>
             </Box>
           )}
         </Box>
@@ -627,6 +713,74 @@ useEffect(() => {
     @keyframes float {
       0%, 100% { transform: translateY(0); }
       50% { transform: translateY(-4px); }
+    }
+
+    /* 🟢 NOVO: Animações premium para TODOS os modais */
+    @keyframes modalSlideUp {
+      from { opacity: 0; transform: translateY(24px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes modalBackdropIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes chipPop {
+      0%   { transform: scale(0.85); opacity: 0; }
+      60%  { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes fadeInContent {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Suaviza o scroll interno dos modais */
+    .MuiDialogContent-root {
+      scroll-behavior: smooth;
+      animation: fadeInContent 0.4s ease-out;
+    }
+
+    /* 🟢 Aplica em TODOS os Dialogs do app */
+    .MuiDialog-paper {
+      animation: modalSlideUp 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+      will-change: transform, opacity;
+    }
+    .MuiBackdrop-root {
+      backdrop-filter: blur(8px) !important;
+      -webkit-backdrop-filter: blur(8px) !important;
+      background-color: rgba(0, 0, 0, 0.72) !important;
+      animation: modalBackdropIn 0.22s ease-out !important;
+    }
+
+    /* 🟢 Scrollbar premium nos Dialogs */
+    .MuiDialog-paper ::-webkit-scrollbar { width: 8px; height: 8px; }
+    .MuiDialog-paper ::-webkit-scrollbar-track { background: rgba(15,23,42,0.6); border-radius: 4px; }
+    .MuiDialog-paper ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, #a855f7 0%, #00e0ff 100%);
+      border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.3);
+    }
+    .MuiDialog-paper ::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, #c084fc 0%, #22d3ee 100%);
+    }
+
+    /* 🟢 Botões com hover suave DENTRO de Dialogs */
+    .MuiDialog-paper .MuiButton-root {
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease !important;
+    }
+    .MuiDialog-paper .MuiButton-root:hover {
+      transform: translateY(-1px);
+    }
+    .MuiDialog-paper .MuiButton-contained:hover {
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35) !important;
+    }
+
+    /* 🟢 Chips com leve hover */
+    .MuiDialog-paper .MuiChip-root {
+      transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+    }
+    .MuiDialog-paper .MuiChip-root:hover {
+      transform: translateY(-1px);
     }
   `;
   document.head.appendChild(styleSheet);
@@ -1065,10 +1219,10 @@ const DEFEITOS_DISPONIVEIS = [
     variacoes: ["Álcool", "Tabaco", "Entorpecentes", "Estimulantes", "Açúcar", "Jogos de Azar", "Sexo", "Adrenalina", "Ouro", "Magia", "Sangue", "Vaidade", "Trabalho", "Engenhocas", "Fofoca", "Combate", "Colecionismo", "Aprovação", "Mentir", "Perfumes"]
   },
   { nome: "Sadismo", nivel: 2, pontos: 2, bloqueia: null, variacoes: [] },
-  { nome: "Amnésia", nivel: 2, pontos: 2, bloqueia: "conhecimento", variacoes: [] }, // Movido para nível 2
   
   // Nível 3
-  { nome: "Honesto", nivel: 3, pontos: 3, bloqueia: "labia", variacoes: [] }, // Movido para nível 3
+  { nome: "Honesto", nivel: 3, pontos: 3, bloqueia: "labia", variacoes: [] },
+  { nome: "Amnésia", nivel: 3, pontos: 3, bloqueia: "conhecimento", variacoes: [] },
   { 
     nome: "7 Pecados Capitais", nivel: 3, pontos: 3, bloqueia: "natureza",
     variacoes: ["Soberba", "Avareza", "Luxúria", "Inveja", "Gula", "Ira", "Preguiça"]
@@ -1161,11 +1315,37 @@ const [modalDefeitosOpen, setModalDefeitosOpen] = useState(false);
 const [restauracaoLiberada, setRestauracaoLiberada] = useState(false);
 const [defeitosSelecionados, setDefeitosSelecionados] = useState([]);
 
-// Calcular pontos extras de perícia dos defeitos
-const pontosPericiaExtras = defeitosSelecionados.reduce((total, defeito) => {
-  const defeitoInfo = DEFEITOS_DISPONIVEIS.find(d => d.nome === defeito);
-  return total + (defeitoInfo?.pontos || 0);
-}, 0);
+// Calcular pontos extras de perícia dos defeitos (AGRUPADO POR VARIAÇÕES)
+const pontosPericiaExtras = useMemo(() => {
+  const grupos = {};
+  
+  defeitosSelecionados.forEach(d => {
+    const baseDefeito = DEFEITOS_DISPONIVEIS.find(def => 
+      d === def.nome || d.startsWith(def.nome + " de ") || d.startsWith(def.nome + " em ") || d.startsWith(def.nome + " a ")
+    );
+    
+    if (baseDefeito) {
+      if (!grupos[baseDefeito.nome]) {
+        grupos[baseDefeito.nome] = {
+          basePontos: baseDefeito.pontos,
+          count: 0
+        };
+      }
+      grupos[baseDefeito.nome].count += 1;
+    }
+  });
+
+  let total = 0;
+  Object.values(grupos).forEach(g => {
+    if (g.count > 0) {
+      // Base vale o valor cheio. Cada variação adicional (além da 1ª) vale +0.5
+      total += g.basePontos + (0.5 * (g.count - 1));
+    }
+  });
+  
+  // Arredonda para baixo para só mostrar pontos cheios (ex: 1.5 vira 1)
+  return Math.floor(total);
+}, [defeitosSelecionados]);
 // 🟢 DICIONÁRIOS DE ÍCONES (Copiados do FloatingHUD + Defeitos)
 const TALENTOS_ICONS = {
   "Regeneração": { icon: "💚", color: "#4caf50", desc: "Regenera 5 PV por ação." },
@@ -1430,6 +1610,87 @@ const [modalTransferirDoSecundarioOpen, setModalTransferirDoSecundarioOpen] = us
 // 🟢 SISTEMA DE DESCANSO
 const [modalDescansoOpen, setModalDescansoOpen] = useState(false);
 const [descansoSelecionado, setDescansoSelecionado] = useState(null);
+
+// 🟢 NOTIFICAÇÕES DE FOME/SEDE
+const [notifFome, setNotifFome] = useState({ visible: false, snoozeUntil: 0, shownAt: 0 });
+const [notifSede, setNotifSede] = useState({ visible: false, snoozeUntil: 0, shownAt: 0 });
+const [notifTick, setNotifTick] = useState(0);
+
+// Tick a cada 30s pra reavaliar (permite reaparecer sozinho após 10min)
+useEffect(() => {
+  const interval = setInterval(() => setNotifTick(t => t + 1), 30000);
+  return () => clearInterval(interval);
+}, []);
+
+// Lógica: mostra quando fome/sede <= 25%.
+// Se fechada (X) → volta após 10min. Se aberta → permanece até o X ou fome/sede subir.
+// Tempo real: qualquer mudança em fome/sede via onSnapshot atualiza a notificação para todos.
+useEffect(() => {
+  if (!ficha) return;
+  const agora = Date.now();
+  const LIMIAR = 25;
+
+  const fomeBaixa = (ficha.fome ?? 100) <= LIMIAR;
+  const sedeBaixa = (ficha.sede ?? 100) <= LIMIAR;
+
+  setNotifFome(prev => {
+    // Fome subiu acima do limiar → esconde imediatamente (sincroniza com mestre/jogador via onSnapshot)
+    if (!fomeBaixa) {
+      if (!prev.visible && prev.snoozeUntil === 0) return prev;
+      return { visible: false, snoozeUntil: 0, shownAt: 0 };
+    }
+    // Fome ainda baixa:
+    if (prev.visible) {
+      // Está aberta e o usuário NÃO fechou → mantém visível (sem ciclo automático)
+      return prev;
+    }
+    // Está escondida (usuário clicou X ou nunca apareceu):
+    if (agora >= prev.snoozeUntil) {
+      return { visible: true, snoozeUntil: 0, shownAt: agora };
+    }
+    return prev;
+  });
+
+  setNotifSede(prev => {
+    if (!sedeBaixa) {
+      if (!prev.visible && prev.snoozeUntil === 0) return prev;
+      return { visible: false, snoozeUntil: 0, shownAt: 0 };
+    }
+    if (prev.visible) {
+      return prev;
+    }
+    if (agora >= prev.snoozeUntil) {
+      return { visible: true, snoozeUntil: 0, shownAt: agora };
+    }
+    return prev;
+  });
+}, [ficha?.fome, ficha?.sede, notifTick]);
+
+// Fechar (X) → volta após 10min
+const fecharNotifFome = () => {
+  setNotifFome({ visible: false, snoozeUntil: Date.now() + 10 * 60 * 1000, shownAt: 0 });
+};
+const fecharNotifSede = () => {
+  setNotifSede({ visible: false, snoozeUntil: Date.now() + 10 * 60 * 1000, shownAt: 0 });
+};
+
+// Recuperação total (SÓ MESTRE)
+const recuperarFomeCompleta = async () => {
+  if (!isMestre || !fichaId) return;
+  try {
+    await setDoc(doc(db, "fichas", fichaId), { fome: 100 }, { merge: true });
+    setFicha(prev => ({ ...prev, fome: 100 }));
+    setNotifFome({ visible: false, snoozeUntil: 0, shownAt: 0 });
+  } catch (err) { console.error(err); }
+};
+const recuperarSedeCompleta = async () => {
+  if (!isMestre || !fichaId) return;
+  try {
+    await setDoc(doc(db, "fichas", fichaId), { sede: 100 }, { merge: true });
+    setFicha(prev => ({ ...prev, sede: 100 }));
+    setNotifSede({ visible: false, snoozeUntil: 0, shownAt: 0 });
+  } catch (err) { console.error(err); }
+};
 const [descansoCheckboxes, setDescansoCheckboxes] = useState({
   desconfortavel: false,
   desabrigado: false,
@@ -2675,6 +2936,7 @@ const gerarCampoComIA = async (habilidadeIndex, campo) => {
         consumivelValor: 0,
         insumivel: "Nenhum",
         insumivelValor: 0,
+        consumivelPercentual: 100,
         // 🟢 NOVOS CAMPOS
         isComida: false,
         isBebida: false,
@@ -2938,16 +3200,45 @@ async function salvarFicha() {
 
   const consumirItem = async (categoria, index, item) => {
     if (!ficha) return;
-    const campo = item.isComida ? 'fome' : 'sede';
-    const valorRecuperado = item.isComida ? (Number(item.recuperacaoFome) || 0) : (Number(item.recuperacaoSede) || 0);
-    const valorAtual = ficha[campo] ?? 100;
-    const novoValor = Math.min(100, valorAtual + valorRecuperado);
+    let atualizacoes = {};
+    let mensagem = "";
 
-    // Atualiza Fome/Sede no Firebase
-    await setDoc(doc(db, "fichas", fichaId), { [campo]: novoValor }, { merge: true });
-    setFicha(prev => ({ ...prev, [campo]: novoValor }));
+    // 🟢 1. Lógica de Comida / Bebida
+    if (item.isComida || item.isBebida) {
+      const campo = item.isComida ? 'fome' : 'sede';
+      const valorRecuperado = item.isComida ? (Number(item.recuperacaoFome) || 0) : (Number(item.recuperacaoSede) || 0);
+      const valorAtual = ficha[campo] ?? 100;
+      const novoValor = Math.min(100, valorAtual + valorRecuperado);
+      atualizacoes[campo] = novoValor;
+      mensagem = `Você consumiu ${item.nome} e recuperou ${valorRecuperado}% de ${item.isComida ? 'Fome' : 'Sede'}!`;
+    } 
+    // 🟢 2. Lógica de Consumível P.V / P.E
+    else if (item.consumivel && item.consumivel !== "Nenhum") {
+      const percentual = Number(item.consumivelPercentual) || 100;
+      
+      if (item.consumivel === "PV") {
+        const maxPV = 100 + ((Number(ficha.atributos?.constituicao) || 0) + (Number(ficha.pericias?.sobrevivencia) || 0)) * 10;
+        const cura = Math.ceil(maxPV * (percentual / 100));
+        const novoPV = Math.min(maxPV, (ficha.pontosVida || 0) + cura);
+        atualizacoes.pontosVida = novoPV;
+        mensagem = `Você usou ${item.nome} e recuperou ${cura} PV! (${percentual}% do máximo)`;
+      } 
+      else if (item.consumivel === "PE") {
+        const maxPE = 10 + ((Number(ficha.atributos?.vontade) || 0) + (Number(ficha.pericias?.aura) || 0)) * 5;
+        const cura = Math.ceil(maxPE * (percentual / 100));
+        const novoPE = Math.min(maxPE, (ficha.pontosEnergia || 0) + cura);
+        atualizacoes.pontosEnergia = novoPE;
+        mensagem = `Você usou ${item.nome} e recuperou ${cura} PE! (${percentual}% do máximo)`;
+      }
+    } else {
+      return; // Não é consumível
+    }
 
-    // Subtrai 1 da quantidade
+    // Aplica as atualizações (PV, PE, Fome ou Sede)
+    await setDoc(doc(db, "fichas", fichaId), atualizacoes, { merge: true });
+    setFicha(prev => ({ ...prev, ...atualizacoes }));
+
+    // Subtrai 1 da quantidade do item
     const novaQtd = (item.quantidade || 1) - 1;
     let novosItens;
     if (novaQtd > 0) {
@@ -2958,7 +3249,7 @@ async function salvarFicha() {
     await setDoc(doc(db, "fichas", fichaId), { [categoria]: novosItens }, { merge: true });
     setFicha(prev => ({ ...prev, [categoria]: novosItens }));
     
-    alert(`Você consumiu ${item.nome} e recuperou ${valorRecuperado}% de ${item.isComida ? 'Fome' : 'Sede'}!`);
+    alert(mensagem);
   };
 // Função para abrir o modal de defeitos e carregar existentes
 const abrirModalDefeitos = () => {
@@ -5713,7 +6004,6 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
     />
   </Box>
 )}
-
       {/* Modal de Defeitos */}
       <Dialog 
         open={modalDefeitosOpen} 
@@ -5763,54 +6053,73 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                       return info?.bloqueia === defeito.bloqueia;
                     });
                   
-                  // Filtra a variação atual se já estiver salva
-                  const variacaoAtual = defeitosSelecionados.find(d => d.startsWith(defeito.nome + " de ") || d.startsWith(defeito.nome + " em ") || d.startsWith(defeito.nome + " a "));
+                  // Calcula os pontos dinâmicos para ESTE card específico
+                  const countVariacoes = defeito.variacoes 
+                    ? defeito.variacoes.filter(v => defeitosSelecionados.includes(`${defeito.nome} de ${v}`)).length 
+                    : (defeitosSelecionados.includes(defeito.nome) ? 1 : 0);
+                  const pontosCalculados = countVariacoes > 0 ? defeito.pontos + (0.5 * (countVariacoes - 1)) : 0;
+                  const pontosExibicao = Math.floor(pontosCalculados);
 
                   return (
                     <Grid item xs={12} key={defeito.nome}>
                       <Paper 
                         sx={{ 
                           p: 2, 
-                          bgcolor: isSelected ? 'rgba(30, 58, 95, 0.4)' : 'rgba(15, 23, 42, 0.6)',
+                          bgcolor: isSelected ? 'rgba(30, 58, 95, 0.45)' : 'rgba(15, 23, 42, 0.6)',
                           border: isSelected ? '1px solid #00e0ff' : '1px solid #334155',
                           borderRadius: 2,
-                          transition: 'all 0.2s',
-                          boxShadow: isSelected ? '0 0 15px rgba(0, 224, 255, 0.1)' : 'none',
-                          '&:hover': { bgcolor: isSelected ? 'rgba(30, 58, 95, 0.5)' : 'rgba(30, 41, 59, 0.8)', borderColor: '#00e0ff88' }
+                          transition: 'all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                          boxShadow: isSelected ? '0 0 20px rgba(0, 224, 255, 0.2)' : 'none',
+                          '&:hover': { 
+                            bgcolor: isSelected ? 'rgba(30, 58, 95, 0.55)' : 'rgba(30, 41, 59, 0.85)', 
+                            borderColor: '#00e0ff88',
+                            transform: 'translateY(-2px)',
+                            boxShadow: '0 10px 24px rgba(0,224,255,0.18)',
+                          }
                         }}
                       >
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={isSelected}
-                              disabled={isBlocked && !isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  if (defeito.variacoes && defeito.variacoes.length > 0) {
-                                    setDefeitosSelecionados([...defeitosSelecionados, `${defeito.nome} de ${defeito.variacoes[0]}`]);
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={isSelected}
+                                disabled={isBlocked && !isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    if (defeito.variacoes && defeito.variacoes.length > 0) {
+                                      setDefeitosSelecionados([...defeitosSelecionados, `${defeito.nome} de ${defeito.variacoes[0]}`]);
+                                    } else {
+                                      setDefeitosSelecionados([...defeitosSelecionados, defeito.nome]);
+                                    }
                                   } else {
-                                    setDefeitosSelecionados([...defeitosSelecionados, defeito.nome]);
+                                    setDefeitosSelecionados(defeitosSelecionados.filter(d => !d.startsWith(defeito.nome)));
                                   }
-                                } else {
-                                  setDefeitosSelecionados(defeitosSelecionados.filter(d => !d.startsWith(defeito.nome)));
-                                }
-                              }}
-                              sx={{ color: '#00e0ff', '&.Mui-checked': { color: '#00e0ff' } }}
+                                }}
+                                sx={{ color: '#00e0ff', '&.Mui-checked': { color: '#00e0ff' } }}
+                              />
+                            }
+                            label={
+                              <Box sx={{ ml: 1 }}>
+                                <Typography variant="body1" sx={{ fontWeight: 'bold', color: isSelected ? '#00e0ff' : '#fff', fontSize: '1.05rem' }}>
+                                  {defeito.nome}
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.5 }}>
+                                  +{defeito.pontos} P.P Base {defeito.bloqueia && `| Bloqueia: ${LABEL_MAP[defeito.bloqueia]}`}
+                                </Typography>
+                              </Box>
+                            }
+                          />
+                          
+                          {isSelected && (
+                            <Chip 
+                              label={`+${pontosExibicao} P.P`} 
+                              size="small"
+                              sx={{ bgcolor: '#22c55e', color: '#000', fontWeight: 'bold' }}
                             />
-                          }
-                          label={
-                            <Box sx={{ ml: 1 }}>
-                              <Typography variant="body1" sx={{ fontWeight: 'bold', color: isSelected ? '#00e0ff' : '#fff', fontSize: '1.05rem' }}>
-                                {defeito.nome}
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.5 }}>
-                                +{defeito.pontos} P.P {defeito.bloqueia && `| Bloqueia: ${LABEL_MAP[defeito.bloqueia]}`}
-                              </Typography>
-                            </Box>
-                          }
-                        />
+                          )}
+                        </Box>
                         
-                        {/* SELEÇÃO DE VARIAÇÃO */}
+                        {/* SELEÇÃO MÚLTIPLA DE VARIAÇÕES */}
                         {isSelected && defeito.variacoes && defeito.variacoes.length > 0 && (
                           <Box sx={{ mt: 2, pl: 5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                             {defeito.variacoes.map(variacao => {
@@ -5823,9 +6132,11 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                                   label={variacao}
                                   size="small"
                                   onClick={() => {
-                                    // Remove a versão antiga e adiciona a nova
-                                    const novosDefeitos = defeitosSelecionados.filter(d => !d.startsWith(defeito.nome));
-                                    setDefeitosSelecionados([...novosDefeitos, nomeCompleto]);
+                                    if (isVariacaoSelecionada) {
+                                      setDefeitosSelecionados(prev => prev.filter(d => d !== nomeCompleto));
+                                    } else {
+                                      setDefeitosSelecionados(prev => [...prev, nomeCompleto]);
+                                    }
                                   }}
                                   sx={{
                                     bgcolor: isVariacaoSelecionada ? '#00e0ff' : 'rgba(0, 224, 255, 0.1)',
@@ -5833,7 +6144,13 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
                                     fontWeight: isVariacaoSelecionada ? 'bold' : 'normal',
                                     border: isVariacaoSelecionada ? '1px solid #00e0ff' : '1px solid #00e0ff44',
                                     cursor: 'pointer',
-                                    '&:hover': { bgcolor: isVariacaoSelecionada ? '#00e0ff' : 'rgba(0, 224, 255, 0.2)' }
+                                    transition: 'all 0.18s ease',
+                                    animation: isVariacaoSelecionada ? 'chipPop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
+                                    '&:hover': { 
+                                      bgcolor: isVariacaoSelecionada ? '#00e0ff' : 'rgba(0, 224, 255, 0.22)',
+                                      transform: 'translateY(-1px) scale(1.05)',
+                                      boxShadow: '0 4px 12px rgba(0,224,255,0.3)',
+                                    }
                                   }}
                                 />
                               );
@@ -6881,40 +7198,53 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
 </DialogTitle>
 
         <DialogContent sx={{ p: 3 }}>
-          {/* Tabs */}
-          <Box sx={{ borderBottom: 1, borderColor: '#334155', mb: 3 }}>
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              {[
-                { id: 'equipamentos', label: '⚔️ Equipamentos', desc: '(Armas, ferramentas, itens de acesso rápido)' },
-                { id: 'vestes', label: '👕 Vestimentas', desc: '(Roupas, armaduras, acessórios vestidos)' },
-                { id: 'diversos', label: '📦 Diversos', desc: '(Itens gerais, consumíveis, materiais)' }
-              ].map((aba) => (
+          {/* Tabs Premium */}
+          <Box sx={{ 
+            display: 'flex', 
+            gap: 1, 
+            mb: 3, 
+            p: 1, 
+            bgcolor: 'rgba(0,0,0,0.3)', 
+            borderRadius: 3, 
+            border: '1px solid rgba(255,255,255,0.05)' 
+          }}>
+            {[
+              { id: 'equipamentos', label: '⚔️ Equipamentos', desc: 'Armas, ferramentas' },
+              { id: 'vestes', label: '👕 Vestimentas', desc: 'Roupas, armaduras' },
+              { id: 'diversos', label: '📦 Diversos', desc: 'Itens gerais' }
+            ].map((aba) => {
+              const ativo = abaAtiva === aba.id;
+              return (
                 <Button
                   key={aba.id}
                   onClick={() => setAbaAtiva(aba.id)}
                   sx={{
-                    color: abaAtiva === aba.id ? '#00e0ff' : '#94a3b8',
-                    borderBottom: abaAtiva === aba.id ? '2px solid #00e0ff' : '2px solid transparent',
-                    borderRadius: 0,
-                    px: 3,
-                    py: 1,
+                    flex: 1,
+                    py: 1.5,
+                    borderRadius: 2,
+                    color: ativo ? '#000' : '#94a3b8',
+                    bgcolor: ativo ? 'linear-gradient(135deg, #00e0ff, #00bcd4)' : 'transparent',
+                    boxShadow: ativo ? '0 4px 15px rgba(0,224,255,0.3)' : 'none',
+                    transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    border: ativo ? '1px solid #00e0ff' : '1px solid transparent',
                     '&:hover': {
-                      color: '#00e0ff',
-                      bgcolor: 'transparent'
+                      bgcolor: ativo ? 'linear-gradient(135deg, #22d3ee, #00e0ff)' : 'rgba(255,255,255,0.05)',
+                      color: ativo ? '#000' : '#fff',
+                      transform: 'translateY(-2px)',
                     }
                   }}
                 >
-                  <Box sx={{ textAlign: 'left' }}>
-                    <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
                       {aba.label}
                     </Typography>
-                    <Typography variant="caption" sx={{ fontSize: '0.7rem', opacity: 0.7 }}>
+                    <Typography sx={{ fontSize: '0.65rem', opacity: ativo ? 0.8 : 0.5, fontWeight: 600 }}>
                       {aba.desc}
                     </Typography>
                   </Box>
                 </Button>
-              ))}
-            </Box>
+              );
+            })}
           </Box>
 
           {/* Lista de Itens */}
@@ -6940,6 +7270,10 @@ const pontosPericiaRestantes = pontosPericiaMax - pontosPericiaGastos + bonusBac
       onAbrirImagem={(src) => { setLightboxSrc(src); setZoom(1); setLightboxOpen(true); }}
       onAbrirEditar={(cat, idx, it) => { setItemEditando({ categoria: cat, index: idx, item: it }); setModalEditarItemOpen(true); }}
       onConsumirItem={consumirItem}
+      onAplicarInsumivel={(cat, idx, it) => {
+        setInsumivelSelecionado({ item: it, index: idx, tipo: cat });
+        setModalInsumivelOpen(true);
+      }}
       onUploadImagemItem={async (cat, idx, file) => {
         const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
         const fd = new FormData();
@@ -8166,7 +8500,20 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                     }
                     
                     return listaItens
-                      .filter(it => it.nome && it.nome !== insumivelSelecionado.item.nome)
+                      .filter(it => {
+                        if (!it.nome || it.nome === insumivelSelecionado.item.nome) return false;
+                        
+                        // Filtro inteligente baseado no tipo de insumível
+                        const tipoIns = insumivelSelecionado.item.insumivel;
+                        if (tipoIns === "Cortante/Perfurante") return ["Cortante", "Perfurante"].includes(it.tipoDano);
+                        if (tipoIns === "Elétrico") return it.tipoDano === "Elétrico";
+                        if (tipoIns === "Térmico") return it.tipoDano === "Térmico";
+                        if (tipoIns === "Vestimenta_Leve") return it._cat === "vestes" && (it.dado || 0) <= 15;
+                        if (tipoIns === "Vestimenta_Pesada") return it._cat === "vestes" && (it.dado || 0) >= 16;
+                        if (tipoIns === "Todos") return true;
+                        
+                        return true; // Fallback
+                      })
                       .map((item) => (
                         <MenuItem key={`${item._cat}-${item._idx}`} value={`${item._cat}-${item._idx}`}>
                           {item.nome || 'Sem nome'} [{item._cat}] (Dur: {item.durabilidade || 100}%)
@@ -8875,9 +9222,18 @@ const novosDiversos = [...diversosAtuais, novoItem];
         sx={{ 
           mb: 2,
           bgcolor: '#1a1a2e',
-          border: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}44`,
+          border: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}${habilidadeExpandida === i ? 'aa' : '44'}`,
           borderRadius: 2,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          transition: 'all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          boxShadow: habilidadeExpandida === i 
+            ? `0 10px 28px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22, 0 0 20px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}11` 
+            : '0 2px 8px rgba(0,0,0,0.25)',
+          '&:hover': {
+            transform: 'translateY(-2px)',
+            boxShadow: `0 12px 32px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}33, 0 0 24px ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}18`,
+            borderColor: `${CORES_AURA[ficha.tipoAura] || "#00e0ff"}88`,
+          },
         }}
       >
  {/* ========== CABEÇALHO RECOLHIDO ========== */}
@@ -9021,7 +9377,11 @@ const novosDiversos = [...diversosAtuais, novoItem];
 </Box>
         {/* ========== CONTEÚDO EXPANDIDO ========== */}
         {habilidadeExpandida === i && (
-          <Box sx={{ p: 3, borderTop: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22` }}>
+          <Box sx={{ 
+            p: 3, 
+            borderTop: `1px solid ${CORES_AURA[ficha.tipoAura] || "#00e0ff"}22`,
+            animation: 'modalSlideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          }}>
             
             {/* LINHA 1: IMAGEM + NOME + DESCRIÇÃO */}
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
@@ -9705,6 +10065,10 @@ const novosDiversos = [...diversosAtuais, novoItem];
         await setDoc(doc(db, "fichas", fichaId), { inventariosSecundarios: novosInventarios }, { merge: true });
       }}
       onMoverItem={(cat, i, dir) => moverItemSecundario(inventarioSecundarioAtivo, i, dir)}
+      onAplicarInsumivel={(cat, idx, it) => {
+        setInsumivelSelecionado({ item: it, index: idx, tipo: cat });
+        setModalInsumivelOpen(true);
+      }}
       onAbrirImagem={(src) => { setLightboxSrc(src); setZoom(1); setLightboxOpen(true); }}
       onAbrirEditar={(cat, idx2, it) => { setItemEditando({ categoria: cat, index: idx2, item: it, secundarioId: inventarioSecundarioAtivo }); setModalEditarItemOpen(true); }}
       TIPOS_DANO={TIPOS_DANO}
@@ -9918,138 +10282,213 @@ const novosDiversos = [...diversosAtuais, novoItem];
     </Button>
   </DialogActions>
       </Dialog>
-{/* 🟢 MODAL EDITAR ITEM */}
 <Dialog
   open={modalEditarItemOpen}
   onClose={() => { setModalEditarItemOpen(false); setItemEditando(null); }}
   maxWidth="sm"
   fullWidth
-  PaperProps={{ sx: { bgcolor: '#0f172a', border: '1px solid #9c27b0', borderRadius: 2 } }}
+  PaperProps={{ 
+    sx: { 
+      bgcolor: '#0f172a', 
+      border: '1px solid rgba(156, 39, 176, 0.5)', 
+      borderRadius: 3,
+      background: 'linear-gradient(145deg, #0f172a, #1a1a2e)',
+      boxShadow: '0 0 40px rgba(156, 39, 176, 0.2)'
+    } 
+  }}
 >
-  <DialogTitle sx={{ color: '#9c27b0' }}>✏️ Editar Item</DialogTitle>
-  <DialogContent>
+  <DialogTitle sx={{ 
+    color: '#e9d5ff', 
+    display: 'flex', 
+    alignItems: 'center', 
+    gap: 1.5,
+    borderBottom: '1px solid rgba(156, 39, 176, 0.3)',
+    bgcolor: 'rgba(156, 39, 176, 0.1)'
+  }}>
+    <EditIcon sx={{ color: '#9c27b0' }} />
+    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Editar Item</Typography>
+  </DialogTitle>
+  
+  <DialogContent sx={{ p: 3 }}>
     {itemEditando && (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-        <TextField
-          label="Nome"
-          fullWidth
-          size="small"
-          value={itemEditando.item.nome || ""}
-          onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, nome: e.target.value } }))}
-          InputProps={{ sx: { color: '#fff' } }}
-          InputLabelProps={{ sx: { color: '#94a3b8' } }}
-        />
-        {isMestre && (
-        <TextField
-          label="Nome Original (deixe vazio se não foi renomeado)"
-          fullWidth
-          size="small"
-          value={itemEditando.item.nomeOriginal || ""}
-          onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, nomeOriginal: e.target.value } }))}
-          InputProps={{ sx: { color: '#fff' } }}
-          InputLabelProps={{ sx: { color: '#94a3b8' } }}
-          helperText="Se preenchido, o nome aparecerá como 'Nome Editado (Original)'"
-          FormHelperTextProps={{ sx: { color: '#64748b' } }}
-        />
-        )}
-                <TextField
-                  label="Descrição"
-                  fullWidth
-                  multiline
-                  minRows={3}
-                  value={itemEditando.item.descricao || ""}
-                  onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, descricao: e.target.value } }))}
-                  InputProps={{ sx: { color: '#fff' } }}
-                  InputLabelProps={{ sx: { color: '#94a3b8' } }}
-                />
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, mt: 1 }}>
+        
+        {/* NOME E NOME ORIGINAL */}
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={isMestre ? 6 : 12}>
+            <TextField
+              label="Nome" fullWidth size="small"
+              value={itemEditando.item.nome || ""}
+              onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, nome: e.target.value } }))}
+              InputProps={{ sx: { color: '#fff', bgcolor: 'rgba(0,0,0,0.2)' } }}
+              InputLabelProps={{ sx: { color: '#94a3b8' } }}
+            />
+          </Grid>
+          {isMestre && (
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Nome Original" fullWidth size="small"
+                value={itemEditando.item.nomeOriginal || ""}
+                onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, nomeOriginal: e.target.value } }))}
+                InputProps={{ sx: { color: '#fff', bgcolor: 'rgba(0,0,0,0.2)' } }}
+                InputLabelProps={{ sx: { color: '#94a3b8' } }}
+                helperText="Deixe vazio se não foi renomeado"
+                FormHelperTextProps={{ sx: { color: '#64748b' } }}
+              />
+            </Grid>
+          )}
+        </Grid>
 
-                {/* 🟢 SISTEMA DE COMIDA/BEBIDA NO MODAL */}
-                {isMestre && (
-                <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px dashed #334155' }}>
-                  <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={itemEditando.item.isComida || false}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isComida: true, isBebida: false, tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" } }));
-                            } else {
-                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isComida: false } }));
-                            }
-                          }}
-                          size="small"
-                          sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }}
-                        />
-                      }
-                      label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 'bold' }}>🍽️ É Comida?</Typography>}
-                    />
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={itemEditando.item.isBebida || false}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isBebida: true, isComida: false, tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" } }));
-                            } else {
-                              setItemEditando(prev => ({ ...prev, item: { ...prev.item, isBebida: false } }));
-                            }
-                          }}
-                          size="small"
-                          sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
-                        />
-                      }
-                      label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 'bold' }}>🥤 É Bebida?</Typography>}
-                    />
-                  </Box>
-                  {(itemEditando.item.isComida || itemEditando.item.isBebida) && (
-                    <Grid container spacing={1.5}>
-                      <Grid item xs={6}>
-                        <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5 }}>
-                          {itemEditando.item.isComida ? '🍽️ Recupera Fome (%)' : '🥤 Recupera Sede (%)'}
-                        </Typography>
-                        <TextField
-                          fullWidth size="small" type="number"
-                          value={itemEditando.item.isComida ? (itemEditando.item.recuperacaoFome || 0) : (itemEditando.item.recuperacaoSede || 0)}
-                          onChange={(e) => {
-                            const val = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-                            setItemEditando(prev => ({ ...prev, item: { ...prev.item, [prev.item.isComida ? 'recuperacaoFome' : 'recuperacaoSede']: val } }));
-                          }}
-                          InputProps={{ inputProps: { min: 0, max: 100 }, sx: { color: itemEditando.item.isComida ? '#4caf50' : '#3b82f6', fontSize: '0.85rem', fontWeight: 700 } }}
-                          sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
-                        />
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography sx={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 700, mb: 0.5 }}>
-                          ⏳ Validade (Dias)
-                        </Typography>
-                        <TextField
-                          fullWidth size="small" type="number"
-                          value={itemEditando.item.validadeDias || 15}
-                          onChange={(e) => {
-                            const val = Math.max(1, Number(e.target.value) || 15);
-                            setItemEditando(prev => ({ ...prev, item: { ...prev.item, validadeDias: val } }));
-                          }}
-                          InputProps={{ inputProps: { min: 1 }, sx: { color: '#fff', fontSize: '0.85rem' } }}
-                          sx={{ bgcolor: '#0f172a', '& input': { textAlign: 'center' } }}
-                        />
-                      </Grid>
-                    </Grid>
-                  )}
-                </Box>
-                )}
-              </Box>
+        {/* DESCRIÇÃO */}
+        <TextField
+          label="Descrição" fullWidth multiline minRows={3}
+          value={itemEditando.item.descricao || ""}
+          onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, descricao: e.target.value } }))}
+          InputProps={{ sx: { color: '#fff', bgcolor: 'rgba(0,0,0,0.2)' } }}
+          InputLabelProps={{ sx: { color: '#94a3b8' } }}
+        />
+
+        {/* CONFIGURAÇÕES DO MESTRE (ÚNICA E EXCLUSIVA) */}
+        {isMestre && (
+          <Paper sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: 2, border: '1px dashed rgba(156, 39, 176, 0.4)' }}>
+            <Typography variant="subtitle2" sx={{ color: '#9c27b0', fontWeight: 'bold', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+              ⚙️ Configurações Especiais
+            </Typography>
+            
+            <Box sx={{ display: 'flex', gap: 3, mb: 2 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={itemEditando.item.isComida || false}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setItemEditando(prev => ({ ...prev, item: { 
+                        ...prev.item, isComida: checked, isBebida: false, 
+                        ...(checked ? { tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" } : {})
+                      }}));
+                    }}
+                    size="small" sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }}
+                  />
+                }
+                label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold' }}>🍽️ É Comida?</Typography>}
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={itemEditando.item.isBebida || false}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setItemEditando(prev => ({ ...prev, item: { 
+                        ...prev.item, isBebida: checked, isComida: false, 
+                        ...(checked ? { tipoDano: "Nenhum", consumivel: "Nenhum", insumivel: "Nenhum" } : {})
+                      }}));
+                    }}
+                    size="small" sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                  />
+                }
+                label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold' }}>🥤 É Bebida?</Typography>}
+              />
+            </Box>
+
+            {/* CAMPOS DE COMIDA/BEBIDA */}
+            {(itemEditando.item.isComida || itemEditando.item.isBebida) && (
+              <Grid container spacing={2} sx={{ mb: 2, p: 1.5, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1 }}>
+                <Grid item xs={6}>
+                  <TextField
+                    label={itemEditando.item.isComida ? 'Recupera Fome (%)' : 'Recupera Sede (%)'}
+                    type="number" fullWidth size="small"
+                    value={itemEditando.item.isComida ? (itemEditando.item.recuperacaoFome || 0) : (itemEditando.item.recuperacaoSede || 0)}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                      setItemEditando(prev => ({ ...prev, item: { ...prev.item, [prev.item.isComida ? 'recuperacaoFome' : 'recuperacaoSede']: val } }));
+                    }}
+                    InputProps={{ inputProps: { min: 0, max: 100 }, sx: { color: itemEditando.item.isComida ? '#4caf50' : '#3b82f6', fontWeight: 700 } }}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    label="Validade (Dias)" type="number" fullWidth size="small"
+                    value={itemEditando.item.validadeDias || 15}
+                    onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, validadeDias: Math.max(1, Number(e.target.value) || 15) } }))}
+                    InputProps={{ inputProps: { min: 1 }, sx: { color: '#fff' } }}
+                  />
+                </Grid>
+              </Grid>
             )}
-          </DialogContent>
-  <DialogActions>
-    <Button onClick={() => { setModalEditarItemOpen(false); setItemEditando(null); }} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+
+            {/* TRAVA DE CONSUMÍVEL E INSUMÍVEL */}
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <FormControl fullWidth size="small" disabled={itemEditando.item.isComida || itemEditando.item.isBebida}>
+                  <InputLabel sx={{ color: '#94a3b8' }}>Consumível</InputLabel>
+                  <Select
+                    value={itemEditando.item.consumivel || "Nenhum"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setItemEditando(prev => ({ ...prev, item: { 
+                        ...prev.item, 
+                        consumivel: val,
+                        insumivel: val !== "Nenhum" ? "Nenhum" : prev.item.insumivel // 🟢 TRAVA AQUI
+                      }}));
+                    }}
+                    sx={{ color: '#fff', bgcolor: 'rgba(0,0,0,0.2)' }}
+                    MenuProps={{ PaperProps: { sx: { bgcolor: '#0f172a', color: '#fff' } } }}
+                  >
+                    {TIPOS_CONSUMIVEL.map(tc => (
+                      <MenuItem key={tc.valor} value={tc.valor}>{tc.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              <Grid item xs={6}>
+                <TextField
+                  label="% de Recuperação" type="number" fullWidth size="small"
+                  disabled={itemEditando.item.isComida || itemEditando.item.isBebida || itemEditando.item.consumivel === "Nenhum"}
+                  value={itemEditando.item.consumivelPercentual || 100}
+                  onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, consumivelPercentual: Math.max(1, Math.min(100, Number(e.target.value) || 100)) } }))}
+                  InputProps={{ inputProps: { min: 1, max: 100 }, sx: { color: '#fff' } }}
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <FormControl fullWidth size="small" disabled={itemEditando.item.isComida || itemEditando.item.isBebida}>
+                  <InputLabel sx={{ color: '#94a3b8' }}>Tipo de Insumível</InputLabel>
+                  <Select
+                    value={itemEditando.item.insumivel || "Nenhum"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setItemEditando(prev => ({ ...prev, item: { 
+                        ...prev.item, 
+                        insumivel: val,
+                        consumivel: val !== "Nenhum" ? "Nenhum" : prev.item.consumivel // 🟢 TRAVA AQUI
+                      }}));
+                    }}
+                    sx={{ color: '#fff', bgcolor: 'rgba(0,0,0,0.2)' }}
+                    MenuProps={{ PaperProps: { sx: { bgcolor: '#0f172a', color: '#fff' } } }}
+                  >
+                    {TIPOS_INSUMIVEL.map(ti => (
+                      <MenuItem key={ti.valor} value={ti.valor}>{ti.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </Paper>
+        )}
+      </Box>
+    )}
+  </DialogContent>
+  <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+    <Button onClick={() => { setModalEditarItemOpen(false); setItemEditando(null); }} sx={{ color: '#94a3b8' }}>
+      Cancelar
+    </Button>
     <Button
       variant="contained"
       onClick={async () => {
         if (!itemEditando) return;
         const { categoria, index, item, secundarioId } = itemEditando;
 
-        // Atualiza dentro de inventário secundário
         if (categoria.startsWith("sec_") && secundarioId) {
           const invAtual = inventariosSecundarios.find(inv => inv.id === secundarioId);
           if (!invAtual) return;
@@ -10060,7 +10499,6 @@ const novosDiversos = [...diversosAtuais, novoItem];
           setInventariosSecundarios(novosInventarios);
           await setDoc(doc(db, "fichas", fichaId), { inventariosSecundarios: novosInventarios }, { merge: true });
         } else {
-          // Inventário principal
           const novosItens = (ficha[categoria] || []).map((it, k) => k === index ? { ...item } : it);
           setFicha(prev => ({ ...prev, [categoria]: novosItens }));
           await setDoc(doc(db, "fichas", fichaId), { [categoria]: novosItens }, { merge: true });
@@ -10069,9 +10507,9 @@ const novosDiversos = [...diversosAtuais, novoItem];
         setModalEditarItemOpen(false);
         setItemEditando(null);
       }}
-      sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+      sx={{ bgcolor: '#9c27b0', color: '#fff', fontWeight: 'bold', px: 4, '&:hover': { bgcolor: '#7b1fa2' } }}
     >
-      Salvar
+      Salvar Alterações
     </Button>
   </DialogActions>
 </Dialog>
@@ -10279,6 +10717,140 @@ const novosDiversos = [...diversosAtuais, novoItem];
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 🟢 NOTIFICAÇÕES DE FOME/SEDE - CANTO INFERIOR DIREITO */}
+      {(notifFome.visible || notifSede.visible) && (
+        <Box sx={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          zIndex: 10000,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1.5,
+          maxWidth: 380,
+        }}>
+          {notifFome.visible && (
+            <Paper elevation={8} sx={{
+              p: 2,
+              bgcolor: '#1a1a2e',
+              border: '2px solid #ff9800',
+              borderRadius: 2,
+              background: 'linear-gradient(135deg, #1a1a2e 0%, #2a1f0f 100%)',
+              boxShadow: '0 0 25px rgba(255,152,0,0.6)',
+              position: 'relative',
+            }}>
+              <IconButton
+                onClick={fecharNotifFome}
+                size="small"
+                sx={{
+                  position: 'absolute', top: 4, right: 4,
+                  color: '#94a3b8',
+                  '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.15)' },
+                }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pr: 3 }}>
+                <Typography sx={{ fontSize: '2rem', animation: 'pulse 1.5s ease-in-out infinite' }}>
+                  🍖
+                </Typography>
+                <Box sx={{ flex: 1 }}>
+                  <Typography sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                    FOME CRÍTICA!
+                  </Typography>
+                  <Typography sx={{ color: '#cbd5e1', fontSize: '0.8rem' }}>
+                    Fome atual: {ficha.fome ?? 100}%
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={ficha.fome ?? 100}
+                    sx={{
+                      mt: 0.5, height: 6, borderRadius: 3,
+                      bgcolor: '#ff980022',
+                      '& .MuiLinearProgress-bar': { bgcolor: '#ff9800' },
+                    }}
+                  />
+                </Box>
+              </Box>
+              {isMestre && (
+                <Button
+                  fullWidth
+                  size="small"
+                  variant="contained"
+                  onClick={recuperarFomeCompleta}
+                  sx={{
+                    mt: 1.5, bgcolor: '#ff9800', color: '#000', fontWeight: 'bold',
+                    '&:hover': { bgcolor: '#f57c00' },
+                  }}
+                >
+                  🍽️ Recuperar 100%
+                </Button>
+              )}
+            </Paper>
+          )}
+
+          {notifSede.visible && (
+            <Paper elevation={8} sx={{
+              p: 2,
+              bgcolor: '#1a1a2e',
+              border: '2px solid #3b82f6',
+              borderRadius: 2,
+              background: 'linear-gradient(135deg, #1a1a2e 0%, #0f1f3f 100%)',
+              boxShadow: '0 0 25px rgba(59,130,246,0.6)',
+              position: 'relative',
+            }}>
+              <IconButton
+                onClick={fecharNotifSede}
+                size="small"
+                sx={{
+                  position: 'absolute', top: 4, right: 4,
+                  color: '#94a3b8',
+                  '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.15)' },
+                }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pr: 3 }}>
+                <Typography sx={{ fontSize: '2rem', animation: 'pulse 1.5s ease-in-out infinite' }}>
+                  💧
+                </Typography>
+                <Box sx={{ flex: 1 }}>
+                  <Typography sx={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                    SEDE CRÍTICA!
+                  </Typography>
+                  <Typography sx={{ color: '#cbd5e1', fontSize: '0.8rem' }}>
+                    Sede atual: {ficha.sede ?? 100}%
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={ficha.sede ?? 100}
+                    sx={{
+                      mt: 0.5, height: 6, borderRadius: 3,
+                      bgcolor: '#3b82f622',
+                      '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' },
+                    }}
+                  />
+                </Box>
+              </Box>
+              {isMestre && (
+                <Button
+                  fullWidth
+                  size="small"
+                  variant="contained"
+                  onClick={recuperarSedeCompleta}
+                  sx={{
+                    mt: 1.5, bgcolor: '#3b82f6', color: '#fff', fontWeight: 'bold',
+                    '&:hover': { bgcolor: '#2563eb' },
+                  }}
+                >
+                  🥤 Recuperar 100%
+                </Button>
+              )}
+            </Paper>
+          )}
+        </Box>
+      )}
     </Paper>
     );
   }

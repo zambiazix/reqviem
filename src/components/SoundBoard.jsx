@@ -232,26 +232,28 @@ export default function SoundBoard({ isMaster }) {
     }
   }, []);
 
-  // 🟢 UPLOAD TO BACKEND (OTIMIZADO)
+  // 🟢 UPLOAD DIRETO PARA O CLOUDINARY (NÃO SOBRECARREGA O RENDER)
   const uploadToBackend = useCallback(async (file) => {
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("https://reqviem.onrender.com/upload", {
+      // Preset configurado como "Unsigned" no seu print
+      formData.append("upload_preset", "rpg_musicas"); 
+      
+      // Envia direto pro Cloudinary, sem passar pelo Render
+      const res = await fetch("https://api.cloudinary.com/v1_1/dwaxw0l83/auto/upload", {
         method: "POST",
         body: formData,
-        mode: 'cors',
-        credentials: 'include',
       });
+      
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error('Erro no upload:', errorText);
         throw new Error(`Upload falhou: ${res.status}`);
       }
+      
       const data = await res.json();
-      console.log('✅ Upload sucesso:', data.url);
-      return data?.url || null;
+      console.log('✅ Upload Cloudinary sucesso:', data.secure_url);
+      return data?.secure_url || null;
     } catch (err) {
       console.error("Erro no upload:", err);
       alert("Erro ao enviar arquivo. Verifique o console.");

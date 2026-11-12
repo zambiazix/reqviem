@@ -25,9 +25,10 @@ import {
   FormControl,
   InputLabel,
   Select,
-  Checkbox,           // 🟢 ADICIONE
+  Checkbox,
   FormControlLabel,
-  Chip,   // 🟢 ADICIONE
+  Radio,
+  Chip,
   Slider,
   Tooltip,
 } from "@mui/material";
@@ -615,6 +616,9 @@ const [posChoqueRolls, setPosChoqueRolls] = useState([]);
 const [posChoqueTotal, setPosChoqueTotal] = useState(0);
 // 🟢 ESTADOS DO SISTEMA DE COMBATE
 const [acaoModo, setAcaoModo] = useState("acao"); // "acao" = normal, "reacao" = respondendo ataque
+const [acaoTipos, setAcaoTipos] = useState([]); // Array: ["dano", "furtividade", "manipulacao", "livre"]
+const [acaoFurtividadeSubTipo, setAcaoFurtividadeSubTipo] = useState(""); // "ativa" | "passiva"
+const [acaoReacaoTipo, setAcaoReacaoTipo] = useState(""); // "esquiva" | "contragolpe"
 // 🟢 JOGADA EM CONJUNTO
 const [jogadoresConjunto, setJogadoresConjunto] = useState([]);
 const [acaoAlvo, setAcaoAlvo] = useState(""); // email do alvo
@@ -924,17 +928,16 @@ const getCorAtributo = (nome) => {
     return "normal";
   }, [acaoItens]);
 
-  // 🟢 VMS: bloqueado em reação, alvo, dano ou furtividade (só permitido em Ação livre)
+  // 🟢 VMS: bloqueado em reação, dano ou furtividade
   const vmsBloqueado =
     acaoModo === "reacao" ||
-    !!acaoAlvo ||
-    acaoTipo === "dano" ||
-    acaoTipo === "furtividade";
+    acaoTipos.includes("dano") ||
+    acaoTipos.includes("furtividade");
 
   const vmsMotivoBloqueio =
     acaoModo === "reacao" ? "🔒 VMS desativado em Reações"
-    : acaoTipo === "furtividade" ? "🔒 VMS desativado em Ações Furtivas"
-    : (acaoTipo === "dano" || !!acaoAlvo) ? "🔒 VMS desativado em Ações de Combate"
+    : acaoTipos.includes("furtividade") ? "🔒 VMS desativado em Ações Furtivas"
+    : acaoTipos.includes("dano") ? "🔒 VMS desativado em Ações de Combate"
     : "";
 
   const podeAdicionarItemAcao = () => {
@@ -950,6 +953,14 @@ const getCorAtributo = (nome) => {
   const chatCol = collection(db, "chat");
 
     const isMaster = userEmail === "mestre@reqviemrpg.com";
+    
+    // 🟢 IDENTIDADE DE ENVIO (Mestre pode assumir a ficha do jogador)
+    const emailEnviando = isMaster && jogadorSelecionadoEmail && jogadorSelecionadoEmail !== "mestre@reqviemrpg.com" 
+      ? jogadorSelecionadoEmail 
+      : userEmail;
+    const nickEnviando = isMaster && jogadorSelecionadoEmail && jogadorSelecionadoEmail !== "mestre@reqviemrpg.com" 
+      ? (fichasMap[jogadorSelecionadoEmail]?.nome || userNick) 
+      : userNick;
   
   // 🟢 EXPOR FICHAS MAP PARA O SOCIALBAR
   useEffect(() => {
@@ -1226,7 +1237,7 @@ useEffect(() => {
     };
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, []);
+  }, [emailEnviando, nickEnviando]); // 🟢 Adicionado dependências
 
   // 🟢 CARREGAR LISTA DE JOGADORES PARA ALVO
 useEffect(() => {
@@ -1382,7 +1393,7 @@ useEffect(() => {
   }
 
     async function quickRollDice(num, sides) {
-  const fatorSorte = sorteAzarMap[userEmail];
+  const fatorSorte = sorteAzarMap[emailEnviando]; // 🟢 USA A IDENTIDADE CORRETA
   const rolls = [];
   let total = 0;
   for (let i = 0; i < num; i++) {
@@ -1405,8 +1416,8 @@ useEffect(() => {
   const isDadoSecreto = modoSecreto; // Afeta TODOS os jogadores
   
   await addDoc(chatCol, {
-    userNick,
-    userEmail,
+    userNick: nickEnviando,
+    userEmail: emailEnviando,
     type: "dice",
     text: `${num}d${sides} => [${rolls.join(", ")}] = ${total}`,
     secretRolls: isDadoSecreto ? rolls : null,
@@ -1561,10 +1572,10 @@ async function rolarDadoMorte() {
   async function sendMessage(e) {
   e?.preventDefault();
   if (!text && !filePreview && filePreviews.length === 0) return;
-  setLastSender(userEmail);
+  setLastSender(emailEnviando);
   
   // Remove o status de digitando
-  deleteDoc(doc(db, "typing", userEmail)).catch(() => {});
+  deleteDoc(doc(db, "typing", emailEnviando)).catch(() => {});
     // 🟢 BLOQUEAR ENVIO SE CHAT TRAVADO (jogadores)
   if (chatTravado && !isMaster) {
     alert("🔒 O chat está travado pelo Mestre. Aguarde a sessão começar!");
@@ -1575,8 +1586,8 @@ async function rolarDadoMorte() {
   if (dice) {
         const isDadoSecreto = modoSecreto; // Afeta TODOS os jogadores
     await addDoc(chatCol, {
-      userNick,
-      userEmail,
+      userNick: nickEnviando,
+      userEmail: emailEnviando,
       type: "dice",
       text: `${dice.expr} => [${dice.rolls.join(", ")}] = ${dice.total}`,
       secretRolls: isDadoSecreto ? dice.rolls : null,
@@ -1590,8 +1601,8 @@ async function rolarDadoMorte() {
 
   if (filePreviews.length > 0) {
     await addDoc(chatCol, {
-      userNick,
-      userEmail,
+      userNick: nickEnviando,
+      userEmail: emailEnviando,
       type: "image-group",
       text: text || "", // 🟢 Mantém o texto com quebras
       images: filePreviews,
@@ -1604,8 +1615,8 @@ async function rolarDadoMorte() {
 
   if (filePreview) {
     await addDoc(chatCol, {
-      userNick,
-      userEmail,
+      userNick: nickEnviando,
+      userEmail: emailEnviando,
       type: "image",
       text: filePreview,
       timestamp: serverTimestamp(),
@@ -1624,8 +1635,8 @@ async function rolarDadoMorte() {
 
   // 🟢 Envia o texto preservando quebras de linha
   await addDoc(chatCol, { 
-    userNick, 
-    userEmail, 
+    userNick: nickEnviando, 
+    userEmail: emailEnviando, 
     type, 
     text: text,
     timestamp: serverTimestamp() 
@@ -1771,8 +1782,8 @@ const ocultarImagemGaleria = (url) => {
 
   async function sendGif(url) {
     await addDoc(chatCol, {
-      userNick,
-      userEmail,
+      userNick: nickEnviando,
+      userEmail: emailEnviando,
       type: "gif",
       text: url,
       timestamp: serverTimestamp(),
@@ -1904,6 +1915,18 @@ async function rolarAcaoConjunta() {
     if (acaoEmbuicao > 0) { totalD10 += acaoEmbuicao; descricao.push(`Embuição: ${acaoEmbuicao}`); }
     if (acaoHabilidadeSelecionada) { totalD10 += acaoHabilidadeDado; descricao.push(`Habilidade: ${acaoHabilidadeSelecionada} (${acaoHabilidadeDado})`); }
 
+    // 🟢 DEBUFF DE FOME E SEDE
+    const fomeBaixa = (fichaJogador?.fome ?? 100) <= 1;
+    const sedeBaixa = (fichaJogador?.sede ?? 100) <= 1;
+    let penalidadeFomeSede = 0;
+    if (fomeBaixa) penalidadeFomeSede += 1;
+    if (sedeBaixa) penalidadeFomeSede += 2;
+    
+    if (penalidadeFomeSede > 0) {
+        totalD10 = Math.max(1, totalD10 - penalidadeFomeSede);
+        descricao.push(`🍖 Penalidade Fome/Sede: -${penalidadeFomeSede} dado(s) (Mín. 1)`);
+    }
+
     const fatorSorte = sorteAzarMap[userEmail];
     const rolls = [];
     let total = 0;
@@ -1996,34 +2019,39 @@ async function rolarAcao() {
     }
   }
   
-    // 🟢 Só atributo é obrigatório (ou perícia)
-  if (!acaoAtributo && !acaoPericia && !acaoItemConsumivel) {
-    alert("Selecione pelo menos um Atributo ou uma Perícia!");
-    return;
-  }
-  
-     // 🟢 Consumível sozinho é permitido (sem atributo/perícia)
-    
-    // 🟢 VMS é OBRIGATÓRIO em Ações livres; BLOQUEADO em Combate/Furtiva/Reação
-    const requiresVMS = acaoModo !== "reacao" && !acaoAlvo && acaoTipo !== "dano" && acaoTipo !== "furtividade";
-    if (requiresVMS && !acaoValorDificuldade) {
-      alert("🎭 Esta é uma AÇÃO livre — preencha o VMS (Valor Mínimo de Sucesso)!\n\nPara ações com alvo/dano/furtividade, o VMS não se aplica.");
-      return;
-    }
+    // 🟢 DEFINE OS TIPOS
+  const isFurtiva = acaoTipos.includes("furtividade");
+  const isFurtivaAtiva = isFurtiva && acaoFurtividadeSubTipo === "ativa";
+  const isDano = acaoTipos.includes("dano") || isFurtivaAtiva;
 
-  // 🟢 Só valida se NÃO for consumível (consumível não precisa de tipo de dano)
-  if (acaoModo === "acao" && acaoAlvo && !acaoTipo && !acaoItemConsumivel) {
-    alert("Selecione o tipo: ☠️ Dano");
+  // 🟢 Só atributo é obrigatório (ou consumível)
+  if (!acaoAtributo && !acaoItemConsumivel) {
+    alert("Selecione pelo menos um Atributo para realizar a ação!");
+    return;
+  }
+    
+  // 🟢 VMS é OBRIGATÓRIO em Ações que não causam dano (Manipulação, Livre) e não são Furtivas
+  const requiresVMS = acaoModo !== "reacao" && !isDano && !isFurtiva;
+  if (requiresVMS && !acaoValorDificuldade) {
+    alert("🎭 Esta é uma AÇÃO livre — preencha o VMS (Valor Mínimo de Sucesso)!\n\nPara ações com dano ou furtividade, o VMS não se aplica.");
+    return;
+  }
+
+  // 🟢 Se tem alvo, precisa ter pelo menos um tipo selecionado
+  if (acaoModo === "acao" && acaoAlvo && acaoTipos.length === 0 && !acaoItemConsumivel) {
+    alert("Selecione pelo menos um tipo de ação (Dano, Furtividade, Manipulação ou Livre)!");
     return;
   }
   
-  if (acaoModo === "acao" && acaoTipo === "dano" && !acaoAlvo) {
-    alert("Para uma Ação de Dano, você precisa selecionar um 🎯 Alvo!");
+  // 🟢 Dano exige alvo
+  if (acaoModo === "acao" && isDano && !acaoAlvo) {
+    alert("Para uma Ação de Dano (ou Furtividade Ativa), você precisa selecionar um 🎯 Alvo!");
     setRolagemEmAndamento(false);
     return;
   }
   
-  if (acaoModo === "reacao" && !acaoTipo) {
+  // 🟢 Reação exige tipo
+  if (acaoModo === "reacao" && !acaoReacaoTipo) {
     alert("Selecione: 🛡️ Esquiva ou ⚔️ Contragolpe");
     return;
   }
@@ -2254,6 +2282,18 @@ if (acaoHabilidadeSelecionada) {
         descricao.push(`⚔️ Golpe Duplo (Traço ${nomeTracoGolpe})`);
     }
 
+    // 🟢 DEBUFF DE FOME E SEDE (Apenas 1% ou 0%)
+    const fomeBaixa = (fichaJogador?.fome ?? 100) <= 1;
+    const sedeBaixa = (fichaJogador?.sede ?? 100) <= 1;
+    let penalidadeFomeSede = 0;
+    if (fomeBaixa) penalidadeFomeSede += 1;
+    if (sedeBaixa) penalidadeFomeSede += 2;
+    
+    if (penalidadeFomeSede > 0) {
+        totalD10 = Math.max(1, totalD10 - penalidadeFomeSede);
+        descricao.push(`🍖 Penalidade Fome/Sede: -${penalidadeFomeSede} dado(s) (Mín. 1)`);
+    }
+
     const rollsPorGolpe = [];
     let total = 0;
     const fatorSorte = sorteAzarMap[userEmail];
@@ -2325,18 +2365,29 @@ if (acaoHabilidadeSelecionada) {
     
     // 🟢 MONTAR MENSAGEM (ANTES do Pós-Choque)
     // 🟢 Detecta o tipo de ação para o cabeçalho
+    const isFurtivaPassiva = isFurtiva && acaoFurtividadeSubTipo === "passiva";
+    const isManipulacao = acaoTipos.includes("manipulacao");
+    
     const tipoAcao = (() => {
-      if (acaoTipo === "furtividade" && acaoAlvo) return "furtiva";
-      if (acaoTipo === "dano" || acaoAlvo) return "combate";
+      if (isFurtiva && acaoAlvo) return "furtiva";
+      if (isDano) return "combate";
+      if (isManipulacao) return "manipulacao";
       return "acao";
     })();
+    
     const headerAcao = {
-      acao:    { titulo: "🎭 AÇÃO 🎭",            cor: "#00e0ff" },
+      acao:    { titulo: "🎭 AÇÃO LIVRE 🎭",       cor: "#00e0ff" },
       combate: { titulo: "⚔️ AÇÃO DE COMBATE ⚔️", cor: "#ef4444" },
       furtiva: { titulo: "🌫️ AÇÃO FURTIVA 🌫️",   cor: "#3b82f6" },
+      manipulacao: { titulo: "🧠 MANIPULAÇÃO 🧠", cor: "#a855f7" },
     }[tipoAcao];
 
     let mensagem = `${montarCaixa(headerAcao.titulo, 37)}\n\n🎭 [C:${headerAcao.cor}]${nomePersonagem}[/C]\n`;
+    
+    if (isFurtivaPassiva) mensagem += `*(Furtividade Passiva - Foco em Sucesso/Fracasso)*\n`;
+    if (isFurtivaAtiva) mensagem += `*(Furtividade Ativa - Foco em Dano)*\n`;
+    if (isManipulacao) mensagem += `*(Ação de Manipulação)*\n`;
+    
     if (descricaoColorida.length > 0) {
       mensagem += `\n📋 COMPONENTES:\n${partesDescricao}\n`;
     }
@@ -2357,8 +2408,12 @@ if (acaoHabilidadeSelecionada) {
     
     if (acaoValorDificuldade) {
       const vd = Number(acaoValorDificuldade);
-      if (total >= vd) mensagem += `\n✅ SUCESSO! (Resultado ${total} ≥ VMS ${vd})`;
-      else mensagem += `\n❌ FRACASSO! (Resultado ${total} < VMS ${vd})`;
+      if (total >= vd) {
+        mensagem += `\n[C:#4caf50]✅ SUCESSO![/C] (Resultado ${total} ≥ VMS ${vd})`;
+        if (isManipulacao || isLivre) mensagem += `\n*(Ação concluída sem causar dano)*`;
+      } else {
+        mensagem += `\n[C:#ef4444]❌ FRACASSO![/C] (Resultado ${total} < VMS ${vd})`;
+      }
     }
     
     // 🟢 TALENTO PÓS-CHOQUE (agora tipoDanoMensagem e mensagem JÁ existem)
@@ -2383,7 +2438,7 @@ if (acaoHabilidadeSelecionada) {
     }
 
     // 🟢 FURTIVIDADE (bloco movido pra fora do if do dano)
-    if (acaoModo === "acao" && acaoTipo === "furtividade" && acaoAlvo) {
+    if (acaoModo === "acao" && isFurtiva && acaoAlvo) {
       const fichaAlvo = fichasMap[acaoAlvo];
       const percepcaoAlvo = fichaAlvo?.pericias?.percepcao || 0;
       const inteligenciaAlvo = fichaAlvo?.atributos?.inteligencia || 0;
@@ -2439,13 +2494,20 @@ if (acaoHabilidadeSelecionada) {
       });
 
       await adicionarXpAcao(jogadorSelecionadoEmail, 1);
-      setAcaoOpen(false);
-      setRolagemEmAndamento(false);
-      setAcaoTipo("");
-      return;
+      
+      // 🟢 Se for Furtividade Passiva, termina aqui (sem dano)
+      if (!isDano) {
+        mensagem += `\n*(Nenhum dano foi aplicado)*`;
+        setAcaoOpen(false);
+        setRolagemEmAndamento(false);
+        setAcaoTipos([]);
+        setAcaoFurtividadeSubTipo("");
+        return;
+      }
     }
 
-                if (acaoModo === "acao" && acaoAlvo && acaoTipo === "dano") {
+    // 🟢 SE FOR DANO (ou Furtividade Ativa)
+    if (acaoModo === "acao" && acaoAlvo && isDano) {
       const pendenteRef = doc(collection(db, "acoesPendentes"));
       
       // 🟢 DETERMINAR TIPO DE DANO
@@ -2504,28 +2566,36 @@ if (acaoHabilidadeSelecionada) {
             // 🟢 SE FOR PARTICIPANTE DE AÇÃO CONJUNTA
         if (acaoModo === "conjunta_participante" && acaoConjuntaAtivaId) {
             const docRef = doc(db, "acoesConjuntas", acaoConjuntaAtivaId);
-            await updateDoc(docRef, {
-                [`rolagens.${jogadorSelecionadoEmail}`]: {
-                    email: jogadorSelecionadoEmail,
-                    nome: fichaJogador?.nome || userNick,
-                    totalD10,
-                    rolls,
-                    total,
-                    descricao: descricao.join(" + "),
-                    isCritico,
-                    isErroCritico
+            
+            // 🟢 CORREÇÃO: usa setDoc com merge para não falhar se o campo não existir
+            await setDoc(docRef, {
+                rolagens: {
+                    [jogadorSelecionadoEmail]: {
+                        email: jogadorSelecionadoEmail,
+                        nome: fichaJogador?.nome || userNick,
+                        totalD10,
+                        rolls,
+                        total,
+                        descricao: descricao.join(" + "),
+                        isCritico,
+                        isErroCritico
+                    }
                 }
-            });
+            }, { merge: true });
 
             const snap = await getDoc(docRef);
             const data = snap.data();
             
+            // 🟢 CORREÇÃO: Verificação segura
+            const rolagensAtuais = data.rolagens || {};
+            const participantes = data.participantes || [];
+            
             // Se todos já rolaram, junta e manda no chat!
-            if (Object.keys(data.rolagens).length === data.participantes.length) {
+            if (Object.keys(rolagensAtuais).length === participantes.length) {
                 let msg = `${montarCaixa("🌐 AÇÃO EM CONJUNTO FINALIZADA 🌐", 37)}\n\n`;
                 let somaTotal = 0;
-                for (const email of data.participantes) {
-                    const r = data.rolagens[email];
+                for (const email of participantes) {
+                    const r = rolagensAtuais[email];
                     somaTotal += r.total;
                     msg += `🎲 [C:#00e0ff]${r.nome}[/C]: ${r.totalD10}d10 => [${r.rolls.join(", ")}] = ${r.total}\n`;
                     if (r.descricao) msg += `   📋 ${r.descricao}\n`;
@@ -2543,12 +2613,12 @@ if (acaoHabilidadeSelecionada) {
                         alvo: data.alvo,
                         tipo: "dano",
                         valorAtaque: somaTotal,
-                        dadosRolados: Object.values(data.rolagens).flatMap(r => r.rolls),
+                        dadosRolados: Object.values(rolagensAtuais).flatMap(r => r.rolls),
                         itemUsado: null,
                         habilidadeUsada: null,
                         tipoDanoAtaque: data.tipoDano,
-                        isCritico: Object.values(data.rolagens).some(r => r.isCritico),
-                        isErroCritico: Object.values(data.rolagens).every(r => r.isErroCritico),
+                        isCritico: Object.values(rolagensAtuais).some(r => r.isCritico),
+                        isErroCritico: Object.values(rolagensAtuais).every(r => r.isErroCritico),
                         ignorarArmaduraDemolidor: false,
                         conjunto: true,
                         participantes: data.participantes,
@@ -2564,7 +2634,7 @@ if (acaoHabilidadeSelecionada) {
                     userEmail: "sistema@reqviemrpg.com",
                     type: "acao",
                     text: isDadoSecreto ? msg.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : msg,
-                    dadosRolados: Object.values(data.rolagens).flatMap(r => r.rolls),
+                    dadosRolados: Object.values(rolagensAtuais).flatMap(r => r.rolls),
                     timestamp: serverTimestamp(),
                 });
                 await updateDoc(docRef, { status: "finalizado" });
@@ -2584,11 +2654,11 @@ if (acaoHabilidadeSelecionada) {
         }
 
         // 🟢 SE FOR REAÇÃO: Envia como o personagem que reagiu
-        if (acaoModo === "reacao" && acaoPendenteId && acaoTipo) {
+        if (acaoModo === "reacao" && acaoPendenteId && acaoReacaoTipo) {
       // 🟢 PÉ DIREITO: primeira esquiva do combate é perfeita
       let isPeDireitoPerfeito = false;
       if (
-        acaoTipo === "esquiva" &&
+        acaoReacaoTipo === "esquiva" &&
         fichaJogador?.caracteristicas?.includes("Pé Direito") &&
         !fichaJogador?.peDireitoUsado
       ) {
@@ -2598,7 +2668,7 @@ if (acaoHabilidadeSelecionada) {
       
       const resultadoCombate = await resolverCombate(
         acaoPendenteId,
-        acaoTipo,
+        acaoReacaoTipo,
         total,
         rolls,
         { peDireitoPerfeito: isPeDireitoPerfeito }
@@ -2617,136 +2687,10 @@ if (acaoHabilidadeSelecionada) {
       return;
     }
     
-            // 🟢 SE FOR CONSUMÍVEL, APLICAR EFEITO
-    if (acaoItemConsumivel && _consumivelItem) {
-      const _consumivelNome = _consumivelItem?.nome || acaoItem;
-      const valorReal = Math.round(acaoConsumivelValor * acaoConsumivelPercentual / 100);
-      const emailAlvo = acaoAlvo || jogadorSelecionadoEmail;
-      const ehOutro = acaoAlvo && acaoAlvo !== jogadorSelecionadoEmail;
-      
-      // Para outro jogador: precisa de 51% do total máximo
-      const totalMaximo = totalD10 * 10; // máximo possível
-      const percentualAcerto = totalMaximo > 0 ? (total / totalMaximo) * 100 : 0;
-      
-      if (ehOutro && percentualAcerto < 51) {
-        // Falhou em aplicar no outro
-        const _consumivelNomeParaErro = _consumivelItem?.nome || acaoItem;
-        mensagem += `\n\n🧪 **FALHA ao usar ${_consumivelNomeParaErro}!** (${Math.round(percentualAcerto)}% < 51% necessário)`;
-                const isDadoSecreto = modoSecreto;
-        await addDoc(chatCol, {
-          userNick: fichaJogador?.nome || userNick,
-          userEmail: jogadorSelecionadoEmail,
-          type: "acao",
-          text: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagem,
-          dadosRolados: rolls,
-          secretRolls: isDadoSecreto ? rolls : null,
-          secretText: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
-          timestamp: serverTimestamp(),
-        });
-      } else {
-        // Sucesso - aplicar efeito
-        const refAlvo = doc(db, "fichas", emailAlvo);
-        const snapAlvo = await getDoc(refAlvo);
-        
-        if (snapAlvo.exists()) {
-          const fichaAlvo = snapAlvo.data();
-          let atualizacoes = {};
-          let msgEfeito = "";
-          const nomeAlvo = ehOutro ? (fichasMap[emailAlvo]?.nome || emailAlvo) : nomePersonagem;
-          
-          if (acaoConsumivelTipo === "PV") {
-            const pvMax = 100 + (Math.max(1, Number(fichaAlvo.atributos?.constituicao) || 1) + Math.max(0, Number(fichaAlvo.pericias?.sobrevivencia) || 0)) * 10;
-            const novoPV = Math.min(pvMax, (fichaAlvo.pontosVida || 0) + valorReal);
-            atualizacoes.pontosVida = novoPV;
-            msgEfeito = `❤️ +${valorReal} PV → ${nomeAlvo} (${fichaAlvo.pontosVida || 0} → ${novoPV})`;
-          } else if (acaoConsumivelTipo === "PE") {
-            const peMax = 10 + (Math.max(1, Number(fichaAlvo.atributos?.vontade) || 1) + Math.max(0, Number(fichaAlvo.pericias?.aura) || 0)) * 5;
-            const novoPE = Math.min(peMax, (fichaAlvo.pontosEnergia || 0) + valorReal);
-            atualizacoes.pontosEnergia = novoPE;
-            msgEfeito = `⚡ +${valorReal} PE → ${nomeAlvo} (${fichaAlvo.pontosEnergia || 0} → ${novoPE})`;
-          } else if (acaoConsumivelTipo === "RE") {
-            msgEfeito = `🔄 Efeito removido de ${nomeAlvo}!`;
-          }
-          
-          await setDoc(refAlvo, atualizacoes, { merge: true });
-          
-                    // 🟢 CONSUMO REAL DO ITEM BASEADO NA DURABILIDADE
-          // A durabilidade do item representa o % restante do item
-          // Ex: durabilidade 50% + usar 100% = consome os 50% restantes + 50% do próximo
-          
-          // 🟢 Usa o NOME DO CONSUMÍVEL (não o primeiro item) pra não bagunçar
-          const categoria = Object.keys(fichaJogador).find(cat => 
-            Array.isArray(fichaJogador[cat]) && fichaJogador[cat].some(it => it.nome === _consumivelNome)
-          );
-          
-          if (categoria) {
-            // Pega TODOS os itens com o mesmo nome (podem estar em slots diferentes)
-            const itensMismoNome = fichaJogador[categoria]
-              .map((it, i) => ({ ...it, __originalIndex: i }))
-              .filter(it => it.nome === _consumivelNome);
-            
-            let percentualRestanteParaConsumir = acaoConsumivelPercentual;
-            const itensAtualizados = [...fichaJogador[categoria]];
-            
-            for (const itemAtual of itensMismoNome) {
-              if (percentualRestanteParaConsumir <= 0) break;
-              
-              const durabilidadeAtual = itemAtual.durabilidade || 100;
-              const idx = itemAtual.__originalIndex;
-              
-              // Quanto este item ainda tem disponível (%)
-              const disponivelNesteItem = durabilidadeAtual;
-              
-              if (percentualRestanteParaConsumir >= disponivelNesteItem) {
-                // Consome TODO este item
-                percentualRestanteParaConsumir -= disponivelNesteItem;
-                
-                // Marca este item como consumido (remove ou zera)
-                if (itemAtual.quantidade > 1) {
-                  itensAtualizados[idx] = {
-                    ...itensAtualizados[idx],
-                    quantidade: itemAtual.quantidade - 1,
-                    durabilidade: 100 // Reseta durabilidade do próximo
-                  };
-                } else {
-                  itensAtualizados[idx] = null; // Será removido
-                }
-              } else {
-                // Consome PARCIALMENTE este item
-                const novaDurabilidade = durabilidadeAtual - percentualRestanteParaConsumir;
-                itensAtualizados[idx] = {
-                  ...itensAtualizados[idx],
-                  durabilidade: Math.max(0, novaDurabilidade)
-                };
-                percentualRestanteParaConsumir = 0;
-              }
-            }
-            
-            // Filtra itens nulos (removidos)
-            const novosItens = itensAtualizados.filter(it => it !== null);
-            
-            // Atualiza no Firestore
-            await setDoc(doc(db, "fichas", jogadorSelecionadoEmail), { [categoria]: novosItens }, { merge: true });
-            
-            // Atualiza localmente também
-            setFichaJogador(prev => ({ ...prev, [categoria]: novosItens }));
-          }
-          
-          mensagem += `\n\n🧪 **${_consumivelNome} usado!** ${msgEfeito}`;
-          
-                    const isDadoSecreto = modoSecreto;
-          await addDoc(chatCol, {
-            userNick: fichaJogador?.nome || userNick,
-            userEmail: jogadorSelecionadoEmail,
-            type: "acao",
-            text: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : mensagem,
-            dadosRolados: rolls,
-            secretRolls: isDadoSecreto ? rolls : null,
-            secretText: isDadoSecreto ? mensagem.replace(/\[[\d,\s]+\]/g, '[***]').replace(/\*\*\d+\*\*/g, '***') : null,
-            timestamp: serverTimestamp(),
-          });
-        }
-      }
+    // 🟢 CONSUMÍVEIS FORAM MOVIDOS PARA O INVENTÁRIO.
+    // Ações no chat são apenas combate e testes.
+    if (false) { 
+      // Bloco morto (desativado)
     } else {
       // Ação normal (não consumível)
             // 🟢 Verifica modo secreto
@@ -2807,6 +2751,9 @@ setAcaoOpen(false);
     setAcaoDebuffs([]);
     setAcaoBonusVariavelLista([]);
     setAcaoValorDificuldade("");
+    setAcaoTipos([]);
+    setAcaoFurtividadeSubTipo("");
+    setAcaoReacaoTipo("");
   }
 }
 
@@ -4146,7 +4093,7 @@ useEffect(() => {
             onChange={(e) => {
               setText(e.target.value);
               if (e.target.value.trim() !== "") {
-                setDoc(doc(db, "typing", userEmail), { nickname: userNick, lastTyping: Date.now() }, { merge: true }).catch(() => {});
+                setDoc(doc(db, "typing", emailEnviando), { nickname: nickEnviando, lastTyping: Date.now() }, { merge: true }).catch(() => {});
               }
             }}
             disabled={chatTravado && !isMaster}
@@ -4254,11 +4201,18 @@ useEffect(() => {
                   if (acoesConjuntas.length > 0) {
                     setAcaoModo("conjunta_participante"); 
                     setAcaoConjuntaAtivaId(acoesConjuntas[0].id);
-                    setAcaoPendenteId(null); setAcaoTipo("");
+                    setAcaoPendenteId(null); 
+                    setAcaoReacaoTipo("");
                   } else if (acoesPendentes.length > 0) {
-                    setAcaoModo("reacao"); setAcaoPendenteId(acoesPendentes[0].id); setAcaoTipo("");
+                    setAcaoModo("reacao"); 
+                    setAcaoPendenteId(acoesPendentes[0].id); 
+                    setAcaoReacaoTipo("");
                   } else {
-                    setAcaoModo("acao"); setAcaoPendenteId(null); setAcaoAlvo(""); setAcaoTipo("");
+                    setAcaoModo("acao"); 
+                    setAcaoPendenteId(null); 
+                    setAcaoAlvo(""); 
+                    setAcaoTipos([]);
+                    setAcaoFurtividadeSubTipo("");
                   }
                   setAcaoOpen(true); 
                 }}
@@ -4448,6 +4402,9 @@ useEffect(() => {
           setAcaoDebuffs([]);
           setAcaoBonusVariavelLista([]);
           setAcaoValorDificuldade("");
+          setAcaoTipos([]);
+          setAcaoFurtividadeSubTipo("");
+          setAcaoReacaoTipo("");
         }}
         maxWidth="sm"
         fullWidth
@@ -5117,84 +5074,115 @@ useEffect(() => {
 )}
             {/* 🟢 TIPO DE AÇÃO */}
             {acaoModo === "acao" && (
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={acaoTipo === "dano"}
-                      onChange={() => setAcaoTipo(acaoTipo === "dano" ? "" : "dano")}
-                      sx={{ color: '#ef4444' }}
-                    />
-                  }
-                  label="☠️ Dano"
-                  sx={{ color: '#fff' }}
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={acaoTipo === "furtividade"}
-                      onChange={() => {
-                        if (acaoTipo === "furtividade") {
-                          setAcaoTipo("");
-                        } else {
-                          const agilidade = fichaJogador?.atributos?.agilidade || 0;
-                          const furtividade = fichaJogador?.pericias?.furtividade || 0;
-                          
-                          if (agilidade < 1) {
-                            alert("❌ Você precisa de pelo menos 1 ponto em AGILIDADE para usar Furtividade!");
-                            return;
+              <Paper sx={{ p: 2, bgcolor: '#1a1a2e', border: '1px solid #334155', borderRadius: 2 }}>
+                <Typography variant="subtitle2" sx={{ color: '#94a3b8', fontWeight: 'bold', mb: 1.5 }}>
+                  ⚔️ Tipos de Ação (Múltiplos permitidos):
+                </Typography>
+                <Grid container spacing={1}>
+                  {[
+                    { id: "dano", label: "☠️ Dano", color: "#ef4444" },
+                    { id: "furtividade", label: "🌫️ Furtividade", color: "#3b82f6" },
+                    { id: "manipulacao", label: "🧠 Manipulação", color: "#a855f7" },
+                    { id: "livre", label: "🎭 Livre", color: "#00e0ff" }
+                  ].map((tipo) => {
+                    const isChecked = acaoTipos.includes(tipo.id);
+                    return (
+                      <Grid item xs={6} sm={3} key={tipo.id}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={isChecked}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setAcaoTipos(acaoTipos.filter(t => t !== tipo.id));
+                                  if (tipo.id === "furtividade") setAcaoFurtividadeSubTipo("");
+                                } else {
+                                  setAcaoTipos([...acaoTipos, tipo.id]);
+                                  if (tipo.id === "furtividade") {
+                                    setAcaoFurtividadeSubTipo("ativa");
+                                    const agilidade = fichaJogador?.atributos?.agilidade || 0;
+                                    const furtividade = fichaJogador?.pericias?.furtividade || 0;
+                                    if (agilidade >= 1 && furtividade >= 1) {
+                                      setAcaoAtributo("agilidade");
+                                      setAcaoPericia("furtividade");
+                                      setAcaoPericia2("");
+                                    }
+                                  }
+                                }
+                              }}
+                              sx={{ color: isChecked ? tipo.color : '#64748b', '&.Mui-checked': { color: tipo.color } }}
+                            />
                           }
-                          if (furtividade < 1) {
-                            alert("❌ Você precisa de pelo menos 1 ponto em FURTIVIDADE para usar Furtividade!");
-                            return;
+                          label={
+                            <Typography sx={{ color: isChecked ? tipo.color : '#fff', fontSize: '0.85rem', fontWeight: isChecked ? 'bold' : 'normal' }}>
+                              {tipo.label}
+                            </Typography>
                           }
-                          
-                          setAcaoAtributo("agilidade");
-                          setAcaoPericia("furtividade");
-                          setAcaoPericia2("");
-                          setAcaoTipo("furtividade");
-                        }
-                      }}
-                      sx={{ color: '#3b82f6' }}
+                          sx={{
+                            width: '100%', m: 0, p: 1, borderRadius: 1.5,
+                            border: `1px solid ${isChecked ? tipo.color : '#334155'}`,
+                            bgcolor: isChecked ? `${tipo.color}15` : 'transparent',
+                            transition: 'all 0.2s ease',
+                            '&:hover': { bgcolor: `${tipo.color}25`, borderColor: tipo.color }
+                          }}
+                        />
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+                
+                {acaoTipos.includes("furtividade") && (
+                  <Box sx={{ display: 'flex', gap: 2, mt: 1.5, p: 1.5, bgcolor: 'rgba(59,130,246,0.08)', borderRadius: 2, border: '1px dashed #3b82f666' }}>
+                    <FormControlLabel
+                      control={<Radio checked={acaoFurtividadeSubTipo === "ativa"} onChange={() => setAcaoFurtividadeSubTipo("ativa")} sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }} size="small" />}
+                      label={<Typography sx={{ color: '#fff', fontSize: '0.8rem', fontWeight: acaoFurtividadeSubTipo === "ativa" ? 'bold' : 'normal' }}>Furtividade Ativa (Causa Dano)</Typography>}
                     />
-                  }
-                  label="🌫️ Furtividade"
-                  sx={{ color: '#fff' }}
-                />
-              </Box>
+                    <FormControlLabel
+                      control={<Radio checked={acaoFurtividadeSubTipo === "passiva"} onChange={() => setAcaoFurtividadeSubTipo("passiva")} sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }} size="small" />}
+                      label={<Typography sx={{ color: '#fff', fontSize: '0.8rem', fontWeight: acaoFurtividadeSubTipo === "passiva" ? 'bold' : 'normal' }}>Furtividade Passiva (Sem Dano)</Typography>}
+                    />
+                  </Box>
+                )}
+              </Paper>
             )}
 
             {/* 🟢 TIPO DE REAÇÃO */}
             {acaoModo === "reacao" && (
-              <Box sx={{ p: 2, bgcolor: '#1a1a2e', borderRadius: 1, border: '1px solid #ef4444' }}>
-                <Typography variant="subtitle2" sx={{ color: '#ef4444', mb: 1 }}>
-                  ⚠️ Você está sob ataque! Escolha sua reação:
+              <Paper sx={{ p: 2, bgcolor: 'rgba(239,68,68,0.1)', borderRadius: 2, border: '2px solid #ef4444', animation: 'pulse 2s infinite' }}>
+                <Typography variant="subtitle2" sx={{ color: '#ef4444', fontWeight: 'bold', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <span style={{ fontSize: '1.2rem' }}>⚠️</span> Você está sob ataque! Escolha sua reação:
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={acaoTipo === "esquiva"}
-                        onChange={() => setAcaoTipo(acaoTipo === "esquiva" ? "" : "esquiva")}
-                        sx={{ color: '#4caf50' }}
-                      />
-                    }
-                    label="🛡️ Esquiva"
-                    sx={{ color: '#fff' }}
-                  />
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={acaoTipo === "contragolpe"}
-                        onChange={() => setAcaoTipo(acaoTipo === "contragolpe" ? "" : "contragolpe")}
-                        sx={{ color: '#ff9800' }}
-                      />
-                    }
-                    label="⚔️ Contragolpe"
-                    sx={{ color: '#fff' }}
-                  />
-                </Box>
-              </Box>
+                <Grid container spacing={1.5}>
+                  <Grid item xs={6}>
+                    <Paper
+                      onClick={() => setAcaoReacaoTipo("esquiva")}
+                      sx={{
+                        p: 1.5, textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+                        bgcolor: acaoReacaoTipo === "esquiva" ? 'rgba(76,175,80,0.2)' : '#1a1a2e',
+                        border: `1px solid ${acaoReacaoTipo === "esquiva" ? '#4caf50' : '#334155'}`,
+                        '&:hover': { borderColor: '#4caf50', bgcolor: 'rgba(76,175,80,0.1)' }
+                      }}
+                    >
+                      <Typography sx={{ fontSize: '1.5rem', mb: 0.5 }}>🛡️</Typography>
+                      <Typography sx={{ color: acaoReacaoTipo === "esquiva" ? '#4caf50' : '#fff', fontWeight: 'bold' }}>Esquiva</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Paper
+                      onClick={() => setAcaoReacaoTipo("contragolpe")}
+                      sx={{
+                        p: 1.5, textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+                        bgcolor: acaoReacaoTipo === "contragolpe" ? 'rgba(255,152,0,0.2)' : '#1a1a2e',
+                        border: `1px solid ${acaoReacaoTipo === "contragolpe" ? '#ff9800' : '#334155'}`,
+                        '&:hover': { borderColor: '#ff9800', bgcolor: 'rgba(255,152,0,0.1)' }
+                      }}
+                    >
+                      <Typography sx={{ fontSize: '1.5rem', mb: 0.5 }}>⚔️</Typography>
+                      <Typography sx={{ color: acaoReacaoTipo === "contragolpe" ? '#ff9800' : '#fff', fontWeight: 'bold' }}>Contragolpe</Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
+              </Paper>
             )}
             
             {/* Casting */}
