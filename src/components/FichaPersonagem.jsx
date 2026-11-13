@@ -459,6 +459,35 @@ function ItemCard({
             </Grid>
           </Grid>
 
+          {/* 🟢 USOS TOTAIS E SUMIR (MESTRE) */}
+          {isMestre && (
+            <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px dashed #334155', mb: 2 }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={6}>
+                  <TextField
+                    label="Usos Totais (0 = Infinito)" type="number" fullWidth size="small"
+                    value={item.usosTotais || 0}
+                    onChange={(e) => onAtualizarItem(categoria, index, "usosTotais", Math.max(0, Number(e.target.value) || 0))}
+                    InputProps={{ inputProps: { min: 0 }, sx: { color: '#fff', fontSize: '0.85rem' } }}
+                    InputLabelProps={{ sx: { color: '#94a3b8' } }}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={item.sumirAoConsumir ?? true}
+                        onChange={(e) => onAtualizarItem(categoria, index, "sumirAoConsumir", e.target.checked)}
+                        size="small" sx={{ color: '#ef4444', '&.Mui-checked': { color: '#ef4444' } }}
+                      />
+                    }
+                    label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.75rem', fontWeight: 'bold' }}>🗑️ Sumir ao Consumir</Typography>}
+                  />
+                </Grid>
+              </Grid>
+            </Box>
+          )}
+
           {/* 🟢 SISTEMA DE COMIDA/BEBIDA (APENAS MESTRE) */}
           {isMestre && (
           <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px dashed #334155', mb: 2 }}>
@@ -3238,14 +3267,51 @@ async function salvarFicha() {
     await setDoc(doc(db, "fichas", fichaId), atualizacoes, { merge: true });
     setFicha(prev => ({ ...prev, ...atualizacoes }));
 
-    // Subtrai 1 da quantidade do item
-    const novaQtd = (item.quantidade || 1) - 1;
+    // 🟢 3. LÓGICA UNIFICADA DE USOS (RODA PRA COMIDA E PRA POÇÃO)
+    const usosTotais = Number(item.usosTotais) || 0;
     let novosItens;
-    if (novaQtd > 0) {
-      novosItens = ficha[categoria].map((it, idx) => idx === index ? { ...it, quantidade: novaQtd } : it);
+
+    if (usosTotais > 0) {
+      const custoDurabilidade = 100 / usosTotais;
+      const novaDurabilidade = (item.durabilidade ?? 100) - custoDurabilidade;
+
+      if (novaDurabilidade <= 0) {
+        if (item.sumirAoConsumir !== false) {
+          // Item quebra e desaparece (ou reduz a quantidade)
+          const novaQtd = (item.quantidade || 1) - 1;
+          if (novaQtd > 0) {
+            novosItens = ficha[categoria].map((it, idx) => 
+              idx === index ? { ...it, quantidade: novaQtd, durabilidade: 100 } : it
+            );
+            mensagem += `\n🔧 Um dos itens quebrou! Ainda restam ${novaQtd} na pilha.`;
+          } else {
+            novosItens = ficha[categoria].filter((_, idx) => idx !== index);
+            mensagem += `\n💥 O item foi totalmente consumido e desapareceu!`;
+          }
+        } else {
+          // Fica no inventário mas com 0% de durabilidade
+          novosItens = ficha[categoria].map((it, idx) => 
+            idx === index ? { ...it, durabilidade: 0 } : it
+          );
+          mensagem += `\n⚠️ O item chegou a 0% de durabilidade e precisa ser reparado!`;
+        }
+      } else {
+        // Ainda tem durabilidade
+        novosItens = ficha[categoria].map((it, idx) => 
+          idx === index ? { ...it, durabilidade: novaDurabilidade } : it
+        );
+        mensagem += `\n🔧 Durabilidade restante: ${novaDurabilidade.toFixed(1)}%`;
+      }
     } else {
-      novosItens = ficha[categoria].filter((_, idx) => idx !== index);
+      // Lógica antiga: reduz a quantidade direto (1 uso = 1 unidade)
+      const novaQtd = (item.quantidade || 1) - 1;
+      if (novaQtd > 0) {
+        novosItens = ficha[categoria].map((it, idx) => idx === index ? { ...it, quantidade: novaQtd } : it);
+      } else {
+        novosItens = ficha[categoria].filter((_, idx) => idx !== index);
+      }
     }
+
     await setDoc(doc(db, "fichas", fichaId), { [categoria]: novosItens }, { merge: true });
     setFicha(prev => ({ ...prev, [categoria]: novosItens }));
     
@@ -10389,6 +10455,31 @@ const novosDiversos = [...diversosAtuais, novoItem];
                 label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold' }}>🥤 É Bebida?</Typography>}
               />
             </Box>
+
+            {/* 🟢 USOS TOTAIS E SUMIR */}
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={6}>
+                <TextField
+                  label="Usos Totais (0 = Infinito)" type="number" fullWidth size="small"
+                  value={itemEditando.item.usosTotais || 0}
+                  onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, usosTotais: Math.max(0, Number(e.target.value) || 0) } }))}
+                  InputProps={{ inputProps: { min: 0 }, sx: { color: '#fff', bgcolor: 'rgba(0,0,0,0.2)' } }}
+                  InputLabelProps={{ sx: { color: '#94a3b8' } }}
+                />
+              </Grid>
+              <Grid item xs={6} sx={{ display: 'flex', alignItems: 'center' }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={itemEditando.item.sumirAoConsumir ?? true}
+                      onChange={(e) => setItemEditando(prev => ({ ...prev, item: { ...prev.item, sumirAoConsumir: e.target.checked } }))}
+                      size="small" sx={{ color: '#ef4444', '&.Mui-checked': { color: '#ef4444' } }}
+                    />
+                  }
+                  label={<Typography sx={{ color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold' }}>🗑️ Sumir ao Consumir</Typography>}
+                />
+              </Grid>
+            </Grid>
 
             {/* CAMPOS DE COMIDA/BEBIDA */}
             {(itemEditando.item.isComida || itemEditando.item.isBebida) && (

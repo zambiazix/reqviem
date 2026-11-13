@@ -47,9 +47,9 @@ import MenuItem from "@mui/material/MenuItem";
 
 const GIPHY_API_KEY = "PBsoFISvy4OFVTNfZbpB5yF79ODJyTsc";
 
-// 🟢 TEMPO DE EXPIRAÇÃO DE UMA REAÇÃO PENDENTE (1 HORA)
+// 🟢 TEMPO DE EXPIRAÇÃO DE UMA REAÇÃO PENDENTE (30 MINUTOS)
 // Depois disso, a ação é apagada do Firestore e o defensor não pode mais reagir
-const TEMPO_EXPIRACAO_REACAO_MS = 60 * 60 * 1000;
+const TEMPO_EXPIRACAO_REACAO_MS = 30 * 60 * 1000;
 
 // 🟢 FUNÇÃO QUE TRANSFORMA TEXTO EM CORES NO CHAT
 const renderCombatText = (text) => {
@@ -1273,7 +1273,7 @@ useEffect(() => {
   return () => window.removeEventListener('enviarEventoChat', handleEventoChat);
 }, [userNick, userEmail, chatCol]);
 
-// 🟢 OUVIR AÇÕES CONJUNTAS PENDENTES PARA ESTE JOGADOR
+// 🟢 OUVIR AÇÕES CONJUNTAS PENDENTES PARA ESTE JOGADOR (COM EXPIRAÇÃO DE 30 MIN)
 useEffect(() => {
   if (!userEmail) return;
   const q = query(
@@ -1281,11 +1281,70 @@ useEffect(() => {
     where("participantes", "array-contains", userEmail),
     where("status", "==", "coletando")
   );
+
+  const processarLista = (lista) => {
+    const agora = Date.now();
+    const validas = [];
+    const paraDeletar = [];
+
+    lista.forEach(item => {
+      // Pega o timestamp
+      let tsMs = Date.now();
+      if (item.timestamp?.toMillis) tsMs = item.timestamp.toMillis();
+      else if (item.timestamp?.seconds) tsMs = item.timestamp.seconds * 1000;
+      else if (typeof item.timestamp === "number") tsMs = item.timestamp;
+
+      const idade = agora - tsMs;
+      
+      // Se passou de 30 minutos, deleta
+      if (idade > TEMPO_EXPIRACAO_REACAO_MS) {
+        paraDeletar.push(item.id);
+      } else {
+        validas.push(item);
+      }
+    });
+
+    paraDeletar.forEach(id => {
+      deleteDoc(doc(db, "acoesConjuntas", id)).catch(() => {});
+    });
+
+    return validas;
+  };
+
   const unsub = onSnapshot(q, (snap) => {
-    setAcoesConjuntas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const validas = processarLista(lista);
+    
+    setAcoesConjuntas(validas);
+    
+    // Se o jogador estava preso em uma ação conjunta que expirou, reseta
+    if (acaoConjuntaAtivaId && !validas.find(v => v.id === acaoConjuntaAtivaId)) {
+      setAcaoModo("acao");
+      setAcaoConjuntaAtivaId(null);
+    }
+  }, (error) => {
+    console.error("❌ Erro no listener de ações conjuntas:", error);
   });
-  return () => unsub();
-}, [userEmail]);
+
+  // Verificação a cada 60s para garantir que ninguém fique preso
+  const interval = setInterval(() => {
+    setAcoesConjuntas(prev => {
+      const validas = processarLista(prev);
+      if (prev.length > 0 && validas.length === 0) {
+        setTimeout(() => {
+          setAcaoModo("acao");
+          setAcaoConjuntaAtivaId(null);
+        }, 0);
+      }
+      return validas.length === prev.length ? prev : validas;
+    });
+  }, 60000);
+
+  return () => {
+    unsub();
+    clearInterval(interval);
+  };
+}, [userEmail, acaoConjuntaAtivaId]);
 
 // 🟢 OUVIR AÇÕES PENDENTES (contra o jogador selecionado ou logado)
 // Reações expiram automaticamente em 1 hora
@@ -1364,10 +1423,13 @@ useEffect(() => {
   const interval = setInterval(() => {
     setAcoesPendentes(prev => {
       const validas = processarLista(prev);
+      
+      // Se todas as ações pendentes expiraram/cancelaram, destrava o jogador
       if (prev.length > 0 && validas.length === 0) {
         setTimeout(() => {
           setAcaoModo("acao");
           setAcaoPendenteId(null);
+          setAcaoReacaoTipo("");
         }, 0);
       }
       return validas.length === prev.length ? prev : validas;
