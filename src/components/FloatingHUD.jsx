@@ -183,7 +183,7 @@ const [profilesOpen, setProfilesOpen] = useState(false);
 const [comercioOpen, setComercioOpen] = useState(false);
 const [perfilVisivel, setPerfilVisivel] = useState(false);
 const [perfis, setPerfis] = useState([]);
-const [hudBackgrounds, setHudBackgrounds] = useState({ manha: "", tarde: "", noite: "", madrugada: "" });
+const [hudBackgrounds, setHudBackgrounds] = useState({});
 const [uploadingBg, setUploadingBg] = useState("");
 const [bgDialogOpen, setBgDialogOpen] = useState(false);
 // 🟢 SISTEMA DE NOTIFICAÇÕES DE FOME/SEDE
@@ -307,13 +307,9 @@ useEffect(() => {
 useEffect(() => {
   const unsub = onSnapshot(doc(db, "hud_backgrounds", "dados"), (snap) => {
     if (snap.exists()) {
-      const d = snap.data() || {};
-      setHudBackgrounds({
-        manha: d.manha || "",
-        tarde: d.tarde || "",
-        noite: d.noite || "",
-        madrugada: d.madrugada || "",
-      });
+      setHudBackgrounds(snap.data() || {});
+    } else {
+      setHudBackgrounds({});
     }
   });
   return () => unsub();
@@ -347,13 +343,15 @@ const removerBackground = async (fase) => {
   setHudBackgrounds((prev) => ({ ...prev, [fase]: "" }));
 };
 
-const getBgKeyFase = useCallback((phase) => {
-  if (phase === "manhã") return "manha";
-  if (phase === "tarde") return "tarde";
-  if (phase === "noite") return "noite";
-  if (phase === "madrugada") return "madrugada";
-  return "manha";
+const getBgKeyFase = useCallback((phase, season) => {
+  const p = phase === "manhã" ? "manha" : (phase || "manha");
+  const s = season ? season.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "primavera";
+  return `${p}_${s}`;
 }, []);
+
+const bgKeyAtual = useMemo(() => {
+  return getBgKeyFase(hud?.world?.phase, hud?.world?.season);
+}, [hud?.world?.phase, hud?.world?.season, getBgKeyFase]);
 
   useEffect(() => {
   const col = collection(db, "fichas");
@@ -927,9 +925,9 @@ if (!fichasMap) return null;
     userSelect: "none",
     overflow: "hidden",
     background: "inherit",
-    ...(hudBackgrounds[getBgKeyFase(hud?.world?.phase)]
+    ...(hudBackgrounds[bgKeyAtual]
       ? {
-          backgroundImage: `linear-gradient(rgba(0,0,0,0.18), rgba(0,0,0,0.18)), url(${hudBackgrounds[getBgKeyFase(hud?.world?.phase)]})`,
+          backgroundImage: `linear-gradient(rgba(0,0,0,0.18), rgba(0,0,0,0.18)), url(${hudBackgrounds[bgKeyAtual]})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
@@ -1764,95 +1762,115 @@ if (!fichasMap) return null;
         </DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Typography variant="caption" sx={{ color: "#94a3b8", display: "block", mb: 2, fontSize: "0.7rem" }}>
-            Envie uma imagem para cada fase do dia. Elas aparecem como plano de fundo do HUD quando a fase correspondente estiver ativa.
+            Envie imagens para cada combinação de Fase e Estação. O HUD vai alternar automaticamente o fundo conforme o tempo do jogo avançar.
           </Typography>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.2 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {[
-              { key: "manha", label: "☀️ Manhã" },
-              { key: "tarde", label: "🌤️ Tarde" },
-              { key: "noite", label: "🌙 Noite" },
-              { key: "madrugada", label: "✨ Madrugada" },
-            ].map(({ key, label }) => (
-              <Paper
-                key={key}
-                sx={{
-                  p: 1.2,
-                  bgcolor: "rgba(26,26,46,0.85)",
-                  border: "1px solid #334155",
-                  borderRadius: 1.5,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1.5,
-                  transition: "all 0.2s",
-                  "&:hover": { borderColor: "#00e0ff44" },
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 90,
-                    height: 58,
-                    borderRadius: 1,
-                    overflow: "hidden",
-                    bgcolor: "#0a0a0a",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    border: "1px solid #1e293b",
-                  }}
-                >
-                  {hudBackgrounds[key] ? (
-                    <img src={hudBackgrounds[key]} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : (
-                    <Typography variant="caption" sx={{ color: "#475569", fontSize: "0.6rem" }}>
-                      sem imagem
-                    </Typography>
-                  )}
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" sx={{ color: "#fff", fontWeight: 700, mb: 0.6 }}>
-                    {label}
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-                    <Button
-                      component="label"
-                      size="small"
-                      variant="contained"
-                      disabled={uploadingBg === key}
-                      startIcon={<CloudUploadIcon sx={{ fontSize: 14 }} />}
-                      sx={{
-                        bgcolor: "#00e0ff",
-                        color: "#000",
-                        fontSize: "0.65rem",
-                        fontWeight: 800,
-                        "&:hover": { bgcolor: "#22d3ee" },
-                        "&.Mui-disabled": { bgcolor: "#334155", color: "#64748b" },
-                      }}
-                    >
-                      {uploadingBg === key ? "Enviando..." : "Enviar"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        hidden
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) uploadBackground(key, file);
-                          e.target.value = "";
+              { id: "manha", label: "☀️ Manhã" },
+              { id: "tarde", label: "🌤️ Tarde" },
+              { id: "noite", label: "🌙 Noite" },
+              { id: "madrugada", label: "✨ Madrugada" },
+            ].map((fase) => (
+              <Box key={fase.id}>
+                <Typography variant="subtitle2" sx={{ color: "#00e0ff", fontWeight: 800, mb: 1.5, borderBottom: "1px solid #1e293b", pb: 0.5, display: "flex", alignItems: "center", gap: 1 }}>
+                  {fase.label}
+                </Typography>
+                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 }}>
+                  {[
+                    { id: "primavera", label: "🌸 Primavera" },
+                    { id: "verao", label: "☀️ Verão" },
+                    { id: "outono", label: "🍂 Outono" },
+                    { id: "inverno", label: "❄️ Inverno" },
+                  ].map((estacao) => {
+                    const key = `${fase.id}_${estacao.id}`;
+                    return (
+                      <Paper
+                        key={key}
+                        sx={{
+                          p: 1.2,
+                          bgcolor: "rgba(26,26,46,0.85)",
+                          border: "1px solid #334155",
+                          borderRadius: 1.5,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.5,
+                          transition: "all 0.2s",
+                          "&:hover": { borderColor: "#00e0ff44" },
                         }}
-                      />
-                    </Button>
-                    {hudBackgrounds[key] && (
-                      <Button
-                        size="small"
-                        onClick={() => removerBackground(key)}
-                        sx={{ color: "#ef4444", fontSize: "0.65rem" }}
                       >
-                        Remover
-                      </Button>
-                    )}
-                  </Box>
+                        <Box
+                          sx={{
+                            width: 70,
+                            height: 46,
+                            borderRadius: 1,
+                            overflow: "hidden",
+                            bgcolor: "#0a0a0a",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            border: "1px solid #1e293b",
+                          }}
+                        >
+                          {hudBackgrounds[key] ? (
+                            <img src={hudBackgrounds[key]} alt={key} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <Typography variant="caption" sx={{ color: "#475569", fontSize: "0.5rem" }}>
+                              sem img
+                            </Typography>
+                          )}
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="caption" sx={{ color: "#fff", fontWeight: 700, display: "block", mb: 0.6 }}>
+                            {estacao.label}
+                          </Typography>
+                          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                            <Button
+                              component="label"
+                              size="small"
+                              variant="contained"
+                              disabled={uploadingBg === key}
+                              startIcon={<CloudUploadIcon sx={{ fontSize: 12 }} />}
+                              sx={{
+                                bgcolor: "#00e0ff",
+                                color: "#000",
+                                fontSize: "0.6rem",
+                                fontWeight: 800,
+                                minWidth: "auto",
+                                px: 1,
+                                py: 0.3,
+                                "&:hover": { bgcolor: "#22d3ee" },
+                                "&.Mui-disabled": { bgcolor: "#334155", color: "#64748b" },
+                              }}
+                            >
+                              {uploadingBg === key ? "..." : "Upar"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) uploadBackground(key, file);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </Button>
+                            {hudBackgrounds[key] && (
+                              <Button
+                                size="small"
+                                onClick={() => removerBackground(key)}
+                                sx={{ color: "#ef4444", fontSize: "0.6rem", minWidth: "auto", px: 1, py: 0.3 }}
+                              >
+                                Remover
+                              </Button>
+                            )}
+                          </Box>
+                        </Box>
+                      </Paper>
+                    );
+                  })}
                 </Box>
-              </Paper>
+              </Box>
             ))}
           </Box>
         </DialogContent>

@@ -270,6 +270,26 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
   const [carregandoIndice, setCarregandoIndice] = useState(false);
   const [carregandoEscambo, setCarregandoEscambo] = useState(false);
 
+  // 🟢 VALORES ALEATÓRIOS PARA ITENS FORA DO COMÉRCIO (10 a 50)
+  const valoresMercadoRef = useRef({});
+  
+  // Limpa os valores aleatórios sempre que um novo escambo começa
+  useEffect(() => {
+    if (comprandoItem?.isEscambo) {
+      valoresMercadoRef.current = {};
+    }
+  }, [comprandoItem?.id, comprandoItem?.isEscambo]);
+
+  const obterValorMercado = useCallback((nomeItem) => {
+    if (indiceComercio[nomeItem] !== undefined) return indiceComercio[nomeItem];
+    if (valoresMercadoRef.current[nomeItem] !== undefined) return valoresMercadoRef.current[nomeItem];
+    
+    // Gera um valor aleatório entre 10 e 50
+    const valorAleatorio = Math.floor(Math.random() * 41) + 10;
+    valoresMercadoRef.current[nomeItem] = valorAleatorio;
+    return valorAleatorio;
+  }, [indiceComercio]);
+
   // 🟢 FUNÇÃO: TRANSFERÊNCIA MESTRE -> JOGADOR
   const executarTransferenciaMaster = async () => {
     if (!transferindoItem || !transferenciaDestino) return alert("Selecione um jogador!");
@@ -856,7 +876,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
   // 🟢 ============ FUNÇÕES DE ESCAMBO ============
   const calcularValorNecessarioEscambo = () => {
     if (!comprandoItem?.isEscambo) return 0;
-    const valorUnit = indiceComercio[comprandoItem.escamboItemNome] || 0;
+    const valorUnit = obterValorMercado(comprandoItem.escamboItemNome);
     const qtd = calcularQuantidadeEscamboEfetiva(comprandoItem, demandaMap);
     return valorUnit * qtd;
   };
@@ -869,7 +889,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       if (!slot) return;
       const itemOfertado = ficha[slot.categoria]?.[slot.index];
       if (!itemOfertado) return;
-      const valorMercado = indiceComercio[itemOfertado.nome] || 0;
+      const valorMercado = obterValorMercado(itemOfertado.nome);
       const isMoedaDaLoja = itemOfertado.nome === comprandoItem?.escamboItemNome;
       total += calcularValorItemOferecido(
         { ...itemOfertado, quantidade: slot.quantidade },
@@ -2519,14 +2539,20 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                   <Typography sx={{ color: '#fff', fontSize: '1.1rem', fontWeight: 'bold' }}>
                     🔁 {qtdNecessaria}x {comprandoItem.escamboItemNome || '(sem item definido)'}
                   </Typography>
-                  {valorUnitMoeda > 0 ? (
-                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                      💰 {valorUnitMoeda} cada · Total: <strong style={{ color: '#fbbf24' }}>💰 {valorNecessario}</strong>
-                      {comprandoItem.escamboVariacaoAuto && ' (varia com demanda/tempo)'}
-                    </Typography>
+                  {isMaster ? (
+                    valorUnitMoeda > 0 ? (
+                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                        💰 {valorUnitMoeda} cada · Total: <strong style={{ color: '#fbbf24' }}>💰 {valorNecessario}</strong>
+                        {comprandoItem.escamboVariacaoAuto && ' (varia com demanda/tempo)'}
+                      </Typography>
+                    ) : (
+                      <Typography variant="caption" sx={{ color: '#ef4444' }}>
+                        ⚠️ Item-moeda não encontrado no comércio.
+                      </Typography>
+                    )
                   ) : (
-                    <Typography variant="caption" sx={{ color: '#ef4444' }}>
-                      ⚠️ Item-moeda não encontrado no comércio (índice não carregado). Recarregue a loja.
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                      O valor de mercado flutua com a demanda e o tempo.
                     </Typography>
                   )}
                 </Paper>
@@ -2579,7 +2605,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                               <span>{opt.nome}</span>
                               <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>
                                 ×{opt.quantidade || 1} · 🔧{opt.durabilidade ?? 100}%
-                                {indiceComercio[opt.nome] ? ` · 💰 ${indiceComercio[opt.nome]}` : ''}
+                                {isMaster && obterValorMercado(opt.nome) ? ` · 💰 ${obterValorMercado(opt.nome)}` : ''}
                               </span>
                             </Box>
                           </li>
@@ -2625,7 +2651,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                     );
                   }
                   const isMoeda = itemFicha.nome === comprandoItem.escamboItemNome;
-                  const valorMercado = indiceComercio[itemFicha.nome] || 0;
+                  const valorMercado = obterValorMercado(itemFicha.nome);
                   const valorEste = calcularValorItemOferecido({ ...itemFicha, quantidade: slot.quantidade }, valorMercado, isMoeda);
                   const dur = itemFicha.durabilidade ?? 100;
                   const fatorDur = calcularFatorDurabilidade(dur);
@@ -2663,7 +2689,8 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                             🔧 Dur: {dur}% {fatorDur < 1 && `(× ${fatorDur.toFixed(2)})`}
                           </Typography>
                           <Typography variant="caption" sx={{ color: isMoeda ? '#4caf50' : '#ff9800', display: 'block', fontWeight: 'bold' }}>
-                            {isMoeda ? '100% do valor' : '50% do valor (não é a moeda)'} → 💰 {valorEste}
+                            {isMoeda ? '100% do valor' : '50% do valor (não é a moeda)'}
+                            {isMaster && ` → 💰 ${valorEste}`}
                           </Typography>
                         </Box>
                       </Box>
@@ -2673,8 +2700,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
 
                 <Paper sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.4)', border: '1px solid #334155', borderRadius: 2 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography sx={{ color: '#94a3b8' }}>💰 Valor ofertado:</Typography>
-                    <Typography sx={{ color: '#fbbf24', fontWeight: 'bold' }}>💰 {valorOfertado} / {valorNecessario}</Typography>
+                    <Typography sx={{ color: '#94a3b8' }}>📦 Progresso da oferta:</Typography>
+                    {isMaster && (
+                      <Typography sx={{ color: '#fbbf24', fontWeight: 'bold' }}>💰 {valorOfertado} / {valorNecessario}</Typography>
+                    )}
                   </Box>
                   <Box sx={{ height: 14, bgcolor: '#0f172a', borderRadius: 7, overflow: 'hidden', mb: 1.5 }}>
                     <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: pct >= 100 ? '#4caf50' : pct >= 50 ? '#ff9800' : '#ef4444', transition: 'width 0.3s' }} />
