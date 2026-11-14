@@ -315,6 +315,13 @@ useEffect(() => {
   return () => unsub();
 }, []);
 
+// 🟢 Função para extrair URL direta do ImgBB
+const getImagemDireta = (data) => {
+  if (!data?.success) return null;
+  // 🟢 Retorna o link exato do ImgBB (sem forçar .jpg, o que quebrava links .png)
+  return data.data?.image?.url || data.data?.display_url || data.data?.url || null;
+};
+
 const uploadBackground = async (fase, file) => {
   if (!file || !isMaster) return;
   setUploadingBg(fase);
@@ -323,14 +330,21 @@ const uploadBackground = async (fase, file) => {
     fd.append("image", file);
     const res = await fetch("https://api.imgbb.com/1/upload?key=73fcf242ce0108665fa0c9e9de33bd50", { method: "POST", body: fd });
     const data = await res.json();
-    if (data?.success) {
-      const url = data.data.url;
+    
+    let url = getImagemDireta(data); 
+    
+    if (url) {
+      // 🟢 Força HTTPS para evitar bloqueio do navegador
+      if (url.startsWith("http://")) {
+        url = url.replace("http://", "https://");
+      }
       await setDoc(doc(db, "hud_backgrounds", "dados"), { [fase]: url }, { merge: true });
       setHudBackgrounds((prev) => ({ ...prev, [fase]: url }));
     } else {
-      alert("Falha no upload da imagem.");
+      alert("Falha no upload da imagem. URL inválida.");
     }
   } catch (e) {
+    console.error(e);
     alert("Erro ao enviar imagem.");
   } finally {
     setUploadingBg("");
@@ -904,68 +918,93 @@ if (!fichasMap) return null;
           ))}
         </Box>
       )}
-      <Box
-  ref={refBox}
-  className={`floating-hud ${faseClass}`}
-  sx={{
-    position: "fixed",
-    left: posicaoLocal.x,
-    top: posicaoLocal.y,
-    zIndex: 120000,
-    width: tamanho.width,
-    minWidth: 380,
-    height: collapsed ? 80 : (minimizado ? 75 : effectiveHeight),
-    minHeight: collapsed ? 80 : (minimizado ? 75 : 400), // 🟢 Garante que o conteúdo interno não seja cortado
-    maxWidth: "95vw",
-    maxHeight: collapsed ? 80 : (minimizado ? 75 : "95vh"),
-    transition: (dragging || redimensionando) ? "none" : "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-    borderRadius: 2,
-    p: collapsed ? 0.5 : (minimizado ? 0.5 : 1),
-    cursor: "grab",
-    userSelect: "none",
-    overflow: "hidden",
-    background: "inherit",
-    ...(hudBackgrounds[bgKeyAtual]
-      ? {
-          backgroundImage: `linear-gradient(rgba(0,0,0,0.18), rgba(0,0,0,0.18)), url(${hudBackgrounds[bgKeyAtual]})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-        }
-      : {}),
-    color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111",
-    boxShadow: "0 12px 28px rgba(0,0,0,0.6)",
-    display: "flex",
-    flexDirection: "column",
-  }}
-  onMouseDown={(e) => {
-    const t = e.target;
+            <Box
+        ref={refBox}
+        className={`floating-hud ${faseClass}`}
+        sx={{
+          position: "fixed",
+          left: posicaoLocal.x,
+          top: posicaoLocal.y,
+          zIndex: 120000,
+          width: tamanho.width,
+          minWidth: 380,
+          height: collapsed ? 80 : (minimizado ? 75 : effectiveHeight),
+          minHeight: collapsed ? 80 : (minimizado ? 75 : 400),
+          maxWidth: "95vw",
+          maxHeight: collapsed ? 80 : (minimizado ? 75 : "95vh"),
+          transition: (dragging || redimensionando) ? "none" : "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          borderRadius: 2,
+          p: collapsed ? 0.5 : (minimizado ? 0.5 : 1),
+          cursor: "grab",
+          userSelect: "none",
+          overflow: "hidden",
+          backgroundColor: "#0f172a",
+          color: hud?.world?.phase === "noite" || hud?.world?.phase === "madrugada" ? "#fff" : "#111",
+          boxShadow: "0 12px 28px rgba(0,0,0,0.6)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+        onMouseDown={(e) => {
+          const t = e.target;
 
-    if (t.closest && t.closest(".commerce-button")) {
-      e.stopPropagation();
-      return;
-    }
+          if (t.closest && t.closest(".commerce-button")) {
+            e.stopPropagation();
+            return;
+          }
 
-    if (
-      !t.closest("button") &&
-      !t.closest("input") &&
-      !t.closest("select") &&
-      !t.closest("svg") &&
-      !t.closest("a")
-    ) {
-      setDragging(true);
-      try {
-        const rect = refBox.current.getBoundingClientRect();
-        dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      } catch {}
-    }
-  }}
->
-        {collapsed ? (
-          <Box sx={{ display: "flex", alignItems: "center" }}>{CollapsedView}</Box>
+          if (
+            !t.closest("button") &&
+            !t.closest("input") &&
+            !t.closest("select") &&
+            !t.closest("svg") &&
+            !t.closest("a")
+          ) {
+            setDragging(true);
+            try {
+              const rect = refBox.current.getBoundingClientRect();
+              dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            } catch {}
+          }
+        }}
+      >
+        {/* 🟢 IMAGEM DE FUNDO REAL (ESTICA E NÃO É BLOQUEADA PELO CSS) */}
+        {hudBackgrounds[bgKeyAtual] ? (
+          <>
+            <img
+              src={hudBackgrounds[bgKeyAtual]}
+              alt=""
+              style={{
+                position: "absolute",
+                top: 0, left: 0, right: 0, bottom: 0,
+                width: "100%", height: "100%",
+                objectFit: "fill", 
+                zIndex: 0,
+                pointerEvents: "none"
+              }}
+            />
+            {/* Película escura para o texto ficar legível */}
+            <div style={{
+              position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.35)",
+              zIndex: 1,
+              pointerEvents: "none"
+            }} />
+          </>
         ) : (
-          <Paper elevation={0} sx={{ width: "100%", p: 0, bgcolor: "transparent" }}>
-            
+          <div style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            background: getBg(hud?.world?.phase) || "#0f172a",
+            zIndex: 0,
+            pointerEvents: "none"
+          }} />
+        )}
+
+        {/* CONTEÚDO FICA ACIMA DA IMAGEM */}
+        <Box sx={{ position: "relative", zIndex: 2, width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {collapsed ? (
+            <Box sx={{ display: "flex", alignItems: "center" }}>{CollapsedView}</Box>
+          ) : (
+            <Paper elevation={0} sx={{ width: "100%", p: 0, bgcolor: "transparent" }}>
             {/* 🟢 MODO MINIMIZADO */}
             {minimizado && (() => {
               const activeEmail = isMaster ? (hud.turn?.id || currentUserEmail) : currentUserEmail;
@@ -1333,6 +1372,7 @@ if (!fichasMap) return null;
             )}
           </Paper>
         )}
+        </Box> {/* 🟢 FECHA A CAIXA DO CONTEÚDO */}
         {/* 🟢 ALÇA DE REDIMENSIONAMENTO */}
         {!collapsed && !minimizado && (
           <Box

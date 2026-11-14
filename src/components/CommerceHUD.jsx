@@ -125,13 +125,36 @@ const calcularFatorVariacaoTempo = (itemId) => {
   return 1 + variacaoItem + variacaoDiaria;
 };
 
-const calcularQuantidadeEscamboEfetiva = (item, demandaMap) => {
-  const base = Number(item.escamboQuantidade || 1);
-  if (!item.escamboVariacaoAuto) return base;
+// 🟢 Normaliza a lista de itens-moeda (compatível com formato antigo e novo)
+const getItensEscambo = (item) => {
+  if (Array.isArray(item?.escamboItens) && item.escamboItens.length > 0) {
+    return item.escamboItens.filter(e => e && e.nome);
+  }
+  if (item?.escamboItemNome) {
+    return [{ nome: item.escamboItemNome, quantidade: Number(item.escamboQuantidade || 1) }];
+  }
+  return [];
+};
+
+// 🟢 Retorna a lista efetiva de itens-moeda (aplicando variação de demanda/tempo)
+const calcularItensEscamboEfetivos = (item, demandaMap) => {
+  const lista = getItensEscambo(item);
+  if (!lista.length) return [];
+  if (!item?.escamboVariacaoAuto) {
+    return lista.map(e => ({ nome: e.nome, quantidade: Number(e.quantidade || 1) }));
+  }
   const dem = demandaMap?.[item.id];
   const fatorDemanda = (dem && dem.expiraEm > Date.now()) ? 1 + (dem.aumento / 100) : 1;
   const fatorTempo = calcularFatorVariacaoTempo(item.id);
-  return Math.max(1, Math.ceil(base * fatorDemanda * fatorTempo));
+  return lista.map(e => ({
+    nome: e.nome,
+    quantidade: Math.max(1, Math.ceil(Number(e.quantidade || 1) * fatorDemanda * fatorTempo)),
+  }));
+};
+
+// 🟢 Mantido por compatibilidade — retorna a soma das quantidades efetivas
+const calcularQuantidadeEscamboEfetiva = (item, demandaMap) => {
+  return calcularItensEscamboEfetivos(item, demandaMap).reduce((acc, e) => acc + e.quantidade, 0);
 };
 
 const calcularValorItemOferecido = (itemOfertado, valorMercadoBase, isMoedaDaLoja) => {
@@ -695,6 +718,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       consumivelPercentual: editandoItem.consumivelPercentual || 100,
       insumivel: editandoItem.insumivel || "Nenhum",
       insumivelValor: editandoItem.insumivelValor || 0,
+      semInflacao: editandoItem.semInflacao || false, // 🟢 NOVO CAMPO
       variedades: editandoItem.variedades || [],
       // 🟢 NOVOS CAMPOS DE COMIDA/BEBIDA
       isComida: editandoItem.isComida || false,
@@ -702,10 +726,11 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       recuperacaoFome: editandoItem.recuperacaoFome || 0,
       recuperacaoSede: editandoItem.recuperacaoSede || 0,
       validadeDias: editandoItem.validadeDias || 15,
-      // 🟢 NOVOS CAMPOS DE ESCAMBO
+      // 🟢 NOVOS CAMPOS DE ESCAMBO (múltiplos itens-moeda)
       isEscambo: editandoItem.isEscambo || false,
-      escamboItemNome: editandoItem.escamboItemNome || "",
-      escamboQuantidade: Number(editandoItem.escamboQuantidade || 1),
+      escamboItens: (editandoItem.isEscambo && Array.isArray(editandoItem.escamboItens))
+        ? editandoItem.escamboItens.filter(e => e && e.nome).map(e => ({ nome: e.nome, quantidade: Number(e.quantidade || 1) }))
+        : [],
       escamboVariacaoAuto: editandoItem.escamboVariacaoAuto ?? true,
       // 🟢 NOVOS CAMPOS DE USOS
       usosTotais: Number(editandoItem.usosTotais || 0),
@@ -876,9 +901,12 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
   // 🟢 ============ FUNÇÕES DE ESCAMBO ============
   const calcularValorNecessarioEscambo = () => {
     if (!comprandoItem?.isEscambo) return 0;
-    const valorUnit = obterValorMercado(comprandoItem.escamboItemNome);
-    const qtd = calcularQuantidadeEscamboEfetiva(comprandoItem, demandaMap);
-    return valorUnit * qtd;
+    const efetivas = calcularItensEscamboEfetivos(comprandoItem, demandaMap);
+    if (efetivas.length === 0) return 0;
+    // 🟢 Cada item-moeda funciona INDEPENDENTE — o vendedor aceita QUALQUER UM deles.
+    //    Logo, o "valor necessário" é o da opção MAIS BARATA (a mais fácil de satisfazer).
+    const valores = efetivas.map(e => obterValorMercado(e.nome) * e.quantidade);
+    return Math.min(...valores);
   };
 
   const calcularValorOfertaEscambo = () => {
@@ -890,7 +918,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
       const itemOfertado = ficha[slot.categoria]?.[slot.index];
       if (!itemOfertado) return;
       const valorMercado = obterValorMercado(itemOfertado.nome);
-      const isMoedaDaLoja = itemOfertado.nome === comprandoItem?.escamboItemNome;
+      const isMoedaDaLoja = getItensEscambo(comprandoItem).some(e => e.nome === itemOfertado.nome);
       total += calcularValorItemOferecido(
         { ...itemOfertado, quantidade: slot.quantidade },
         valorMercado,
@@ -1511,7 +1539,9 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                         const variacaoDiaria = Math.sin(horaAtual * 0.5 + seed * 0.3) * 0.15;
                         const fatorVariacao = 1 + variacaoItem + variacaoDiaria;
                         const temMendigo = fichasMap[currentUserEmail]?.caracteristicas?.includes("Mendigo") || false;
-                        const precoBase = Math.round((item.valor || 0) * fatorDemanda * fatorVariacao);
+                        // 🟢 VERIFICA SE O ITEM TEM INFLUÊNCIA DE DEMANDA/TEMPO
+                        const aplicarVariacao = !item.semInflacao && !item.isEscambo;
+                        const precoBase = Math.round((item.valor || 0) * (aplicarVariacao ? fatorDemanda : 1) * (aplicarVariacao ? fatorVariacao : 1));
                         const precoFinal = temMendigo ? Math.ceil(precoBase / 2) : precoBase;
                         const precoExibicao = (item.valor || 0) > 0 ? Math.max(1, precoFinal) : 0;
                         return (
@@ -1582,6 +1612,22 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                                   {item.variedades && item.variedades.length > 0 && (
                                     <Chip label={`🎨 ${item.variedades.length}`} size="small" sx={{ bgcolor: "#1e3a5f", color: '#a855f7', fontSize: "0.55rem", height: 18, width: "100%", fontWeight: 'bold' }} />
                                   )}
+                                  {/* 🟢 CHIP DE INSUMÍVEL */}
+                                  {item.insumivel && item.insumivel !== "Nenhum" && (
+                                    <Chip 
+                                      label={TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.label || item.insumivel} 
+                                      size="small" 
+                                      sx={{ 
+                                        bgcolor: "#1e293b", 
+                                        color: TIPOS_INSUMIVEL.find(t => t.valor === item.insumivel)?.cor || '#fff', 
+                                        fontSize: "0.55rem", 
+                                        height: 18, 
+                                        width: "100%", 
+                                        fontWeight: 'bold',
+                                        '& .MuiChip-label': { px: 0.5 } 
+                                      }} 
+                                    />
+                                  )}
                                 </Box>
                                 <Box sx={{ flex: 1, minWidth: 0 }}>
                                   <Typography variant="subtitle2" sx={{ fontWeight: "bold", color: '#fff', mb: 0.3 }}>{item.nome}</Typography>
@@ -1591,22 +1637,26 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                                 </Box>
                                 <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "space-between", minWidth: 70 }}>
                                   <Box>
-                                    {item.isEscambo ? (
-                                      <>
-                                        <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold", fontSize: '0.7rem' }}>
-                                          🔁 {calcularQuantidadeEscamboEfetiva(item, demandaMap)}x
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ color: '#e9d5ff', display: 'block', fontSize: '0.6rem', fontWeight: 'bold' }}>
-                                          {item.escamboItemNome || '—'}
-                                        </Typography>
-                                        {item.escamboVariacaoAuto && (
-                                          <Typography variant="caption" sx={{ color: "#ff9800", display: "block", fontSize: '0.55rem' }}>📈 varia</Typography>
-                                        )}
-                                      </>
-                                    ) : (
+                                    {item.isEscambo ? (() => {
+                                      const efetivas = calcularItensEscamboEfetivos(item, demandaMap);
+                                      const primeira = efetivas[0];
+                                      return (
+                                        <>
+                                          <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold", fontSize: '0.7rem' }}>
+                                            🔁 {primeira ? primeira.quantidade : 0}x
+                                          </Typography>
+                                          <Typography variant="caption" sx={{ color: '#e9d5ff', display: 'block', fontSize: '0.6rem', fontWeight: 'bold' }}>
+                                            {primeira ? primeira.nome : '—'}{efetivas.length > 1 ? ` ou +${efetivas.length - 1}` : ''}
+                                          </Typography>
+                                          {item.escamboVariacaoAuto && (
+                                            <Typography variant="caption" sx={{ color: "#ff9800", display: "block", fontSize: '0.55rem' }}>📈 varia</Typography>
+                                          )}
+                                        </>
+                                      );
+                                    })() : (
                                       <>
                                         <Typography variant="body2" sx={{ color: "#fbbf24", fontWeight: "bold" }}>💰 {precoExibicao}</Typography>
-                                        {item.valor > 0 && (
+                                        {item.valor > 0 && aplicarVariacao && (
                                           <Typography variant="caption" sx={{ 
                                             color: precoFinal > item.valor ? '#ef4444' : precoFinal < item.valor ? '#4caf50' : '#94a3b8',
                                             display: 'block',
@@ -1646,7 +1696,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                                           <span style={{ fontSize: '0.9rem' }}>📤</span>
                                         </IconButton>
                                       </Tooltip>
-                                      <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditandoItem(item); }} sx={{ color: '#00e0ff', bgcolor: 'rgba(0,224,255,0.1)', '&:hover': { bgcolor: 'rgba(0,224,255,0.3)' } }}><EditIcon sx={{ fontSize: '0.8rem' }} /></IconButton>
+                                      <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setEditandoItem({ ...item, escamboItens: getItensEscambo(item) }); }} sx={{ color: '#00e0ff', bgcolor: 'rgba(0,224,255,0.1)', '&:hover': { bgcolor: 'rgba(0,224,255,0.3)' } }}><EditIcon sx={{ fontSize: '0.8rem' }} /></IconButton>
                                       <IconButton size="small" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deletarItem(item.id); }} sx={{ color: '#ef4444', bgcolor: 'rgba(239,68,68,0.1)', '&:hover': { bgcolor: 'rgba(239,68,68,0.3)' } }}><DeleteIcon sx={{ fontSize: '0.8rem' }} /></IconButton>
                                     </Box>
                                   )}
@@ -1840,6 +1890,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                         insumivel: itemOrigem.insumivel || "Nenhum",
                         insumivelValor: itemOrigem.insumivelValor || 0,
                         variedades: itemOrigem.variedades || [],
+                        semInflacao: itemOrigem.semInflacao || false, // 🟢 Copia a nova flag
                       });
                     }
                   }}
@@ -1867,12 +1918,43 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                   checked={editandoItem?.isEscambo || false}
                   onChange={(e) => {
                     const checked = e.target.checked;
-                    setEditandoItem(prev => ({
-                      ...prev,
-                      isEscambo: checked,
-                      ...(checked ? { valor: 0, escamboQuantidade: prev.escamboQuantidade || 1, escamboVariacaoAuto: prev.escamboVariacaoAuto ?? true } : {})
-                    }));
-                    if (checked && Object.keys(indiceComercio).length === 0) {
+
+                    if (!checked) {
+                      setEditandoItem(prev => ({ ...prev, isEscambo: false }));
+                      return;
+                    }
+
+                    // 🟢 Já tem itens-moeda preenchidos? Só liga a flag, não mexe.
+                    const jaTemItens = Array.isArray(editandoItem?.escamboItens)
+                      && editandoItem.escamboItens.some(x => x.nome);
+
+                    if (jaTemItens) {
+                      setEditandoItem(prev => ({ ...prev, isEscambo: true, valor: 0 }));
+                    } else if (!editandoItem?.id) {
+                      // 🟢 Item NOVO: pré-seleciona o item-moeda do escambo
+                      //    MAIS RECENTE já criado nesta loja.
+                      const escambos = itens.filter(i => i.isEscambo && getItensEscambo(i).length > 0);
+                      let moedaPadrao = "";
+                      if (escambos.length > 0) {
+                        // itens[] já vem ordenado por 'ordem' asc — o último é o mais recente
+                        const maisRecente = escambos[escambos.length - 1];
+                        moedaPadrao = getItensEscambo(maisRecente)[0]?.nome || "";
+                      }
+                      setEditandoItem(prev => ({
+                        ...prev,
+                        isEscambo: true,
+                        valor: 0,
+                        escamboItens: moedaPadrao
+                          ? [{ nome: moedaPadrao, quantidade: 1 }]
+                          : [],
+                        escamboVariacaoAuto: prev.escamboVariacaoAuto ?? true,
+                      }));
+                    } else {
+                      // 🟢 Item EXISTENTE (legacy) sem escamboItens — só liga a flag
+                      setEditandoItem(prev => ({ ...prev, isEscambo: true, valor: 0 }));
+                    }
+
+                    if (Object.keys(indiceComercio).length === 0) {
                       carregarIndiceComercio();
                     }
                   }}
@@ -1884,16 +1966,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
 
             <Grid container spacing={1}>
               <Grid item xs={6}>
-                {editandoItem?.isEscambo ? (
-                  <TextField fullWidth size="small" label="Quantidade (Escambo)" type="number"
-                    value={editandoItem?.escamboQuantidade || 1}
-                    onChange={(e) => setEditandoItem(prev => ({ ...prev, escamboQuantidade: Math.max(1, Number(e.target.value) || 1) }))}
-                    InputProps={{ style: { color: '#fbbf24' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                ) : (
-                  <TextField fullWidth size="small" label="Valor (💰)" type="number" value={editandoItem?.valor || 0}
-                    onChange={(e) => setEditandoItem(prev => ({ ...prev, valor: Number(e.target.value) || 0 }))}
-                    InputProps={{ style: { color: '#fbbf24' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
-                )}
+                <TextField fullWidth size="small" label="Valor (💰)" type="number" value={editandoItem?.valor || 0}
+                  disabled={editandoItem?.isEscambo}
+                  onChange={(e) => setEditandoItem(prev => ({ ...prev, valor: Number(e.target.value) || 0 }))}
+                  InputProps={{ style: { color: '#fbbf24' } }} InputLabelProps={{ style: { color: '#94a3b8' } }} />
               </Grid>
               <Grid item xs={6}>
                 <TextField fullWidth size="small" label="Dado (1-10)" type="number" value={editandoItem?.dado || 1}
@@ -1914,20 +1990,33 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
               </Grid>
             </Grid>
 
-            {/* 🟢 CAMPOS DE ESCAMBO (item-moeda + toggle variação) */}
-            {editandoItem?.isEscambo && (
-              <Box sx={{ p: 1.5, bgcolor: 'rgba(251,191,36,0.08)', border: '1px dashed #fbbf24', borderRadius: 1 }}>
+            {/* 🟢 CAMPOS DE ESCAMBO (múltiplos itens-moeda + toggle variação) */}
+            {editandoItem?.isEscambo && (() => {
+              const listaSalva = getItensEscambo(editandoItem);
+              const atualizarItem = (idx, patch) => setEditandoItem(prev => {
+                const base = getItensEscambo(prev);
+                base[idx] = { ...base[idx], ...patch };
+                return { ...prev, escamboItens: base };
+              });
+              const removerItem = (idx) => setEditandoItem(prev => {
+                const base = getItensEscambo(prev).filter((_, k) => k !== idx);
+                return { ...prev, escamboItens: base };
+              });
+              const adicionarItem = (nome) => setEditandoItem(prev => {
+                const base = getItensEscambo(prev);
+                return { ...prev, escamboItens: [...base, { nome, quantidade: 1 }] };
+              });
+
+              const opcoes = Object.entries(indiceComercio).map(([nome, valor]) => ({ nome, valor }));
+
+              // 🟢 Adicionado 'keyProp' para forçar a remontagem e limpar o input
+              const renderAuto = (value, onChange, label, keyProp) => (
                 <Autocomplete
-                  options={Object.entries(indiceComercio).map(([nome, valor]) => ({ nome, valor }))}
+                  key={keyProp}
+                  options={opcoes}
                   getOptionLabel={(opt) => (typeof opt === 'string' ? opt : `${opt.nome} (💰 ${opt.valor})`)}
-                  value={
-                    editandoItem?.escamboItemNome
-                      ? { nome: editandoItem.escamboItemNome, valor: indiceComercio[editandoItem.escamboItemNome] || 0 }
-                      : null
-                  }
-                  onChange={(e, novoValor) => {
-                    setEditandoItem(prev => ({ ...prev, escamboItemNome: novoValor?.nome || "" }));
-                  }}
+                  value={value}
+                  onChange={onChange}
                   filterOptions={(options, { inputValue }) => {
                     const busca = normalizarTexto(inputValue);
                     if (!busca) return options;
@@ -1939,7 +2028,6 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                   noOptionsText={carregandoIndice ? "⏳ Carregando..." : "Nenhum item encontrado"}
                   size="small"
                   fullWidth
-                  sx={{ mb: 1 }}
                   componentsProps={{
                     paper: {
                       sx: {
@@ -1965,7 +2053,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="🔍 Buscar Item-Moeda"
+                      label={label}
                       placeholder="Digite para filtrar..."
                       sx={{
                         '& .MuiOutlinedInput-root': {
@@ -1981,20 +2069,62 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                     />
                   )}
                 />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={editandoItem?.escamboVariacaoAuto ?? true}
-                      onChange={(e) => setEditandoItem(prev => ({ ...prev, escamboVariacaoAuto: e.target.checked }))}
-                      sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }}
-                    />
-                  }
-                  label={<Typography sx={{ color: '#fff', fontSize: '0.85rem' }}>📈 Variação automática de quantidade (demanda + tempo)</Typography>}
-                />
-              </Box>
-            )}
-            {/* 🟢 CHECKBOXES DE ESTOQUE ILIMITADO/FIXO */}
-            <Box sx={{ display: 'flex', gap: 2, p: 1.5, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 2, border: '1px dashed #555' }}>
+              );
+
+              return (
+                <Box sx={{ p: 1.5, bgcolor: 'rgba(251,191,36,0.08)', border: '1px dashed #fbbf24', borderRadius: 1 }}>
+                  <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 'bold', display: 'block', mb: 1 }}>
+                    💱 Itens que o vendedor aceita como moeda
+                  </Typography>
+
+                  {listaSalva.map((entrada, idx) => (
+                    <Box key={`esc-${idx}`} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 1 }}>
+                      <Box sx={{ flex: 1 }}>
+                        {renderAuto(
+                          entrada.nome ? { nome: entrada.nome, valor: indiceComercio[entrada.nome] || 0 } : null,
+                          (e, novo) => {
+                            if (!novo) removerItem(idx);
+                            else atualizarItem(idx, { nome: novo.nome });
+                          },
+                          `🔍 Item-Moeda ${idx + 1}`
+                        )}
+                      </Box>
+                      <TextField
+                        size="small" type="number" label="Qtd"
+                        value={entrada.quantidade || 1}
+                        onChange={(e) => atualizarItem(idx, { quantidade: Math.max(1, Number(e.target.value) || 1) })}
+                        InputProps={{ style: { color: '#fbbf24', width: 70 } }}
+                        InputLabelProps={{ style: { color: '#94a3b8' } }}
+                      />
+                      <IconButton size="small" onClick={() => removerItem(idx)} sx={{ color: '#ef4444', mt: 0.5 }} title="Remover">
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ))}
+
+                  {/* 🟢 Slot vazio sempre visível no final — preencheu, aparece outro */}
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Box sx={{ flex: 1 }}>
+                      {renderAuto(null, (e, novo) => { if (novo) adicionarItem(novo.nome); }, `➕ Adicionar item-moeda`, `novo-slot-${listaSalva.length}`)}
+                    </Box>
+                  </Box>
+
+                  <FormControlLabel
+                    sx={{ mt: 1 }}
+                    control={
+                      <Checkbox
+                        checked={editandoItem?.escamboVariacaoAuto ?? true}
+                        onChange={(e) => setEditandoItem(prev => ({ ...prev, escamboVariacaoAuto: e.target.checked }))}
+                        sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }}
+                      />
+                    }
+                    label={<Typography sx={{ color: '#fff', fontSize: '0.85rem' }}>📈 Variação automática de quantidade (demanda + tempo)</Typography>}
+                  />
+                </Box>
+              );
+            })()}
+            {/* 🟢 CHECKBOXES DE ESTOQUE ILIMITADO/FIXO E INFLACAO */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, p: 1.5, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 2, border: '1px dashed #555' }}>
               <FormControlLabel
                 control={<Checkbox checked={editandoItem?.estoqueIlimitado || false} onChange={(e) => setEditandoItem(prev => ({ ...prev, estoqueIlimitado: e.target.checked, estoqueFixo: false }))} sx={{ color: '#00e0ff', '&.Mui-checked': { color: '#00e0ff' } }} />}
                 label={<Typography sx={{ color: '#fff', fontWeight: 'bold' }}>♾️ Ilimitado</Typography>}
@@ -2002,6 +2132,10 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
               <FormControlLabel
                 control={<Checkbox checked={editandoItem?.estoqueFixo || false} onChange={(e) => setEditandoItem(prev => ({ ...prev, estoqueFixo: e.target.checked, estoqueIlimitado: false }))} sx={{ color: '#ff9800', '&.Mui-checked': { color: '#ff9800' } }} />}
                 label={<Typography sx={{ color: '#fff', fontWeight: 'bold' }}>📌 Fixo (Não altera)</Typography>}
+              />
+              <FormControlLabel
+                control={<Checkbox checked={editandoItem?.semInflacao || false} onChange={(e) => setEditandoItem(prev => ({ ...prev, semInflacao: e.target.checked }))} sx={{ color: '#4caf50', '&.Mui-checked': { color: '#4caf50' } }} />}
+                label={<Typography sx={{ color: '#fff', fontWeight: 'bold' }}>📉 Sem Inflação (Preço Fixo)</Typography>}
               />
             </Box>
             {/* 🟢 NOVOS CAMPOS DE USOS E SUMIR */}
@@ -2518,8 +2652,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
             const valorNecessario = calcularValorNecessarioEscambo();
             const valorOfertado = calcularValorOfertaEscambo();
             const pct = calcularPercentualEscambo();
-            const qtdNecessaria = calcularQuantidadeEscamboEfetiva(comprandoItem, demandaMap);
-            const valorUnitMoeda = indiceComercio[comprandoItem.escamboItemNome] || 0;
+            const efetivasNecessarias = calcularItensEscamboEfetivos(comprandoItem, demandaMap);
             const hashAtual = gerarHashOfertaEscambo(ofertaEscambo);
             const travado = fichasMap[currentUserEmail]?.escamboFalhas?.[comprandoItem.id] === hashAtual && hashAtual !== "";
             const ficha = fichasMap[currentUserEmail];
@@ -2534,24 +2667,47 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Paper sx={{ p: 2, bgcolor: 'rgba(168,85,247,0.08)', border: '1px solid #a855f744', borderRadius: 2 }}>
                   <Typography sx={{ color: '#e9d5ff', fontWeight: 'bold', fontSize: '0.9rem', mb: 0.5 }}>
-                    📋 O vendedor quer:
+                    📋 O vendedor {efetivasNecessarias.length > 1 ? 'aceita QUALQUER UM destes' : 'quer'}:
                   </Typography>
-                  <Typography sx={{ color: '#fff', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                    🔁 {qtdNecessaria}x {comprandoItem.escamboItemNome || '(sem item definido)'}
-                  </Typography>
+                  {efetivasNecessarias.length === 0 && (
+                    <Typography sx={{ color: '#ef4444', fontSize: '0.9rem' }}>
+                      ⚠️ Nenhum item-moeda definido no comércio.
+                    </Typography>
+                  )}
+                  {efetivasNecessarias.map((e, i) => {
+                    const valorUnit = obterValorMercado(e.nome);
+                    return (
+                      <Box key={i}>
+                        {i > 0 && (
+                          <Typography sx={{ color: '#fbbf24', fontSize: '0.8rem', fontWeight: 'bold', my: 0.4, textAlign: 'center', letterSpacing: 2 }}>
+                            — OU —
+                          </Typography>
+                        )}
+                        <Typography sx={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', display: 'block' }}>
+                          🔁 {e.quantidade}x {e.nome}
+                          {isMaster && valorUnit > 0 && (
+                            <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'normal' }}>
+                              {' '}· 💰 {valorUnit} cada
+                            </span>
+                          )}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                  {efetivasNecessarias.length > 1 && (
+                    <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 1, fontWeight: 'bold' }}>
+                      💡 Você só precisa entregar UM dos conjuntos acima (o mais barato já basta).
+                    </Typography>
+                  )}
                   {isMaster ? (
-                    valorUnitMoeda > 0 ? (
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                        💰 {valorUnitMoeda} cada · Total: <strong style={{ color: '#fbbf24' }}>💰 {valorNecessario}</strong>
+                    efetivasNecessarias.length > 0 && (
+                      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1 }}>
+                        💰 Alvo (menor opção): <strong style={{ color: '#fbbf24' }}>{valorNecessario}</strong>
                         {comprandoItem.escamboVariacaoAuto && ' (varia com demanda/tempo)'}
-                      </Typography>
-                    ) : (
-                      <Typography variant="caption" sx={{ color: '#ef4444' }}>
-                        ⚠️ Item-moeda não encontrado no comércio.
                       </Typography>
                     )
                   ) : (
-                    <Typography variant="caption" sx={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontStyle: 'italic', display: 'block', mt: 0.5 }}>
                       O valor de mercado flutua com a demanda e o tempo.
                     </Typography>
                   )}
@@ -2650,7 +2806,7 @@ function CommerceHUD({ isMaster = false, visible = false, onClose = () => {}, cu
                       </Paper>
                     );
                   }
-                  const isMoeda = itemFicha.nome === comprandoItem.escamboItemNome;
+                  const isMoeda = getItensEscambo(comprandoItem).some(e => e.nome === itemFicha.nome);
                   const valorMercado = obterValorMercado(itemFicha.nome);
                   const valorEste = calcularValorItemOferecido({ ...itemFicha, quantidade: slot.quantidade }, valorMercado, isMoeda);
                   const dur = itemFicha.durabilidade ?? 100;
