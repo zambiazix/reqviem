@@ -3,7 +3,7 @@ import {
   Box, Paper, Typography, Button, IconButton, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, FormControl, InputLabel,
   Select, MenuItem, Chip, Tabs, Tab, InputAdornment, Tooltip,
-  Grid, Divider
+  Grid, Divider, Checkbox, FormControlLabel
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
@@ -15,9 +15,11 @@ import AssignmentIndIcon from "@mui/icons-material/AssignmentInd";
 import LocalAtmIcon from "@mui/icons-material/LocalAtm";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { db } from "../firebaseConfig";
 import {
-  collection, doc, onSnapshot, setDoc, deleteDoc, getDoc, updateDoc
+  collection, doc, onSnapshot, setDoc, deleteDoc, getDoc, updateDoc, getDocs, writeBatch
 } from "firebase/firestore";
 
 // 🟢 TEMA CYBERPUNK / FIXER REFINADO
@@ -44,27 +46,29 @@ const normalizarTexto = (texto) => {
 
 export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster = false }) {
   const [aba, setAba] = useState(0);
+  
+  // 🟢 CONTROLE DE NAVEGAÇÃO INTERNA (SUBSTITUI OS MODAIS EMPILHADOS)
+  const [viewMode, setViewMode] = useState("list"); // "list" | "detail" | "form"
+  const [servicoSelecionado, setServicoSelecionado] = useState(null);
 
   const [servicos, setServicos] = useState([]);
   const [operadores, setOperadores] = useState([]);
   const [contratosAtivos, setContratosAtivos] = useState([]);
   const [paises, setPaises] = useState([]);
   const [cidades, setCidades] = useState([]);
+  const [todosItensLoja, setTodosItensLoja] = useState([]); // 🟢 ITENS DO COMÉRCIO
 
   const [busca, setBusca] = useState("");
   const [filtroOperador, setFiltroOperador] = useState("");
 
-  const [modalAceitar, setModalAceitar] = useState(false);
-  const [servicoSelecionado, setServicoSelecionado] = useState(null);
-  const [modalServicoOpen, setModalServicoOpen] = useState(false);
   const [modalOperadorOpen, setModalOperadorOpen] = useState(false);
 
-  // 🟢 NOVOS ESTADOS: Concluir + Pagar contrato
+  // 🟢 ESTADOS: Concluir + Pagar contrato
   const [modalConcluirOpen, setModalConcluirOpen] = useState(false);
   const [contratoSelecionado, setContratoSelecionado] = useState(null);
   const [valorFinal, setValorFinal] = useState(0);
   const [motivoAjuste, setMotivoAjuste] = useState("");
-  const [ajusteTipo, setAjusteTipo] = useState("mesmo"); // "mesmo" | "bonus" | "penalidade" | "custom"
+  const [ajusteTipo, setAjusteTipo] = useState("mesmo");
 
   // 🟢 REPUTAÇÃO / RANKING
   const [reputacoes, setReputacoes] = useState({});
@@ -77,6 +81,20 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
 
   const [formServico, setFormServico] = useState({});
   const [formOperador, setFormOperador] = useState({});
+  
+  // 🟢 RECOMPENSAS E MASSA
+  const [itemBusca, setItemBusca] = useState("");
+  
+  // 🟢 NOVOS CAMPOS ADICIONADOS NA CONFIGURAÇÃO DE MASSA
+  const [configMassa, setConfigMassa] = useState({ 
+    gerarDinheiro: true, 
+    gerarItens: false, 
+    incluirLojasOcultas: false, 
+    qtdMaxItens: 2,
+    escopo: "global", // 🟢 NOVO: "global" | "pais" | "cidades"
+    paisAlvoId: "",   // 🟢 NOVO
+    cidadesAlvoIds: [] // 🟢 NOVO
+  });
 
   // 🟢 CARREGAR DADOS
   useEffect(() => {
@@ -100,7 +118,6 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       setCidades(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (error) => console.error("Erro cidades:", error));
 
-    // 🟢 REPUTAÇÃO
     const unsubRep = onSnapshot(collection(db, "comercio_reputacao"), (snap) => {
       const map = {};
       snap.forEach((d) => {
@@ -117,12 +134,42 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       setReputacaoCarregada(true);
     }, (error) => console.error("Erro reputação:", error));
 
+    // 🟢 CARREGAR ITENS DO COMÉRCIO PARA AS RECOMPENSAS
+    const carregarItensCommerce = async () => {
+      try {
+        const itensArr = [];
+        const paisesSnap = await getDocs(collection(db, "comercio_paises"));
+        for (const p of paisesSnap.docs) {
+          const cidadesSnap = await getDocs(collection(db, "comercio_paises", p.id, "cidades"));
+          for (const c of cidadesSnap.docs) {
+            const lojasSnap = await getDocs(collection(db, "comercio_paises", p.id, "cidades", c.id, "lojas"));
+            for (const l of lojasSnap.docs) {
+              const lojaData = l.data();
+              const itensSnap = await getDocs(collection(db, "comercio_paises", p.id, "cidades", c.id, "lojas", l.id, "itens"));
+              for (const it of itensSnap.docs) {
+                itensArr.push({
+                  ...it.data(),
+                  id: it.id,
+                  lojaNome: lojaData.nome,
+                  lojaOculta: lojaData.oculta || false
+                });
+              }
+            }
+          }
+        }
+        setTodosItensLoja(itensArr);
+      } catch (err) {
+        console.warn("Erro ao carregar itens do comércio:", err);
+      }
+    };
+    carregarItensCommerce();
+
     return () => {
       unsubServicos(); unsubOperadores(); unsubContratos(); unsubPaises(); unsubCidades(); unsubRep();
     };
   }, []);
 
-  // 🟢 SINCRONIZA MINHA REPUTAÇÃO + ABRE MODAL SE NÃO TIVER NICK
+  // 🟢 SINCRONIZA MINHA REPUTAÇÃO
   useEffect(() => {
     if (!reputacaoCarregada) return;
     if (!userEmail || isMaster) return;
@@ -163,6 +210,29 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     if (isMaster) return contratosAtivos;
     return contratosAtivos.filter(c => c.jogadorEmail === userEmail);
   }, [contratosAtivos, isMaster, userEmail]);
+
+  // 🟢 RESETS
+  const resetarContratos = async () => {
+    if (!window.confirm("⚠️ ATENÇÃO: Isso apagará TODOS os contratos ativos e concluídos. Continuar?")) return;
+    try {
+      const snap = await getDocs(collection(db, "comercio_contratos_ativos"));
+      const batch = writeBatch(db);
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      alert("✅ Todos os contratos foram resetados.");
+    } catch(e) { alert("Erro: " + e.message); }
+  };
+
+  const resetarOperadores = async () => {
+    if (!window.confirm("⚠️ ATENÇÃO: Isso apagará TODOS os operadores cadastrados. Continuar?")) return;
+    try {
+      const snap = await getDocs(collection(db, "comercio_operadores"));
+      const batch = writeBatch(db);
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      alert("✅ Todos os operadores foram resetados.");
+    } catch(e) { alert("Erro: " + e.message); }
+  };
 
   // 🟢 SALVAR NICK
   const salvarNick = async () => {
@@ -281,7 +351,6 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
   // 🟢 AÇÕES
   const aceitarServico = async () => {
     if (!servicoSelecionado || !userEmail) return;
-    // 🟢 Bloqueia se não tem nick (anonimato no ranking)
     if (!isMaster && !minhaReputacao?.nick) {
       setModalNickOpen(true);
       return alert("Você precisa registrar um nick antes de aceitar contratos.");
@@ -306,7 +375,7 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       });
 
       alert("✅ Contrato aceito! Verifique a aba 'Ativos'.");
-      setModalAceitar(false);
+      setViewMode("list");
       setServicoSelecionado(null);
     } catch (err) {
       console.error(err);
@@ -314,7 +383,6 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     }
   };
 
-  // 🟢 ABRIR MODAL DE CONCLUSÃO (com ajuste de valor)
   const abrirConcluir = (contrato) => {
     setContratoSelecionado(contrato);
     setValorFinal(contrato.detalhes.valor || 0);
@@ -323,7 +391,6 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     setModalConcluirOpen(true);
   };
 
-  // 🟢 APLICAR AJUSTE RÁPIDO
   const aplicarAjuste = (tipo) => {
     if (!contratoSelecionado) return;
     const base = contratoSelecionado.detalhes.valor || 0;
@@ -340,7 +407,7 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     }
   };
 
-  // 🟢 CONCLUIR E PAGAR — credita na carteira "Bolso" do jogador
+  // 🟢 CONCLUIR E PAGAR — credita dinheiro E itens na ficha
   const concluirEPagar = async () => {
     if (!contratoSelecionado) return;
 
@@ -349,13 +416,12 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     }
 
     if (!window.confirm(
-      `Confirmar pagamento de 💰 ${valorFinal.toLocaleString("pt-BR")} ` +
-      `para ${contratoSelecionado.jogadorNome}?\n\n` +
-      `Valor original: 💰 ${(contratoSelecionado.detalhes.valor || 0).toLocaleString("pt-BR")}`
+      `Confirmar a entrega de recompensas para ${contratoSelecionado.jogadorNome}?\n\n` +
+      `Valor: 💰 ${valorFinal.toLocaleString("pt-BR")}\n` +
+      `Itens: ${(contratoSelecionado.detalhes.itensRecompensa || []).length}`
     )) return;
 
     try {
-      // 1) Creditar na carteira do jogador
       const playerFichaRef = doc(db, "fichas", contratoSelecionado.jogadorEmail);
       const playerSnap = await getDoc(playerFichaRef);
 
@@ -364,21 +430,43 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       }
 
       const fichaData = playerSnap.data();
-      const carteiras = Array.isArray(fichaData.carteiras) ? [...fichaData.carteiras] : [];
-      const bolsoIdx = carteiras.findIndex(c => c.nome === "Bolso");
+      let novasCarteiras = Array.isArray(fichaData.carteiras) ? [...fichaData.carteiras] : [];
+      let categoriaDiversos = Array.isArray(fichaData.diversos) ? [...fichaData.diversos] : [];
 
-      if (bolsoIdx >= 0) {
-        carteiras[bolsoIdx] = {
-          ...carteiras[bolsoIdx],
-          valor: (carteiras[bolsoIdx].valor || 0) + valorFinal
-        };
-      } else {
-        carteiras.push({ nome: "Bolso", valor: valorFinal });
+      // 1. Dinheiro
+      if (valorFinal > 0) {
+        const bolsoIdx = novasCarteiras.findIndex(c => c.nome === "Bolso");
+        if (bolsoIdx >= 0) {
+          novasCarteiras[bolsoIdx] = { ...novasCarteiras[bolsoIdx], valor: (novasCarteiras[bolsoIdx].valor || 0) + valorFinal };
+        } else {
+          novasCarteiras.push({ nome: "Bolso", valor: valorFinal });
+        }
       }
 
-      await updateDoc(playerFichaRef, { carteiras });
+      // 2. Itens
+      const itensRecompensa = contratoSelecionado.detalhes.itensRecompensa || [];
+      itensRecompensa.forEach(item => {
+        const idx = categoriaDiversos.findIndex(i => i.nome === item.nome);
+        if (idx >= 0) {
+          categoriaDiversos[idx] = { ...categoriaDiversos[idx], quantidade: (categoriaDiversos[idx].quantidade || 1) + item.quantidade };
+        } else {
+          categoriaDiversos.push({
+            nome: item.nome,
+            quantidade: item.quantidade,
+            durabilidade: item.durabilidade || 100,
+            dado: item.dado || 1,
+            imagem: item.imagem || "",
+            tipoDano: item.tipoDano || "Nenhum",
+            consumivel: item.consumivel || "Nenhum",
+            insumivel: item.insumivel || "Nenhum",
+            travado: true,
+            origem: "contrato"
+          });
+        }
+      });
 
-      // 2) Marcar contrato como concluído + registrar valores
+      await updateDoc(playerFichaRef, { carteiras: novasCarteiras, diversos: categoriaDiversos });
+
       await setDoc(doc(db, "comercio_contratos_ativos", contratoSelecionado.id), {
         status: "concluido",
         valorPago: valorFinal,
@@ -389,40 +477,20 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
         concluidoPor: userEmail || "mestre",
       }, { merge: true });
 
-      // 🟢 XP DE REPUTAÇÃO (números fixos)
       const xpMap = { mesmo: 10, bonus: 15, penalidade: 5, custom: 10 };
       const xpGanho = xpMap[ajusteTipo] ?? 10;
       await adicionarXPReputacao(contratoSelecionado.jogadorEmail, xpGanho, 1);
 
-      // 3) 🟢 EMPURRAR O DINHEIRO NO HUD EM TEMPO REAL (se o jogador estiver online)
-      try {
-        // Cria um "envelope" de transferência que o FloatingHUD/Ficha escuta
-        const transfId = `pay_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        await setDoc(doc(db, "transferencias_pendentes", transfId), {
-          tipo: "dinheiro",
-          valor: valorFinal,
-          carteiraDestino: "Bolso",
-          de: userEmail || "mestre",
-          deNome: "Contrato Concluído",
-          para: contratoSelecionado.jogadorEmail,
-          paraNome: contratoSelecionado.jogadorNome,
-          aplicado: true, // já foi aplicado direto na ficha acima
-          criadoEm: new Date().toISOString(),
-          origem: "contrato_servico",
-        });
-      } catch (e) {
-        console.warn("Aviso: não consegui criar envelope de notificação:", e);
-      }
-
       alert(
         `✅ Contrato concluído!\n\n` +
         `💰 Pago: ${valorFinal.toLocaleString("pt-BR")}\n` +
-        `👤 Para: ${contratoSelecionado.jogadorNome}\n` +
-        `📁 Carteira: Bolso`
+        `📦 Itens entregues: ${itensRecompensa.length}\n` +
+        `👤 Para: ${contratoSelecionado.jogadorNome}\n`
       );
 
       setModalConcluirOpen(false);
       setContratoSelecionado(null);
+      setViewMode("list");
     } catch (err) {
       console.error("Erro ao concluir contrato:", err);
       alert("❌ Erro ao concluir: " + err.message);
@@ -466,10 +534,11 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       operadorId: formServico.operadorId,
       operadorNome: op?.nome || "Desconhecido",
       operadorCor: op?.cor || T.neon,
+      itensRecompensa: formServico.itensRecompensa || []
     };
 
     await setDoc(doc(db, "comercio_servicos", id), payload, { merge: true });
-    setModalServicoOpen(false);
+    setViewMode("list");
   };
 
   const deletarServico = async (id) => {
@@ -482,13 +551,25 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     await deleteDoc(doc(db, "comercio_operadores", id));
   };
 
-  // 🟢 GERADOR DE CONTRATOS COM I.A. (MASSIVO)
   const gerarServicosComIA = async () => {
     if (!isMaster) return;
     if (operadores.length === 0) return alert("⚠️ Cadastre pelo menos 1 Operador antes de gerar com I.A.");
     if (cidades.length === 0) return alert("⚠️ Inicialize o Simulador do Mundo primeiro (para ter cidades).");
 
-    const qtdParaGerar = Math.min(cidades.length, 30);
+    // 🟢 FILTRO DE ESCOPO (GLOBAL, PAÍS OU CIDADES ESPECÍFICAS)
+    let cidadesBase = [...cidades];
+
+    if (configMassa.escopo === "pais" && configMassa.paisAlvoId) {
+      cidadesBase = cidadesBase.filter(c => c.paisId === configMassa.paisAlvoId);
+    } else if (configMassa.escopo === "cidades" && configMassa.cidadesAlvoIds.length > 0) {
+      cidadesBase = cidadesBase.filter(c => configMassa.cidadesAlvoIds.includes(c.id));
+    }
+
+    if (cidadesBase.length === 0) {
+      return alert("⚠️ Nenhuma cidade encontrada para o escopo selecionado.");
+    }
+
+    const qtdParaGerar = Math.min(cidadesBase.length, 30);
     const promises = [];
 
     const prefixos = ["Protocolo:", "Operação:", "Fantasma em", "A Queda de", "O Segredo de", "Lágrimas de", "Sombras em", "Corrida Contra o Tempo em", "O Resgate de", "Roubo em"];
@@ -512,7 +593,9 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       "A localização é uma zona de exclusão aérea. Você precisará entrar a pé, passar pelos postos de controle e garantir que a extração saia viva.\n\nSe der errado, o cliente negará qualquer envolvimento."
     ];
 
-    const cidadesParaIA = [...cidades].sort(() => 0.5 - Math.random()).slice(0, qtdParaGerar);
+    // 🟢 USA A LISTA FILTRADA (cidadesBase) EM VEZ DA LISTA GLOBAL
+    const cidadesParaIA = cidadesBase.sort(() => 0.5 - Math.random()).slice(0, qtdParaGerar);
+    const itensDisponiveis = todosItensLoja.filter(i => configMassa.incluirLojasOcultas || !i.lojaOculta);
 
     for (let i = 0; i < cidadesParaIA.length; i++) {
       const cidade = cidadesParaIA[i];
@@ -521,21 +604,29 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
 
       const p = prefixos[Math.floor(Math.random() * prefixos.length)];
       const t = titulosBase[Math.floor(Math.random() * titulosBase.length)];
-      const l = locaisParaIA(cidade.nome);
-
-      const titulo = `${p} ${t} (${l})`;
+      const titulo = `${p} ${t}`;
       const sinopse = sinopsesBase[Math.floor(Math.random() * sinopsesBase.length)];
       const descricaoCompleta = descricoesBase[Math.floor(Math.random() * descricoesBase.length)];
 
-      const valor = Math.floor(Math.random() * 45 + 5) * 500;
+      let valorDinheiro = configMassa.gerarDinheiro ? Math.floor(Math.random() * 45 + 5) * 500 : 0;
+      let itensSorteados = [];
+      if (configMassa.gerarItens && itensDisponiveis.length > 0) {
+        const qtdItens = Math.floor(Math.random() * configMassa.qtdMaxItens) + 1;
+        for (let k = 0; k < qtdItens; k++) {
+          const it = itensDisponiveis[Math.floor(Math.random() * itensDisponiveis.length)];
+          itensSorteados.push({ ...it, quantidade: Math.floor(Math.random() * 3) + 1 });
+        }
+      }
+
       const prazoDias = Math.floor(Math.random() * 7) + 1;
       const id = `srv_ai_${Date.now()}_${i}`;
 
       const payload = {
-        id, titulo, sinopse, descricaoCompleta, valor, prazoDias,
+        id, titulo, sinopse, descricaoCompleta, valor: valorDinheiro, prazoDias,
         paisId: pais.id, paisNome: pais.nome,
         cidadeId: cidade.id, cidadeNome: cidade.nome,
         operadorId: op.id, operadorNome: op.nome, operadorCor: op.cor || T.neon,
+        itensRecompensa: itensSorteados
       };
 
       promises.push(setDoc(doc(db, "comercio_servicos", id), payload, { merge: true }));
@@ -551,19 +642,197 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
     }
   };
 
-  const locaisParaIA = (nomeCidade) => {
-    const prefixos = ["Distrito de", "Setor de", "Zona Franca de", "Docas de", "Periferia de", "Submundo de"];
-    return `${prefixos[Math.floor(Math.random() * prefixos.length)]} ${nomeCidade}`;
-  };
-
   // ================= RENDERIZAÇÃO =================
+
+  // 🟢 TELA DE DETALHES DO SERVIÇO
+  if (viewMode === "detail" && servicoSelecionado) {
+    return (
+      <Box sx={{ p: 2, bgcolor: T.bg, height: "100%", overflowY: "auto", fontFamily: "'Courier New', monospace" }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => { setViewMode("list"); setServicoSelecionado(null); }} sx={{ color: T.neon, fontWeight: 900, mb: 2 }}>
+          VOLTAR AO CATÁLOGO
+        </Button>
+
+        <Paper sx={{ p: 3, bgcolor: T.bg2, border: `2px solid ${T.neon}`, borderRadius: 2, boxShadow: `0 0 20px ${T.neon}22` }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1, mb: 2 }}>
+            <Typography sx={{ color: T.textDim, fontSize: "0.85rem" }}>
+              <strong>OPERADOR:</strong> <span style={{ color: servicoSelecionado.operadorCor }}>{servicoSelecionado.operadorNome}</span>
+            </Typography>
+            <Typography sx={{ color: T.textDim, fontSize: "0.85rem" }}>
+              <strong>LOCAL:</strong> {servicoSelecionado.cidadeNome || servicoSelecionado.paisNome || "Desconhecido"}
+            </Typography>
+          </Box>
+
+          <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.8rem", fontFamily: "'Courier New', monospace", mb: 2 }}>
+            {servicoSelecionado.titulo}
+          </Typography>
+
+          <Paper sx={{ p: 2, bgcolor: T.card, border: `1px dashed ${T.border}`, mb: 3 }}>
+            <Typography sx={{ color: T.text, fontSize: "0.95rem", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+              {servicoSelecionado.sinopse}
+            </Typography>
+          </Paper>
+
+          <Box sx={{ p: 1.5, bgcolor: `${T.pink}15`, border: `1px solid ${T.pink}44`, borderRadius: 1, mb: 3 }}>
+            <Typography sx={{ color: T.pink, fontSize: "0.8rem", textAlign: "center", fontWeight: 900 }}>
+              🔒 ALERTA: Os detalhes completos serão descriptografados após o aceite.
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 2, mb: 3 }}>
+            <Box>
+              <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Pagamento Base</Typography>
+              <Typography sx={{ color: T.gold, fontWeight: 900, fontSize: "1.5rem", display: "flex", alignItems: "center", gap: 1 }}>
+                <LocalAtmIcon /> {(servicoSelecionado.valor || 0).toLocaleString("pt-BR")}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Prazo</Typography>
+              <Typography sx={{ color: T.pink, fontWeight: 900, fontSize: "1.2rem", display: "flex", alignItems: "center", gap: 1 }}>
+                <AccessTimeIcon /> {servicoSelecionado.prazoDias > 0 ? `${servicoSelecionado.prazoDias} DIAS` : "SEM PRAZO"}
+              </Typography>
+            </Box>
+          </Box>
+
+          {(servicoSelecionado.itensRecompensa || []).length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Itens Inclusos</Typography>
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
+                {servicoSelecionado.itensRecompensa.map((it, i) => (
+                  <Chip key={i} label={`${it.quantidade}x ${it.nome}`} sx={{ bgcolor: T.card, color: T.neon, border: `1px solid ${T.neonDark}` }} />
+                ))}
+              </Box>
+            </Box>
+          )}
+
+          <Button variant="contained" fullWidth onClick={aceitarServico} sx={{ bgcolor: T.green, color: "#000", fontWeight: 900, py: 1.5, fontSize: "1rem" }}>
+            ACEITAR CONTRATO
+          </Button>
+        </Paper>
+      </Box>
+    );
+  }
+
+  // 🟢 TELA DE CRIAÇÃO/EDIÇÃO
+  if (viewMode === "form") {
+    const itensFiltrados = itemBusca ? todosItensLoja.filter(i => normalizarTexto(i.nome).includes(normalizarTexto(itemBusca))) : [];
+    return (
+      <Box sx={{ p: 2, bgcolor: T.bg, height: "100%", overflowY: "auto", fontFamily: "'Courier New', monospace" }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => setViewMode("list")} sx={{ color: T.neon, fontWeight: 900, mb: 2 }}>
+          CANCELAR E VOLTAR
+        </Button>
+
+        <Paper sx={{ p: 3, bgcolor: T.bg2, border: `2px solid ${T.neon}`, borderRadius: 2 }}>
+          <Typography variant="h5" sx={{ color: T.neon, borderBottom: `1px solid ${T.border}`, fontWeight: 900, pb: 2, mb: 3 }}>
+            ⚙️ {formServico.id ? "EDITAR" : "NOVO"} SERVIÇO
+          </Typography>
+
+          {/* SEÇÃO 1: INFORMAÇÕES BÁSICAS */}
+          <Typography sx={{ color: T.neonDark, fontWeight: 900, fontSize: "0.8rem", mb: 1, letterSpacing: 1 }}>INFORMAÇÕES BÁSICAS</Typography>
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12}>
+              <TextField label="Título do Contrato" fullWidth size="small" value={formServico.titulo || ""} onChange={e => setFormServico({ ...formServico, titulo: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.neon, fontWeight: 900 } }} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: T.textDim }}>Operador Responsável</InputLabel>
+                <Select value={formServico.operadorId || ""} onChange={e => setFormServico({ ...formServico, operadorId: e.target.value })} label="Operador Responsável" sx={{ color: "#fff" }} MenuProps={{ PaperProps: { sx: { bgcolor: T.card } } }}>
+                  {operadores.map(o => <MenuItem key={o.id} value={o.id}>{o.nome}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: T.textDim }}>País (Filtro)</InputLabel>
+                <Select value={formServico.paisId || ""} onChange={e => setFormServico({ ...formServico, paisId: e.target.value, cidadeId: "" })} label="País (Filtro)" sx={{ color: "#fff" }} MenuProps={{ PaperProps: { sx: { bgcolor: T.card } } }}>
+                  <MenuItem value="">Nenhum</MenuItem>
+                  {paises.map(p => <MenuItem key={p.id} value={p.id}>{p.nome}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ color: T.textDim }}>Cidade (Local)</InputLabel>
+                <Select value={formServico.cidadeId || ""} onChange={e => setFormServico({ ...formServico, cidadeId: e.target.value })} label="Cidade (Local)" sx={{ color: "#fff" }} MenuProps={{ PaperProps: { sx: { bgcolor: T.card } } }}>
+                  <MenuItem value="">Nenhum</MenuItem>
+                  {cidades.filter(c => !formServico.paisId || c.paisId === formServico.paisId).map(c => <MenuItem key={c.id} value={c.id}>{c.nome}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField label="Prazo em Dias (0 = Sem prazo)" type="number" fullWidth size="small" value={formServico.prazoDias || 0} onChange={e => setFormServico({ ...formServico, prazoDias: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.pink, fontWeight: 900 } }} />
+            </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 3, borderColor: T.border }} />
+
+          {/* SEÇÃO 2: RECOMPENSAS */}
+          <Typography sx={{ color: T.gold, fontWeight: 900, fontSize: "0.8rem", mb: 1, letterSpacing: 1 }}>RECOMPENSAS (DINHEIRO E ITENS)</Typography>
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Grid item xs={12} md={4}>
+              <TextField label="Valor em Dinheiro (0 para nenhum)" type="number" fullWidth size="small" value={formServico.valor || 0} onChange={e => setFormServico({ ...formServico, valor: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.gold, fontWeight: 900 } }} />
+            </Grid>
+            <Grid item xs={12} md={8}>
+              <TextField label="🔍 Pesquisar item do comércio..." fullWidth size="small" value={itemBusca} onChange={e => setItemBusca(e.target.value)} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" }, startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: T.neon }}/></InputAdornment> }} />
+            </Grid>
+          </Grid>
+
+          {itemBusca && (
+            <Paper sx={{ maxHeight: 150, overflowY: "auto", bgcolor: T.card, border: `1px solid ${T.border}`, mb: 2 }}>
+              {itensFiltrados.map(it => (
+                <Box key={it.id} onClick={() => {
+                  const atual = formServico.itensRecompensa || [];
+                  setFormServico({ ...formServico, itensRecompensa: [...atual, { ...it, quantidade: 1 }] });
+                  setItemBusca("");
+                }} sx={{ p: 1.5, display: "flex", justifyContent: "space-between", "&:hover": { bgcolor: T.border }, cursor: "pointer" }}>
+                  <Typography sx={{ color: "#fff" }}>{it.nome} <span style={{ color: T.textDim, fontSize: "0.8rem" }}>({it.lojaNome})</span></Typography>
+                  <Typography sx={{ color: T.neon }}>+ Adicionar</Typography>
+                </Box>
+              ))}
+              {itensFiltrados.length === 0 && <Typography sx={{ p: 2, color: T.textDim }}>Nenhum item encontrado.</Typography>}
+            </Paper>
+          )}
+
+          {(formServico.itensRecompensa || []).map((it, idx) => (
+            <Box key={idx} sx={{ display: "flex", gap: 1, alignItems: "center", mb: 1, p: 1, bgcolor: T.card, border: `1px solid ${T.border}`, borderRadius: 1 }}>
+              <Typography sx={{ flex: 1, color: "#fff" }}>{it.nome}</Typography>
+              <TextField size="small" type="number" label="Qtd" value={it.quantidade} onChange={e => {
+                const arr = [...formServico.itensRecompensa];
+                arr[idx].quantidade = Math.max(1, Number(e.target.value));
+                setFormServico({ ...formServico, itensRecompensa: arr });
+              }} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.neon } }} sx={{ width: 80 }} />
+              <IconButton onClick={() => setFormServico({ ...formServico, itensRecompensa: formServico.itensRecompensa.filter((_, i) => i !== idx) })} sx={{ color: T.pink }}>
+                <DeleteIcon />
+              </IconButton>
+            </Box>
+          ))}
+
+          <Divider sx={{ my: 3, borderColor: T.border }} />
+
+          {/* SEÇÃO 3: DETALHES */}
+          <Typography sx={{ color: T.neon, fontWeight: 900, fontSize: "0.8rem", mb: 1, letterSpacing: 1 }}>DETALHES DO CONTRATO</Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField label="Sinopse (Curta e Chamativa)" multiline rows={2} fullWidth size="small" value={formServico.sinopse || ""} onChange={e => setFormServico({ ...formServico, sinopse: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" } }} />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField label="Descrição Completa (O Briefing Real)" multiline rows={4} fullWidth size="small" value={formServico.descricaoCompleta || ""} onChange={e => setFormServico({ ...formServico, descricaoCompleta: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" } }} />
+            </Grid>
+          </Grid>
+
+          <Button variant="contained" onClick={salvarServico} sx={{ mt: 4, bgcolor: T.green, color: "#000", fontWeight: 900, "&:hover": { bgcolor: T.green, boxShadow: `0 0 15px ${T.green}` } }}>
+            SALVAR SERVIÇO
+          </Button>
+        </Paper>
+      </Box>
+    );
+  }
+
   return (
     <Box
       sx={{
-        p: 3,
+        p: 2,
         bgcolor: T.bg,
         fontFamily: "'Courier New', monospace",
-        // 🟢 FIX DO SCROLL: ocupa 100% do pai e rola internamente
         height: "100%",
         maxHeight: "100%",
         overflowY: "auto",
@@ -571,19 +840,16 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       }}
     >
       {/* HEADER ESTILIZADO */}
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", mb: 3, flexWrap: "wrap", gap: 2, borderBottom: `2px solid ${T.neonDark}`, pb: 2 }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", mb: 2, flexWrap: "wrap", gap: 2, borderBottom: `2px solid ${T.neonDark}`, pb: 2 }}>
         <Box>
-          <Typography variant="h4" sx={{ color: T.neon, fontWeight: 900, letterSpacing: 2, textShadow: `0 0 10px ${T.neon}` }}>
+          <Typography variant="h5" sx={{ color: T.neon, fontWeight: 900, letterSpacing: 1, textShadow: `0 0 10px ${T.neon}` }}>
             💼 QUADRO DE CONTRATOS
-          </Typography>
-          <Typography variant="caption" sx={{ color: T.textDim, letterSpacing: 2, textTransform: "uppercase" }}>
-            Terminal de Negociação // Acesso Restrito
           </Typography>
         </Box>
         <Chip
-          label={`📡 ${servicosFiltrados.length} CONTRATOS DISPONÍVEIS`}
-          size="medium"
-          sx={{ bgcolor: `${T.neon}15`, color: T.neon, fontWeight: 900, border: `1px solid ${T.neon}`, borderRadius: 1, px: 1 }}
+          label={`📡 ${servicosFiltrados.length} DISPONÍVEIS`}
+          size="small"
+          sx={{ bgcolor: `${T.neon}15`, color: T.neon, fontWeight: 900, border: `1px solid ${T.neon}`, borderRadius: 1 }}
         />
       </Box>
 
@@ -592,10 +858,11 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
         value={aba}
         onChange={(_, v) => setAba(v)}
         sx={{
-          mb: 3,
-          "& .MuiTab-root": { color: T.textDim, fontWeight: 900, fontFamily: "'Courier New', monospace", fontSize: "1rem", transition: "0.3s" },
+          mb: 2,
+          minHeight: 36,
+          "& .MuiTab-root": { minHeight: 36, color: T.textDim, fontWeight: 900, fontFamily: "'Courier New', monospace", fontSize: "0.85rem" },
           "& .Mui-selected": { color: `${T.neon} !important`, textShadow: `0 0 8px ${T.neon}` },
-          "& .MuiTabs-indicator": { bgcolor: T.neon, height: 3, boxShadow: `0 0 10px ${T.neon}` }
+          "& .MuiTabs-indicator": { bgcolor: T.neon, height: 2 }
         }}
       >
         <Tab label="📋 Catálogo" />
@@ -607,34 +874,26 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       {/* ABA 0: CATÁLOGO */}
       {aba === 0 && (
         <Box>
-          {/* BARRA DE BUSCA */}
-          <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
+          <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap" }}>
             <TextField
               size="small"
-              placeholder="🔍 Buscar por título, operador, local..."
+              placeholder="🔍 Buscar por título, operador..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               sx={{
-                flex: 2, minWidth: 250, bgcolor: T.card,
-                input: { color: T.neon, fontFamily: "'Courier New', monospace" },
+                flex: 2, minWidth: 200, bgcolor: T.card,
+                input: { color: T.neon, fontFamily: "'Courier New', monospace", fontSize: "0.85rem" },
                 "& .MuiOutlinedInput-notchedOutline": { borderColor: T.neonDark },
-                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: T.neon },
-                "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: T.neon, borderWidth: 2 }
               }}
-              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: T.neon }} /></InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: T.neon, fontSize: "1rem" }} /></InputAdornment> }}
             />
             <FormControl size="small" sx={{ flex: 1, minWidth: 150, bgcolor: T.card }}>
-              <InputLabel sx={{ color: T.textDim }}>Operador</InputLabel>
+              <InputLabel sx={{ color: T.textDim, fontSize: "0.85rem" }}>Operador</InputLabel>
               <Select
                 value={filtroOperador}
                 onChange={(e) => setFiltroOperador(e.target.value)}
                 label="Operador"
-                sx={{
-                  color: T.text, fontFamily: "'Courier New', monospace",
-                  "& .MuiOutlinedInput-notchedOutline": { borderColor: T.neonDark },
-                  "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: T.neon },
-                  "& .MuiSvgIcon-root": { color: T.neon }
-                }}
+                sx={{ color: T.text, fontFamily: "'Courier New', monospace", fontSize: "0.85rem" }}
                 MenuProps={{ PaperProps: { sx: { bgcolor: T.card, color: T.text } } }}
               >
                 <MenuItem value="">Todos</MenuItem>
@@ -643,66 +902,68 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
             </FormControl>
           </Box>
 
-          {/* GRID DE CARDS */}
-          <Grid container spacing={3}>
+          <Grid container spacing={2}>
             {servicosFiltrados.map(srv => (
-              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={srv.id}>
+              <Grid item xs={12} sm={6} md={4} key={srv.id} sx={{ display: "flex" }}>
                 <Paper
+                  onClick={() => { setServicoSelecionado(srv); setViewMode("detail"); }}
                   sx={{
                     p: 0, bgcolor: T.card, border: `1px solid ${T.border}`, borderRadius: 2,
-                    height: "100%", display: "flex", flexDirection: "column", overflow: "hidden",
-                    position: "relative",
-                    transition: "all 0.3s ease",
+                    height: "100%", width: "100%", display: "flex", flexDirection: "column", overflow: "hidden",
+                    position: "relative", cursor: "pointer",
+                    transition: "all 0.2s ease",
                     "&:hover": {
                       borderColor: srv.operadorCor,
-                      boxShadow: `0 0 20px ${srv.operadorCor}44`,
-                      transform: "translateY(-5px)"
+                      boxShadow: `0 0 15px ${srv.operadorCor}44`,
+                      transform: "translateY(-2px)"
                     }
                   }}
                 >
-                  <Box sx={{ height: 4, width: "100%", bgcolor: srv.operadorCor, boxShadow: `0 0 10px ${srv.operadorCor}` }} />
-
-                  <Box sx={{ p: 2, display: "flex", flexDirection: "column", flex: 1 }}>
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+                  <Box sx={{ height: 3, width: "100%", bgcolor: srv.operadorCor }} />
+                  <Box sx={{ p: 1.5, display: "flex", flexDirection: "column", flex: 1 }}>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
                       <Chip
-                        icon={<AssignmentIndIcon sx={{ color: `${srv.operadorCor} !important`, fontSize: '0.9rem' }} />}
                         label={srv.operadorNome}
                         size="small"
-                        sx={{ bgcolor: `${srv.operadorCor}15`, color: srv.operadorCor, fontWeight: 900, fontSize: "0.65rem", border: `1px solid ${srv.operadorCor}44` }}
+                        sx={{ bgcolor: `${srv.operadorCor}15`, color: srv.operadorCor, fontWeight: 900, fontSize: "0.6rem", height: 20 }}
                       />
-                      <Typography variant="caption" sx={{ color: T.textDim, display: "flex", alignItems: "center", gap: 0.5 }}>
-                        <LocationOnIcon sx={{ fontSize: 14 }} /> {srv.cidadeNome || srv.paisNome || "Desconhecido"}
+                      <Typography variant="caption" sx={{ color: T.textDim, display: "flex", alignItems: "center", gap: 0.5, fontSize: "0.65rem" }}>
+                        <LocationOnIcon sx={{ fontSize: 12 }} /> {srv.cidadeNome || srv.paisNome || "?"}
                       </Typography>
                     </Box>
 
-                    <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.2rem", mb: 1, lineHeight: 1.2 }}>
+                    <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1rem", mb: 1, lineHeight: 1.2 }}>
                       {srv.titulo}
                     </Typography>
+
                     <Typography
                       variant="body2"
                       sx={{
-                        color: T.textDim, fontSize: "0.8rem", mb: 2, flex: 1,
-                        display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+                        color: T.textDim, fontSize: "0.75rem", mb: 2, flex: 1,
+                        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
                         fontFamily: "'Courier New', monospace"
                       }}
                     >
                       {srv.sinopse || "Nenhuma sinopse fornecida."}
                     </Typography>
 
-                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", mt: "auto", pt: 2, borderTop: `1px dashed ${T.border}` }}>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", mt: "auto", pt: 1.5, borderTop: `1px dashed ${T.border}` }}>
                       <Box>
-                        <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Pagamento</Typography>
-                        <Typography sx={{ color: T.gold, fontWeight: 900, fontSize: "1.2rem", display: "flex", alignItems: "center", gap: 0.5 }}>
-                          <LocalAtmIcon /> {(srv.valor || 0).toLocaleString("pt-BR")}
+                        <Typography sx={{ color: T.gold, fontWeight: 900, fontSize: "1rem", display: "flex", alignItems: "center", gap: 0.5 }}>
+                          <LocalAtmIcon sx={{ fontSize: "1rem" }}/> {(srv.valor || 0).toLocaleString("pt-BR")}
                         </Typography>
+                        {(srv.itensRecompensa || []).length > 0 && (
+                          <Typography sx={{ color: T.pink, fontWeight: 900, fontSize: "0.65rem", display: "flex", alignItems: "center", gap: 0.5, mt: 0.2 }}>
+                            📦 +{srv.itensRecompensa.length} item(ns)
+                          </Typography>
+                        )}
                       </Box>
                       <Button
-                        variant="contained"
+                        variant="outlined"
                         size="small"
-                        onClick={() => { setServicoSelecionado(srv); setModalAceitar(true); }}
                         sx={{
-                          bgcolor: srv.operadorCor, color: "#000", fontWeight: 900, borderRadius: 1,
-                          "&:hover": { bgcolor: srv.operadorCor, boxShadow: `0 0 15px ${srv.operadorCor}` }
+                          color: srv.operadorCor, borderColor: srv.operadorCor, fontWeight: 900, fontSize: "0.65rem", py: 0.2, minWidth: 60,
+                          "&:hover": { bgcolor: `${srv.operadorCor}11` }
                         }}
                       >
                         Acessar
@@ -714,9 +975,9 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
             ))}
           </Grid>
           {servicosFiltrados.length === 0 && (
-            <Box sx={{ textAlign: "center", mt: 8, opacity: 0.5 }}>
-              <SearchIcon sx={{ fontSize: 60, color: T.textDim, mb: 2 }} />
-              <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace" }}>Nenhum contrato disponível no momento.</Typography>
+            <Box sx={{ textAlign: "center", mt: 6, opacity: 0.5 }}>
+              <SearchIcon sx={{ fontSize: 50, color: T.textDim, mb: 1 }} />
+              <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace", fontSize: "0.85rem" }}>Nenhum contrato disponível.</Typography>
             </Box>
           )}
         </Box>
@@ -726,8 +987,8 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       {aba === 1 && (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {contratosVisiveis.length === 0 && (
-            <Paper sx={{ p: 6, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
-              <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace" }}>Nenhum contrato ativo.</Typography>
+            <Paper sx={{ p: 4, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
+              <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace", fontSize: "0.85rem" }}>Nenhum contrato ativo.</Typography>
             </Paper>
           )}
           {contratosVisiveis.map(ctr => {
@@ -737,74 +998,72 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
               <Paper
                 key={ctr.id}
                 sx={{
-                  p: 3, bgcolor: T.card,
+                  p: 2, bgcolor: T.card,
                   border: `1px solid ${concluido ? T.green + "66" : ctr.detalhes.operadorCor + "66"}`,
                   borderRadius: 2, position: "relative", overflow: "hidden"
                 }}
               >
                 <Box sx={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, bgcolor: concluido ? T.green : ctr.detalhes.operadorCor }} />
 
-                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 1 }}>
                   <Box>
-                    <Typography sx={{ color: ctr.detalhes.operadorCor, fontWeight: 900, fontSize: "0.9rem", letterSpacing: 1, textTransform: "uppercase", mb: 1 }}>
-                      📡 Operador: {ctr.detalhes.operadorNome}
+                    <Typography sx={{ color: ctr.detalhes.operadorCor, fontWeight: 900, fontSize: "0.75rem", letterSpacing: 1, textTransform: "uppercase", mb: 0.5 }}>
+                      📡 {ctr.detalhes.operadorNome}
                     </Typography>
-                    <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.4rem" }}>{ctr.detalhes.titulo}</Typography>
-                    {isMaster && <Chip label={`Jogador: ${ctr.jogadorNome}`} size="small" sx={{ mt: 1, bgcolor: T.pink, color: "#fff", fontWeight: 900 }} />}
+                    <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.2rem" }}>{ctr.detalhes.titulo}</Typography>
+                    {isMaster && <Chip label={`Jogador: ${ctr.jogadorNome}`} size="small" sx={{ mt: 0.5, bgcolor: T.pink, color: "#fff", fontWeight: 900, height: 18, fontSize: "0.6rem" }} />}
                   </Box>
                   <Chip
                     label={concluido ? "CONCLUÍDO" : "EM ANDAMENTO"}
                     size="small"
                     sx={{
                       bgcolor: `${corStatus}22`, color: corStatus,
-                      fontWeight: 900, border: `1px solid ${corStatus}`
+                      fontWeight: 900, border: `1px solid ${corStatus}`, height: 20, fontSize: "0.65rem"
                     }}
                   />
                 </Box>
 
-                <Typography sx={{ color: T.text, fontSize: "0.9rem", mb: 2, whiteSpace: "pre-wrap", lineHeight: 1.6, fontFamily: "'Courier New', monospace" }}>
+                <Typography sx={{ color: T.text, fontSize: "0.8rem", mb: 2, whiteSpace: "pre-wrap", lineHeight: 1.4, fontFamily: "'Courier New', monospace" }}>
                   <strong style={{ color: T.neon }}>BRIEFING:</strong> {ctr.detalhes.descricaoCompleta || ctr.detalhes.sinopse}
                 </Typography>
 
-                {/* 🟢 SE CONCLUÍDO: mostra valor pago + motivo */}
                 {concluido && (
-                  <Paper sx={{ p: 1.5, mb: 2, bgcolor: `${T.green}10`, border: `1px solid ${T.green}44`, borderRadius: 1 }}>
-                    <Typography sx={{ color: T.green, fontWeight: 900, fontSize: "0.85rem" }}>
+                  <Paper sx={{ p: 1, mb: 1.5, bgcolor: `${T.green}10`, border: `1px solid ${T.green}44`, borderRadius: 1 }}>
+                    <Typography sx={{ color: T.green, fontWeight: 900, fontSize: "0.75rem" }}>
                       ✅ Pago: 💰 {(ctr.valorPago || 0).toLocaleString("pt-BR")}
                       {ctr.valorOriginal !== ctr.valorPago && (
-                        <span style={{ color: T.textDim, fontWeight: 400, fontSize: "0.75rem" }}>
-                          {" "}(original: {(ctr.valorOriginal || 0).toLocaleString("pt-BR")})
+                        <span style={{ color: T.textDim, fontWeight: 400, fontSize: "0.65rem" }}>
+                          {" "}(orig: {(ctr.valorOriginal || 0).toLocaleString("pt-BR")})
                         </span>
                       )}
                     </Typography>
                     {ctr.motivoAjuste && (
-                      <Typography sx={{ color: T.textDim, fontSize: "0.75rem", mt: 0.5, fontStyle: "italic" }}>
+                      <Typography sx={{ color: T.textDim, fontSize: "0.65rem", mt: 0.2, fontStyle: "italic" }}>
                         Motivo: {ctr.motivoAjuste}
                       </Typography>
                     )}
                   </Paper>
                 )}
 
-                <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", mt: 2, pt: 2, borderTop: `1px dashed ${T.border}` }}>
-                  <Chip icon={<LocalAtmIcon />} label={`${(ctr.detalhes.valor || 0).toLocaleString("pt-BR")}`} size="small" sx={{ bgcolor: `${T.gold}15`, color: T.gold, fontWeight: 900, border: `1px solid ${T.gold}44` }} />
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1, pt: 1, borderTop: `1px dashed ${T.border}` }}>
+                  <Chip icon={<LocalAtmIcon sx={{ fontSize: "0.8rem" }}/>} label={`${(ctr.detalhes.valor || 0).toLocaleString("pt-BR")}`} size="small" sx={{ bgcolor: `${T.gold}15`, color: T.gold, fontWeight: 900, border: `1px solid ${T.gold}44`, height: 20, fontSize: "0.65rem" }} />
                   {ctr.detalhes.prazoDias > 0 ? (
-                    <Chip icon={<AccessTimeIcon />} label={`Prazo: ${new Date(ctr.prazoFinal).toLocaleDateString()}`} size="small" sx={{ bgcolor: `${T.pink}15`, color: T.pink, fontWeight: 900, border: `1px solid ${T.pink}44` }} />
+                    <Chip icon={<AccessTimeIcon sx={{ fontSize: "0.8rem" }}/>} label={`Prazo: ${new Date(ctr.prazoFinal).toLocaleDateString()}`} size="small" sx={{ bgcolor: `${T.pink}15`, color: T.pink, fontWeight: 900, border: `1px solid ${T.pink}44`, height: 20, fontSize: "0.65rem" }} />
                   ) : (
-                    <Chip icon={<AccessTimeIcon />} label="Sem prazo" size="small" sx={{ bgcolor: T.bg2, color: T.textDim, fontWeight: 900, border: `1px solid ${T.border}` }} />
+                    <Chip icon={<AccessTimeIcon sx={{ fontSize: "0.8rem" }}/>} label="Sem prazo" size="small" sx={{ bgcolor: T.bg2, color: T.textDim, fontWeight: 900, border: `1px solid ${T.border}`, height: 20, fontSize: "0.65rem" }} />
                   )}
-                  <Chip icon={<LocationOnIcon />} label={ctr.detalhes.cidadeNome || ctr.detalhes.paisNome} size="small" sx={{ bgcolor: T.bg2, color: T.textDim, border: `1px solid ${T.border}` }} />
+                  <Chip icon={<LocationOnIcon sx={{ fontSize: "0.8rem" }}/>} label={ctr.detalhes.cidadeNome || ctr.detalhes.paisNome} size="small" sx={{ bgcolor: T.bg2, color: T.textDim, border: `1px solid ${T.border}`, height: 20, fontSize: "0.65rem" }} />
                 </Box>
 
-                {/* 🟢 BOTÃO CONCLUIR (Mestre) */}
                 {isMaster && !concluido && (
-                  <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end", gap: 1 }}>
+                  <Box sx={{ mt: 1.5, display: "flex", justifyContent: "flex-end" }}>
                     <Button
                       size="small"
                       variant="outlined"
                       color="success"
                       startIcon={<CheckCircleIcon />}
                       onClick={() => abrirConcluir(ctr)}
-                      sx={{ fontWeight: 900, borderColor: T.green, color: T.green, "&:hover": { bgcolor: `${T.green}22` } }}
+                      sx={{ fontWeight: 900, borderColor: T.green, color: T.green, fontSize: "0.7rem", "&:hover": { bgcolor: `${T.green}22` } }}
                     >
                       Concluir & Pagar
                     </Button>
@@ -823,7 +1082,6 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
           .sort((a, b) => b.xp - a.xp);
         const meuRank = reputacaoList.findIndex(r => r.email === userEmail) + 1;
 
-        // 🟢 Ranking de operadores (por contratos concluídos)
         const xpPorOperador = {};
         contratosAtivos.forEach(ctr => {
           if (ctr.status !== "concluido") return;
@@ -832,11 +1090,8 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
           const xpGanho = { mesmo: 10, bonus: 15, penalidade: 5, custom: 10 }[ctr.ajusteTipo] ?? 10;
           if (!xpPorOperador[opId]) {
             xpPorOperador[opId] = {
-              operadorId: opId,
-              xp: 0,
-              contratos: 0,
-              nome: ctr.detalhes?.operadorNome || "—",
-              cor: ctr.detalhes?.operadorCor || T.neon,
+              operadorId: opId, xp: 0, contratos: 0,
+              nome: ctr.detalhes?.operadorNome || "—", cor: ctr.detalhes?.operadorCor || T.neon,
             };
           }
           xpPorOperador[opId].xp += xpGanho;
@@ -848,23 +1103,18 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
 
         return (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {/* RANKING DE JOGADORES */}
             <Box>
               <Typography variant="caption" sx={{ color: T.gold, fontWeight: 900, letterSpacing: 1.5, fontSize: "0.75rem", display: "block", mb: 1 }}>
                 🏆 RANKING DE REPUTAÇÃO — CONTRATANTES
               </Typography>
               <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem", display: "block", mb: 1.5, fontStyle: "italic" }}>
-                {isMaster
-                  ? "🔓 Modo Mestre: você vê o nick E o personagem real."
-                  : "🎭 Anonimato ativo: você vê apenas os nicks."}
+                {isMaster ? "🔓 Modo Mestre: você vê o nick E o personagem real." : "🎭 Anonimato ativo: você vê apenas os nicks."}
                 {" "}XP: +10 (normal), +15 (bônus), +5 (penalidade).
               </Typography>
 
               {reputacaoList.length === 0 ? (
-                <Paper sx={{ p: 4, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
-                  <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace" }}>
-                    Ninguém no ranking ainda. Conclua contratos para aparecer aqui.
-                  </Typography>
+                <Paper sx={{ p: 3, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
+                  <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace", fontSize: "0.85rem" }}>Ninguém no ranking ainda.</Typography>
                 </Paper>
               ) : (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -874,61 +1124,35 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
                     const fichaNome = isMaster ? (fichasMap[r.email]?.nome || r.email) : null;
                     const corBorda = pos === 1 ? "#fbbf24" : pos === 2 ? "#c0c0c0" : pos === 3 ? "#cd7f32" : T.border;
                     return (
-                      <Paper
-                        key={r.email}
-                        sx={{
-                          p: 1.5, bgcolor: isMeu ? `${T.neon}11` : T.card,
-                          border: `1px solid ${isMeu ? T.neon : corBorda}`,
-                          borderRadius: 2,
-                          display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap",
-                          boxShadow: isMeu ? `0 0 12px ${T.neon}44` : pos <= 3 ? `0 0 8px ${corBorda}44` : "none",
-                        }}
-                      >
-                        <Typography sx={{ fontSize: "1.3rem", minWidth: 40, textAlign: "center", fontWeight: 900, color: corBorda }}>
-                          {medalha(pos)}
-                        </Typography>
-                        <Box sx={{ flex: 1, minWidth: 140 }}>
-                          <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "0.95rem" }}>
-                            {r.nick}
-                            {isMeu && <Chip label="VOCÊ" size="small" sx={{ ml: 1, bgcolor: T.neon, color: "#000", fontWeight: 900, fontSize: "0.55rem", height: 16 }} />}
+                      <Paper key={r.email} sx={{ p: 1.5, bgcolor: isMeu ? `${T.neon}11` : T.card, border: `1px solid ${isMeu ? T.neon : corBorda}`, borderRadius: 2, display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+                        <Typography sx={{ fontSize: "1.2rem", minWidth: 30, textAlign: "center", fontWeight: 900, color: corBorda }}>{medalha(pos)}</Typography>
+                        <Box sx={{ flex: 1, minWidth: 120 }}>
+                          <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "0.9rem" }}>
+                            {r.nick} {isMeu && <Chip label="VOCÊ" size="small" sx={{ ml: 1, bgcolor: T.neon, color: "#000", fontWeight: 900, fontSize: "0.55rem", height: 16 }} />}
                           </Typography>
-                          {isMaster && fichaNome && (
-                            <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem" }}>
-                              🎭 Personagem: <strong style={{ color: T.pink }}>{fichaNome}</strong>
-                            </Typography>
-                          )}
+                          {isMaster && fichaNome && <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem" }}>🎭 Personagem: <strong style={{ color: T.pink }}>{fichaNome}</strong></Typography>}
                         </Box>
-                        <Chip label={`${r.contratosConcluidos} contrato(s)`} size="small" sx={{ bgcolor: `${T.neon}22`, color: T.neon, fontWeight: 800, fontSize: "0.6rem" }} />
-                        <Chip label={`⭐ ${r.xp} XP`} size="small" sx={{ bgcolor: `${T.gold}22`, color: T.gold, fontWeight: 900, fontSize: "0.65rem", border: `1px solid ${T.gold}66` }} />
+                        <Chip label={`${r.contratosConcluidos} contrato(s)`} size="small" sx={{ bgcolor: `${T.neon}22`, color: T.neon, fontWeight: 800, fontSize: "0.6rem", height: 20 }} />
+                        <Chip label={`⭐ ${r.xp} XP`} size="small" sx={{ bgcolor: `${T.gold}22`, color: T.gold, fontWeight: 900, fontSize: "0.65rem", border: `1px solid ${T.gold}66`, height: 20 }} />
                       </Paper>
                     );
                   })}
                 </Box>
               )}
-
               {!isMaster && minhaReputacao?.nick && meuRank > 0 && (
                 <Paper sx={{ p: 1.5, mt: 1.5, bgcolor: `${T.neon}15`, border: `1px solid ${T.neon}66`, borderRadius: 2 }}>
-                  <Typography sx={{ color: T.neon, fontWeight: 900, fontSize: "0.8rem" }}>
-                    🎯 Sua posição: #{meuRank} de {reputacaoList.length} · Nick: <strong>{minhaReputacao.nick}</strong> · ⭐ {minhaReputacao.xp} XP
-                  </Typography>
+                  <Typography sx={{ color: T.neon, fontWeight: 900, fontSize: "0.75rem" }}>🎯 Sua posição: #{meuRank} de {reputacaoList.length} · Nick: <strong>{minhaReputacao.nick}</strong> · ⭐ {minhaReputacao.xp} XP</Typography>
                 </Paper>
               )}
             </Box>
 
-            {/* RANKING DE OPERADORES */}
             <Box>
               <Typography variant="caption" sx={{ color: T.pink, fontWeight: 900, letterSpacing: 1.5, fontSize: "0.75rem", display: "block", mb: 1 }}>
                 📡 RANKING DE OPERADORES — MAIS CONFIÁVEIS
               </Typography>
-              <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem", display: "block", mb: 1.5, fontStyle: "italic" }}>
-                Baseado em contratos concluídos com sucesso.
-              </Typography>
-
               {rankingOperadores.length === 0 ? (
-                <Paper sx={{ p: 4, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
-                  <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace" }}>
-                    Nenhum operador com contratos concluídos ainda.
-                  </Typography>
+                <Paper sx={{ p: 3, textAlign: "center", bgcolor: T.card, border: `1px dashed ${T.border}`, borderRadius: 2 }}>
+                  <Typography sx={{ color: T.textDim, fontFamily: "'Courier New', monospace", fontSize: "0.85rem" }}>Nenhum operador com contratos concluídos ainda.</Typography>
                 </Paper>
               ) : (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -937,32 +1161,14 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
                     const opInfo = operadores.find(o => o.id === op.operadorId);
                     const cor = opInfo?.cor || op.cor || T.neon;
                     return (
-                      <Paper
-                        key={op.operadorId}
-                        sx={{
-                          p: 1.5, bgcolor: T.card,
-                          border: `1px solid ${pos <= 3 ? cor : T.border}`,
-                          borderLeft: `4px solid ${cor}`,
-                          borderRadius: 2,
-                          display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap",
-                          boxShadow: pos <= 3 ? `0 0 8px ${cor}44` : "none",
-                        }}
-                      >
-                        <Typography sx={{ fontSize: "1.3rem", minWidth: 40, textAlign: "center", fontWeight: 900, color: cor }}>
-                          {medalha(pos)}
-                        </Typography>
-                        <Box sx={{ flex: 1, minWidth: 140 }}>
-                          <Typography sx={{ color: cor, fontWeight: 900, fontSize: "0.95rem" }}>
-                            📡 {op.nome}
-                          </Typography>
-                          {opInfo?.descricao && (
-                            <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.6rem", display: "block" }}>
-                              {opInfo.descricao.slice(0, 80)}
-                            </Typography>
-                          )}
+                      <Paper key={op.operadorId} sx={{ p: 1.5, bgcolor: T.card, border: `1px solid ${pos <= 3 ? cor : T.border}`, borderLeft: `3px solid ${cor}`, borderRadius: 2, display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+                        <Typography sx={{ fontSize: "1.2rem", minWidth: 30, textAlign: "center", fontWeight: 900, color: cor }}>{medalha(pos)}</Typography>
+                        <Box sx={{ flex: 1, minWidth: 120 }}>
+                          <Typography sx={{ color: cor, fontWeight: 900, fontSize: "0.9rem" }}>📡 {op.nome}</Typography>
+                          {opInfo?.descricao && <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.6rem", display: "block" }}>{opInfo.descricao.slice(0, 60)}...</Typography>}
                         </Box>
-                        <Chip label={`${op.contratos} contrato(s)`} size="small" sx={{ bgcolor: `${cor}22`, color: cor, fontWeight: 800, fontSize: "0.6rem" }} />
-                        <Chip label={`⭐ ${op.xp} XP`} size="small" sx={{ bgcolor: `${T.gold}22`, color: T.gold, fontWeight: 900, fontSize: "0.65rem", border: `1px solid ${T.gold}66` }} />
+                        <Chip label={`${op.contratos} contrato(s)`} size="small" sx={{ bgcolor: `${cor}22`, color: cor, fontWeight: 800, fontSize: "0.6rem", height: 20 }} />
+                        <Chip label={`⭐ ${op.xp} XP`} size="small" sx={{ bgcolor: `${T.gold}22`, color: T.gold, fontWeight: 900, fontSize: "0.65rem", border: `1px solid ${T.gold}66`, height: 20 }} />
                       </Paper>
                     );
                   })}
@@ -976,55 +1182,131 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
       {/* ABA 3: GERENCIAR (MESTRE) */}
       {aba === 3 && isMaster && (
         <Box>
-          <Box sx={{ display: "flex", gap: 2, mb: 4, flexWrap: "wrap" }}>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setFormServico({}); setModalServicoOpen(true); }} sx={{ bgcolor: T.neon, color: "#000", fontWeight: 900, boxShadow: `0 0 10px ${T.neon}44` }}>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
+            <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={() => { setFormServico({}); setViewMode("form"); }} sx={{ bgcolor: T.neon, color: "#000", fontWeight: 900, fontSize: "0.75rem" }}>
               Novo Serviço
             </Button>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setFormOperador({}); setModalOperadorOpen(true); }} sx={{ bgcolor: T.pink, color: "#fff", fontWeight: 900, boxShadow: `0 0 10px ${T.pink}44` }}>
+            <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={() => { setFormOperador({}); setModalOperadorOpen(true); }} sx={{ bgcolor: T.pink, color: "#fff", fontWeight: 900, fontSize: "0.75rem" }}>
               Novo Operador
             </Button>
-            <Button
-              variant="contained"
-              startIcon={<span>⚙️</span>}
-              onClick={gerarOperadores}
-              disabled={seedando}
-              sx={{ bgcolor: '#a855f7', color: '#fff', fontWeight: 900, boxShadow: `0 0 10px #a855f744` }}
-            >
-              {seedando ? "Gerando..." : `Gerar Operadores (${cidades.length} cidades)`}
-            </Button>
-            <Button variant="contained" startIcon={<AutoAwesomeIcon />} onClick={gerarServicosComIA} sx={{ bgcolor: T.gold, color: "#000", fontWeight: 900, ml: "auto", boxShadow: `0 0 15px ${T.gold}66`, animation: "pulse 2s infinite" }}>
-              Gerar com I.A. (Massa)
+            <Button variant="contained" size="small" startIcon={<span>⚙️</span>} onClick={gerarOperadores} disabled={seedando} sx={{ bgcolor: '#a855f7', color: '#fff', fontWeight: 900, fontSize: "0.75rem" }}>
+              {seedando ? "Gerando..." : `Gerar Operadores (${cidades.length})`}
             </Button>
           </Box>
 
-          <Typography variant="h5" sx={{ color: T.neon, mb: 2, borderBottom: `1px solid ${T.neonDark}`, pb: 1, display: "inline-block" }}>
-            Serviços Cadastrados
+          {/* 🟢 GERAÇÃO EM MASSA COM FILTROS */}
+          <Paper sx={{ p: 2, bgcolor: T.card, border: `1px solid ${T.gold}`, borderRadius: 2, mb: 3 }}>
+            <Typography sx={{ color: T.gold, fontWeight: 900, mb: 1.5, fontSize: "0.85rem" }}>GERADOR EM MASSA (I.A.)</Typography>
+            
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth size="small">
+                  <InputLabel sx={{ color: T.textDim, fontSize: "0.8rem" }}>Escopo</InputLabel>
+                  <Select
+                    value={configMassa.escopo}
+                    onChange={e => setConfigMassa({ ...configMassa, escopo: e.target.value, paisAlvoId: "", cidadesAlvoIds: [] })}
+                    sx={{ color: "#fff", fontSize: "0.8rem" }}
+                    MenuProps={{ PaperProps: { sx: { bgcolor: T.card, color: T.text } } }}
+                    label="Escopo"
+                  >
+                    <MenuItem value="global" sx={{ fontSize: "0.8rem" }}>🌍 Global (Tudo)</MenuItem>
+                    <MenuItem value="pais" sx={{ fontSize: "0.8rem" }}>🏳️ País Específico</MenuItem>
+                    <MenuItem value="cidades" sx={{ fontSize: "0.8rem" }}>🏙️ Cidades Específicas</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {configMassa.escopo === "pais" && (
+                <Grid item xs={12} md={8}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel sx={{ color: T.textDim, fontSize: "0.8rem" }}>Selecione o País</InputLabel>
+                    <Select
+                      value={configMassa.paisAlvoId}
+                      onChange={e => setConfigMassa({ ...configMassa, paisAlvoId: e.target.value })}
+                      sx={{ color: "#fff", fontSize: "0.8rem" }}
+                      MenuProps={{ PaperProps: { sx: { bgcolor: T.card, color: T.text } } }}
+                      label="Selecione o País"
+                    >
+                      {paises.map(p => <MenuItem key={p.id} value={p.id} sx={{ fontSize: "0.8rem" }}>{p.nome}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+
+              {configMassa.escopo === "cidades" && (
+                <Grid item xs={12} md={8}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel sx={{ color: T.textDim, fontSize: "0.8rem" }}>Selecione as Cidades</InputLabel>
+                    <Select
+                      multiple
+                      value={configMassa.cidadesAlvoIds}
+                      onChange={e => setConfigMassa({ ...configMassa, cidadesAlvoIds: typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value })}
+                      renderValue={(selected) => selected.length === 0 ? "Nenhuma" : `${selected.length} cidade(s) selecionada(s)`}
+                      sx={{ color: "#fff", fontSize: "0.8rem" }}
+                      MenuProps={{ PaperProps: { sx: { bgcolor: T.card, color: T.text, maxHeight: 300 } } }}
+                      label="Selecione as Cidades"
+                    >
+                      {cidades.map(c => (
+                        <MenuItem key={c.id} value={c.id} sx={{ fontSize: "0.8rem", p: 0.5 }}>
+                          <Checkbox size="small" checked={configMassa.cidadesAlvoIds.indexOf(c.id) > -1} sx={{ color: T.neon, '&.Mui-checked': { color: T.neon }, p: 0.5 }} />
+                          {c.nome}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+            </Grid>
+
+            <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
+              <FormControlLabel control={<Checkbox size="small" checked={configMassa.gerarDinheiro} onChange={e => setConfigMassa({ ...configMassa, gerarDinheiro: e.target.checked })} sx={{ color: T.green, '&.Mui-checked': { color: T.green }, p: 0.5 }} />} label={<Typography sx={{ color: "#fff", fontSize: "0.8rem" }}>Incluir Dinheiro</Typography>} />
+              <FormControlLabel control={<Checkbox size="small" checked={configMassa.gerarItens} onChange={e => setConfigMassa({ ...configMassa, gerarItens: e.target.checked })} sx={{ color: T.pink, '&.Mui-checked': { color: T.pink }, p: 0.5 }} />} label={<Typography sx={{ color: "#fff", fontSize: "0.8rem" }}>Incluir Itens</Typography>} />
+            </Box>
+            {configMassa.gerarItens && (
+              <Box sx={{ pl: 1, mb: 2 }}>
+                <FormControlLabel control={<Checkbox size="small" checked={configMassa.incluirLojasOcultas} onChange={e => setConfigMassa({ ...configMassa, incluirLojasOcultas: e.target.checked })} sx={{ color: T.neon, '&.Mui-checked': { color: T.neon }, p: 0.5 }} />} label={<Typography sx={{ color: "#fff", fontSize: "0.75rem" }}>Permitir lojas ocultas</Typography>} />
+              </Box>
+            )}
+            <Button variant="contained" size="small" onClick={gerarServicosComIA} sx={{ bgcolor: T.gold, color: "#000", fontWeight: 900, fontSize: "0.75rem" }}>
+              Gerar com I.A.
+            </Button>
+          </Paper>
+
+          {/* GERENCIAMENTO DE RISCO (RESET) */}
+          <Typography variant="h6" sx={{ color: T.pink, mb: 1, fontSize: "0.9rem" }}>GERENCIAMENTO DE RISCO</Typography>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 3 }}>
+            <Button variant="outlined" size="small" color="error" startIcon={<RestartAltIcon />} onClick={resetarContratos} sx={{ flex: 1, fontSize: "0.7rem", fontWeight: 900 }}>Resetar Contratos</Button>
+            <Button variant="outlined" size="small" color="error" startIcon={<RestartAltIcon />} onClick={resetarOperadores} sx={{ flex: 1, fontSize: "0.7rem", fontWeight: 900 }}>Resetar Operadores</Button>
+          </Box>
+
+          <Typography variant="h6" sx={{ color: T.neon, mb: 1, borderBottom: `1px solid ${T.neonDark}`, pb: 0.5, display: "inline-block", fontSize: "0.9rem" }}>
+            Serviços
           </Typography>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mb: 4 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 3 }}>
             {servicos.map(srv => (
-              <Paper key={srv.id} sx={{ p: 2, bgcolor: T.card, display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${T.border}`, "&:hover": { borderColor: T.neonDark } }}>
+              <Paper key={srv.id} sx={{ p: 1.5, bgcolor: T.card, display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${T.border}` }}>
                 <Box>
-                  <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.1rem" }}>{srv.titulo}</Typography>
-                  <Typography variant="caption" sx={{ color: T.textDim }}>📡 {srv.operadorNome} • 📍 {srv.cidadeNome || srv.paisNome}</Typography>
+                  <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "0.85rem" }}>{srv.titulo}</Typography>
+                  <Typography variant="caption" sx={{ color: T.textDim, fontSize: "0.65rem" }}>📡 {srv.operadorNome}</Typography>
                 </Box>
                 <Box>
-                  <Tooltip title="Editar"><IconButton onClick={() => { setFormServico(srv); setModalServicoOpen(true); }} sx={{ color: T.neon }}><EditIcon /></IconButton></Tooltip>
-                  <Tooltip title="Excluir"><IconButton onClick={() => deletarServico(srv.id)} sx={{ color: T.pink }}><DeleteIcon /></IconButton></Tooltip>
+                  <IconButton size="small" onClick={() => { setFormServico(srv); setViewMode("form"); }} sx={{ color: T.neon }}><EditIcon fontSize="small"/></IconButton>
+                  <IconButton size="small" onClick={() => deletarServico(srv.id)} sx={{ color: T.pink }}><DeleteIcon fontSize="small"/></IconButton>
                 </Box>
               </Paper>
             ))}
           </Box>
 
-          <Typography variant="h5" sx={{ color: T.pink, mt: 4, mb: 2, borderBottom: `1px solid ${T.pink}55`, pb: 1, display: "inline-block" }}>
-            Operadores Cadastrados
+          <Typography variant="h6" sx={{ color: T.pink, mb: 1, borderBottom: `1px solid ${T.pink}55`, pb: 0.5, display: "inline-block", fontSize: "0.9rem" }}>
+            Operadores
           </Typography>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
             {operadores.map(op => (
-              <Paper key={op.id} sx={{ p: 2, bgcolor: T.card, display: "flex", justifyContent: "space-between", alignItems: "center", borderLeft: `4px solid ${op.cor}`, borderTop: `1px solid ${T.border}`, borderRight: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
-                <Typography sx={{ color: op.cor, fontWeight: 900, fontSize: "1.1rem", textShadow: `0 0 5px ${op.cor}44` }}>📡 {op.nome}</Typography>
+              <Paper key={op.id} sx={{ p: 1.5, bgcolor: T.card, display: "flex", justifyContent: "space-between", alignItems: "center", borderLeft: `3px solid ${op.cor}`, borderTop: `1px solid ${T.border}`, borderRight: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
+                <Typography sx={{ color: op.cor, fontWeight: 900, fontSize: "0.85rem" }}>📡 {op.nome}</Typography>
                 <Box>
-                  <Tooltip title="Editar"><IconButton onClick={() => { setFormOperador(op); setModalOperadorOpen(true); }} sx={{ color: T.neon }}><EditIcon /></IconButton></Tooltip>
-                  <Tooltip title="Excluir"><IconButton onClick={() => deletarOperador(op.id)} sx={{ color: T.pink }}><DeleteIcon /></IconButton></Tooltip>
+                  <IconButton size="small" onClick={() => { setFormOperador(op); setModalOperadorOpen(true); }} sx={{ color: T.neon }}><EditIcon fontSize="small"/></IconButton>
+                  <IconButton size="small" onClick={() => deletarOperador(op.id)} sx={{ color: T.pink }}><DeleteIcon fontSize="small"/></IconButton>
                 </Box>
               </Paper>
             ))}
@@ -1032,362 +1314,90 @@ export default function ServicosEspeciais({ userEmail, fichasMap = {}, isMaster 
         </Box>
       )}
 
-      {/* 🟢 MODAL ACEITAR SERVIÇO — maxWidth aumentado para md */}
-      <Dialog
-        open={modalAceitar}
-        onClose={() => setModalAceitar(false)}
-        maxWidth="md"
-        fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: T.bg2,
-            border: `2px solid ${T.neon}`,
-            borderRadius: 2,
-            boxShadow: `0 0 30px ${T.neon}44`,
-          }
-        }}
-      >
-        <DialogTitle sx={{ color: T.neon, borderBottom: `1px solid ${T.border}`, fontFamily: "'Courier New', monospace", fontWeight: 900 }}>
-          📡 TRANSMISSÃO CRIPTOGRAFADA
-        </DialogTitle>
-        <DialogContent sx={{ pt: 3, minHeight: 360 }}>
-          {servicoSelecionado && (
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 1 }}>
-                <Typography sx={{ color: T.textDim, fontSize: "0.85rem" }}>
-                  <strong>OPERADOR:</strong> <span style={{ color: servicoSelecionado.operadorCor }}>{servicoSelecionado.operadorNome}</span>
-                </Typography>
-                <Typography sx={{ color: T.textDim, fontSize: "0.85rem" }}>
-                  <strong>LOCAL:</strong> {servicoSelecionado.cidadeNome || servicoSelecionado.paisNome || "Desconhecido"}
-                </Typography>
-              </Box>
-
-              <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.5rem", fontFamily: "'Courier New', monospace" }}>
-                {servicoSelecionado.titulo}
-              </Typography>
-
-              <Paper sx={{ p: 2, bgcolor: T.card, border: `1px dashed ${T.border}` }}>
-                <Typography sx={{ color: T.text, fontSize: "0.9rem", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-                  {servicoSelecionado.sinopse}
-                </Typography>
-              </Paper>
-
-              <Box sx={{ p: 1.5, bgcolor: `${T.pink}15`, border: `1px solid ${T.pink}44`, borderRadius: 1 }}>
-                <Typography sx={{ color: T.pink, fontSize: "0.8rem", textAlign: "center", fontWeight: 900 }}>
-                  🔒 ALERTA: Os detalhes completos serão descriptografados após o aceite.
-                </Typography>
-              </Box>
-
-              <Box sx={{ display: "flex", justifyContent: "space-between", mt: 1, alignItems: "center", flexWrap: "wrap", gap: 1 }}>
-                <Typography sx={{ color: T.gold, fontWeight: 900, fontSize: "1.4rem", display: "flex", alignItems: "center", gap: 1 }}>
-                  <LocalAtmIcon fontSize="large" /> {(servicoSelecionado.valor || 0).toLocaleString("pt-BR")}
-                </Typography>
-                <Typography sx={{ color: T.pink, fontWeight: 900, fontSize: "1rem", display: "flex", alignItems: "center", gap: 0.5 }}>
-                  <AccessTimeIcon /> {servicoSelecionado.prazoDias > 0 ? `${servicoSelecionado.prazoDias} DIAS` : "SEM PRAZO"}
-                </Typography>
-              </Box>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ borderTop: `1px solid ${T.border}`, p: 2 }}>
-          <Button onClick={() => setModalAceitar(false)} sx={{ color: T.textDim, fontWeight: 900 }}>RECUSAR</Button>
-          <Button variant="contained" onClick={aceitarServico} sx={{ bgcolor: T.green, color: "#000", fontWeight: 900, "&:hover": { bgcolor: T.green, boxShadow: `0 0 15px ${T.green}` } }}>
-            ACEITAR CONTRATO
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* 🟢 NOVO MODAL: CONCLUIR & PAGAR */}
+      {/* 🟢 MODAIS SECUNDÁRIOS (PAGAR, NICK, OPERADOR) */}
       <Dialog
         open={modalConcluirOpen}
         onClose={() => setModalConcluirOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: {
-            bgcolor: T.bg2,
-            border: `2px solid ${T.green}`,
-            borderRadius: 2,
-            boxShadow: `0 0 30px ${T.green}44`,
-          }
-        }}
+        container={document.body}
+        PaperProps={{ sx: { bgcolor: T.bg2, border: `2px solid ${T.green}`, borderRadius: 2, boxShadow: `0 0 30px ${T.green}44`, zIndex: 999999 } }}
       >
         <DialogTitle sx={{ color: T.green, borderBottom: `1px solid ${T.border}`, fontFamily: "'Courier New', monospace", fontWeight: 900 }}>
-          ✅ FINALIZAR & PAGAR CONTRATO
+          ✅ FINALIZAR & PAGAR
         </DialogTitle>
-        <DialogContent sx={{ pt: 3, minHeight: 380 }}>
+        <DialogContent sx={{ pt: 2 }}>
           {contratoSelecionado && (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <Box>
-                <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>
-                  Contrato
-                </Typography>
-                <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.2rem" }}>
-                  {contratoSelecionado.detalhes.titulo}
-                </Typography>
-                <Typography variant="caption" sx={{ color: T.textDim }}>
-                  Jogador: <strong style={{ color: T.pink }}>{contratoSelecionado.jogadorNome}</strong>
-                </Typography>
+                <Typography sx={{ color: "#fff", fontWeight: 900, fontSize: "1.1rem" }}>{contratoSelecionado.detalhes.titulo}</Typography>
+                <Typography variant="caption" sx={{ color: T.textDim }}>Jogador: <strong style={{ color: T.pink }}>{contratoSelecionado.jogadorNome}</strong></Typography>
               </Box>
-
-              <Divider sx={{ borderColor: T.border }} />
-
               <Box>
-                <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", letterSpacing: 1 }}>
-                  Valor Original
-                </Typography>
-                <Typography sx={{ color: T.gold, fontWeight: 900, fontSize: "1.5rem", display: "flex", alignItems: "center", gap: 1 }}>
+                <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase" }}>Valor Original</Typography>
+                <Typography sx={{ color: T.gold, fontWeight: 900, fontSize: "1.2rem", display: "flex", alignItems: "center", gap: 1 }}>
                   <LocalAtmIcon /> {(contratoSelecionado.detalhes.valor || 0).toLocaleString("pt-BR")}
                 </Typography>
               </Box>
-
-              {/* 🟢 Ajustes rápidos */}
               <Box>
-                <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", letterSpacing: 1, display: "block", mb: 1 }}>
-                  Ajuste
-                </Typography>
+                <Typography variant="caption" sx={{ color: T.textDim, textTransform: "uppercase", display: "block", mb: 1 }}>Ajuste</Typography>
                 <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                   {[
-                    { id: "mesmo", label: "Sem alteração", cor: T.neon },
-                    { id: "bonus", label: "+25% Bônus", cor: T.green },
-                    { id: "penalidade", label: "-25% Penalidade", cor: T.pink },
-                    { id: "custom", label: "Personalizado", cor: T.gold },
+                    { id: "mesmo", label: "Normal", cor: T.neon },
+                    { id: "bonus", label: "+25%", cor: T.green },
+                    { id: "penalidade", label: "-25%", cor: T.pink },
+                    { id: "custom", label: "Custom", cor: T.gold },
                   ].map(opt => (
-                    <Button
-                      key={opt.id}
-                      size="small"
-                      variant={ajusteTipo === opt.id ? "contained" : "outlined"}
-                      onClick={() => aplicarAjuste(opt.id)}
-                      sx={{
-                        fontWeight: 900,
-                        borderColor: opt.cor,
-                        color: ajusteTipo === opt.id ? "#000" : opt.cor,
-                        bgcolor: ajusteTipo === opt.id ? opt.cor : "transparent",
-                        "&:hover": { bgcolor: opt.cor, color: "#000" },
-                      }}
-                    >
+                    <Button key={opt.id} size="small" variant={ajusteTipo === opt.id ? "contained" : "outlined"} onClick={() => aplicarAjuste(opt.id)}
+                      sx={{ fontWeight: 900, borderColor: opt.cor, color: ajusteTipo === opt.id ? "#000" : opt.cor, bgcolor: ajusteTipo === opt.id ? opt.cor : "transparent", "&:hover": { bgcolor: opt.cor, color: "#000" }, fontSize: "0.7rem" }}>
                       {opt.label}
                     </Button>
                   ))}
                 </Box>
               </Box>
-
-              {/* 🟢 Valor final editável */}
-              <TextField
-                label="Valor Final a Pagar (💰)"
-                type="number"
-                fullWidth
-                size="small"
-                value={valorFinal}
-                onChange={(e) => {
-                  const v = Math.max(0, Number(e.target.value) || 0);
-                  setValorFinal(v);
-                  setAjusteTipo("custom");
-                }}
-                InputLabelProps={{ sx: { color: T.textDim } }}
-                InputProps={{
-                  startAdornment: <InputAdornment position="start"><LocalAtmIcon sx={{ color: T.gold }} /></InputAdornment>,
-                  sx: { color: T.gold, fontWeight: 900, fontSize: "1.2rem" }
-                }}
-              />
-
-              {/* Motivo */}
-              <TextField
-                label="Motivo do Ajuste (opcional)"
-                fullWidth
-                size="small"
-                multiline
-                rows={2}
-                placeholder="Ex: 'Excelente trabalho, bônus pela rapidez' ou 'Demorou muito, penalidade'"
-                value={motivoAjuste}
-                onChange={(e) => setMotivoAjuste(e.target.value)}
-                InputLabelProps={{ sx: { color: T.textDim } }}
-                InputProps={{ sx: { color: "#fff" } }}
-              />
-
-              {/* Preview */}
-              <Paper sx={{ p: 1.5, bgcolor: `${T.green}10`, border: `1px solid ${T.green}44`, borderRadius: 1 }}>
-                <Typography sx={{ color: T.green, fontWeight: 900, fontSize: "0.9rem" }}>
-                  💰 Será creditado: <strong>{(valorFinal || 0).toLocaleString("pt-BR")}</strong> na carteira <strong>Bolso</strong> de {contratoSelecionado.jogadorNome}
-                </Typography>
-                {valorFinal !== (contratoSelecionado.detalhes.valor || 0) && (
-                  <Typography sx={{ color: T.textDim, fontSize: "0.75rem", mt: 0.5 }}>
-                    Ajuste: {valorFinal > (contratoSelecionado.detalhes.valor || 0) ? "+" : ""}
-                    {(valorFinal - (contratoSelecionado.detalhes.valor || 0)).toLocaleString("pt-BR")}
-                  </Typography>
-                )}
-              </Paper>
+              <TextField label="Valor Final (💰)" type="number" fullWidth size="small" value={valorFinal} onChange={(e) => { const v = Math.max(0, Number(e.target.value) || 0); setValorFinal(v); setAjusteTipo("custom"); }} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ startAdornment: <InputAdornment position="start"><LocalAtmIcon sx={{ color: T.gold }} /></InputAdornment>, sx: { color: T.gold, fontWeight: 900 } }} />
+              <TextField label="Motivo do Ajuste" fullWidth size="small" multiline rows={2} value={motivoAjuste} onChange={(e) => setMotivoAjuste(e.target.value)} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" } }} />
             </Box>
           )}
         </DialogContent>
         <DialogActions sx={{ borderTop: `1px solid ${T.border}`, p: 2 }}>
-          <Button onClick={() => setModalConcluirOpen(false)} sx={{ color: T.textDim, fontWeight: 900 }}>
-            CANCELAR
-          </Button>
-          <Button
-            variant="contained"
-            onClick={concluirEPagar}
-            startIcon={<CheckCircleIcon />}
-            sx={{ bgcolor: T.green, color: "#000", fontWeight: 900, "&:hover": { bgcolor: T.green, boxShadow: `0 0 15px ${T.green}` } }}
-          >
-            CONCLUIR & PAGAR
+          <Button onClick={() => setModalConcluirOpen(false)} sx={{ color: T.textDim, fontWeight: 900 }}>CANCELAR</Button>
+          <Button variant="contained" onClick={concluirEPagar} startIcon={<CheckCircleIcon />} sx={{ bgcolor: T.green, color: "#000", fontWeight: 900 }}>
+            CONCLUIR
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* MODAL GERENCIAR SERVIÇO */}
-      <Dialog open={modalServicoOpen} onClose={() => setModalServicoOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { bgcolor: T.bg2, border: `1px solid ${T.neonDark}`, minHeight: 520 } }}>
-        <DialogTitle sx={{ color: T.neon, borderBottom: `1px solid ${T.border}`, fontWeight: 900 }}>⚙️ {formServico.id ? "EDITAR" : "NOVO"} SERVIÇO</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3, pt: 3 }}>
-          <TextField label="Título do Contrato" fullWidth size="small" value={formServico.titulo || ""} onChange={e => setFormServico({ ...formServico, titulo: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.neon, fontWeight: 900 } }} />
-
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 6 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel sx={{ color: T.textDim }}>Operador Responsável</InputLabel>
-                <Select value={formServico.operadorId || ""} onChange={e => setFormServico({ ...formServico, operadorId: e.target.value })} label="Operador Responsável" sx={{ color: "#fff" }} MenuProps={{ PaperProps: { sx: { bgcolor: T.card } } }}>
-                  {operadores.map(o => <MenuItem key={o.id} value={o.id}>{o.nome}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 6 }}>
-              <TextField label="Valor (💰)" type="number" fullWidth size="small" value={formServico.valor || 0} onChange={e => setFormServico({ ...formServico, valor: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.gold, fontWeight: 900 } }} />
-            </Grid>
-          </Grid>
-
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 6 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel sx={{ color: T.textDim }}>País (Filtro)</InputLabel>
-                <Select value={formServico.paisId || ""} onChange={e => setFormServico({ ...formServico, paisId: e.target.value })} label="País (Filtro)" sx={{ color: "#fff" }} MenuProps={{ PaperProps: { sx: { bgcolor: T.card } } }}>
-                  <MenuItem value="">Nenhum</MenuItem>
-                  {paises.map(p => <MenuItem key={p.id} value={p.id}>{p.nome}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 6 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel sx={{ color: T.textDim }}>Cidade (Local)</InputLabel>
-                <Select value={formServico.cidadeId || ""} onChange={e => setFormServico({ ...formServico, cidadeId: e.target.value })} label="Cidade (Local)" sx={{ color: "#fff" }} MenuProps={{ PaperProps: { sx: { bgcolor: T.card } } }}>
-                  <MenuItem value="">Nenhum</MenuItem>
-                  {cidades.filter(c => !formServico.paisId || c.paisId === formServico.paisId).map(c => <MenuItem key={c.id} value={c.id}>{c.nome}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
-
-          <TextField label="Prazo em Dias (0 = Sem prazo)" type="number" fullWidth size="small" value={formServico.prazoDias || 0} onChange={e => setFormServico({ ...formServico, prazoDias: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.pink, fontWeight: 900 } }} />
-
-          <TextField label="Sinopse (Curta e Chamativa)" multiline rows={2} fullWidth size="small" value={formServico.sinopse || ""} onChange={e => setFormServico({ ...formServico, sinopse: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" } }} />
-          <TextField label="Descrição Completa (O Briefing Real)" multiline rows={5} fullWidth size="small" value={formServico.descricaoCompleta || ""} onChange={e => setFormServico({ ...formServico, descricaoCompleta: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" } }} />
+      <Dialog open={modalNickOpen} container={document.body} disableEscapeKeyDown maxWidth="xs" fullWidth PaperProps={{ sx: { bgcolor: T.bg2, border: `2px solid ${T.neon}`, borderRadius: 2, zIndex: 999999 } }}>
+        <DialogTitle sx={{ color: T.neon, borderBottom: `1px solid ${T.border}`, fontFamily: "'Courier New', monospace", fontWeight: 900 }}>🎭 ESCOLHA SEU NICK</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography sx={{ color: T.text, fontSize: "0.8rem", mb: 2 }}>Mantenha o anonimato no ranking escolhendo um codinome.</Typography>
+          <TextField label="Nick" fullWidth size="small" value={nickTemp} onChange={(e) => setNickTemp(e.target.value.slice(0, 20))} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.neon, fontWeight: 900 } }} />
         </DialogContent>
         <DialogActions sx={{ borderTop: `1px solid ${T.border}`, p: 2 }}>
-          <Button onClick={() => setModalServicoOpen(false)} sx={{ color: T.textDim, fontWeight: 900 }}>CANCELAR</Button>
-          <Button variant="contained" onClick={salvarServico} sx={{ bgcolor: T.green, color: "#000", fontWeight: 900, "&:hover": { bgcolor: T.green, boxShadow: `0 0 15px ${T.green}` } }}>SALVAR SERVIÇO</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* 🟢 MODAL NICK (OBRIGATÓRIO ANTES DE ACEITAR CONTRATOS) */}
-      <Dialog
-        open={modalNickOpen}
-        onClose={() => {}}
-        maxWidth="xs"
-        fullWidth
-        disableEscapeKeyDown
-        PaperProps={{
-          sx: {
-            bgcolor: T.bg2,
-            border: `2px solid ${T.neon}`,
-            borderRadius: 2,
-            boxShadow: `0 0 40px ${T.neon}66`,
-          }
-        }}
-      >
-        <DialogTitle sx={{ color: T.neon, borderBottom: `1px solid ${T.border}`, fontFamily: "'Courier New', monospace", fontWeight: 900 }}>
-          🎭 ESCOLHA SEU NICK
-        </DialogTitle>
-        <DialogContent sx={{ pt: 3 }}>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <Typography sx={{ color: T.text, fontSize: "0.85rem", lineHeight: 1.6 }}>
-              Para manter o <strong style={{ color: T.neon }}>anonimato no ranking</strong>, você precisa escolher um nick.
-              Os outros jogadores verão <strong>apenas seu nick</strong>. Apenas o Mestre vê qual personagem está por trás.
-            </Typography>
-
-            <TextField
-              label="Seu Nick de Ranking"
-              fullWidth
-              size="small"
-              value={nickTemp}
-              onChange={(e) => setNickTemp(e.target.value.slice(0, 20))}
-              placeholder="Ex: Fantasma, Corvo, Lâmina..."
-              helperText={`${nickTemp.length}/20 caracteres (mínimo 3)`}
-              InputLabelProps={{ sx: { color: T.textDim } }}
-              InputProps={{ sx: { color: T.neon, fontWeight: 900, fontSize: "1rem", letterSpacing: 1 } }}
-              sx={{
-                "& .MuiOutlinedInput-notchedOutline": { borderColor: T.neonDark },
-                "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: T.neon },
-                "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: T.neon, borderWidth: 2 },
-              }}
-            />
-
-            <Paper sx={{ p: 1.5, bgcolor: `${T.gold}11`, border: `1px dashed ${T.gold}66`, borderRadius: 1 }}>
-              <Typography variant="caption" sx={{ color: T.gold, fontSize: "0.65rem", display: "block", lineHeight: 1.6 }}>
-                💡 O nick é <strong>permanente</strong>. Escolha com cuidado.
-              </Typography>
-            </Paper>
-
-            <Paper sx={{ p: 1.5, bgcolor: `${T.neon}11`, border: `1px dashed ${T.neon}66`, borderRadius: 1 }}>
-              <Typography variant="caption" sx={{ color: T.neon, fontSize: "0.65rem", display: "block", lineHeight: 1.6 }}>
-                🏆 Cada contrato concluído rende XP de reputação. Maior XP = mais confiável.
-              </Typography>
-            </Paper>
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ borderTop: `1px solid ${T.border}`, p: 2 }}>
-          <Button
-            variant="contained"
-            fullWidth
-            onClick={salvarNick}
-            disabled={salvandoNick || nickTemp.trim().length < 3}
-            sx={{
-              bgcolor: T.neon, color: "#000", fontWeight: 900,
-              "&:hover": { bgcolor: T.neon, boxShadow: `0 0 15px ${T.neon}` },
-              "&.Mui-disabled": { bgcolor: "#334155", color: "#64748b" }
-            }}
-          >
-            {salvandoNick ? "Salvando..." : "✅ Confirmar Nick"}
+          <Button variant="contained" fullWidth onClick={salvarNick} disabled={salvandoNick || nickTemp.trim().length < 3} sx={{ bgcolor: T.neon, color: "#000", fontWeight: 900, fontSize: "0.8rem" }}>
+            CONFIRMAR
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* MODAL GERENCIAR OPERADOR */}
-      <Dialog open={modalOperadorOpen} onClose={() => setModalOperadorOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { bgcolor: T.bg2, border: `1px solid ${T.pink}`, minHeight: 360 } }}>
-        <DialogTitle sx={{ color: T.pink, borderBottom: `1px solid ${T.border}`, fontWeight: 900 }}>⚙️ {formOperador.id ? "EDITAR" : "NOVO"} OPERADOR</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3, pt: 3 }}>
-          <TextField label="Nome do Operador" fullWidth size="small" value={formOperador.nome || ""} onChange={e => setFormOperador({ ...formOperador, nome: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.pink, fontWeight: 900 } }} />
-          <TextField label="Descrição / Facção" fullWidth size="small" value={formOperador.descricao || ""} onChange={e => setFormOperador({ ...formOperador, descricao: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" } }} />
-
+      <Dialog open={modalOperadorOpen} onClose={() => setModalOperadorOpen(false)} container={document.body} maxWidth="xs" fullWidth PaperProps={{ sx: { bgcolor: T.bg2, border: `1px solid ${T.pink}`, zIndex: 999999 } }}>
+        <DialogTitle sx={{ color: T.pink, borderBottom: `1px solid ${T.border}`, fontWeight: 900 }}>OPERADOR</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}>
+          <TextField label="Nome" fullWidth size="small" value={formOperador.nome || ""} onChange={e => setFormOperador({ ...formOperador, nome: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: T.pink, fontWeight: 900 } }} />
+          <TextField label="Descrição" fullWidth size="small" value={formOperador.descricao || ""} onChange={e => setFormOperador({ ...formOperador, descricao: e.target.value })} InputLabelProps={{ sx: { color: T.textDim } }} InputProps={{ sx: { color: "#fff" } }} />
           <Box>
-            <Typography variant="caption" sx={{ color: T.textDim, fontWeight: 900, mb: 1, display: "block" }}>COR DE DESTAQUE (NEON)</Typography>
-            <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+            <Typography variant="caption" sx={{ color: T.textDim, fontWeight: 900, mb: 1, display: "block" }}>COR</Typography>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
               {CORES_OPERADOR.map(cor => (
-                <Box
-                  key={cor}
-                  onClick={() => setFormOperador({ ...formOperador, cor })}
-                  sx={{
-                    width: 36, height: 36, borderRadius: "50%", bgcolor: cor, cursor: "pointer",
-                    border: formOperador.cor === cor ? "3px solid #fff" : "3px solid transparent",
-                    boxShadow: formOperador.cor === cor ? `0 0 15px ${cor}` : "none",
-                    transition: "0.2s"
-                  }}
-                />
+                <Box key={cor} onClick={() => setFormOperador({ ...formOperador, cor })} sx={{ width: 28, height: 28, borderRadius: "50%", bgcolor: cor, cursor: "pointer", border: formOperador.cor === cor ? "2px solid #fff" : "2px solid transparent" }} />
               ))}
             </Box>
           </Box>
         </DialogContent>
         <DialogActions sx={{ borderTop: `1px solid ${T.border}`, p: 2 }}>
-          <Button onClick={() => setModalOperadorOpen(false)} sx={{ color: T.textDim, fontWeight: 900 }}>CANCELAR</Button>
-          <Button variant="contained" onClick={salvarOperador} sx={{ bgcolor: T.pink, color: "#fff", fontWeight: 900, "&:hover": { bgcolor: T.pink, boxShadow: `0 0 15px ${T.pink}` } }}>SALVAR OPERADOR</Button>
+          <Button onClick={() => setModalOperadorOpen(false)} sx={{ color: T.textDim, fontWeight: 900, fontSize: "0.8rem" }}>CANCELAR</Button>
+          <Button variant="contained" onClick={salvarOperador} sx={{ bgcolor: T.pink, color: "#fff", fontWeight: 900, fontSize: "0.8rem" }}>SALVAR</Button>
         </DialogActions>
       </Dialog>
 
