@@ -8817,16 +8817,19 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                         key={bg.id}
                         className="archetype-card"
                         onClick={() => {
-                          if (!isMestre) return;
+                          // 🟢 TRAVA REMOVIDA: Agora jogadores podem selecionar
                           setBackgroundSelecionado(bg);
                           setPerguntasOrigem(prev => ({ ...prev, historia: `Arquétipo: ${bg.nome}. ${bg.descricao}` }));
                         }}
                         sx={{
-                          minWidth: 180, maxWidth: 180, p: 2, cursor: isMestre ? 'pointer' : 'default',
+                          minWidth: 180, maxWidth: 180, p: 2, cursor: 'pointer', // 🟢 cursor sempre pointer
                           bgcolor: backgroundSelecionado?.id === bg.id ? 'rgba(0,224,255,0.1)' : 'rgba(15,23,42,0.8)',
                           border: `2px solid ${backgroundSelecionado?.id === bg.id ? '#00e0ff' : '#334155'}`,
                           borderRadius: 2, position: 'relative', overflow: 'hidden',
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center'
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
+                          // 🟢 Adiciona um efeito de hover para indicar que é clicável
+                          '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 4px 12px rgba(0,224,255,0.2)' },
+                          transition: 'all 0.2s ease'
                         }}
                       >
                         <Typography sx={{ fontSize: '2.5rem', mb: 1 }}>{bg.icone}</Typography>
@@ -8853,16 +8856,16 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                 
                 <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, width: '100%' }}>
                   <FormControl fullWidth variant="outlined" sx={{ width: '100%', flex: 1 }}>
-                    <InputLabel sx={{ color: "#94a3b8" }}>País</InputLabel>
-                    <Select
-                      fullWidth
-                      value={paisOrigemSelecionado}
-                      onChange={(e) => {
-                        setPaisOrigemSelecionado(e.target.value);
-                        setCidadeOrigemSelecionada("");
-                        setPerguntasOrigem(prev => ({ ...prev, origem: paisesSim.find(p => p.id === e.target.value)?.nome || "" }));
-                      }}
-                      label="País"
+                      <InputLabel sx={{ color: "#94a3b8" }}>País</InputLabel>
+                      <Select
+                        fullWidth
+                        value={paisOrigemSelecionado}
+                        onChange={(e) => {
+                          setPaisOrigemSelecionado(e.target.value);
+                          setCidadeOrigemSelecionada("");
+                          setPerguntasOrigem(prev => ({ ...prev, origem: paisesSim.find(p => p.id === e.target.value)?.nome || "" }));
+                        }}
+                        label="País"
                       disabled={!isMestre}
                       sx={{
                         color: "#fff",
@@ -8881,7 +8884,7 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                     </Select>
                   </FormControl>
 
-                  <FormControl fullWidth variant="outlined" sx={{ width: '100%', flex: 1 }} disabled={!isMestre || !paisOrigemSelecionado}>
+                                      <FormControl fullWidth variant="outlined" sx={{ width: '100%', flex: 1 }} disabled={!paisOrigemSelecionado}>
                     <InputLabel sx={{ color: "#94a3b8" }}>Cidade / Região</InputLabel>
                     <Select
                       fullWidth
@@ -8925,9 +8928,9 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                         <Typography sx={{ color: '#00e0ff', fontWeight: 'bold' }}>🛡️ Passado e Origem</Typography>
                       </AccordionSummary>
                       <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <TextField label="História (Infância)" multiline rows={2} value={perguntasOrigem.historia} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, historia: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Ocupação" value={perguntasOrigem.ocupacao} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, ocupacao: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Acontecimento Marcante" multiline rows={2} value={perguntasOrigem.acontecimento} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, acontecimento: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="História (Infância)" multiline rows={2} value={perguntasOrigem.historia} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, historia: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Ocupação" value={perguntasOrigem.ocupacao} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, ocupacao: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Acontecimento Marcante" multiline rows={2} value={perguntasOrigem.acontecimento} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, acontecimento: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
                       </AccordionDetails>
                     </Accordion>
 
@@ -8936,10 +8939,10 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                         <Typography sx={{ color: '#facc15', fontWeight: 'bold' }}>⚔️ Habilidades e Limitações</Typography>
                       </AccordionSummary>
                       <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <TextField label="Especialidades" value={perguntasOrigem.especialidades} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, especialidades: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Experiência" value={perguntasOrigem.experiencia} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, experiencia: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Equipamentos" value={perguntasOrigem.equipamentos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, equipamentos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Limitações" multiline rows={2} value={perguntasOrigem.limitacoes} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, limitacoes: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Especialidades" value={perguntasOrigem.especialidades} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, especialidades: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Experiência" value={perguntasOrigem.experiencia} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, experiencia: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Equipamentos" value={perguntasOrigem.equipamentos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, equipamentos: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Limitações" multiline rows={2} value={perguntasOrigem.limitacoes} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, limitacoes: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
                       </AccordionDetails>
                     </Accordion>
 
@@ -8948,10 +8951,10 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                         <Typography sx={{ color: '#ff9800', fontWeight: 'bold' }}>🎯 Presente e Motivações</Typography>
                       </AccordionSummary>
                       <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <TextField label="Objetivo Atual" value={perguntasOrigem.objetivo} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, objetivo: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Motivação" value={perguntasOrigem.motivacao} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, motivacao: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Medos" value={perguntasOrigem.medos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, medos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Limites" value={perguntasOrigem.limites} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, limites: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Objetivo Atual" value={perguntasOrigem.objetivo} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, objetivo: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Motivação" value={perguntasOrigem.motivacao} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, motivacao: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Medos" value={perguntasOrigem.medos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, medos: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Limites" value={perguntasOrigem.limites} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, limites: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
                       </AccordionDetails>
                     </Accordion>
 
@@ -8960,10 +8963,10 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                         <Typography sx={{ color: '#ef4444', fontWeight: 'bold' }}>🕵️ Relações e Segredos</Typography>
                       </AccordionSummary>
                       <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <TextField label="Pessoas Importantes" value={perguntasOrigem.pessoas} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, pessoas: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Conflitos" value={perguntasOrigem.conflitos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, conflitos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Segredos" value={perguntasOrigem.segredos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, segredos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
-                        <TextField label="Companheiros" value={perguntasOrigem.companheiros} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, companheiros: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Pessoas Importantes" value={perguntasOrigem.pessoas} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, pessoas: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Conflitos" value={perguntasOrigem.conflitos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, conflitos: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Segredos" value={perguntasOrigem.segredos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, segredos: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Companheiros" value={perguntasOrigem.companheiros} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, companheiros: e.target.value }))} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
                       </AccordionDetails>
                     </Accordion>
                   </Box>
@@ -8973,7 +8976,7 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
                   variant="contained"
                   fullWidth
                   onClick={gerarBackgroundIA}
-                  disabled={gerandoBackground || !isMestre}
+                  disabled={gerandoBackground}
                   sx={{
                     mt: 2, bgcolor: "#a855f7", color: "#fff", fontWeight: "bold", py: 1.5,
                     background: "linear-gradient(90deg, #a855f7, #d946ef)",
@@ -9169,31 +9172,29 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
           <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
             FECHAR
           </Button>
-          {isMestre && (
-            <Button 
-              variant="contained" 
-              onClick={async () => {
-                try {
-                  const payload = { 
-                    background: backgroundTexto, 
-                    backgroundCapitulos,
-                    perguntasOrigem,
-                    paisOrigemSelecionado,
-                    cidadeOrigemSelecionada
-                  };
-                  await setDoc(doc(db, "fichas", fichaId), payload, { merge: true });
-                  setFicha(prev => ({ ...prev, ...payload }));
-                  alert("✅ Background salvo com sucesso!");
-                  setModalBackgroundOpen(false);
-                } catch (err) {
-                  alert("Erro ao salvar: " + err.message);
-                }
-              }} 
-              sx={{ bgcolor: '#a855f7', color: '#fff', fontWeight: 'bold' }}
-            >
-              SALVAR E FECHAR
-            </Button>
-          )}
+          <Button 
+            variant="contained" 
+            onClick={async () => {
+              try {
+                const payload = { 
+                  background: backgroundTexto, 
+                  backgroundCapitulos,
+                  perguntasOrigem,
+                  paisOrigemSelecionado,
+                  cidadeOrigemSelecionada
+                };
+                await setDoc(doc(db, "fichas", fichaId), payload, { merge: true });
+                setFicha(prev => ({ ...prev, ...payload }));
+                alert("✅ Background salvo com sucesso!");
+                setModalBackgroundOpen(false);
+              } catch (err) {
+                alert("Erro ao salvar: " + err.message);
+              }
+            }} 
+            sx={{ bgcolor: '#a855f7', color: '#fff', fontWeight: 'bold' }}
+          >
+            SALVAR E FECHAR
+          </Button>
         </DialogActions>
       </Dialog>
   {/* 🟢🟢🟢 MODAL DE HABILIDADES (VERSÃO FINAL COM IMAGEM + IA FUSIONADA) 🟢🟢🟢 */}
