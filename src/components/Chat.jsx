@@ -2085,6 +2085,8 @@ async function rolarAcao() {
   const isFurtiva = acaoTipos.includes("furtividade");
   const isFurtivaAtiva = isFurtiva && acaoFurtividadeSubTipo === "ativa";
   const isDano = acaoTipos.includes("dano") || isFurtivaAtiva;
+  const isLivre = acaoTipos.includes("livre");
+  const isManipulacao = acaoTipos.includes("manipulacao");
 
   // 🟢 Só atributo é obrigatório (ou consumível)
   if (!acaoAtributo && !acaoItemConsumivel) {
