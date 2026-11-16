@@ -2,31 +2,17 @@
   import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
   import { useGame } from "../context/GameProvider";
   import {
-  Box,
-  Button,
-  Grid,
-  Paper,
-  TextField,
-  Typography,
-  Slider,
-  LinearProgress,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  InputAdornment,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Chip,
+  Box, Button, Grid, Paper, TextField, Typography, Slider, LinearProgress,
+  IconButton, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment,
+  FormControl, InputLabel, Select, MenuItem, Chip, Tabs, Tab,
+  Accordion, AccordionSummary, AccordionDetails
 } from "@mui/material";
 import { Divider } from "@mui/material";
 import { Checkbox, FormControlLabel, Tooltip, Collapse } from "@mui/material";
-  import AddIcon from "@mui/icons-material/Add";
-  import DeleteIcon from "@mui/icons-material/Delete";
-  import CloseIcon from "@mui/icons-material/Close";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import CloseIcon from "@mui/icons-material/Close";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore"; // 🟢 IMPORT ADICIONADO AQUI
   import EditIcon from "@mui/icons-material/Edit";
   import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
   import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
@@ -811,6 +797,38 @@ useEffect(() => {
     .MuiDialog-paper .MuiChip-root:hover {
       transform: translateY(-1px);
     }
+
+    /* 🟢 ANIMAÇÕES PARA O BACKGROUND */
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in-up {
+      animation: fadeInUp 0.4s ease-out forwards;
+    }
+    .animate-slide-in-right {
+      animation: slideInRight 0.4s ease-out forwards;
+    }
+    
+    /* 🟢 CARD DE CAPÍTULO */
+    .chapter-card {
+      transition: all 0.25s ease;
+      cursor: pointer;
+    }
+    .chapter-card:hover {
+      transform: translateX(4px);
+      border-left-color: #00e0ff !important;
+      background-color: rgba(0, 224, 255, 0.05) !important;
+    }
+    .chapter-card.active {
+      border-left-color: #a855f7 !important;
+      background-color: rgba(168, 85, 247, 0.1) !important;
+      box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+    }
   `;
   document.head.appendChild(styleSheet);
   
@@ -1476,10 +1494,21 @@ const [listaJogadores, setListaJogadores] = useState([]);
 // 🟢 LISTENER DE TRANSFERÊNCIAS AUTOMÁTICAS (aplica sozinho, sem aceitar)
 const [transferenciasProcessando, setTransferenciasProcessando] = useState(false);
 const processadasRef = useRef(new Set());
+const arquetiposRef = useRef(null); // 🟢 ADICIONE ESTA LINHA AQUI
+
+// 🟢 BUSCAR PAÍSES E CIDADES DO SIMULADOR DE MUNDO
+useEffect(() => {
+  const unsubPaises = onSnapshot(collection(db, "sim_paises"), (snap) => {
+    setPaisesSim(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+  const unsubCidades = onSnapshot(collection(db, "sim_cidades"), (snap) => {
+    setCidadesSim(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+  return () => { unsubPaises(); unsubCidades(); };
+}, []);
 
 useEffect(() => {
   if (!fichaId) return;
-  
   const unsub = onSnapshot(
     query(
       collection(db, "transferencias_pendentes"),
@@ -1602,6 +1631,37 @@ const [redimensionandoAnotacoes, setRedimensionandoAnotacoes] = useState(false);
 const dragStartRef = useRef({ x: 0, y: 0 });
 const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
 const [modalBackgroundOpen, setModalBackgroundOpen] = useState(false);
+
+// 🟢 BLOQUEIA O SCROLL DE FORA QUANDO O MOUSE ESTÁ NOS ARQUÉTIPOS
+useEffect(() => {
+  if (!modalBackgroundOpen) return;
+
+  // 🟢 O SEGREDO ESTÁ AQUI: Delay de 400ms para a animação do modal terminar
+  const timer = setTimeout(() => {
+    const el = arquetiposRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault(); // Impede o scroll da tela de trás
+      el.scrollLeft += e.deltaY * 1.5; // Scroll lateral
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Salva a função de limpeza no elemento para podermos remover depois
+    el._cleanupWheel = () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, 400);
+
+  return () => {
+    clearTimeout(timer);
+    const el = arquetiposRef.current;
+    if (el && el._cleanupWheel) {
+      el._cleanupWheel();
+    }
+  };
+}, [modalBackgroundOpen]);
 const [anotacoesTexto, setAnotacoesTexto] = useState("");
 const [backgroundTexto, setBackgroundTexto] = useState("");
 const [backgroundCapitulos, setBackgroundCapitulos] = useState([]);
@@ -1615,6 +1675,19 @@ const [backgroundSelecionado, setBackgroundSelecionado] = useState(null);
 const [cidadeSelecionada, setCidadeSelecionada] = useState("");
 const [backgroundConfirmado, setBackgroundConfirmado] = useState(false);
 const [origemConfirmada, setOrigemConfirmada] = useState(false);
+
+// 🟢 NOVOS ESTADOS PARA O BACKGROUND
+const [paisesSim, setPaisesSim] = useState([]);
+const [cidadesSim, setCidadesSim] = useState([]);
+const [paisOrigemSelecionado, setPaisOrigemSelecionado] = useState("");
+const [cidadeOrigemSelecionada, setCidadeOrigemSelecionada] = useState("");
+const [gerandoBackground, setGerandoBackground] = useState(false);
+const [perguntasOrigem, setPerguntasOrigem] = useState({
+  origem: "", historia: "", ocupacao: "", acontecimento: "",
+  especialidades: "", experiencia: "", equipamentos: "", limitacoes: "",
+  objetivo: "", motivacao: "", medos: "", limites: "",
+  pessoas: "", conflitos: "", segredos: "", companheiros: ""
+});
 
 // 🟢 REFERÊNCIA PARA O TEXTAREA (para inserir imagem no cursor)
 const anotacaoTextareaRef = useRef(null);
@@ -1704,6 +1777,70 @@ const fecharNotifSede = () => {
 };
 
 // Recuperação total (SÓ MESTRE)
+// 🟢 FUNÇÃO PARA GERAR BACKGROUND COM IA
+const gerarBackgroundIA = async () => {
+  if (!ficha?.nome) return alert("Preencha o nome do personagem primeiro.");
+  setGerandoBackground(true);
+  
+  // Junta todas as respostas em um prompt estruturado
+  const prompt = `
+    Gere um background narrativo rico e imersivo para um personagem de RPG.
+    Nome: ${ficha.nome}
+    ${perguntasOrigem.origem ? `Origem: ${perguntasOrigem.origem}.` : ""}
+    ${perguntasOrigem.historia ? `História/Infância: ${perguntasOrigem.historia}.` : ""}
+    ${perguntasOrigem.ocupacao ? `Ocupação: ${perguntasOrigem.ocupacao}.` : ""}
+    ${perguntasOrigem.acontecimento ? `Acontecimento Marcante: ${perguntasOrigem.acontecimento}.` : ""}
+    ${perguntasOrigem.especialidades ? `Especialidades: ${perguntasOrigem.especialidades}.` : ""}
+    ${perguntasOrigem.experiencia ? `Experiência: ${perguntasOrigem.experiencia}.` : ""}
+    ${perguntasOrigem.equipamentos ? `Equipamentos: ${perguntasOrigem.equipamentos}.` : ""}
+    ${perguntasOrigem.limitacoes ? `Limitações: ${perguntasOrigem.limitacoes}.` : ""}
+    ${perguntasOrigem.objetivo ? `Objetivo: ${perguntasOrigem.objetivo}.` : ""}
+    ${perguntasOrigem.motivacao ? `Motivação: ${perguntasOrigem.motivacao}.` : ""}
+    ${perguntasOrigem.medos ? `Medos: ${perguntasOrigem.medos}.` : ""}
+    ${perguntasOrigem.limites ? `Limites: ${perguntasOrigem.limites}.` : ""}
+    ${perguntasOrigem.pessoas ? `Pessoas Importantes: ${perguntasOrigem.pessoas}.` : ""}
+    ${perguntasOrigem.conflitos ? `Conflitos: ${perguntasOrigem.conflitos}.` : ""}
+    ${perguntasOrigem.segredos ? `Segredos: ${perguntasOrigem.segredos}.` : ""}
+    ${perguntasOrigem.companheiros ? `Companheiros: ${perguntasOrigem.companheiros}.` : ""}
+  `;
+
+  try {
+    const resp = await fetch("https://reqviem.onrender.com/api/ia-background", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    
+    let textoFinal = "";
+    if (resp.ok) {
+      const data = await resp.json();
+      textoFinal = data.texto || data.background || "";
+    }
+
+    // Fallback caso a IA não responda: formatação local bem feita
+    if (!textoFinal) {
+      textoFinal = `${ficha.nome} nasceu em ${perguntasOrigem.origem || "um lugar desconhecido"}. ` +
+      (perguntasOrigem.historia ? `Durante sua infância, ${perguntasOrigem.historia.toLowerCase()}. ` : "") +
+      (perguntasOrigem.acontecimento ? `Sua vida mudou drasticamente quando ${perguntasOrigem.acontecimento.toLowerCase()}. ` : "") +
+      (perguntasOrigem.ocupacao ? `Para sobreviver, atua como ${perguntasOrigem.ocupacao.toLowerCase()}. ` : "") +
+      (perguntasOrigem.especialidades ? `É reconhecido por suas habilidades em ${perguntasOrigem.especialidades.toLowerCase()}. ` : "") +
+      (perguntasOrigem.objetivo ? `No momento, seu maior objetivo é ${perguntasOrigem.objetivo.toLowerCase()}. ` : "") +
+      (perguntasOrigem.motivacao ? `O que o move é ${perguntasOrigem.motivacao.toLowerCase()}. ` : "") +
+      (perguntasOrigem.medos ? `Porém, teme ${perguntasOrigem.medos.toLowerCase()}. ` : "") +
+      (perguntasOrigem.segredos ? `Esconde um segredo: ${perguntasOrigem.segredos.toLowerCase()}.` : "");
+    }
+
+    setBackgroundTexto(textoFinal);
+    setAbaBackground("background");
+    await setDoc(doc(db, "fichas", fichaId), { background: textoFinal }, { merge: true });
+    setFicha(prev => ({ ...prev, background: textoFinal }));
+  } catch (err) {
+    alert("Erro ao gerar background: " + err.message);
+  } finally {
+    setGerandoBackground(false);
+  }
+};
+
 const recuperarFomeCompleta = async () => {
   if (!isMestre || !fichaId) return;
   try {
@@ -1743,71 +1880,18 @@ const TRACOS_POR_PERICIA = {
   intimidacao: "Intimidador",
   aura: "Auris",
 };
-
-// 🟢 BACKGROUNDS DISPONÍVEIS
 const BACKGROUNDS = [
-  { 
-    id: 1, nome: "Herdeiro", descricao: "Você nasceu em berço de ouro, seja de uma família nobre, corporativa ou dinastia comercial.",
-    dinheiro: 50000, item: "Autômato de Companhia", pericia: "labia", bonus: 1 
-  },
-  { 
-    id: 2, nome: "Operário", descricao: "Você trabalhou nas fábricas, minas ou oficinas. Suas mãos conhecem o peso do trabalho duro.",
-    dinheiro: 500, item: "Machado de Batalha", pericia: "atletismo", bonus: 1 
-  },
-  { 
-    id: 3, nome: "Forasteiro", descricao: "Você veio de fora das cidades, das estepes, desertos ou terras selvagens.",
-    dinheiro: 2000, item: "Dardos Tranquilizantes", pericia: "sobrevivencia", bonus: 1 
-  },
-  { 
-    id: 4, nome: "Acadêmico", descricao: "Você estudou em universidades, bibliotecas ou laboratórios. O conhecimento é sua arma.",
-    dinheiro: 5000, item: "Terminal de Mesa", pericia: "conhecimento", bonus: 1 
-  },
-  { 
-    id: 5, nome: "Mercenário", descricao: "Você lutou por dinheiro, sobrevivendo de contrato em contrato nos campos de batalha.",
-    dinheiro: 8000, item: "Sabre de Oficial", pericia: "luta", bonus: 1 
-  },
-  { 
-    id: 6, nome: "Místico", descricao: "Você teve contato com o sobrenatural: cultos, ordens esotéricas, ou experiências inexplicáveis.",
-    dinheiro: 3000, item: "Injeção da Vida", pericia: "aura", bonus: 1 
-  },
-  { 
-    id: 7, nome: "Submundo", descricao: "Você viveu nas sombras: ladrão, contrabandista, ou simplesmente sobrevivente dos becos.",
-    dinheiro: 4500, item: "Adaga Curta de Aço Damasco", pericia: "furtividade", bonus: 1 
-  },
-  { 
-    id: 8, nome: "Artista", descricao: "Você viveu da arte: música, teatro, pintura, ou performances de rua.",
-    dinheiro: 2500, item: "Alaúde", pericia: "performance", bonus: 1 
-  },
-  { 
-    id: 9, nome: "Médico", descricao: "Você curou pessoas: em hospitais, campos de batalha, ou clínicas clandestinas.",
-    dinheiro: 10000, item: "Kit Médico", pericia: "medicina", bonus: 1 
-  },
-  { 
-    id: 10, nome: "Caçador", descricao: "Você rastreou presas: animais, monstros, ou até mesmo pessoas.",
-    dinheiro: 6000, item: "Arco Intermediário", pericia: "armaDistancia", bonus: 1 
-  },
-  { 
-    id: 11, nome: "Diplomata", descricao: "Você negociou paz e guerra: embaixador, mediador, ou simplesmente alguém que sabe falar.",
-    dinheiro: 12000, item: "ICM", pericia: "labia", bonus: 1 
-  },
-  { 
-    id: 12, nome: "Investigador", descricao: "Você resolveu mistérios: detetive, jornalista, ou simplesmente um curioso incurável.",
-    dinheiro: 7000, item: "Olho de Lente de Aumento", pericia: "investigacao", bonus: 1 
-  },
-  { 
-    id: 13, nome: "Sentinela", descricao: "Você protegeu algo ou alguém: guarda, vigia, ou batedor de caravanas.",
-    dinheiro: 3500, item: "Drone de Vigilancia", pericia: "percepcao", bonus: 1 
-  },
-  { 
-    id: 14, nome: "Intimidador", descricao: "Você impôs respeito pelo medo: capanga, executor, ou simplesmente alguém muito grande.",
-    dinheiro: 100, item: "Obsidiana", pericia: "intimidacao", bonus: 1 
-  },
-  { 
-    id: 15, nome: "Naturalista", descricao: "Você estudou a natureza: botânico, geólogo, ou herbalista das terras selvagens.",
-    dinheiro: 1000, item: "Cavalo", pericia: "natureza", bonus: 1 
-  },
+  { id: 1, nome: "Herdeiro", icone: "👑", descricao: "Você nasceu em berço de ouro, seja de uma família nobre, corporativa ou dinastia comercial.", dinheiro: 50000, item: "Autômato de Companhia", pericia: "labia", bonus: 1 },
+  { id: 2, nome: "Operário", icone: "🔨", descricao: "Você trabalhou nas fábricas, minas ou oficinas. Suas mãos conhecem o peso do trabalho duro.", dinheiro: 500, item: "Machado de Batalha", pericia: "atletismo", bonus: 1 },
+  { id: 3, nome: "Forasteiro", icone: "🏕️", descricao: "Você veio de fora das cidades, das estepes, desertos ou terras selvagens.", dinheiro: 2000, item: "Dardos Tranquilizantes", pericia: "sobrevivencia", bonus: 1 },
+  { id: 4, nome: "Acadêmico", icone: "📚", descricao: "Você estudou em universidades, bibliotecas ou laboratórios. O conhecimento é sua arma.", dinheiro: 5000, item: "Terminal de Mesa", pericia: "conhecimento", bonus: 1 },
+  { id: 5, nome: "Mercenário", icone: "⚔️", descricao: "Você lutou por dinheiro, sobrevivendo de contrato em contrato nos campos de batalha.", dinheiro: 8000, item: "Sabre de Oficial", pericia: "luta", bonus: 1 },
+  { id: 6, nome: "Místico", icone: "🔮", descricao: "Você teve contato com o sobrenatural: cultos, ordens esotéricas, ou experiências inexplicáveis.", dinheiro: 3000, item: "Injeção da Vida", pericia: "aura", bonus: 1 },
+  { id: 7, nome: "Submundo", icone: "🌑", descricao: "Você viveu nas sombras: ladrão, contrabandista, ou simplesmente sobrevivente dos becos.", dinheiro: 4500, item: "Adaga Curta de Aço Damasco", pericia: "furtividade", bonus: 1 },
+  { id: 8, nome: "Artista", icone: "🎭", descricao: "Você viveu da arte: música, teatro, pintura, ou performances de rua.", dinheiro: 2500, item: "Alaúde", pericia: "performance", bonus: 1 },
+  { id: 9, nome: "Médico", icone: "🩺", descricao: "Você curou pessoas: em hospitais, campos de batalha, ou clínicas clandestinas.", dinheiro: 10000, item: "Kit Médico", pericia: "medicina", bonus: 1 },
+  { id: 10, nome: "Caçador", icone: "🏹", descricao: "Você rastreou presas: animais, monstros, ou até mesmo pessoas.", dinheiro: 6000, item: "Arco Intermediário", pericia: "armaDistancia", bonus: 1 },
 ];
-
 // 🟢 ORIGENS (Cidades e Gentílicos)
 const ORIGENS = [
   // Império Aurano
@@ -8668,559 +8752,450 @@ listaItens = todos.filter(it => tiposReparados.includes(it.tipoDano));
           </Button>
         </DialogActions>
       </Dialog>
-      {/* 🟢🟢🟢 MODAL DE BACKGROUND (NOVO - COM BACKGROUNDS E ORIGEM) 🟢🟢🟢 */}
-<Dialog 
-  open={modalBackgroundOpen} 
-  onClose={() => setModalBackgroundOpen(false)}
-  maxWidth="lg"
-  fullWidth
-  PaperProps={{ sx: { bgcolor: "#0f172a", border: "1px solid #1e293b", borderRadius: 2, minHeight: "80vh" } }}
->
-  <DialogTitle sx={{ color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <span style={{ fontSize: '1.5rem' }}>📖</span>
-      Background - {ficha?.nome || "Personagem"}
-    </Box>
-    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-      {/* Tabs */}
-      <Button 
-        size="small" 
-        variant={abaBackground === "origem" ? "contained" : "outlined"}
-        onClick={() => setAbaBackground("origem")}
-        sx={{ color: abaBackground === "origem" ? '#000' : '#94a3b8', bgcolor: abaBackground === "origem" ? '#4caf50' : 'transparent', borderColor: '#4caf50', textTransform: 'none' }}
+      <Dialog 
+        open={modalBackgroundOpen} 
+        onClose={() => setModalBackgroundOpen(false)} 
+        maxWidth="lg" 
+        fullWidth
+        PaperProps={{ 
+          sx: { 
+            bgcolor: '#0a0a14', 
+            color: '#fff', 
+            backgroundImage: 'linear-gradient(135deg, rgba(0,224,255,0.05), rgba(168,85,247,0.05))', 
+            border: '1px solid #a855f7',
+            minHeight: '80vh'
+          } 
+        }}
       >
-        🏙️ {ficha?.origem ? `Origem: ${ficha.origem}` : "Origem"}
-      </Button>
-      <Button 
-        size="small" 
-        variant={abaBackground === "background" ? "contained" : "outlined"}
-        onClick={() => setAbaBackground("background")}
-        sx={{ color: abaBackground === "background" ? '#000' : '#94a3b8', bgcolor: abaBackground === "background" ? '#ff9800' : 'transparent', borderColor: '#ff9800', textTransform: 'none' }}
-      >
-        ⚜️ {ficha?.backgroundTipo ? `Background: ${ficha.backgroundTipo}` : "Background"}
-      </Button>
-      <Button 
-        size="small" 
-        variant={abaBackground === "capitulos" ? "contained" : "outlined"}
-        onClick={() => setAbaBackground("capitulos")}
-        sx={{ color: abaBackground === "capitulos" ? '#000' : '#94a3b8', bgcolor: abaBackground === "capitulos" ? '#9c27b0' : 'transparent', borderColor: '#9c27b0', textTransform: 'none' }}
-      >
-        📝 Capítulos ({backgroundCapitulos.length})
-      </Button>
-      
-      {/* 🟢 BOTÕES DO MESTRE PARA EDITAR/REMOVER ORIGEM E BACKGROUND */}
-      {isMestre && (
-        <>
-          {ficha?.origem && (
-            <Tooltip title="Remover Origem" arrow>
-              <IconButton 
-                size="small"
-                onClick={async () => {
-                  if (!window.confirm(`Remover origem "${ficha.origem}"?`)) return;
-                  const ref = doc(db, "fichas", fichaId);
-                  await setDoc(ref, { origem: "", gentilico: "" }, { merge: true });
-                  setFicha(prev => ({ ...prev, origem: "", gentilico: "" }));
-                  alert("✅ Origem removida!");
-                }}
-                sx={{ color: '#ef4444' }}
-              >
-                <DeleteIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-          
-          {ficha?.backgroundTipo && (
-            <Tooltip title="Remover Background" arrow>
-              <IconButton 
-                size="small"
-                onClick={async () => {
-                  if (!window.confirm(`Remover background "${ficha.backgroundTipo}"?`)) return;
-                  const ref = doc(db, "fichas", fichaId);
-                  await setDoc(ref, { backgroundTipo: "" }, { merge: true });
-                  setFicha(prev => ({ ...prev, backgroundTipo: "" }));
-                  alert("✅ Background removido!");
-                }}
-                sx={{ color: '#ef4444' }}
-              >
-                <DeleteIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-        </>
-      )}
-      
-      <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
-        <CloseIcon />
-      </IconButton>
-    </Box>
-  </DialogTitle>
-  
-  <DialogContent sx={{ p: 2, overflowY: 'auto' }}>
-    
-    {/* ========== ABA ORIGEM ========== */}
-    {abaBackground === "origem" && (
-      <Box>
-        <Typography variant="h6" sx={{ color: '#4caf50', mb: 2 }}>🏙️ Escolha sua cidade natal</Typography>
-        
-        {ficha?.origem ? (
-          <Paper sx={{ p: 3, bgcolor: '#1a2e1a', border: '2px solid #4caf50', borderRadius: 2, textAlign: 'center' }}>
-            <Typography variant="h5" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-              🏙️ {ficha.origem}
-            </Typography>
-            <Typography variant="subtitle1" sx={{ color: '#fff', mt: 1 }}>
-              Gentílico: <strong>{ORIGENS.find(o => o.cidade === ficha.origem)?.gentilico || "—"}</strong>
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1 }}>
-              ✅ Origem já definida. Não é possível alterar.
-            </Typography>
-          </Paper>
-        ) : (
-          <Box>
-            <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-              Escolha a cidade onde seu personagem nasceu. Esta escolha é <strong>permanente</strong>.
-            </Typography>
+        <DialogTitle sx={{ borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'rgba(0,0,0,0.3)' }}>
+          <Typography variant="inherit" sx={{ fontWeight: 'bold', color: '#00e0ff', fontSize: '1.25rem' }}>
+            📖 Background - {ficha?.nome || 'Personagem'}
+          </Typography>
+          <IconButton onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#ef4444' }}><CloseIcon /></IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column' }}>
+          {/* 🟢 TABS */}
+          <Tabs 
+            value={abaBackground} 
+            onChange={(_, v) => setAbaBackground(v)} 
+            sx={{ borderBottom: '1px solid #334155', bgcolor: 'rgba(0,0,0,0.2)' }}
+            variant="fullWidth"
+          >
+            <Tab icon={<span style={{ fontSize: '1.2rem' }}>🌍</span>} iconPosition="start" label="Origem & Background" value="origem" sx={{ color: '#94a3b8', '&.Mui-selected': { color: '#00e0ff' } }} />
+            <Tab icon={<span style={{ fontSize: '1.2rem' }}>📚</span>} iconPosition="start" label={`Capítulos (${backgroundCapitulos.length})`} value="capitulos" sx={{ color: '#94a3b8', '&.Mui-selected': { color: '#00e0ff' } }} />
+          </Tabs>
+
+          <Box sx={{ p: 3, flex: 1, overflowY: 'auto' }}>
             
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel sx={{ color: '#fff' }}>Cidade Natal</InputLabel>
-              <Select
-                value={cidadeSelecionada}
-                label="Cidade Natal"
-                onChange={(e) => setCidadeSelecionada(e.target.value)}
-                sx={{ color: '#fff', bgcolor: '#1a1a2e' }}
-                MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 400 } } }}
-              >
-                <MenuItem value="">-- Selecione uma cidade --</MenuItem>
-                {[...new Set(ORIGENS.map(o => o.nacao))].map(nacao => [
-                  <MenuItem key={nacao} disabled sx={{ opacity: 1, borderBottom: '1px solid #ff9800', mt: 0.5 }}>
-                    <Typography variant="caption" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
-                      ── {nacao} ──
-                    </Typography>
-                  </MenuItem>,
-                  ...ORIGENS.filter(o => o.nacao === nacao).map(origem => (
-                    <MenuItem key={origem.cidade} value={origem.cidade} sx={{ pl: 3 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                        <Typography sx={{ color: '#fff' }}>{origem.cidade}</Typography>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>{origem.gentilico}</Typography>
-                      </Box>
-                    </MenuItem>
-                  ))
-                ])}
-              </Select>
-            </FormControl>
-            
-            {cidadeSelecionada && (
-              <Paper sx={{ p: 2, bgcolor: '#16213e', borderRadius: 1, mb: 2 }}>
-                <Typography variant="subtitle1" sx={{ color: '#fff' }}>
-                  📍 <strong>{cidadeSelecionada}</strong>
-                </Typography>
-                <Typography variant="body2" sx={{ color: '#4caf50' }}>
-                  Gentílico: <strong>{ORIGENS.find(o => o.cidade === cidadeSelecionada)?.gentilico}</strong>
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                  Nação: {ORIGENS.find(o => o.cidade === cidadeSelecionada)?.nacao}
-                </Typography>
-              </Paper>
-            )}
-            
-            <Button
-              variant="contained"
-              fullWidth
-              disabled={!cidadeSelecionada}
-              onClick={async () => {
-                if (!window.confirm(`⚠️ Confirmar ${cidadeSelecionada} como cidade natal? Esta escolha é PERMANENTE!`)) return;
+            {/* ================= ABA ORIGEM E BACKGROUND ================= */}
+            {abaBackground === "origem" && (
+              <Box className="animate-fade-in-up" sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 
-                const origemEscolhida = ORIGENS.find(o => o.cidade === cidadeSelecionada);
-                setCampo("origem", cidadeSelecionada);
-                setCampo("gentilico", origemEscolhida?.gentilico || "");
-                
-                const ref = doc(db, "fichas", fichaId);
-                await setDoc(ref, { 
-                  origem: cidadeSelecionada, 
-                  gentilico: origemEscolhida?.gentilico || "" 
-                }, { merge: true });
-                
-                alert(`✅ Origem definida: ${cidadeSelecionada} (${origemEscolhida?.gentilico})`);
-              }}
-              sx={{ bgcolor: '#4caf50', '&:hover': { bgcolor: '#388e3c' } }}
-            >
-              ✅ Confirmar Origem
-            </Button>
-          </Box>
-        )}
-      </Box>
-    )}
-    
-    {/* ========== ABA BACKGROUND ========== */}
-    {abaBackground === "background" && (
-      <Box>
-        <Typography variant="h6" sx={{ color: '#ff9800', mb: 2 }}>⚜️ Escolha seu Background</Typography>
-        
-        {ficha?.backgroundTipo ? (
-          <Paper sx={{ p: 3, bgcolor: '#2e1a00', border: '2px solid #ff9800', borderRadius: 2, textAlign: 'center' }}>
-            <Typography variant="h5" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
-              ⚜️ {ficha.backgroundTipo}
-            </Typography>
-            <Typography variant="body1" sx={{ color: '#fff', mt: 1 }}>
-              {BACKGROUNDS.find(b => b.nome === ficha.backgroundTipo)?.descricao}
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1 }}>
-              ✅ Background já definido. Não é possível alterar.
-            </Typography>
-          </Paper>
-        ) : (
-          <Box>
-            <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-              Escolha um dos 15 backgrounds. Esta escolha é <strong>permanente</strong> e concede bônus de dinheiro, um item inicial e um ponto de perícia.
-            </Typography>
-            
-            <Grid container spacing={2}>
-              {BACKGROUNDS.map(bg => (
-                <Grid item xs={12} sm={6} key={bg.id}>
-                  <Paper 
+                {/* 1. CARDS DE BACKGROUND (ARQUÉTIPOS) */}
+                <Box>
+                  <Typography variant="subtitle1" sx={{ color: "#00e0ff", fontWeight: "bold", display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    🎭 Escolha o Arquétipo do Personagem
+                  </Typography>
+                  <Box 
+                    ref={arquetiposRef}
                     sx={{ 
-                      p: 2, 
-                      bgcolor: backgroundSelecionado === bg.id ? '#2e1a00' : '#1a1a2e',
-                      border: backgroundSelecionado === bg.id ? '2px solid #ff9800' : '1px solid #334155',
-                      cursor: 'pointer',
-                      '&:hover': { borderColor: '#ff9800' }
+                      display: 'flex', 
+                      gap: 2, 
+                      overflowX: 'auto', 
+                      pb: 2, 
+                      pt: 1, 
+                      px: 1, 
+                      scrollBehavior: 'smooth', // 🟢 Deixa a rolagem fluida e animada
+                      overscrollBehavior: 'contain', // 🟢 Trava o scroll ao chegar no final
+                      '&::-webkit-scrollbar': { height: '8px' }, 
+                      '&::-webkit-scrollbar-thumb': { background: '#334155', borderRadius: '10px' } 
                     }}
-                    onClick={() => setBackgroundSelecionado(bg.id)}
                   >
-                    <Typography variant="subtitle1" sx={{ color: '#ff9800', fontWeight: 'bold' }}>
-                      ⚜️ {bg.nome}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
-                      {bg.descricao}
-                    </Typography>
-                    <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.3 }}>
-                      <Typography variant="caption" sx={{ color: '#fbbf24' }}>💰 +{bg.dinheiro.toLocaleString()} na carteira "Bolso"</Typography>
-                      <Typography variant="caption" sx={{ color: '#00e0ff' }}>🎒 Item: {bg.item}</Typography>
-                      <Typography variant="caption" sx={{ color: '#4caf50' }}>📈 +{bg.bonus} {LABEL_MAP[bg.pericia] || bg.pericia}</Typography>
-                    </Box>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-            
-            {backgroundSelecionado && (
-              <Box sx={{ mt: 2, textAlign: 'center' }}>
+                    {BACKGROUNDS.map(bg => (
+                      <Paper
+                        key={bg.id}
+                        className="archetype-card"
+                        onClick={() => {
+                          if (!isMestre) return;
+                          setBackgroundSelecionado(bg);
+                          setPerguntasOrigem(prev => ({ ...prev, historia: `Arquétipo: ${bg.nome}. ${bg.descricao}` }));
+                        }}
+                        sx={{
+                          minWidth: 180, maxWidth: 180, p: 2, cursor: isMestre ? 'pointer' : 'default',
+                          bgcolor: backgroundSelecionado?.id === bg.id ? 'rgba(0,224,255,0.1)' : 'rgba(15,23,42,0.8)',
+                          border: `2px solid ${backgroundSelecionado?.id === bg.id ? '#00e0ff' : '#334155'}`,
+                          borderRadius: 2, position: 'relative', overflow: 'hidden',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center'
+                        }}
+                      >
+                        <Typography sx={{ fontSize: '2.5rem', mb: 1 }}>{bg.icone}</Typography>
+                        <Typography sx={{ color: backgroundSelecionado?.id === bg.id ? '#00e0ff' : '#fff', fontWeight: 'bold', fontSize: '1rem', mb: 0.5 }}>
+                          {bg.nome}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', fontSize: '0.7rem', lineHeight: 1.3, height: 55, overflow: 'hidden', mb: 1 }}>
+                          {bg.descricao}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'center', mt: 'auto' }}>
+                          <Chip label={`💰 ${bg.dinheiro}`} size="small" sx={{ height: 18, fontSize: '0.6rem', bgcolor: '#fbbf2422', color: '#fbbf24' }} />
+                          <Chip label={`+1 ${bg.pericia}`} size="small" sx={{ height: 18, fontSize: '0.6rem', bgcolor: '#00ff8822', color: '#00ff88' }} />
+                        </Box>
+                      </Paper>
+                    ))}
+                  </Box>
+                </Box>
+
+                <Divider sx={{ borderColor: '#334155' }} />
+                {/* 3. LOCAL DE NASCIMENTO (SIMULADOR) */}
+                <Typography variant="subtitle1" sx={{ color: "#ff9800", fontWeight: "bold", display: 'flex', alignItems: 'center', gap: 1 }}>
+                  🌍 Local de Nascimento (Simulador do Mundo)
+                </Typography>
+                
+                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, width: '100%' }}>
+                  <FormControl fullWidth variant="outlined" sx={{ width: '100%', flex: 1 }}>
+                    <InputLabel sx={{ color: "#94a3b8" }}>País</InputLabel>
+                    <Select
+                      fullWidth
+                      value={paisOrigemSelecionado}
+                      onChange={(e) => {
+                        setPaisOrigemSelecionado(e.target.value);
+                        setCidadeOrigemSelecionada("");
+                        setPerguntasOrigem(prev => ({ ...prev, origem: paisesSim.find(p => p.id === e.target.value)?.nome || "" }));
+                      }}
+                      label="País"
+                      disabled={!isMestre}
+                      sx={{
+                        color: "#fff",
+                        bgcolor: "#0f172a",
+                        "& .MuiSelect-select": { py: 1.5, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' },
+                        "& fieldset": { borderColor: '#ff980055' },
+                        "&:hover fieldset": { borderColor: '#ff9800' },
+                        "&.Mui-focused fieldset": { borderColor: '#ff9800' }
+                      }}
+                      MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 300 } } }}
+                    >
+                      <MenuItem value="" disabled><em>Selecione um país</em></MenuItem>
+                      {paisesSim.map(p => (
+                        <MenuItem key={p.id} value={p.id}>{p.nome}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth variant="outlined" sx={{ width: '100%', flex: 1 }} disabled={!isMestre || !paisOrigemSelecionado}>
+                    <InputLabel sx={{ color: "#94a3b8" }}>Cidade / Região</InputLabel>
+                    <Select
+                      fullWidth
+                      value={cidadeOrigemSelecionada}
+                      onChange={(e) => {
+                        setCidadeOrigemSelecionada(e.target.value);
+                        const cidadeNome = cidadesSim.find(c => c.id === e.target.value)?.nome || "";
+                        const paisNome = paisesSim.find(p => p.id === paisOrigemSelecionado)?.nome || "";
+                        setPerguntasOrigem(prev => ({ ...prev, origem: `${cidadeNome}, ${paisNome}` }));
+                      }}
+                      label="Cidade / Região"
+                      sx={{
+                        color: "#fff",
+                        bgcolor: "#0f172a",
+                        "& .MuiSelect-select": { py: 1.5, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' },
+                        "& fieldset": { borderColor: '#ff980055' },
+                        "&:hover fieldset": { borderColor: '#ff9800' },
+                        "&.Mui-focused fieldset": { borderColor: '#ff9800' }
+                      }}
+                      MenuProps={{ PaperProps: { sx: { bgcolor: "#0f172a", color: "#fff", maxHeight: 300 } } }}
+                    >
+                      <MenuItem value="" disabled><em>Selecione uma cidade</em></MenuItem>
+                      {cidadesSim.filter(c => c.paisId === paisOrigemSelecionado).map(c => (
+                        <MenuItem key={c.id} value={c.id}>{c.nome}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+
+                <Divider sx={{ borderColor: '#334155' }} />
+
+                {/* 3. QUESTIONÁRIO */}
+                <Box>
+                  <Typography variant="subtitle1" sx={{ color: "#4caf50", fontWeight: "bold", display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    📝 Questionário de Background
+                  </Typography>
+
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                    <Accordion sx={{ bgcolor: 'rgba(15,23,42,0.6)', color: '#fff', border: '1px solid #334155', '&:before': { display: 'none' }, borderRadius: '8px !important', overflow: 'hidden' }}>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#00e0ff' }} />}>
+                        <Typography sx={{ color: '#00e0ff', fontWeight: 'bold' }}>🛡️ Passado e Origem</Typography>
+                      </AccordionSummary>
+                      <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <TextField label="História (Infância)" multiline rows={2} value={perguntasOrigem.historia} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, historia: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Ocupação" value={perguntasOrigem.ocupacao} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, ocupacao: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Acontecimento Marcante" multiline rows={2} value={perguntasOrigem.acontecimento} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, acontecimento: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                      </AccordionDetails>
+                    </Accordion>
+
+                    <Accordion sx={{ bgcolor: 'rgba(15,23,42,0.6)', color: '#fff', border: '1px solid #334155', '&:before': { display: 'none' }, borderRadius: '8px !important', overflow: 'hidden' }}>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#facc15' }} />}>
+                        <Typography sx={{ color: '#facc15', fontWeight: 'bold' }}>⚔️ Habilidades e Limitações</Typography>
+                      </AccordionSummary>
+                      <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <TextField label="Especialidades" value={perguntasOrigem.especialidades} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, especialidades: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Experiência" value={perguntasOrigem.experiencia} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, experiencia: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Equipamentos" value={perguntasOrigem.equipamentos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, equipamentos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Limitações" multiline rows={2} value={perguntasOrigem.limitacoes} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, limitacoes: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                      </AccordionDetails>
+                    </Accordion>
+
+                    <Accordion sx={{ bgcolor: 'rgba(15,23,42,0.6)', color: '#fff', border: '1px solid #334155', '&:before': { display: 'none' }, borderRadius: '8px !important', overflow: 'hidden' }}>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#ff9800' }} />}>
+                        <Typography sx={{ color: '#ff9800', fontWeight: 'bold' }}>🎯 Presente e Motivações</Typography>
+                      </AccordionSummary>
+                      <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <TextField label="Objetivo Atual" value={perguntasOrigem.objetivo} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, objetivo: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Motivação" value={perguntasOrigem.motivacao} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, motivacao: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Medos" value={perguntasOrigem.medos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, medos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Limites" value={perguntasOrigem.limites} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, limites: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                      </AccordionDetails>
+                    </Accordion>
+
+                    <Accordion sx={{ bgcolor: 'rgba(15,23,42,0.6)', color: '#fff', border: '1px solid #334155', '&:before': { display: 'none' }, borderRadius: '8px !important', overflow: 'hidden' }}>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#ef4444' }} />}>
+                        <Typography sx={{ color: '#ef4444', fontWeight: 'bold' }}>🕵️ Relações e Segredos</Typography>
+                      </AccordionSummary>
+                      <AccordionDetails sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <TextField label="Pessoas Importantes" value={perguntasOrigem.pessoas} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, pessoas: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Conflitos" value={perguntasOrigem.conflitos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, conflitos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Segredos" value={perguntasOrigem.segredos} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, segredos: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                        <TextField label="Companheiros" value={perguntasOrigem.companheiros} onChange={(e) => setPerguntasOrigem(prev => ({ ...prev, companheiros: e.target.value }))} disabled={!isMestre} InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)" } }} />
+                      </AccordionDetails>
+                    </Accordion>
+                  </Box>
+                </Box>
+
                 <Button
                   variant="contained"
-                  size="large"
-                  onClick={async () => {
-                    const bg = BACKGROUNDS.find(b => b.id === backgroundSelecionado);
-                    if (!bg) return;
-                    
-                    if (!window.confirm(`⚠️ Confirmar background "${bg.nome}"? Esta escolha é PERMANENTE!`)) return;
-                    
-                    try {
-                      const ref = doc(db, "fichas", fichaId);
-                      const snap = await getDoc(ref);
-                      const dados = snap.exists() ? snap.data() : {};
-                      
-                      // 1. Criar/atualizar carteira "Bolso"
-                      const carteirasAtuais = dados.carteiras || [];
-                      const bolsoIndex = carteirasAtuais.findIndex(c => c.nome === "Bolso");
-                      let novasCarteiras;
-                      if (bolsoIndex >= 0) {
-                        novasCarteiras = carteirasAtuais.map((c, i) => 
-                          i === bolsoIndex ? { ...c, valor: (c.valor || 0) + bg.dinheiro } : c
-                        );
-                      } else {
-                        novasCarteiras = [...carteirasAtuais, { nome: "Bolso", valor: bg.dinheiro }];
-                      }
-                      
-// 2. Buscar item no comércio com todos os dados
-const diversosAtuais = dados.diversos || [];
-const itemCompleto = await buscarItemNoComercio(bg.item);
-const novoItem = { ...itemCompleto, quantidade: 1 };
-const novosDiversos = [...diversosAtuais, novoItem];
-                      
-                      // 3. Bônus de perícia
-                      const periciasAtuais = dados.pericias || {};
-                      const periciaAlvo = bg.pericia;
-                      const valorAtualPericia = periciasAtuais[periciaAlvo] || 0;
-                      let mensagemBonus = "";
-                      
-                      if (valorAtualPericia >= 5) {
-                        mensagemBonus = `⚠️ Perícia ${LABEL_MAP[periciaAlvo]} já está no máximo (5). Nenhum bônus aplicado.`;
-                      } else {
-                        periciasAtuais[periciaAlvo] = Math.min(5, valorAtualPericia + bg.bonus);
-                        mensagemBonus = `📈 +${bg.bonus} ${LABEL_MAP[periciaAlvo]} (${valorAtualPericia} → ${periciasAtuais[periciaAlvo]})`;
-                      }
-                      
-                      // 4. Salvar tudo
-                      await setDoc(ref, {
-                        backgroundTipo: bg.nome,
-                        carteiras: novasCarteiras,
-                        diversos: novosDiversos,
-                        pericias: periciasAtuais,
-                      }, { merge: true });
-                      
-                      // Atualizar estado local
-                      setFicha(prev => ({
-                        ...prev,
-                        backgroundTipo: bg.nome,
-                        carteiras: novasCarteiras,
-                        diversos: novosDiversos,
-                        pericias: periciasAtuais,
-                      }));
-                      setCarteiras(novasCarteiras);
-                      
-                      alert(`✅ Background "${bg.nome}" aplicado!\n💰 +${bg.dinheiro} no Bolso\n🎒 Item "${bg.item}" adicionado\n${mensagemBonus}`);
-                      setBackgroundSelecionado(null);
-                    } catch (err) {
-                      console.error("Erro ao aplicar background:", err);
-                      alert("Erro ao aplicar background.");
-                    }
+                  fullWidth
+                  onClick={gerarBackgroundIA}
+                  disabled={gerandoBackground || !isMestre}
+                  sx={{
+                    mt: 2, bgcolor: "#a855f7", color: "#fff", fontWeight: "bold", py: 1.5,
+                    background: "linear-gradient(90deg, #a855f7, #d946ef)",
+                    "&:hover": { bgcolor: "#7b1fa2", boxShadow: "0 0 20px rgba(168,85,247,0.6)" },
+                    transition: "all 0.3s ease",
+                    borderRadius: 2
                   }}
-                  sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' }, px: 4, py: 1.5, fontSize: '1.1rem' }}
                 >
-                  ✅ Confirmar Background: {BACKGROUNDS.find(b => b.id === backgroundSelecionado)?.nome}
+                  {gerandoBackground ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : "✨ Gerar Background com I.A."}
                 </Button>
-              </Box>
-            )}
-          </Box>
-        )}
-      </Box>
-    )}
-    
-    {/* ========== ABA CAPÍTULOS (EXISTENTE) ========== */}
-    {abaBackground === "capitulos" && (
-      <Box sx={{ display: 'flex', gap: 2, height: "65vh" }}>
-        {/* Lista de capítulos salvos */}
-        <Box sx={{ width: 250, borderRight: '1px solid #334155', pr: 2, overflowY: 'auto' }}>
-          <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1 }}>
-            {backgroundCapitulos.length} capítulos
-          </Typography>
-          {backgroundCapitulos.map((cap, idx) => (
-            <Paper 
-              key={idx}
-              sx={{ 
-                p: 1.5, mb: 1, 
-                bgcolor: backgroundEditandoIndex === idx ? '#1e3a5f' : '#1a1a2e',
-                cursor: 'pointer',
-                border: backgroundEditandoIndex === idx ? '1px solid #9c27b0' : '1px solid #334155',
-                '&:hover': { borderColor: '#9c27b0' }
-              }}
-              onClick={() => {
-                setBackgroundEditandoIndex(idx);
-                setBackgroundTitulo(cap.titulo);
-                setBackgroundTexto(cap.texto);
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="caption" sx={{ color: '#fff', fontWeight: 'bold' }}>
-                  {cap.titulo || `Capítulo ${idx + 1}`}
-                </Typography>
-                <IconButton 
-                  size="small" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const novas = backgroundCapitulos.filter((_, i) => i !== idx);
-                    setBackgroundCapitulos(novas);
-                    if (backgroundEditandoIndex === idx) {
-                      setBackgroundEditandoIndex(null);
-                      setBackgroundTitulo("");
-                      setBackgroundTexto("");
-                    }
-                  }}
-                  sx={{ color: '#ef4444' }}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
-              <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.5, maxHeight: 30, overflow: 'hidden' }}>
-                {cap.texto?.substring(0, 50)}...
-              </Typography>
-            </Paper>
-          ))}
-          {backgroundCapitulos.length === 0 && (
-            <Typography variant="caption" sx={{ color: '#64748b' }}>
-              Nenhum capítulo escrito
-            </Typography>
-          )}
-          
-          <Button 
-            size="small" 
-            variant="contained" 
-            startIcon={<AddIcon />}
-            fullWidth
-            onClick={() => {
-              setBackgroundEditandoIndex(null);
-              setBackgroundTitulo("");
-              setBackgroundTexto("");
-            }}
-            sx={{ mt: 1, bgcolor: '#9c27b0' }}
-          >
-            Novo Capítulo
-          </Button>
-        </Box>
-        {/* Editor de capítulo */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <TextField
-            label="Título do capítulo"
-            fullWidth
-            size="small"
-            value={backgroundTitulo}
-            onChange={(e) => setBackgroundTitulo(e.target.value)}
-            InputProps={{ style: { color: '#fff' } }}
-            InputLabelProps={{ style: { color: '#94a3b8' } }}
-            sx={{ mb: 1 }}
-          />
-          
-          {/* 🟢 Botão de upload + ações */}
-          <Box sx={{ mb: 1, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-            <Button 
-              size="small" 
-              variant="outlined" 
-              component="label"
-              startIcon={<span>📷</span>}
-              sx={{ color: '#94a3b8', borderColor: '#555', fontSize: '0.7rem' }}
-            >
-              Inserir Imagem
-              <input hidden type="file" accept="image/*" onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                try {
-                  const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
-                  const fd = new FormData();
-                  fd.append("image", file);
-                  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-                  const data = await res.json();
-                  if (data?.success) {
-                    const url = data.data.image?.url || data.data.url;
-                    const el = backgroundTextareaRef.current;
-                    if (el) {
-                      el.focus();
-                      const img = document.createElement('img');
-                      img.src = url;
-                      img.alt = 'Imagem';
-                      img.style.maxWidth = '100%';
-                      img.style.borderRadius = '4px';
-                      img.style.cursor = 'pointer';
-                      img.onclick = () => { setLightboxSrc(url); setZoom(1); setLightboxOpen(true); };
-                      const selection = window.getSelection();
-                      if (selection.rangeCount > 0) {
-                        const range = selection.getRangeAt(0);
-                        range.deleteContents();
-                        range.insertNode(img);
-                        range.setStartAfter(img);
-                        range.collapse(true);
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-                      } else {
-                        el.appendChild(img);
-                      }
-                      const br = document.createElement('br');
-                      el.appendChild(br);
-                      const html = el.innerHTML;
-                      const markdown = html
-                        .replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*>/g, '![$2]($1)')
-                        .replace(/<br\s*\/?>/g, '\n')
-                        .replace(/<div>/g, '\n').replace(/<\/div>/g, '')
-                        .replace(/<[^>]*>/g, '');
-                      setBackgroundTexto(markdown);
-                    }
-                  }
-                } catch (err) { alert("Erro ao enviar imagem"); }
-              }} />
-            </Button>
-            
-            {backgroundEditandoIndex !== null && (
-              <Button size="small" variant="contained" onClick={async () => {
-                const novas = [...backgroundCapitulos];
-                novas[backgroundEditandoIndex] = { titulo: backgroundTitulo, texto: backgroundTexto };
-                setBackgroundCapitulos(novas);
-                await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
-                alert("Capítulo atualizado!");
-              }} sx={{ bgcolor: '#9c27b0', fontSize: '0.7rem' }}>💾 Atualizar</Button>
-            )}
-            {backgroundEditandoIndex === null && backgroundTexto.trim() && (
-              <Button size="small" variant="contained" onClick={async () => {
-                const novas = [...backgroundCapitulos, { titulo: backgroundTitulo || `Capítulo ${backgroundCapitulos.length + 1}`, texto: backgroundTexto }];
-                setBackgroundCapitulos(novas);
-                setBackgroundTitulo("");
-                setBackgroundTexto("");
-                await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(novas) }, { merge: true });
-                alert("Capítulo salvo!");
-              }} sx={{ bgcolor: '#4caf50', fontSize: '0.7rem' }}>➕ Salvar</Button>
-            )}
-            <Typography variant="caption" sx={{ color: '#64748b', ml: 1 }}>Clique na imagem para ampliar</Typography>
-          </Box>
 
-          {/* 🟢 EDITOR WYSIWYG - IMAGEM E TEXTO JUNTOS */}
-          <Box 
-            contentEditable
-            suppressContentEditableWarning
-            ref={(el) => {
-              if (el) {
-                backgroundTextareaRef.current = el;
-                if (backgroundTexto && el.innerHTML === '') {
-                  el.innerHTML = backgroundTexto
-                    .replace(/\!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:4px;cursor:pointer" />')
-                    .replace(/\n/g, '<br/>');
+                {/* RESULTADO DO BACKGROUND GERADO */}
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle1" sx={{ color: "#00e0ff", fontWeight: "bold", mb: 1 }}>
+                    📖 História Gerada (Editável)
+                  </Typography>
+                  <TextField
+                    multiline
+                    fullWidth
+                    minRows={6}
+                    value={backgroundTexto}
+                    onChange={(e) => setBackgroundTexto(e.target.value)}
+                    disabled={!isMestre}
+                    placeholder="O texto gerado pela I.A. aparecerá aqui. Você também pode escrever manualmente."
+                    variant="outlined"
+                    sx={{
+                      "& .MuiOutlinedInput-root": {
+                        color: "#e2e8f0",
+                        bgcolor: "rgba(0,0,0,0.3)",
+                        fontFamily: "'Courier New', monospace",
+                        fontSize: "0.9rem",
+                        "& fieldset": { borderColor: '#334155' },
+                        "&:hover fieldset": { borderColor: '#00e0ff' },
+                        "&.Mui-focused fieldset": { borderColor: '#00e0ff' }
+                      }
+                    }}
+                  />
+                </Box>
+              </Box>
+            )}
+
+            {/* ================= ABA CAPÍTULOS ================= */}
+            {abaBackground === "capitulos" && (
+              <Box className="animate-fade-in-up" sx={{ display: "flex", gap: 2, height: "100%", minHeight: 400 }}>
+                
+                {/* Lista de Capítulos */}
+                <Box sx={{ width: 250, display: "flex", flexDirection: "column", gap: 1 }}>
+                  <Typography variant="caption" sx={{ color: "#94a3b8", fontWeight: "bold", letterSpacing: 1, mb: 0.5 }}>
+                    CAPÍTULOS ({backgroundCapitulos.length})
+                  </Typography>
+                  
+                  <Box sx={{ flex: 1, overflowY: "auto", pr: 1, display: "flex", flexDirection: "column", gap: 1, '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-thumb': { background: 'rgba(0,224,255,0.3)', borderRadius: '10px' } }}>
+                    {backgroundCapitulos.map((cap, idx) => (
+                      <Paper
+                        key={idx}
+                        className={`chapter-card ${backgroundEditandoIndex === idx ? 'active' : ''}`}
+                        onClick={() => {
+                          setBackgroundEditandoIndex(idx);
+                          setBackgroundTitulo(cap.titulo);
+                          setBackgroundTexto(cap.texto || ""); // 🟢 CORREÇÃO DO BUG AQUI
+                        }}
+                        sx={{
+                          p: 1.5,
+                          bgcolor: 'rgba(15,23,42,0.6)',
+                          borderLeft: `4px solid ${backgroundEditandoIndex === idx ? '#a855f7' : '#334155'}`,
+                          borderTop: '1px solid #334155',
+                          borderRight: '1px solid #334155',
+                          borderBottom: '1px solid #334155',
+                          borderRadius: 1,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography sx={{ color: backgroundEditandoIndex === idx ? '#fff' : '#cbd5e1', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {cap.titulo || `Capítulo ${idx + 1}`}
+                          </Typography>
+                          <Typography sx={{ color: '#64748b', fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {cap.texto ? cap.texto.substring(0, 30) + '...' : 'Vazio'}
+                          </Typography>
+                        </Box>
+                        {isMestre && (
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm("Apagar este capítulo?")) {
+                                const novos = backgroundCapitulos.filter((_, i) => i !== idx);
+                                setBackgroundCapitulos(novos);
+                                if (backgroundEditandoIndex === idx) {
+                                  setBackgroundEditandoIndex(null);
+                                  setBackgroundTitulo("");
+                                  setBackgroundTexto("");
+                                }
+                              }
+                            }}
+                            sx={{ color: '#ef4444', p: 0.5, ml: 1 }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </Paper>
+                    ))}
+                  </Box>
+
+                  {isMestre && (
+                    <Button
+                      variant="outlined"
+                      fullWidth
+                      startIcon={<AddIcon />}
+                      onClick={() => {
+                        const novoIdx = backgroundCapitulos.length;
+                        setBackgroundCapitulos([...backgroundCapitulos, { titulo: `Capítulo ${novoIdx + 1}`, texto: "" }]);
+                        setBackgroundEditandoIndex(novoIdx);
+                        setBackgroundTitulo(`Capítulo ${novoIdx + 1}`);
+                        setBackgroundTexto("");
+                      }}
+                      sx={{ borderColor: '#a855f7', color: '#a855f7', '&:hover': { bgcolor: 'rgba(168,85,247,0.1)' }, borderStyle: 'dashed' }}
+                    >
+                      NOVO CAPÍTULO
+                    </Button>
+                  )}
+                </Box>
+
+                {/* Editor */}
+                <Box sx={{ flex: 1, display: "flex", flexDirection: "column", bgcolor: 'rgba(15,23,42,0.4)', borderRadius: 2, border: '1px solid #334155', p: 2 }}>
+                  {backgroundEditandoIndex !== null ? (
+                    <Box className="animate-slide-in-right" sx={{ display: "flex", flexDirection: "column", gap: 2, height: "100%" }}>
+                      
+                      <TextField
+                        label="Título do Capítulo"
+                        value={backgroundTitulo}
+                        onChange={(e) => setBackgroundTitulo(e.target.value)}
+                        variant="filled"
+                        fullWidth
+                        disabled={!isMestre}
+                        InputLabelProps={{ sx: { color: "#94a3b8" } }}
+                        InputProps={{ sx: { color: "#fff", bgcolor: "rgba(0,0,0,0.2)", borderRadius: '4px 4px 0 0', fontSize: "1rem", fontWeight: 'bold' } }}
+                      />
+
+                      <TextField
+                        multiline
+                        fullWidth
+                        value={backgroundTexto}
+                        onChange={(e) => setBackgroundTexto(e.target.value)}
+                        placeholder="Escreva a história deste capítulo aqui... (Aceita Markdown)"
+                        variant="outlined"
+                        disabled={!isMestre}
+                        sx={{
+                          flex: 1,
+                          "& .MuiOutlinedInput-root": {
+                            color: "#e2e8f0",
+                            bgcolor: "rgba(0,0,0,0.3)",
+                            fontFamily: "'Courier New', monospace",
+                            fontSize: "0.9rem",
+                            alignItems: "flex-start",
+                            "& textarea": { minHeight: "250px !important" }
+                          }
+                        }}
+                      />
+
+                      {isMestre && (
+                        <Button
+                          variant="contained"
+                          size="medium"
+                          startIcon={<span>💾</span>}
+                          onClick={() => {
+                            const novos = [...backgroundCapitulos];
+                            novos[backgroundEditandoIndex] = { titulo: backgroundTitulo, texto: backgroundTexto };
+                            setBackgroundCapitulos(novos);
+                            // Opcional: Salvar no Firebase aqui automaticamente
+                          }}
+                          sx={{ bgcolor: '#4caf50', color: '#000', fontWeight: 'bold', alignSelf: 'flex-end' }}
+                        >
+                          SALVAR CAPÍTULO
+                        </Button>
+                      )}
+                    </Box>
+                  ) : (
+                    <Box sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", flexDirection: "column", opacity: 0.5 }}>
+                      <span style={{ fontSize: "3rem", marginBottom: 10 }}>📖</span>
+                      <Typography sx={{ color: "#94a3b8" }}>Selecione um capítulo ou crie um novo para começar.</Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ borderTop: '1px solid #334155', p: 2, bgcolor: 'rgba(0,0,0,0.2)' }}>
+          <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>
+            FECHAR
+          </Button>
+          {isMestre && (
+            <Button 
+              variant="contained" 
+              onClick={async () => {
+                try {
+                  const payload = { 
+                    background: backgroundTexto, 
+                    backgroundCapitulos,
+                    perguntasOrigem,
+                    paisOrigemSelecionado,
+                    cidadeOrigemSelecionada
+                  };
+                  await setDoc(doc(db, "fichas", fichaId), payload, { merge: true });
+                  setFicha(prev => ({ ...prev, ...payload }));
+                  alert("✅ Background salvo com sucesso!");
+                  setModalBackgroundOpen(false);
+                } catch (err) {
+                  alert("Erro ao salvar: " + err.message);
                 }
-              }
-            }}
-            onInput={(e) => {
-              let html = e.currentTarget.innerHTML;
-              html = html.replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*>/g, '![$2]($1)');
-              html = html.replace(/<br\s*\/?>/g, '\n');
-              html = html.replace(/<div>/g, '\n').replace(/<\/div>/g, '');
-              html = html.replace(/<[^>]*>/g, '');
-              setBackgroundTexto(html);
-            }}
-            onClick={(e) => {
-              if (e.target.tagName === 'IMG') {
-                setLightboxSrc(e.target.src);
-                setZoom(1);
-                setLightboxOpen(true);
-              }
-            }}
-            onPaste={(e) => {
-              e.preventDefault();
-              const text = e.clipboardData.getData('text/plain');
-              document.execCommand('insertText', false, text);
-            }}
-            sx={{
-              flex: 1,
-              bgcolor: '#1a1a2e',
-              borderRadius: 1,
-              border: '1px solid #334155',
-              p: 1.5,
-              color: '#fff',
-              fontFamily: 'sans-serif',
-              fontSize: '0.85rem',
-              overflowY: 'auto',
-              minHeight: 200,
-              outline: 'none',
-              '&:focus': { borderColor: '#9c27b0' },
-              '& img': { maxWidth: '100%', borderRadius: 1, cursor: 'pointer', display: 'block', my: 1 }
-            }}
-          />
-        </Box>
-      </Box>
-    )}
-    
-  </DialogContent>
-  
-  <DialogActions sx={{ p: 2, borderTop: '1px solid #334155' }}>
-    <Button onClick={() => setModalBackgroundOpen(false)} sx={{ color: '#94a3b8' }}>Fechar</Button>
-    {abaBackground === "capitulos" && (
-      <Button 
-        variant="contained"
-        onClick={async () => {
-          await setDoc(doc(db, "fichas", fichaId), { backgroundCapitulos: JSON.stringify(backgroundCapitulos) }, { merge: true });
-          setModalBackgroundOpen(false);
-        }}
-        sx={{ bgcolor: '#9c27b0' }}
-      >
-        Salvar e Fechar
-      </Button>
-    )}
-  </DialogActions>
-</Dialog>
+              }} 
+              sx={{ bgcolor: '#a855f7', color: '#fff', fontWeight: 'bold' }}
+            >
+              SALVAR E FECHAR
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
   {/* 🟢🟢🟢 MODAL DE HABILIDADES (VERSÃO FINAL COM IMAGEM + IA FUSIONADA) 🟢🟢🟢 */}
 <Dialog
   open={modalHabilidadesOpen}
