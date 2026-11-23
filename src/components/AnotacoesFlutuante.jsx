@@ -12,11 +12,140 @@ import remarkGfm from "remark-gfm";
 import { db } from "../firebaseConfig";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 
+// Converte HTML copiado de sites como DeepSeek em Markdown
+function htmlToMarkdown(html) {
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+
+  const convert = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent.replace(/\u00a0/g, " ");
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+    const tag = node.tagName.toLowerCase();
+
+    const children = () =>
+      Array.from(node.childNodes).map(convert).join("");
+
+    switch (tag) {
+      case "br":
+        return "\n";
+
+      case "h1":
+      case "h2":
+      case "h3":
+      case "h4":
+      case "h5":
+      case "h6":
+        return `${"#".repeat(Number(tag[1]))} ${children().trim()}\n\n`;
+
+      case "p":
+        return `${children().trim()}\n\n`;
+
+      case "strong":
+      case "b":
+        return `**${children()}**`;
+
+      case "em":
+      case "i":
+        return `*${children()}*`;
+
+      case "u":
+        return `<u>${children()}</u>`;
+
+      case "del":
+      case "s":
+        return `~~${children()}~~`;
+
+      case "a": {
+        const href = node.getAttribute("href");
+        const content = children();
+        return href ? `[${content}](${href})` : content;
+      }
+
+      case "img": {
+        const src = node.getAttribute("src");
+        const alt = node.getAttribute("alt") || "Imagem";
+        return src ? `![${alt}](${src})` : "";
+      }
+
+      case "table": {
+        const rows = Array.from(node.querySelectorAll("tr"));
+
+        if (!rows.length) return "";
+
+        const convertedRows = rows.map((row) => {
+          const cells = Array.from(row.children)
+            .filter((cell) => ["TD", "TH"].includes(cell.tagName))
+            .map((cell) =>
+              Array.from(cell.childNodes)
+                .map(convert)
+                .join("")
+                .replace(/\s*\n\s*/g, " ")
+                .replace(/\|/g, "\\|")
+                .trim()
+            );
+
+          return `| ${cells.join(" | ")} |`;
+        });
+
+        const firstRow = rows[0];
+        const headerCells = Array.from(firstRow.children)
+          .filter((cell) => ["TD", "TH"].includes(cell.tagName));
+
+        const separator =
+          `| ${headerCells.map(() => "---").join(" | ")} |`;
+
+        convertedRows.splice(1, 0, separator);
+
+        return `\n\n${convertedRows.join("\n")}\n\n`;
+      }
+
+      case "ul":
+      case "ol": {
+        const items = Array.from(node.children)
+          .filter((child) => child.tagName === "LI");
+
+        return items.map((item, index) => {
+          const marker = tag === "ol" ? `${index + 1}.` : "-";
+          return `${marker} ${convert(item).trim()}`;
+        }).join("\n") + "\n\n";
+      }
+
+      case "li":
+        return children();
+
+      case "blockquote":
+        return children().trim().split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n") + "\n\n";
+
+      case "hr":
+        return "\n\n---\n\n";
+
+      case "div":
+      case "section":
+      case "article":
+        return `${children()}\n`;
+
+      default:
+        return children();
+    }
+  };
+
+  return Array.from(parsed.body.childNodes)
+    .map(convert)
+    .join("")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 const IMGBB_API_KEY = "73fcf242ce0108665fa0c9e9de33bd50";
 
 function AnotacoesFlutuante({ userEmail, userNick, onClose }) {
-  const [posicao, setPosicao] = useState({ x: 200, y: 100 });
-  const [tamanho, setTamanho] = useState({ width: 650, height: 550 });
+const [posicao, setPosicao] = useState({ x: 100, y: 60 });
+const [tamanho, setTamanho] = useState({ width: 900, height: 720 });
   const [minimizado, setMinimizado] = useState(false);
   const [arrastando, setArrastando] = useState(false);
   const [redimensionando, setRedimensionando] = useState(false);
@@ -24,11 +153,18 @@ function AnotacoesFlutuante({ userEmail, userNick, onClose }) {
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const [capitulos, setCapitulos] = useState([]);
   const [editandoIndex, setEditandoIndex] = useState(null);
+
+// Capítulo atualmente selecionado
+const [capituloSelecionado, setCapituloSelecionado] = useState(null);
+
+// Inicia sempre no modo de leitura
+const [modoEdicao, setModoEdicao] = useState(false);
   const [titulo, setTitulo] = useState("");
   const [texto, setTexto] = useState("");
   const [lightboxImage, setLightboxImage] = useState(null);
   const [zoom, setZoom] = useState(1);
   const textAreaRef = useRef(null);
+const [enviandoImagem, setEnviandoImagem] = useState(false);
 
   useEffect(() => {
     if (!userEmail) return;
@@ -58,6 +194,19 @@ function AnotacoesFlutuante({ userEmail, userNick, onClose }) {
     });
     return () => unsub();
   }, [userEmail]);
+  // Seleciona automaticamente o primeiro capítulo ao abrir
+useEffect(() => {
+  if (
+    capituloSelecionado === null &&
+    capitulos.length > 0 &&
+    !modoEdicao
+  ) {
+    setCapituloSelecionado(0);
+    setEditandoIndex(0);
+    setTitulo(capitulos[0].titulo || "");
+    setTexto(capitulos[0].texto || "");
+  }
+}, [capitulos, capituloSelecionado, modoEdicao]);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -82,52 +231,187 @@ function AnotacoesFlutuante({ userEmail, userNick, onClose }) {
     );
   };
 
-  const novoCapitulo = () => {
+const novoCapitulo = () => {
+  setEditandoIndex(null);
+  setCapituloSelecionado(null);
+  setTitulo("");
+  setTexto("");
+  setModoEdicao(true);
+};
+
+const salvarCapitulo = async () => {
+  let novos;
+  let indiceSalvo;
+
+  if (editandoIndex !== null) {
+    novos = [...capitulos];
+
+    indiceSalvo = editandoIndex;
+
+    novos[indiceSalvo] = {
+      titulo: titulo || `Capítulo ${indiceSalvo + 1}`,
+      texto
+    };
+
+  } else {
+    novos = [
+      ...capitulos,
+      {
+        titulo: titulo || `Capítulo ${capitulos.length + 1}`,
+        texto
+      }
+    ];
+
+    indiceSalvo = novos.length - 1;
+  }
+
+  setCapitulos(novos);
+
+  await salvar(novos);
+
+  setEditandoIndex(indiceSalvo);
+  setCapituloSelecionado(indiceSalvo);
+
+  setTitulo(novos[indiceSalvo].titulo);
+  setTexto(novos[indiceSalvo].texto);
+
+  setModoEdicao(false);
+};
+
+const deletarCapitulo = async (idx) => {
+  const novos = capitulos.filter((_, i) => i !== idx);
+
+  setCapitulos(novos);
+  await salvar(novos);
+
+  if (capituloSelecionado === idx || novos.length === 0) {
+    setCapituloSelecionado(null);
     setEditandoIndex(null);
     setTitulo("");
     setTexto("");
-  };
+    setModoEdicao(false);
+  } else if (capituloSelecionado > idx) {
+    const novoIndice = capituloSelecionado - 1;
 
-  const salvarCapitulo = async () => {
-    let novos;
-    if (editandoIndex !== null) {
-      novos = [...capitulos];
-      novos[editandoIndex] = { titulo: titulo || `Capítulo ${editandoIndex + 1}`, texto };
-    } else {
-      novos = [...capitulos, { titulo: titulo || `Capítulo ${capitulos.length + 1}`, texto }];
+    setCapituloSelecionado(novoIndice);
+    setEditandoIndex(novoIndice);
+    setTitulo(novos[novoIndice].titulo || "");
+    setTexto(novos[novoIndice].texto || "");
+  }
+};
+
+const handleUploadImagem = async (e) => {
+  const input = e.target;
+  const file = input.files?.[0];
+
+  if (!file) return;
+
+  try {
+    if (!file.type.startsWith("image/")) {
+      alert("Selecione um arquivo de imagem válido.");
+      return;
     }
-    setCapitulos(novos);
-    await salvar(novos);
-    setEditandoIndex(null);
-    setTitulo("");
-    setTexto("");
-  };
 
-  const deletarCapitulo = async (idx) => {
-    const novos = capitulos.filter((_, i) => i !== idx);
-    setCapitulos(novos);
-    await salvar(novos);
-    if (editandoIndex === idx) { setEditandoIndex(null); setTitulo(""); setTexto(""); }
-  };
+    if (file.size > 32 * 1024 * 1024) {
+      alert("A imagem ultrapassa o limite de 32 MB.");
+      return;
+    }
 
-  const handleUploadImagem = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    setEnviandoImagem(true);
+
     const fd = new FormData();
     fd.append("image", file);
-    try {
-      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: fd });
-      const data = await res.json();
-      if (data?.success) {
-        const url = data.data.url;
-        const imagemMarkdown = `\n![Imagem](${url})\n`;
-        setTexto(prev => prev + imagemMarkdown);
+
+    const res = await fetch(
+      `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`,
+      {
+        method: "POST",
+        body: fd
       }
-    } catch (err) { alert("Erro ao enviar imagem"); }
-  };
+    );
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(
+        data?.error?.message ||
+        `Erro HTTP ${res.status} ao enviar imagem.`
+      );
+    }
+
+    const url = data.data.display_url || data.data.url;
+
+    if (!url) {
+      throw new Error("O ImgBB não retornou o endereço da imagem.");
+    }
+
+    const imagemMarkdown = `\n\n![Imagem](${url})\n\n`;
+
+    setTexto((prev) => {
+      const separador = prev.trim() ? "\n\n" : "";
+      return prev + separador + imagemMarkdown.trim() + "\n\n";
+    });
+
+    alert("Imagem enviada com sucesso!");
+
+  } catch (err) {
+    console.error("Erro no upload da imagem:", err);
+
+    alert(
+      `Não foi possível enviar a imagem.\n\nMotivo: ${err.message}`
+    );
+
+  } finally {
+    setEnviandoImagem(false);
+    input.value = "";
+  }
+};
+
+
+// COLAGEM INTELIGENTE DO DEEPSEEK NAS ANOTAÇÕES
+const handlePasteAnotacoes = (e) => {
+  const clipboard = e.clipboardData;
+  const html = clipboard.getData("text/html");
+
+  // Se não houver HTML, permite a colagem normal.
+  if (!html) return;
+
+  const markdown = htmlToMarkdown(html);
+
+  if (!markdown) return;
+
+  e.preventDefault();
+
+  const textarea = textAreaRef.current;
+
+  if (!textarea) return;
+
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const atual = textarea.value;
+
+  const antes = atual.slice(0, start);
+  const depois = atual.slice(end);
+
+  const novoTexto = antes + markdown + depois;
+
+  setTexto(novoTexto);
+
+  const novaPosicao = antes.length + markdown.length;
+
+  requestAnimationFrame(() => {
+    textarea.focus();
+    textarea.setSelectionRange(novaPosicao, novaPosicao);
+  });
+};
+
 
   return createPortal(
-    <Paper elevation={10} sx={{ position: "fixed", left: posicao.x, top: posicao.y, width: minimizado ? 300 : tamanho.width, height: minimizado ? 48 : tamanho.height, bgcolor: "#0f172a", color: "#fff", borderRadius: 2, border: "2px solid #fbbf24", zIndex: 9998, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
+    <Paper elevation={10} sx={{ position: "fixed", left: posicao.x, top: posicao.y, width: minimizado ? 300 : tamanho.width,
+height: minimizado ? 48 : tamanho.height,
+maxWidth: 'calc(100vw - 24px)',
+maxHeight: 'calc(100vh - 24px)',
+boxSizing: 'border-box', bgcolor: "#0f172a", color: "#fff", borderRadius: 2, border: "2px solid #fbbf24", zIndex: 9998, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", p: 1, bgcolor: "#fbbf24", cursor: "move", minHeight: 40 }}
         onMouseDown={(e) => { if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return; e.preventDefault(); setArrastando(true); dragStartRef.current = { x: e.clientX - posicao.x, y: e.clientY - posicao.y }; }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -140,46 +424,362 @@ function AnotacoesFlutuante({ userEmail, userNick, onClose }) {
         </Box>
       </Box>
       {!minimizado && (
-        <Box sx={{ flex: 1, display: "flex", gap: 1, p: 1.5, overflow: "hidden" }}>
+        <Box sx={{
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+  display: "flex",
+  gap: 1,
+  p: 1.5,
+  overflow: "hidden"
+}}>
           {/* Lista de capítulos (igual à ficha) */}
           <Box sx={{ width: 200, borderRight: "1px solid #fbbf2433", pr: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 0.5 }}>
             <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={novoCapitulo} sx={{ bgcolor: '#fbbf24', color: '#000', fontSize: '0.7rem', mb: 1 }}>Novo</Button>
             {capitulos.map((cap, idx) => (
-              <Paper key={idx} sx={{ p: 1, bgcolor: editandoIndex === idx ? '#1e3a5f' : '#1a1a2e', cursor: 'pointer', border: editandoIndex === idx ? '1px solid #fbbf24' : '1px solid #334155' }}
-                onClick={() => { setEditandoIndex(idx); setTitulo(cap.titulo); setTexto(cap.texto); }}>
-                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <Typography variant="caption" sx={{ color: "#fff", fontWeight: "bold" }}>{cap.titulo}</Typography>
-                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); deletarCapitulo(idx); }} sx={{ color: '#ef4444', p: 0.3 }}><DeleteIcon sx={{ fontSize: 12 }} /></IconButton>
-                </Box>
-                <Typography variant="caption" sx={{ color: "#64748b", display: "block", maxHeight: 25, overflow: "hidden", fontSize: "0.6rem" }}>{cap.texto?.substring(0, 40)}...</Typography>
-              </Paper>
+<Paper
+  key={idx}
+  sx={{
+    p: 1,
+    bgcolor: capituloSelecionado === idx
+      ? '#1e3a5f'
+      : '#1a1a2e',
+    cursor: 'pointer',
+    border: capituloSelecionado === idx
+      ? '1px solid #fbbf24'
+      : '1px solid #334155'
+  }}
+  onClick={() => {
+    setCapituloSelecionado(idx);
+    setEditandoIndex(idx);
+    setTitulo(cap.titulo);
+    setTexto(cap.texto);
+    setModoEdicao(false);
+  }}
+>
+  <Box sx={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  }}>
+    <Typography
+      variant="caption"
+      sx={{
+        color: "#fff",
+        fontWeight: "bold",
+        overflowWrap: "anywhere"
+      }}
+    >
+      {cap.titulo}
+    </Typography>
+
+    <IconButton
+      size="small"
+      onClick={(e) => {
+        e.stopPropagation();
+        deletarCapitulo(idx);
+      }}
+      sx={{ color: '#ef4444', p: 0.3 }}
+    >
+      <DeleteIcon sx={{ fontSize: 12 }} />
+    </IconButton>
+  </Box>
+
+  <Typography
+    variant="caption"
+    sx={{
+      color: "#64748b",
+      display: "block",
+      maxHeight: 25,
+      overflow: "hidden",
+      fontSize: "0.6rem"
+    }}
+  >
+    {cap.texto?.substring(0, 40)}...
+  </Typography>
+</Paper>
             ))}
           </Box>
-          {/* Editor */}
-          <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 1 }}>
-            <TextField size="small" placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)}
-              InputProps={{ style: { color: '#fff', fontSize: '0.85rem' } }} sx={{ '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#334155' } } }} />
-            <Box sx={{ display: "flex", gap: 0.5 }}>
-              <Button size="small" component="label" startIcon={<ImageIcon sx={{ fontSize: 14 }} />} sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
-                Imagem
-                <input type="file" accept="image/*" hidden onChange={handleUploadImagem} />
-              </Button>
-              <Button size="small" variant="contained" startIcon={<SaveIcon sx={{ fontSize: 14 }} />} onClick={salvarCapitulo} sx={{ bgcolor: '#fbbf24', color: '#000', fontSize: '0.65rem' }}>Salvar</Button>
-            </Box>
-            <TextField multiline minRows={12} maxRows={30} value={texto} onChange={(e) => setTexto(e.target.value)}
-              placeholder="Conteúdo (Markdown)..."
-              InputProps={{ style: { color: '#fff', fontSize: '0.8rem', fontFamily: 'monospace' } }}
-              sx={{ flex: 1, '& .MuiOutlinedInput-root': { height: '100%', alignItems: 'flex-start', '& fieldset': { borderColor: '#334155' }, '&:hover fieldset': { borderColor: '#fbbf24' }, '&.Mui-focused fieldset': { borderColor: '#fbbf24' } } }} />
-            {texto && (
-              <Box sx={{ p: 1, bgcolor: '#1a1a2e', borderRadius: 1, maxHeight: 120, overflowY: 'auto', border: '1px solid #334155' }}
-                onClick={(e) => { if (e.target.tagName === 'IMG') { setLightboxImage(e.target.src); setZoom(1); } }}>
-                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.5 }}>📄 Preview:</Typography>
-                <Box sx={{ color: '#fff', '& img': { maxWidth: '100%', borderRadius: 1, cursor: 'pointer' } }}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{texto}</ReactMarkdown>
-                </Box>
-              </Box>
-            )}
-          </Box>
+
+{/* EDITOR / VISUALIZADOR DE ANOTAÇÕES */}
+<Box sx={{
+  flex: 1,
+  minWidth: 0,
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 1
+}}>
+
+  {/* CABEÇALHO FIXO */}
+  <Box sx={{
+    display: "flex",
+    alignItems: "center",
+    gap: 1,
+    flexShrink: 0
+  }}>
+
+    {modoEdicao ? (
+      <TextField
+        size="small"
+        fullWidth
+        placeholder="Título da anotação"
+        value={titulo}
+        onChange={(e) => setTitulo(e.target.value)}
+        InputProps={{
+          style: {
+            color: '#fff',
+            fontSize: '0.9rem',
+            fontWeight: 'bold'
+          }
+        }}
+        sx={{
+          '& .MuiOutlinedInput-root fieldset': {
+            borderColor: '#334155'
+          }
+        }}
+      />
+    ) : (
+      <Typography sx={{
+        flex: 1,
+        minWidth: 0,
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: '1rem',
+        overflowWrap: 'anywhere'
+      }}>
+        {titulo || "Selecione uma anotação"}
+      </Typography>
+    )}
+
+    {!modoEdicao ? (
+      <IconButton
+        size="small"
+        title="Editar anotação"
+        onClick={() => setModoEdicao(true)}
+        sx={{
+          color: '#fbbf24',
+          border: '1px solid #fbbf24',
+          flexShrink: 0
+        }}
+      >
+        ✏️
+      </IconButton>
+    ) : (
+      <Button
+        size="small"
+        onClick={() => {
+          if (capituloSelecionado !== null) {
+            const cap = capitulos[capituloSelecionado];
+
+            setTitulo(cap.titulo || "");
+            setTexto(cap.texto || "");
+          } else if (capitulos.length > 0) {
+            setCapituloSelecionado(0);
+            setEditandoIndex(0);
+            setTitulo(capitulos[0].titulo || "");
+            setTexto(capitulos[0].texto || "");
+          } else {
+            setTitulo("");
+            setTexto("");
+          }
+
+          setModoEdicao(false);
+        }}
+        sx={{ color: '#94a3b8', flexShrink: 0 }}
+      >
+        Cancelar
+      </Button>
+    )}
+
+  </Box>
+
+  {/* BOTÕES DE EDIÇÃO */}
+  {modoEdicao && (
+    <Box sx={{
+      display: "flex",
+      gap: 0.5,
+      flexShrink: 0,
+      flexWrap: "wrap"
+    }}>
+
+      <Button
+        size="small"
+        component="label"
+        disabled={enviandoImagem}
+        startIcon={<ImageIcon sx={{ fontSize: 14 }} />}
+        sx={{
+          color: '#94a3b8',
+          fontSize: '0.7rem'
+        }}
+      >
+        {enviandoImagem ? "Enviando..." : "Imagem"}
+
+        <input
+          type="file"
+          accept="image/*"
+          hidden
+          disabled={enviandoImagem}
+          onChange={handleUploadImagem}
+        />
+      </Button>
+
+      <Button
+        size="small"
+        variant="contained"
+        startIcon={<SaveIcon sx={{ fontSize: 14 }} />}
+        onClick={salvarCapitulo}
+        sx={{
+          bgcolor: '#fbbf24',
+          color: '#000',
+          fontSize: '0.7rem',
+          '&:hover': {
+            bgcolor: '#f59e0b'
+          }
+        }}
+      >
+        Salvar
+      </Button>
+
+    </Box>
+  )}
+
+  {/* CONTEÚDO: EDITÁVEL OU SOMENTE LEITURA */}
+  <Box sx={{
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    overflowX: "hidden",
+    p: 1.5,
+    bgcolor: '#111827',
+    border: '1px solid #334155',
+    borderRadius: 1
+  }}>
+
+    {modoEdicao ? (
+
+      <TextField
+        multiline
+        fullWidth
+        minRows={12}
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        onPaste={handlePasteAnotacoes}
+        inputRef={textAreaRef}
+        placeholder="Conteúdo (Markdown)..."
+        variant="standard"
+        InputProps={{
+          disableUnderline: true,
+          style: {
+            color: '#fff',
+            fontSize: '0.85rem',
+            fontFamily: 'monospace',
+            lineHeight: 1.7
+          }
+        }}
+        sx={{
+          '& textarea': {
+            resize: 'vertical'
+          }
+        }}
+      />
+
+    ) : (
+
+      <Box
+        className="markdown-content"
+        sx={{
+          color: '#e2e8f0',
+          fontSize: '0.85rem',
+          lineHeight: 1.7,
+          overflowWrap: 'anywhere',
+
+          '& p': {
+            margin: '10px 0'
+          },
+
+          '& h1, & h2, & h3, & h4': {
+            color: '#fff',
+            marginTop: '20px',
+            marginBottom: '10px'
+          },
+
+          '& strong': {
+            color: '#fff'
+          },
+
+          '& table': {
+            width: '100%',
+            borderCollapse: 'collapse',
+            margin: '15px 0'
+          },
+
+          '& th, & td': {
+            border: '1px solid #475569',
+            padding: '8px',
+            textAlign: 'left'
+          },
+
+          '& th': {
+            backgroundColor: '#1e293b',
+            color: '#fbbf24'
+          },
+
+          '& img': {
+            maxWidth: '100%',
+            height: 'auto',
+            display: 'block',
+            margin: '14px auto',
+            borderRadius: '8px',
+            cursor: 'pointer'
+          },
+
+          '& ul, & ol': {
+            paddingLeft: '25px'
+          },
+
+          '& blockquote': {
+            borderLeft: '3px solid #fbbf24',
+            paddingLeft: '12px',
+            color: '#94a3b8',
+            margin: '12px 0'
+          },
+
+          '& pre': {
+            overflowX: 'auto',
+            padding: '12px',
+            backgroundColor: '#0b1120',
+            borderRadius: '6px'
+          },
+
+          '& code': {
+            overflowWrap: 'anywhere'
+          }
+        }}
+        onClick={(e) => {
+          if (e.target.tagName === 'IMG') {
+            setLightboxImage(e.target.src);
+            setZoom(1);
+          }
+        }}
+      >
+        {texto ? (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {texto}
+          </ReactMarkdown>
+        ) : (
+          <Typography color="text.secondary">
+            Esta anotação está vazia.
+          </Typography>
+        )}
+      </Box>
+
+    )}
+
+  </Box>
+
+</Box>
+
         </Box>
       )}
       {!minimizado && <Box sx={{ position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize", zIndex: 10 }}
