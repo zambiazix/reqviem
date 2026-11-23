@@ -25,7 +25,141 @@ import { getAuth } from "firebase/auth";
 import { db } from "../firebaseConfig";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import ReactMarkdown from "react-markdown";
+
 import remarkGfm from "remark-gfm";
+
+// Converte a formatação HTML copiada de outros sites
+// para Markdown, preservando tabelas, títulos e parágrafos.
+function htmlToMarkdown(html) {
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+
+  const convert = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent.replace(/\u00a0/g, " ");
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+    const tag = node.tagName.toLowerCase();
+    const children = () =>
+      Array.from(node.childNodes).map(convert).join("");
+
+    switch (tag) {
+      case "br":
+        return "\n";
+
+      case "h1":
+      case "h2":
+      case "h3":
+      case "h4":
+      case "h5":
+      case "h6": {
+        const level = Number(tag[1]);
+        return `${"#".repeat(level)} ${children().trim()}\n\n`;
+      }
+
+      case "p":
+        return `${children().trim()}\n\n`;
+
+      case "strong":
+      case "b":
+        return `**${children()}**`;
+
+      case "em":
+      case "i":
+        return `*${children()}*`;
+
+      case "u":
+        return `<u>${children()}</u>`;
+
+      case "del":
+      case "s":
+        return `~~${children()}~~`;
+
+      case "a": {
+        const href = node.getAttribute("href");
+        const text = children();
+        return href ? `[${text}](${href})` : text;
+      }
+
+      case "img": {
+        const src = node.getAttribute("src");
+        const alt = node.getAttribute("alt") || "Imagem";
+        return src ? `![${alt}](${src})` : "";
+      }
+
+      case "table": {
+        const rows = Array.from(node.querySelectorAll("tr"));
+
+        if (!rows.length) return "";
+
+        const tableRows = rows.map((row) => {
+          const cells = Array.from(row.children)
+            .filter((cell) => ["TD", "TH"].includes(cell.tagName))
+            .map((cell) =>
+              Array.from(cell.childNodes)
+                .map(convert)
+                .join("")
+                .replace(/\s*\n\s*/g, " ")
+                .replace(/\|/g, "\\|")
+                .trim()
+            );
+
+          return `| ${cells.join(" | ")} |`;
+        });
+
+        const firstRow = rows[0];
+        const headerCells = Array.from(firstRow.children)
+          .filter((cell) => ["TD", "TH"].includes(cell.tagName));
+
+        const separator = `| ${headerCells.map(() => "---").join(" | ")} |`;
+
+        tableRows.splice(1, 0, separator);
+
+        return `\n\n${tableRows.join("\n")}\n\n`;
+      }
+
+      case "ul":
+      case "ol": {
+        const items = Array.from(node.children)
+          .filter((child) => child.tagName === "LI");
+
+        return items.map((item, index) => {
+          const marker = tag === "ol" ? `${index + 1}.` : "-";
+          return `${marker} ${convert(item).trim()}`;
+        }).join("\n") + "\n\n";
+      }
+
+      case "li":
+        return children();
+
+      case "blockquote":
+        return children()
+          .trim()
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n") + "\n\n";
+
+      case "hr":
+        return "\n\n---\n\n";
+
+      case "div":
+      case "section":
+      case "article":
+        return `${children()}\n`;
+
+      default:
+        return children();
+    }
+  };
+
+  return Array.from(parsed.body.childNodes)
+    .map(convert)
+    .join("")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // 🟢 ESTILOS GLOBAIS DA PÁGINA
 const globalStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
@@ -271,8 +405,16 @@ const TopicCard = memo(({
         <ReactMarkdown
           children={topic.content}
           remarkPlugins={[remarkGfm]}
-          components={{
+
+components={{
+            table: ({ ...props }) => (
+              <div className="markdown-table-wrap">
+                <table {...props} />
+              </div>
+            ),
+
             img: ({ ...props }) => (
+
               <img
                 {...props}
                 loading="lazy"
@@ -425,30 +567,170 @@ export default function Sistema() {
   const [content, setContent] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // 🖼️ Lightbox
-  const [lightboxImage, setLightboxImage] = useState(null);
-  const [zoom, setZoom] = useState(1);
+// 🖼️ Lightbox
+const [lightboxImage, setLightboxImage] = useState(null);
+const [zoom, setZoom] = useState(1);
 
-  // 🟢 MEMOIZAR ESTILOS MARKDOWN
-  const markdownStyles = useMemo(() => `
-    .markdown-content img {
-      max-width: 100%;
-      height: auto;
-      border-radius: 8px;
-      margin: 8px 0;
-      cursor: pointer;
-      transition: transform 0.2s ease;
-    }
-    .markdown-content img:hover {
-      transform: scale(1.02);
-    }
-    .markdown-content video {
-      max-width: 100%;
-      border-radius: 8px;
-      margin: 8px 0;
-      display: block;
-    }
-  `, []);
+// 🟢 COLAGEM INTELIGENTE: preserva formatação do DeepSeek
+const handleContentPaste = useCallback((e) => {
+  const clipboard = e.clipboardData;
+  const html = clipboard.getData("text/html");
+
+  // Se não houver HTML, mantém a colagem normal de texto.
+  if (!html) return;
+
+  const markdown = htmlToMarkdown(html);
+
+  if (!markdown) return;
+
+  e.preventDefault();
+
+  const textarea = contentInputRef.current;
+
+  if (!textarea) return;
+
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const currentText = textarea.value;
+
+  const before = currentText.slice(0, start);
+  const after = currentText.slice(end);
+
+  const prefix =
+    before && !before.endsWith("\n\n") ? "\n\n" : "";
+
+  const suffix =
+    after && !after.startsWith("\n\n") ? "\n\n" : "";
+
+  const newText =
+    before + prefix + markdown + suffix + after;
+
+  setContent(newText);
+
+  const newCursorPosition =
+    before.length + prefix.length + markdown.length;
+
+  requestAnimationFrame(() => {
+    textarea.focus();
+    textarea.setSelectionRange(
+      newCursorPosition,
+      newCursorPosition
+    );
+  });
+}, []);
+
+// 🟢 MEMOIZAR ESTILOS MARKDOWN
+const markdownStyles = useMemo(() => `
+  .markdown-content {
+    width: 100%;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .markdown-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 8px 0;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+
+  .markdown-content img:hover {
+    transform: scale(1.02);
+  }
+
+  .markdown-content video {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 8px 0;
+    display: block;
+  }
+
+  /* TABELAS MARKDOWN */
+  .markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.95rem;
+    display: table;
+  }
+
+  .markdown-content thead {
+    background: rgba(156, 39, 176, 0.15);
+  }
+
+  .markdown-content th {
+    color: #ffffff !important;
+    font-weight: 800;
+    text-align: left;
+    padding: 12px;
+    border-bottom: 2px solid #9c27b0;
+  }
+
+  .markdown-content td {
+    color: #e2e8f0 !important;
+    padding: 12px;
+    border-bottom: 1px solid #334155;
+    vertical-align: top;
+  }
+
+  .markdown-content tr:hover {
+    background: rgba(156, 39, 176, 0.08);
+  }
+
+  .markdown-content .markdown-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+
+  /* PARÁGRAFOS */
+  .markdown-content p {
+    margin: 10px 0;
+    line-height: 1.7;
+  }
+
+  /* TÍTULOS */
+  .markdown-content h1,
+  .markdown-content h2,
+  .markdown-content h3,
+  .markdown-content h4 {
+    margin-top: 22px;
+    margin-bottom: 12px;
+    color: #ffffff;
+  }
+
+  /* LISTAS */
+  .markdown-content ul,
+  .markdown-content ol {
+    padding-left: 28px;
+    margin: 12px 0;
+  }
+
+  .markdown-content li {
+    margin-bottom: 6px;
+    line-height: 1.6;
+  }
+
+  /* NEGRITO */
+  .markdown-content strong {
+    color: #ffffff;
+    font-weight: 800;
+  }
+
+  /* ITÁLICO */
+  .markdown-content em {
+    color: #cbd5e1;
+  }
+
+  /* LINHAS DIVISÓRIAS */
+  .markdown-content hr {
+    border: none;
+    border-top: 1px solid #475569;
+    margin: 20px 0;
+  }
+`, []);
 
   // 🔹 Carrega tópicos do Firestore (e garante IDs únicos)
   useEffect(() => {
@@ -1051,6 +1333,7 @@ export default function Sistema() {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             inputRef={contentInputRef}
+            onPaste={handleContentPaste}
             sx={{
               '& .MuiInputLabel-root': { 
                 color: '#94a3b8', 
